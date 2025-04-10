@@ -1,12 +1,12 @@
 
-import { WaveformIcon } from 'lucide-react';
+import { AudioWaveform } from 'lucide-react';
 
 const WelcomeSection = () => {
   return (
     <section className="py-10 px-4 text-center">
       <div className="max-w-3xl mx-auto">
         <div className="inline-block mb-4">
-          <WaveformIcon className="h-12 w-12 text-accent animate-pulse" />
+          <AudioWaveform className="h-12 w-12 text-accent animate-pulse" />
         </div>
         <h1 className="text-4xl font-extrabold mb-4 hutz-gradient-text">
           Bem-vindo ao Hutz Live
