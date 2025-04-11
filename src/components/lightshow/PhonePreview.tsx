@@ -13,6 +13,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const [flashlightColor, setFlashlightColor] = useState('#FFFFFF');
   const [flashlightIntensity, setFlashlightIntensity] = useState(0);
   const [displayImage, setDisplayImage] = useState<string | null>(null);
+  const [backgroundColor, setBackgroundColor] = useState<string | null>(null);
   const flashIntervalRef = useRef<number | null>(null);
   
   // Clear any existing intervals when component unmounts
@@ -43,8 +44,9 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       currentTime >= item.startTime && currentTime < (item.startTime + item.duration)
     );
     
-    // Process active items
+    // Process active items based on type
     let activeImage: string | null = null;
+    let activeBackgroundColor: string | null = null;
     let activeFlashlightItem: TimelineItem | null = null;
     
     activeItems.forEach(item => {
@@ -54,11 +56,15 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       } else if (item.type === 'flashlight' && item.pattern) {
         // Using the last active flashlight (in case of overlapping)
         activeFlashlightItem = item;
+      } else if (item.type === 'background' && item.backgroundColor) {
+        // Last background color will be used
+        activeBackgroundColor = item.backgroundColor;
       }
     });
     
-    // Update display image
+    // Update display
     setDisplayImage(activeImage);
+    setBackgroundColor(activeBackgroundColor);
     
     // Handle flashlight
     if (activeFlashlightItem && activeFlashlightItem.pattern) {
@@ -92,7 +98,8 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
         <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-24 h-5 bg-black rounded-b-xl z-20"></div>
         
         {/* Phone screen */}
-        <div className="relative w-full h-full bg-gray-900 overflow-hidden">
+        <div className="relative w-full h-full overflow-hidden"
+             style={{ backgroundColor: backgroundColor || '#1f1f1f' }}>
           {/* Display image if any */}
           {displayImage && (
             <img 
@@ -102,19 +109,22 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
             />
           )}
           
-          {/* Flashlight effect */}
+          {/* Flashlight effect - now as a dot in the corner */}
           {activeFlashlight && (
-            <div 
-              className="absolute inset-0 z-20 mix-blend-screen transition-opacity duration-100"
-              style={{ 
-                backgroundColor: flashlightColor,
-                opacity: flashlightIntensity / 100
-              }}
-            ></div>
+            <div className="absolute top-3 right-3 z-30 flex items-center justify-center">
+              <div 
+                className="w-6 h-6 rounded-full shadow-lg transition-opacity duration-100"
+                style={{ 
+                  backgroundColor: flashlightColor,
+                  opacity: flashlightIntensity / 100,
+                  boxShadow: `0 0 10px 5px ${flashlightColor}80`
+                }}
+              ></div>
+            </div>
           )}
           
           {/* Default content when nothing is playing */}
-          {!isPlaying && !displayImage && (
+          {!isPlaying && !displayImage && !backgroundColor && (
             <div className="flex flex-col items-center justify-center h-full text-white/70 p-4">
               <div className="text-center">
                 <p className="mb-2">Aponte a câmera</p>

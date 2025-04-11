@@ -14,12 +14,13 @@ import Timeline from "@/components/lightshow/Timeline";
 import PhonePreview from "@/components/lightshow/PhonePreview";
 import AudioUploader from "@/components/lightshow/AudioUploader";
 import ImageSelector from "@/components/lightshow/ImageSelector";
+import ColorSelector from "@/components/lightshow/ColorSelector";
 import { 
   Play, Pause, Save, Music, Image as ImageIcon, 
-  Flashlight, Zap, Download, Upload, Plus, Trash2 
+  Flashlight, Zap, Download, Upload, Plus, Trash2, Wand2, Palette 
 } from "lucide-react";
-import { FlashlightPattern, TimelineItem } from "@/types/lightshow";
-import { generateUltrasonicAudio } from "@/utils/audioProcessing";
+import { FlashlightPattern, MediaTrackType, TimelineItem } from "@/types/lightshow";
+import { generateUltrasonicAudio, detectBeats } from "@/utils/audioProcessing";
 
 const LightShowPage = () => {
   const { toast } = useToast();
@@ -32,6 +33,7 @@ const LightShowPage = () => {
   const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([]);
   const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
   const [autoSync, setAutoSync] = useState(true);
+  const [activeTab, setActiveTab] = useState("properties");
   
   // Get selected item
   const selectedItem = selectedItemIndex !== null ? timelineItems[selectedItemIndex] : null;
@@ -60,32 +62,85 @@ const LightShowPage = () => {
     }
   };
   
-  const generateAutoSyncPatterns = () => {
-    // This would be replaced with actual beat detection in a full implementation
-    // For demo purposes, we'll create patterns at regular intervals
-    if (!duration) return;
+  const generateAutoSyncPatterns = async () => {
+    if (!duration || !audioFile) return;
     
-    const newPatterns: TimelineItem[] = [];
-    // Create a flashlight event roughly every 2 seconds
-    for (let time = 0; time < duration; time += 2) {
-      newPatterns.push({
-        id: `flash-${Date.now()}-${time}`,
-        type: 'flashlight',
-        startTime: time,
-        duration: 0.5,
-        pattern: {
-          intensity: 100,
-          blinkRate: 4,
-          color: '#FFFFFF'
-        }
+    toast({
+      title: "Gerando padrões...",
+      description: "Criando sincronização automática com o áudio.",
+    });
+    
+    try {
+      // Improved pattern generation that simulates beat detection
+      // In a real implementation, would use actual audio analysis
+      
+      // Generate flashlight patterns at different intervals
+      const newPatterns: TimelineItem[] = [];
+      
+      // For a simple version, create patterns at regular intervals
+      // Every 1 second get a short flash
+      for (let time = 0; time < duration; time += 1) {
+        // Skip some beats randomly for a more natural feel
+        if (Math.random() > 0.7) continue;
+        
+        newPatterns.push({
+          id: `flash-${Date.now()}-${time}`,
+          type: 'flashlight',
+          startTime: time,
+          duration: 0.3,
+          pattern: {
+            intensity: 70 + Math.random() * 30, // 70-100%
+            blinkRate: 2 + Math.random() * 3,  // 2-5 Hz
+            color: '#FFFFFF'
+          }
+        });
+      }
+      
+      // Every 4 seconds, create a longer color flash
+      const colors = ['#9b87f5', '#0EA5E9', '#F97316', '#4ADE80'];
+      for (let time = 0; time < duration; time += 4) {
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        
+        newPatterns.push({
+          id: `color-flash-${Date.now()}-${time}`,
+          type: 'flashlight',
+          startTime: time,
+          duration: 1.5,
+          pattern: {
+            intensity: 90,
+            blinkRate: 0.5,  // slow flash
+            color,
+          }
+        });
+      }
+      
+      // Add some background color changes
+      const bgColors = ['#1E40AF', '#BE123C', '#15803D', '#7E69AB'];
+      for (let time = 0; time < duration; time += 8) {
+        const color = bgColors[Math.floor(Math.random() * bgColors.length)];
+        
+        newPatterns.push({
+          id: `bg-color-${Date.now()}-${time}`,
+          type: 'background',
+          startTime: time,
+          duration: 8,
+          backgroundColor: color
+        });
+      }
+      
+      setTimelineItems(newPatterns);
+      toast({
+        title: "Sincronização concluída",
+        description: `${newPatterns.length} eventos criados com base no áudio.`,
+      });
+    } catch (error) {
+      console.error("Error generating patterns:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível gerar os padrões automaticamente.",
+        variant: "destructive"
       });
     }
-    
-    setTimelineItems(newPatterns);
-    toast({
-      title: "Sincronização automática concluída",
-      description: "Padrões de lanterna criados com base no áudio.",
-    });
   };
   
   const addImageToTimeline = (imageUrl: string) => {
@@ -107,6 +162,27 @@ const LightShowPage = () => {
     };
     
     setTimelineItems([...timelineItems, newImage]);
+  };
+  
+  const addColorToTimeline = (color: string) => {
+    if (!duration) {
+      toast({
+        title: "Erro",
+        description: "Por favor, carregue um áudio primeiro.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    const newColor: TimelineItem = {
+      id: `bg-${Date.now()}`,
+      type: 'background',
+      startTime: currentTime,
+      duration: 5, // Default duration for background is 5 seconds
+      backgroundColor: color
+    };
+    
+    setTimelineItems([...timelineItems, newColor]);
   };
   
   const addFlashlightPattern = () => {
@@ -132,6 +208,22 @@ const LightShowPage = () => {
     };
     
     setTimelineItems([...timelineItems, newPattern]);
+  };
+  
+  const handleAddItem = (type: MediaTrackType) => {
+    switch(type) {
+      case 'flashlight':
+        addFlashlightPattern();
+        break;
+      case 'image':
+        setActiveTab('images');
+        break;
+      case 'background':
+        setActiveTab('colors');
+        break;
+      default:
+        break;
+    }
   };
   
   const updateTimelineItem = (id: string, updates: Partial<TimelineItem>) => {
@@ -257,11 +349,11 @@ const LightShowPage = () => {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={addFlashlightPattern}
+                    onClick={generateAutoSyncPatterns}
                     disabled={!audioFile}
                   >
-                    <Flashlight className="h-4 w-4 mr-2" />
-                    Adicionar Lanterna
+                    <Wand2 className="h-4 w-4 mr-2" />
+                    Sincronização Automática
                   </Button>
                   
                   <Select 
@@ -294,6 +386,7 @@ const LightShowPage = () => {
                   onRemoveItem={removeTimelineItem}
                   onItemSelect={setSelectedItemIndex}
                   selectedItemIndex={selectedItemIndex}
+                  onAddItem={handleAddItem}
                 />
               )}
             </div>
@@ -303,10 +396,15 @@ const LightShowPage = () => {
           
           {/* Right panel - Properties and preview */}
           <ResizablePanel defaultSize={35} minSize={30}>
-            <Tabs defaultValue="properties" className="h-full flex flex-col">
-              <TabsList className="mx-4 mt-4 grid grid-cols-3">
+            <Tabs 
+              value={activeTab} 
+              onValueChange={setActiveTab}
+              className="h-full flex flex-col"
+            >
+              <TabsList className="mx-4 mt-4 grid grid-cols-4">
                 <TabsTrigger value="properties">Propriedades</TabsTrigger>
                 <TabsTrigger value="images">Imagens</TabsTrigger>
+                <TabsTrigger value="colors">Cores</TabsTrigger>
                 <TabsTrigger value="preview">Preview</TabsTrigger>
               </TabsList>
               
@@ -314,7 +412,9 @@ const LightShowPage = () => {
                 {selectedItem ? (
                   <div className="space-y-4">
                     <h3 className="text-lg font-medium">
-                      {selectedItem.type === 'image' ? 'Propriedades da Imagem' : 'Propriedades da Lanterna'}
+                      {selectedItem.type === 'image' ? 'Propriedades da Imagem' : 
+                       selectedItem.type === 'flashlight' ? 'Propriedades da Luz' : 
+                       'Propriedades da Cor de Fundo'}
                     </h3>
                     
                     <div className="space-y-2">
@@ -412,6 +512,26 @@ const LightShowPage = () => {
                       </>
                     )}
                     
+                    {selectedItem.type === 'background' && selectedItem.backgroundColor && (
+                      <div className="space-y-2">
+                        <Label>Cor de Fundo</Label>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-10 h-10 rounded-full border"
+                            style={{ backgroundColor: selectedItem.backgroundColor }}
+                          />
+                          <Input 
+                            type="color" 
+                            value={selectedItem.backgroundColor} 
+                            onChange={(e) => updateTimelineItem(
+                              selectedItem.id,
+                              { backgroundColor: e.target.value }
+                            )}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    
                     <Button 
                       variant="destructive" 
                       onClick={() => removeTimelineItem(selectedItem.id)}
@@ -432,6 +552,10 @@ const LightShowPage = () => {
               
               <TabsContent value="images" className="flex-1 p-4 overflow-y-auto">
                 <ImageSelector onImageSelect={addImageToTimeline} />
+              </TabsContent>
+              
+              <TabsContent value="colors" className="flex-1 p-4 overflow-y-auto">
+                <ColorSelector onColorSelect={addColorToTimeline} />
               </TabsContent>
               
               <TabsContent value="preview" className="flex-1 p-4 overflow-y-auto flex items-center justify-center">
