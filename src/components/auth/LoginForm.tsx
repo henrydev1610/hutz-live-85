@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { Eye, EyeOff } from "lucide-react";
+import { useAuth } from '@/contexts/AuthContext';
 
 const LoginForm = ({ onSuccess }: { onSuccess: () => void }) => {
   const [email, setEmail] = useState('');
@@ -12,29 +13,32 @@ const LoginForm = ({ onSuccess }: { onSuccess: () => void }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { toast } = useToast();
+  const { signIn } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
-    // Simulate authentication (will be replaced with Supabase auth later)
     try {
-      // Mock login
-      if (email && password) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      // Use the signIn method from AuthContext
+      const { error } = await signIn(email, password);
+      
+      if (error) {
+        console.error("Login error:", error);
+        toast({
+          variant: "destructive",
+          title: "Erro no login",
+          description: error.message || "Verifique suas credenciais e tente novamente.",
+        });
+      } else {
         toast({
           title: "Login bem-sucedido",
           description: "Bem-vindo ao Hutz Live!",
         });
         onSuccess();
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Erro no login",
-          description: "Por favor, insira email e senha válidos.",
-        });
       }
     } catch (error) {
+      console.error("Unexpected error:", error);
       toast({
         variant: "destructive",
         title: "Erro no login",
