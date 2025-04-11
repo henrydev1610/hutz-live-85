@@ -68,17 +68,17 @@ const LightShowPage = () => {
     });
     
     const newPatterns: TimelineItem[] = [];
-    for (let time = 0; time < duration; time += 2) {
+    for (let time = 0; time < duration; time += 0.4) {
       const randomColorIndex = Math.floor(Math.random() * colorPalette.length);
       
       newPatterns.push({
         id: `flash-${Date.now()}-${time}`,
         type: 'flashlight',
         startTime: time,
-        duration: 0.5,
+        duration: 0.2,
         pattern: {
           intensity: 50 + Math.random() * 50,
-          blinkRate: 1 + Math.random() * 5,
+          blinkRate: 5,
           color: colorPalette[randomColorIndex]
         }
       });
@@ -153,10 +153,10 @@ const LightShowPage = () => {
       id: `flash-${Date.now()}`,
       type: 'flashlight',
       startTime: currentTime,
-      duration: 1,
+      duration: 0.2,
       pattern: {
         intensity: 100,
-        blinkRate: 2,
+        blinkRate: 5,
         color: '#FFFFFF'
       }
     };

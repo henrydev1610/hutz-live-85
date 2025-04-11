@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -48,8 +49,8 @@ const Timeline = ({
       progressColor: '#9b87f5',
       cursorColor: '#FFFFFF',
       cursorWidth: 2,
-      height: 128,
-      barWidth: 2,
+      height: 160, // Increased height for more detailed view
+      barWidth: 1,  // Thinner bars for more detail
       barGap: 1,
       barRadius: 2,
       normalize: true,
@@ -57,10 +58,10 @@ const Timeline = ({
     
     const timeline = wavesurfer.registerPlugin(TimelinePlugin.create({
       container: '#timeline',
-      primaryLabelInterval: 5,
-      secondaryLabelInterval: 1,
-      primaryFontColor: '#FFFFFF',
-      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
+      primaryLabelInterval: 1, // Increased precision to 1 second intervals
+      secondaryLabelInterval: 0.2, // More precise marking at 0.2 second intervals
+      primaryColor: '#FFFFFF',
+      secondaryColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
@@ -238,13 +239,13 @@ const Timeline = ({
         <span>{new Date(currentTime * 1000).toISOString().substr(14, 5)} / {new Date((wavesurferRef.current?.getDuration() || 0) * 1000).toISOString().substr(14, 5)}</span>
       </div>
       
-      {/* Audio waveform track */}
-      <div className="relative h-24 bg-black/30 rounded-md">
+      {/* Audio waveform track - now taller for more detail */}
+      <div className="relative h-32 bg-black/30 rounded-md">
         <div ref={containerRef} className="h-full" />
         <div className="timeline-marker absolute top-0 h-full w-0.5 bg-white z-10 pointer-events-none"></div>
       </div>
       
-      {/* Time ruler */}
+      {/* Time ruler - now with more precise markings */}
       <div id="timeline" className="h-10" />
       
       {/* Image track */}

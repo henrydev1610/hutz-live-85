@@ -74,8 +74,9 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       setFlashlightColor(color);
       
       if (blinkRate > 0) {
-        // Set up flashing with the specified rate
-        const intervalMs = 1000 / (blinkRate * 2); // *2 for on/off cycle
+        // Set up flashing with the specified rate - faster blinking (0.2s)
+        // Using a constant fast blink rate of 200ms (5Hz) for better visual effect
+        const intervalMs = 200; // 0.2 seconds, or 5Hz
         let isOn = true;
         
         setActiveFlashlight(true);
