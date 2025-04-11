@@ -14,8 +14,6 @@ import TelaoPage from "./pages/TelaoPage";
 import QuizPage from "./pages/QuizPage";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
-
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   
@@ -92,20 +90,23 @@ const AppRoutes = () => {
 };
 
 const App = () => {
+  // Create a new QueryClient instance inside the component
+  const [queryClient] = useState(() => new QueryClient());
+
   return (
-    <QueryClientProvider client={queryClient}>
+    <BrowserRouter>
       <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
             <div className="min-h-screen flex flex-col bg-black">
               <AppRoutes />
             </div>
-          </BrowserRouter>
-        </TooltipProvider>
+          </TooltipProvider>
+        </QueryClientProvider>
       </AuthProvider>
-    </QueryClientProvider>
+    </BrowserRouter>
   );
 };
 
