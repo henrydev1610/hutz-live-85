@@ -19,8 +19,8 @@ export interface WaveformRegion {
   start: number;
   end: number;
   color: string;
-  data: {
+  attributes: {
     type: 'image' | 'flashlight';
-    item: TimelineItem;
+    item: string;  // JSON stringified TimelineItem
   };
 }

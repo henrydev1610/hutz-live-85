@@ -57,15 +57,15 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 5,
       secondaryLabelInterval: 1,
-      primaryColor: 'rgba(255, 255, 255, 0.5)',
-      secondaryColor: 'rgba(255, 255, 255, 0.2)',
+      // Updated property names for the TimelinePlugin
       primaryFontColor: 'rgba(255, 255, 255, 0.7)',
       secondaryFontColor: 'rgba(255, 255, 255, 0.5)',
+      primaryColor: 'rgba(255, 255, 255, 0.5)',
+      secondaryColor: 'rgba(255, 255, 255, 0.2)',
     }));
     
-    const regions = wavesurfer.registerPlugin(RegionsPlugin.create({
-      dragSelection: false,
-    }));
+    // Fix: Create the RegionsPlugin with empty options
+    const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
     
     regionsRef.current = regions;
     wavesurferRef.current = wavesurfer;
@@ -129,7 +129,7 @@ const Timeline = ({
         ? 'rgba(14, 165, 233, 0.3)' // Blue for images
         : 'rgba(139, 92, 246, 0.3)'; // Purple for flashlight
       
-      // Create region
+      // Create region with the correct options format
       const region = regionsRef.current?.addRegion({
         id: item.id,
         start: item.startTime,
@@ -137,9 +137,10 @@ const Timeline = ({
         color,
         drag: true,
         resize: true,
-        data: {
+        // Store metadata using attributes rather than data property
+        attributes: {
           type: item.type,
-          item
+          item: JSON.stringify(item)
         }
       });
       
