@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -65,8 +66,10 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 5,
       secondaryLabelInterval: 1,
-      primaryFontColor: '#FFFFFF',
-      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
+      // Corrected property names for TimelinePlugin
+      primaryColor: '#FFFFFF',
+      secondaryColor: 'rgba(255, 255, 255, 0.7)',
+      // FontSize is used instead of fontColor
       fontSize: 10,
     }));
     
@@ -122,12 +125,13 @@ const Timeline = ({
     
     regionsRef.current.clearRegions();
     
+    // Filter items by visible tracks
     const visibleTrackIds = tracks.filter(t => t.visible).map(t => t.id);
     const visibleItems = timelineItems.filter(item => visibleTrackIds.includes(item.type));
     
     visibleItems.forEach(item => {
       const trackConfig = tracks.find(t => t.type === item.type);
-      const color = trackConfig ? `${trackConfig.color}80` : 'rgba(128, 128, 128, 0.3)';
+      const color = trackConfig ? `${trackConfig.color}80` : 'rgba(128, 128, 128, 0.3)'; // Add 50% transparency
       
       const region = regionsRef.current?.addRegion({
         id: item.id,
