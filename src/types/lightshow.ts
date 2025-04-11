@@ -11,6 +11,7 @@ export interface TimelineItem {
   startTime: number;  // Seconds from start
   duration: number;   // Seconds
   imageUrl?: string;  // For image items
+  backgroundColor?: string; // For color background items
   pattern?: FlashlightPattern;  // For flashlight items
 }
 

@@ -13,6 +13,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const [flashlightColor, setFlashlightColor] = useState('#FFFFFF');
   const [flashlightIntensity, setFlashlightIntensity] = useState(0);
   const [displayImage, setDisplayImage] = useState<string | null>(null);
+  const [backgroundColor, setBackgroundColor] = useState('#000000');
   const flashIntervalRef = useRef<number | null>(null);
   
   // Clear any existing intervals when component unmounts
@@ -45,20 +46,27 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     
     // Process active items
     let activeImage: string | null = null;
+    let activeBackgroundColor: string = '#000000';
     let activeFlashlightItem: TimelineItem | null = null;
     
     activeItems.forEach(item => {
-      if (item.type === 'image' && item.imageUrl) {
-        // Last image in the list will be shown (in case of overlapping images)
-        activeImage = item.imageUrl;
+      if (item.type === 'image') {
+        if (item.imageUrl) {
+          // Last image in the list will be shown (in case of overlapping images)
+          activeImage = item.imageUrl;
+        } else if (item.backgroundColor) {
+          // Use background color if specified
+          activeBackgroundColor = item.backgroundColor;
+        }
       } else if (item.type === 'flashlight' && item.pattern) {
         // Using the last active flashlight (in case of overlapping)
         activeFlashlightItem = item;
       }
     });
     
-    // Update display image
+    // Update display image and background
     setDisplayImage(activeImage);
+    setBackgroundColor(activeBackgroundColor);
     
     // Handle flashlight
     if (activeFlashlightItem && activeFlashlightItem.pattern) {
@@ -89,28 +97,35 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     <div className="flex flex-col items-center">
       <div className="relative w-64 h-[500px] bg-black rounded-3xl border-8 border-gray-800 overflow-hidden shadow-xl">
         {/* Phone "notch" */}
-        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-24 h-5 bg-black rounded-b-xl z-20"></div>
+        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-24 h-5 bg-black rounded-b-xl z-30"></div>
         
         {/* Phone screen */}
-        <div className="relative w-full h-full bg-gray-900 overflow-hidden">
-          {/* Display image if any */}
-          {displayImage && (
-            <img 
-              src={displayImage} 
-              alt="Display content" 
-              className="absolute inset-0 w-full h-full object-contain z-10"
-            />
+        <div 
+          className="relative w-full h-full overflow-hidden"
+          style={{ backgroundColor }}
+        >
+          {/* Flashlight spot effect at top center */}
+          {activeFlashlight && (
+            <div className="absolute top-10 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none">
+              <div 
+                className="w-6 h-6 rounded-full transition-opacity duration-100"
+                style={{ 
+                  boxShadow: `0 0 20px 10px ${flashlightColor}`,
+                  opacity: flashlightIntensity / 100
+                }}
+              ></div>
+            </div>
           )}
           
-          {/* Flashlight effect */}
-          {activeFlashlight && (
-            <div 
-              className="absolute inset-0 z-20 mix-blend-screen transition-opacity duration-100"
-              style={{ 
-                backgroundColor: flashlightColor,
-                opacity: flashlightIntensity / 100
-              }}
-            ></div>
+          {/* Display image if any */}
+          {displayImage && (
+            <div className="flex items-center justify-center h-full">
+              <img 
+                src={displayImage} 
+                alt="Display content" 
+                className="max-w-full max-h-full object-contain z-10"
+              />
+            </div>
           )}
           
           {/* Default content when nothing is playing */}
