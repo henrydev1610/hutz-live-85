@@ -1,11 +1,8 @@
-
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline';
-import { MediaTrackType, TimelineItem, TrackConfig, WaveformRegion } from '@/types/lightshow';
-import { Button } from '@/components/ui/button';
-import { Eye, EyeOff, Plus } from 'lucide-react';
+import { TimelineItem, WaveformRegion } from '@/types/lightshow';
 
 interface TimelineProps {
   audioUrl: string | null;
@@ -19,7 +16,6 @@ interface TimelineProps {
   onRemoveItem: (id: string) => void;
   onItemSelect: (index: number | null) => void;
   selectedItemIndex: number | null;
-  onAddItem: (type: MediaTrackType) => void;
 }
 
 const Timeline = ({
@@ -33,18 +29,11 @@ const Timeline = ({
   onRemoveItem,
   onItemSelect,
   selectedItemIndex,
-  onAddItem,
 }: TimelineProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const [regions, setRegions] = useState<Record<string, WaveformRegion>>({});
-  const [tracks, setTracks] = useState<TrackConfig[]>([
-    { id: 'audio', name: 'Áudio', type: 'audio', color: '#4B5563', visible: true },
-    { id: 'image', name: 'Imagens', type: 'image', color: '#0EA5E9', visible: true },
-    { id: 'flashlight', name: 'Luz do Celular', type: 'flashlight', color: '#8B5CF6', visible: true },
-    { id: 'background', name: 'Cor de Fundo', type: 'background', color: '#F59E0B', visible: true },
-  ]);
   
   useEffect(() => {
     if (!containerRef.current || !audioUrl) return;
@@ -66,11 +55,8 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 5,
       secondaryLabelInterval: 1,
-      // Corrected property names for TimelinePlugin
-      primaryColor: '#FFFFFF',
-      secondaryColor: 'rgba(255, 255, 255, 0.7)',
-      // FontSize is used instead of fontColor
-      fontSize: 10,
+      primaryFontColor: '#FFFFFF',
+      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
@@ -125,13 +111,10 @@ const Timeline = ({
     
     regionsRef.current.clearRegions();
     
-    // Filter items by visible tracks
-    const visibleTrackIds = tracks.filter(t => t.visible).map(t => t.id);
-    const visibleItems = timelineItems.filter(item => visibleTrackIds.includes(item.type));
-    
-    visibleItems.forEach(item => {
-      const trackConfig = tracks.find(t => t.type === item.type);
-      const color = trackConfig ? `${trackConfig.color}80` : 'rgba(128, 128, 128, 0.3)'; // Add 50% transparency
+    timelineItems.forEach(item => {
+      const color = item.type === 'image' 
+        ? 'rgba(14, 165, 233, 0.3)'
+        : 'rgba(139, 92, 246, 0.3)';
       
       const region = regionsRef.current?.addRegion({
         id: item.id,
@@ -157,50 +140,10 @@ const Timeline = ({
         }
       }
     });
-  }, [timelineItems, selectedItemIndex, tracks]);
-
-  const toggleTrackVisibility = (trackId: string) => {
-    setTracks(tracks.map(track => 
-      track.id === trackId ? { ...track, visible: !track.visible } : track
-    ));
-  };
+  }, [timelineItems, selectedItemIndex]);
 
   return (
     <div className="flex flex-col h-full bg-black/50 rounded-lg p-4">
-      <div className="flex mb-4 gap-2 overflow-x-auto pb-2">
-        {tracks.map(track => (
-          <div 
-            key={track.id} 
-            className="flex items-center gap-1"
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => toggleTrackVisibility(track.id)}
-              className="h-7 px-2"
-            >
-              {track.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-            </Button>
-            <div 
-              className="px-3 py-1 rounded-md text-xs text-white flex items-center gap-1"
-              style={{ backgroundColor: track.color }}
-            >
-              {track.name}
-            </div>
-            {track.id !== 'audio' && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => onAddItem(track.type)}
-              >
-                <Plus size={14} />
-              </Button>
-            )}
-          </div>
-        ))}
-      </div>
-      
       <div ref={containerRef} className="flex-1" />
       <div id="timeline" className="h-20" />
       

@@ -5,16 +5,13 @@ export interface FlashlightPattern {
   color: string;      // Color value
 }
 
-export type MediaTrackType = 'audio' | 'image' | 'flashlight' | 'background';
-
 export interface TimelineItem {
   id: string;
-  type: MediaTrackType;
+  type: 'image' | 'flashlight';
   startTime: number;  // Seconds from start
   duration: number;   // Seconds
   imageUrl?: string;  // For image items
   pattern?: FlashlightPattern;  // For flashlight items
-  backgroundColor?: string;  // For background items
 }
 
 export interface WaveformRegion {
@@ -23,12 +20,4 @@ export interface WaveformRegion {
   end: number;
   color: string;
   content: string;  // JSON stringified metadata
-}
-
-export interface TrackConfig {
-  id: string;
-  name: string;
-  type: MediaTrackType;
-  color: string;
-  visible: boolean;
 }
