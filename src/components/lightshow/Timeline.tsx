@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -36,7 +35,6 @@ const Timeline = ({
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const [regions, setRegions] = useState<Record<string, WaveformRegion>>({});
   
-  // Initialize WaveSurfer
   useEffect(() => {
     if (!containerRef.current || !audioUrl) return;
     
@@ -57,23 +55,17 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 5,
       secondaryLabelInterval: 1,
-      // Use the correct property names for TimelinePlugin
-      primaryColor: 'rgba(255, 255, 255, 0.5)',
-      secondaryColor: 'rgba(255, 255, 255, 0.2)',
-      // Using fontColor instead of primaryFontColor/secondaryFontColor
-      fontColor: 'rgba(255, 255, 255, 0.7)',
+      primaryFontColor: '#FFFFFF',
+      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
-    // Create the RegionsPlugin without any options
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
     
     regionsRef.current = regions;
     wavesurferRef.current = wavesurfer;
     
-    // Load audio
     wavesurfer.load(audioUrl);
     
-    // Set up event handlers
     wavesurfer.on('ready', () => {
       setDuration(wavesurfer.getDuration());
     });
@@ -104,7 +96,6 @@ const Timeline = ({
     };
   }, [audioUrl]);
   
-  // Handle play/pause
   useEffect(() => {
     if (!wavesurferRef.current) return;
     
@@ -115,21 +106,16 @@ const Timeline = ({
     }
   }, [isPlaying]);
   
-  // Update regions when timeline items change
   useEffect(() => {
     if (!regionsRef.current || !wavesurferRef.current) return;
     
-    // Clear existing regions
     regionsRef.current.clearRegions();
     
-    // Add new regions for each timeline item
     timelineItems.forEach(item => {
-      // Define color based on item type
       const color = item.type === 'image' 
-        ? 'rgba(14, 165, 233, 0.3)' // Blue for images
-        : 'rgba(139, 92, 246, 0.3)'; // Purple for flashlight
+        ? 'rgba(14, 165, 233, 0.3)'
+        : 'rgba(139, 92, 246, 0.3)';
       
-      // Create region with the correct options format
       const region = regionsRef.current?.addRegion({
         id: item.id,
         start: item.startTime,
@@ -137,15 +123,13 @@ const Timeline = ({
         color,
         drag: true,
         resize: true,
-        // Store metadata as a data property (the correct property according to WaveSurfer API)
-        data: {
+        content: JSON.stringify({
           type: item.type,
           item: JSON.stringify(item)
-        }
+        })
       });
       
       if (region) {
-        // Check if this is the selected region
         const index = timelineItems.findIndex(i => i.id === item.id);
         if (index === selectedItemIndex) {
           region.element.style.border = '2px solid white';
