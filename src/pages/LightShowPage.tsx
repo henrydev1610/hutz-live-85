@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,12 +15,11 @@ import AudioUploader from "@/components/lightshow/AudioUploader";
 import ImageSelector from "@/components/lightshow/ImageSelector";
 import { 
   Play, Pause, Save, Music, Image as ImageIcon, 
-  Flashlight, Zap, Download, Upload, Plus, Trash2, Palette, MagicWand
+  Flashlight, Zap, Download, Upload, Plus, Trash2, Palette, Wand2
 } from "lucide-react";
 import { FlashlightPattern, TimelineItem } from "@/types/lightshow";
 import { generateUltrasonicAudio } from "@/utils/audioProcessing";
 
-// Predefined color palette
 const colorPalette = [
   '#FF0000', '#FF3300', '#FF6600', '#FF9900', '#FFCC00', // Reds to yellows
   '#FFFF00', '#CCFF00', '#99FF00', '#66FF00', '#33FF00', // Yellows to greens
@@ -44,13 +42,11 @@ const LightShowPage = () => {
   const [autoSync, setAutoSync] = useState(true);
   const [selectedColor, setSelectedColor] = useState('#000000');
   
-  // Get selected item
   const selectedItem = selectedItemIndex !== null ? timelineItems[selectedItemIndex] : null;
 
   const handleAudioUpload = (file: File) => {
     setAudioFile(file);
     
-    // Create object URL for the audio file
     const url = URL.createObjectURL(file);
     setAudioUrl(url);
     
@@ -59,14 +55,11 @@ const LightShowPage = () => {
       description: `${file.name} foi carregado com sucesso.`,
     });
     
-    // Reset timeline when new audio is uploaded
     setTimelineItems([]);
     setCurrentTime(0);
   };
   
   const generateAutoSyncPatterns = () => {
-    // This would be replaced with actual beat detection in a full implementation
-    // For demo purposes, we'll create patterns at regular intervals
     if (!duration) return;
     
     toast({
@@ -75,9 +68,7 @@ const LightShowPage = () => {
     });
     
     const newPatterns: TimelineItem[] = [];
-    // Create a flashlight event roughly every 2 seconds
     for (let time = 0; time < duration; time += 2) {
-      // Randomize colors for variety
       const randomColorIndex = Math.floor(Math.random() * colorPalette.length);
       
       newPatterns.push({
@@ -86,14 +77,13 @@ const LightShowPage = () => {
         startTime: time,
         duration: 0.5,
         pattern: {
-          intensity: 50 + Math.random() * 50, // Random intensity between 50-100%
-          blinkRate: 1 + Math.random() * 5,   // Random blink rate between 1-6 Hz
+          intensity: 50 + Math.random() * 50,
+          blinkRate: 1 + Math.random() * 5,
           color: colorPalette[randomColorIndex]
         }
       });
     }
     
-    // Add the new patterns to timeline without removing existing ones
     setTimelineItems(prev => [...prev, ...newPatterns]);
     
     toast({
@@ -116,7 +106,7 @@ const LightShowPage = () => {
       id: `img-${Date.now()}`,
       type: 'image',
       startTime: currentTime,
-      duration: 3, // Default duration for images is 3 seconds
+      duration: 3,
       imageUrl
     };
     
@@ -135,9 +125,9 @@ const LightShowPage = () => {
     
     const newColorBackground: TimelineItem = {
       id: `color-${Date.now()}`,
-      type: 'image', // Reusing image type for color backgrounds
+      type: 'image',
       startTime: currentTime,
-      duration: 3, // Default duration for background color is 3 seconds
+      duration: 3,
       backgroundColor: selectedColor
     };
     
@@ -163,7 +153,7 @@ const LightShowPage = () => {
       id: `flash-${Date.now()}`,
       type: 'flashlight',
       startTime: currentTime,
-      duration: 1, // Default duration for flashlight is 1 second
+      duration: 1,
       pattern: {
         intensity: 100,
         blinkRate: 2,
@@ -204,12 +194,9 @@ const LightShowPage = () => {
       description: "Processando áudio e padrões ultrassônicos.",
     });
     
-    // Simulate file generation - in a real app this would process the audio
     setTimeout(() => {
-      // Generate ultrasonic audio using our utility function
       generateUltrasonicAudio(audioFile, timelineItems)
         .then(blob => {
-          // Create download link
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
@@ -271,7 +258,6 @@ const LightShowPage = () => {
           direction="horizontal"
           className="min-h-[calc(100vh-200px)] border rounded-lg border-white/10 bg-secondary/40 backdrop-blur-lg"
         >
-          {/* Left panel - Timeline editor */}
           <ResizablePanel defaultSize={65} minSize={30}>
             <div className="h-full flex flex-col p-4">
               <div className="mb-4 flex items-center space-x-2">
@@ -297,7 +283,7 @@ const LightShowPage = () => {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={addImageToTimeline}
+                    onClick={() => addImageToTimeline("https://via.placeholder.com/300/000000/FFFFFF/?text=Selecione+Imagem")}
                     disabled={!audioFile}
                     className="bg-sky-950/40"
                   >
@@ -323,7 +309,7 @@ const LightShowPage = () => {
                     disabled={!audioFile}
                     className="bg-green-950/40"
                   >
-                    <MagicWand className="h-4 w-4 mr-2" />
+                    <Wand2 className="h-4 w-4 mr-2" />
                     Auto Sync
                   </Button>
                 </div>
@@ -351,7 +337,6 @@ const LightShowPage = () => {
           
           <ResizableHandle withHandle />
           
-          {/* Right panel - Properties and preview */}
           <ResizablePanel defaultSize={35} minSize={30}>
             <Tabs defaultValue="properties" className="h-full flex flex-col">
               <TabsList className="mx-4 mt-4 grid grid-cols-4">

@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -60,8 +59,8 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 5,
       secondaryLabelInterval: 1,
-      primaryColor: '#FFFFFF',
-      secondaryColor: 'rgba(255, 255, 255, 0.7)',
+      primaryFontColor: '#FFFFFF',
+      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
@@ -99,7 +98,6 @@ const Timeline = ({
     }
   }, [isPlaying]);
   
-  // Create and manage regions in separate tracks
   useEffect(() => {
     if (!wavesurferRef.current || !imageTrackRef.current || !flashlightTrackRef.current) return;
     
