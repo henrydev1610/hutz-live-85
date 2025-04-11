@@ -5,8 +5,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useState, useEffect } from "react";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import Navbar from "./components/layout/Navbar";
-import Login from "./pages/Login";
+import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import LightShowPage from "./pages/LightShowPage";
 import TelaoPage from "./pages/TelaoPage";
@@ -15,54 +16,95 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-const App = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
   
-  // Check if user was previously authenticated
-  useEffect(() => {
-    const savedAuth = localStorage.getItem('hutz-auth');
-    if (savedAuth) {
-      setIsAuthenticated(true);
-    }
-  }, []);
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-black">
+      <div className="animate-spin h-8 w-8 border-4 border-accent border-r-transparent rounded-full"></div>
+    </div>;
+  }
   
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-    localStorage.setItem('hutz-auth', 'true');
-  };
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
   
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('hutz-auth');
-  };
+  return <>{children}</>;
+};
+
+const AppRoutes = () => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-black">
+      <div className="animate-spin h-8 w-8 border-4 border-accent border-r-transparent rounded-full"></div>
+    </div>;
+  }
 
   return (
+    <Routes>
+      {user ? (
+        <>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/auth" element={<Navigate to="/dashboard" replace />} />
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/lightshow" 
+            element={
+              <ProtectedRoute>
+                <LightShowPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/telao" 
+            element={
+              <ProtectedRoute>
+                <TelaoPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/quiz" 
+            element={
+              <ProtectedRoute>
+                <QuizPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route path="*" element={<NotFound />} />
+        </>
+      ) : (
+        <>
+          <Route path="/auth" element={<Auth />} />
+          <Route path="*" element={<Navigate to="/auth" replace />} />
+        </>
+      )}
+    </Routes>
+  );
+};
+
+const App = () => {
+  return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          {isAuthenticated ? (
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
             <div className="min-h-screen flex flex-col bg-black">
-              <Navbar onLogout={handleLogout} />
-              <main className="flex-1">
-                <Routes>
-                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/lightshow" element={<LightShowPage />} />
-                  <Route path="/telao" element={<TelaoPage />} />
-                  <Route path="/quiz" element={<QuizPage />} />
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </main>
+              <AppRoutes />
             </div>
-          ) : (
-            <Routes>
-              <Route path="*" element={<Login onLogin={handleLogin} />} />
-            </Routes>
-          )}
-        </BrowserRouter>
-      </TooltipProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 };

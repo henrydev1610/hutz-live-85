@@ -1,16 +1,17 @@
 
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { LogOut, Menu, X } from "lucide-react";
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/components/ui/use-toast';
 
-interface NavbarProps {
-  onLogout: () => void;
-}
-
-const Navbar = ({ onLogout }: NavbarProps) => {
+const Navbar = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
+  const { toast } = useToast();
 
   const isActive = (path: string) => {
     return location.pathname === path ? 'border-b-2 border-accent' : '';
@@ -22,6 +23,23 @@ const Navbar = ({ onLogout }: NavbarProps) => {
     { path: '/telao', label: 'Momento Telão' },
     { path: '/quiz', label: 'Momento Quiz' },
   ];
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      toast({
+        title: "Logout bem-sucedido",
+        description: "Você saiu do sistema com sucesso.",
+      });
+      navigate('/auth');
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Erro ao sair",
+        description: "Ocorreu um problema ao tentar sair do sistema.",
+      });
+    }
+  };
 
   return (
     <nav className="bg-secondary/40 backdrop-blur-lg border-b border-white/10 sticky top-0 z-50">
@@ -53,7 +71,7 @@ const Navbar = ({ onLogout }: NavbarProps) => {
             <Button 
               variant="ghost" 
               className="text-white/80 hover:text-white"
-              onClick={onLogout}
+              onClick={handleLogout}
             >
               <LogOut className="h-5 w-5 mr-2" />
               Sair
@@ -100,7 +118,7 @@ const Navbar = ({ onLogout }: NavbarProps) => {
               className="w-full text-left px-3 py-2 text-base font-medium text-white/70 hover:bg-secondary hover:text-white"
               onClick={() => {
                 setIsMobileMenuOpen(false);
-                onLogout();
+                handleLogout();
               }}
             >
               <LogOut className="h-5 w-5 mr-2" />
