@@ -57,14 +57,14 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 5,
       secondaryLabelInterval: 1,
-      // Updated property names for the TimelinePlugin
-      primaryFontColor: 'rgba(255, 255, 255, 0.7)',
-      secondaryFontColor: 'rgba(255, 255, 255, 0.5)',
+      // Use the correct property names for TimelinePlugin
       primaryColor: 'rgba(255, 255, 255, 0.5)',
       secondaryColor: 'rgba(255, 255, 255, 0.2)',
+      // Using fontColor instead of primaryFontColor/secondaryFontColor
+      fontColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
-    // Fix: Create the RegionsPlugin with empty options
+    // Create the RegionsPlugin without any options
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
     
     regionsRef.current = regions;
@@ -137,8 +137,8 @@ const Timeline = ({
         color,
         drag: true,
         resize: true,
-        // Store metadata using attributes rather than data property
-        attributes: {
+        // Store metadata as a data property (the correct property according to WaveSurfer API)
+        data: {
           type: item.type,
           item: JSON.stringify(item)
         }
