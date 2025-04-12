@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -37,7 +38,7 @@ const Timeline = ({
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const [regions, setRegions] = useState<Record<string, WaveformRegion>>({});
-  const [zoomLevel, setZoomLevel] = useState<number>(50);
+  const [zoomLevel, setZoomLevel] = useState<number>(100);
   
   const imageTrackRef = useRef<HTMLDivElement>(null);
   const flashlightTrackRef = useRef<HTMLDivElement>(null);
@@ -46,7 +47,7 @@ const Timeline = ({
     setZoomLevel(value[0]);
     if (wavesurferRef.current) {
       const zoomFactor = value[0] / 50;
-      wavesurferRef.current.zoom(Math.max(1, zoomFactor * 10));
+      wavesurferRef.current.zoom(Math.max(1, zoomFactor * 20));
     }
   };
   
@@ -84,7 +85,7 @@ const Timeline = ({
     wavesurfer.on('ready', () => {
       setDuration(wavesurfer.getDuration());
       const zoomFactor = zoomLevel / 50;
-      wavesurfer.zoom(Math.max(1, zoomFactor * 10));
+      wavesurfer.zoom(Math.max(1, zoomFactor * 20));
     });
     
     wavesurfer.on('timeupdate', (currentTime) => {
@@ -128,6 +129,19 @@ const Timeline = ({
       return (duration / trackDuration) * 100;
     };
     
+    // Clear existing regions
+    if (imageTrackRef.current) {
+      while (imageTrackRef.current.firstChild) {
+        imageTrackRef.current.removeChild(imageTrackRef.current.firstChild);
+      }
+    }
+    
+    if (flashlightTrackRef.current) {
+      while (flashlightTrackRef.current.firstChild) {
+        flashlightTrackRef.current.removeChild(flashlightTrackRef.current.firstChild);
+      }
+    }
+    
     timelineItems.forEach(item => {
       const leftPosition = calculatePosition(item.startTime);
       const widthPercentage = calculateWidth(item.duration);
@@ -152,8 +166,57 @@ const Timeline = ({
         
         const label = document.createElement('div');
         label.className = 'absolute bottom-1 left-2 text-xs text-white bg-black/50 px-1 rounded';
-        label.textContent = `${item.startTime.toFixed(1)}s`;
+        label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + item.duration).toFixed(1)}s`;
         regionElement.appendChild(label);
+        
+        // Add resize handle for right edge
+        const rightResizeHandle = document.createElement('div');
+        rightResizeHandle.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 cursor-ew-resize';
+        
+        // Add drag functionality for resize
+        let isDragging = false;
+        let startX = 0;
+        let startWidth = 0;
+        
+        rightResizeHandle.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          isDragging = true;
+          startX = e.clientX;
+          startWidth = regionElement.offsetWidth;
+          
+          const onMouseMove = (event: MouseEvent) => {
+            if (!isDragging) return;
+            
+            const dx = event.clientX - startX;
+            const newWidth = startWidth + dx;
+            const minWidth = 5; // Minimum width in pixels
+            
+            if (newWidth > minWidth) {
+              const percentWidth = (newWidth / trackWidth) * 100;
+              regionElement.style.width = `${percentWidth}%`;
+              
+              // Calculate new duration based on width
+              const newDuration = (percentWidth / 100) * trackDuration;
+              
+              // Update label
+              label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
+              
+              // Update item in parent component
+              onUpdateItem(item.id, { duration: newDuration });
+            }
+          };
+          
+          const onMouseUp = () => {
+            isDragging = false;
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+          };
+          
+          document.addEventListener('mousemove', onMouseMove);
+          document.addEventListener('mouseup', onMouseUp);
+        });
+        
+        regionElement.appendChild(rightResizeHandle);
         
         regionElement.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -237,7 +300,7 @@ const Timeline = ({
         <Button 
           variant="ghost" 
           size="sm" 
-          onClick={() => handleZoomChange([Math.max(10, zoomLevel - 10)])}
+          onClick={() => handleZoomChange([Math.max(10, zoomLevel - 20)])}
           className="p-1 h-8 w-8"
         >
           <ZoomOut className="h-4 w-4" />
@@ -246,8 +309,8 @@ const Timeline = ({
         <Slider
           value={[zoomLevel]}
           min={10}
-          max={150}
-          step={1}
+          max={300}
+          step={10}
           className="flex-1"
           onValueChange={handleZoomChange}
         />
@@ -255,7 +318,7 @@ const Timeline = ({
         <Button 
           variant="ghost" 
           size="sm" 
-          onClick={() => handleZoomChange([Math.min(150, zoomLevel + 10)])}
+          onClick={() => handleZoomChange([Math.min(300, zoomLevel + 20)])}
           className="p-1 h-8 w-8"
         >
           <ZoomIn className="h-4 w-4" />
@@ -290,7 +353,7 @@ const Timeline = ({
       </div>
       
       <div className="mt-2 text-xs text-white/50 text-center">
-        Clique em uma região para editar • Adicione conteúdo às trilhas específicas
+        Clique em uma região para editar • Arraste a borda direita de uma imagem para alterar sua duração
       </div>
     </div>
   );

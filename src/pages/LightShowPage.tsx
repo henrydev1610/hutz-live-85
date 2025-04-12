@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,12 +16,13 @@ import AudioUploader from "@/components/lightshow/AudioUploader";
 import ImageSelector from "@/components/lightshow/ImageSelector";
 import { 
   Play, Pause, Save, Music, Image as ImageIcon, 
-  Flashlight, Zap, Download, Upload, Plus, Trash2, Palette, Wand2, RotateCcw
+  Flashlight, Zap, Download, Upload, Plus, Trash2, Wand2, RotateCcw
 } from "lucide-react";
 import { FlashlightPattern, TimelineItem } from "@/types/lightshow";
 import { generateUltrasonicAudio } from "@/utils/audioProcessing";
 
-const colorPalette = [
+// Flashlight colors for auto-sync
+const flashlightColors = [
   '#FF0000', '#FF3300', '#FF6600', '#FF9900', '#FFCC00', // Reds to yellows
   '#FFFF00', '#CCFF00', '#99FF00', '#66FF00', '#33FF00', // Yellows to greens
   '#00FF00', '#00FF33', '#00FF66', '#00FF99', '#00FFCC', // Greens to cyans
@@ -40,7 +42,6 @@ const LightShowPage = () => {
   const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([]);
   const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
   const [autoSync, setAutoSync] = useState(true);
-  const [selectedColor, setSelectedColor] = useState('#000000');
   
   const selectedItem = selectedItemIndex !== null ? timelineItems[selectedItemIndex] : null;
 
@@ -64,36 +65,78 @@ const LightShowPage = () => {
     
     toast({
       title: "Gerando sincronização automática",
-      description: "Processando o áudio e criando padrões de lanterna...",
+      description: "Processando o áudio e criando um show de luzes intenso...",
     });
     
+    // Clear any existing flashlight items
+    const nonFlashlightItems = timelineItems.filter(item => item.type !== 'flashlight');
+    
     const newPatterns: TimelineItem[] = [];
-    for (let time = 0; time < duration; time += 0.4) {
-      const randomColorIndex = Math.floor(Math.random() * colorPalette.length);
+    
+    // Create more intense, varied patterns (every 0.1s for more intensity)
+    for (let time = 0; time < duration; time += 0.1) {
+      // Generate random properties for more dramatic effect
+      const randomColorIndex = Math.floor(Math.random() * flashlightColors.length);
+      const randomIntensity = 70 + Math.random() * 30; // Higher base intensity (70-100%)
+      const randomDuration = 0.05 + Math.random() * 0.15; // Shorter flashes for more intensity
+      const randomBlinkRate = 5 + Math.random() * 5; // Faster blink rate
       
-      newPatterns.push({
-        id: `flash-${Date.now()}-${time}`,
-        type: 'flashlight',
-        startTime: time,
-        duration: 0.2,
-        pattern: {
-          intensity: 50 + Math.random() * 50,
-          blinkRate: 5,
-          color: colorPalette[randomColorIndex]
-        }
-      });
+      // Add variation - occasionally add brighter bursts
+      if (Math.random() > 0.7) {
+        newPatterns.push({
+          id: `flash-${Date.now()}-${time}-burst`,
+          type: 'flashlight',
+          startTime: time,
+          duration: randomDuration * 2,
+          pattern: {
+            intensity: 100, // Max intensity for bursts
+            blinkRate: 10, // Fastest blink rate
+            color: '#FFFFFF' // Bright white for emphasis
+          }
+        });
+      } else {
+        newPatterns.push({
+          id: `flash-${Date.now()}-${time}`,
+          type: 'flashlight',
+          startTime: time,
+          duration: randomDuration,
+          pattern: {
+            intensity: randomIntensity,
+            blinkRate: randomBlinkRate,
+            color: flashlightColors[randomColorIndex]
+          }
+        });
+      }
     }
     
-    setTimelineItems(prev => [...prev, ...newPatterns]);
+    // Special effect: Add intense strobe effects at intervals
+    for (let time = 2; time < duration; time += 10) {
+      for (let i = 0; i < 10; i++) {
+        const strokeTime = time + (i * 0.1);
+        newPatterns.push({
+          id: `flash-${Date.now()}-strobe-${strokeTime}`,
+          type: 'flashlight',
+          startTime: strokeTime,
+          duration: 0.05,
+          pattern: {
+            intensity: 100,
+            blinkRate: 10,
+            color: i % 2 === 0 ? '#FFFFFF' : flashlightColors[Math.floor(Math.random() * flashlightColors.length)]
+          }
+        });
+      }
+    }
+    
+    setTimelineItems([...nonFlashlightItems, ...newPatterns]);
     
     toast({
-      title: "Sincronização automática concluída",
-      description: "Padrões de lanterna criados com base no áudio.",
+      title: "Show de luzes criado!",
+      description: "Um espetáculo intenso de luzes foi criado baseado no seu áudio.",
     });
   };
   
-  const addImageToTimeline = (imageUrl: string) => {
-    if (!duration) {
+  const addImageToTimeline = (imageUrl: string, duration: number = 3) => {
+    if (!audioFile) {
       toast({
         title: "Erro",
         description: "Por favor, carregue um áudio primeiro.",
@@ -106,41 +149,15 @@ const LightShowPage = () => {
       id: `img-${Date.now()}`,
       type: 'image',
       startTime: currentTime,
-      duration: 3,
+      duration: duration,
       imageUrl
     };
     
     setTimelineItems([...timelineItems, newImage]);
   };
   
-  const addColorBackgroundToTimeline = () => {
-    if (!duration) {
-      toast({
-        title: "Erro",
-        description: "Por favor, carregue um áudio primeiro.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    const newColorBackground: TimelineItem = {
-      id: `color-${Date.now()}`,
-      type: 'image',
-      startTime: currentTime,
-      duration: 3,
-      backgroundColor: selectedColor
-    };
-    
-    setTimelineItems([...timelineItems, newColorBackground]);
-    
-    toast({
-      title: "Cor de fundo adicionada",
-      description: "Cor de fundo adicionada à timeline.",
-    });
-  };
-  
   const addFlashlightPattern = () => {
-    if (!duration) {
+    if (!audioFile) {
       toast({
         title: "Erro",
         description: "Por favor, carregue um áudio primeiro.",
@@ -362,10 +379,9 @@ const LightShowPage = () => {
           
           <ResizablePanel defaultSize={35} minSize={30}>
             <Tabs defaultValue="properties" className="h-full flex flex-col">
-              <TabsList className="mx-4 mt-4 grid grid-cols-4">
+              <TabsList className="mx-4 mt-4 grid grid-cols-3">
                 <TabsTrigger value="properties">Propriedades</TabsTrigger>
                 <TabsTrigger value="images">Imagens</TabsTrigger>
-                <TabsTrigger value="colors">Cores</TabsTrigger>
                 <TabsTrigger value="preview">Preview</TabsTrigger>
               </TabsList>
               
@@ -373,7 +389,7 @@ const LightShowPage = () => {
                 {selectedItem ? (
                   <div className="space-y-4">
                     <h3 className="text-lg font-medium">
-                      {selectedItem.type === 'image' ? 'Propriedades da Imagem/Cor' : 'Propriedades da Lanterna'}
+                      {selectedItem.type === 'image' ? 'Propriedades da Imagem' : 'Propriedades da Lanterna'}
                     </h3>
                     
                     <div className="space-y-2">
@@ -405,26 +421,6 @@ const LightShowPage = () => {
                         )}
                       />
                     </div>
-                    
-                    {selectedItem.type === 'image' && selectedItem.backgroundColor && (
-                      <div className="space-y-2">
-                        <Label>Cor de Fundo</Label>
-                        <div className="flex items-center gap-2">
-                          <div 
-                            className="w-10 h-10 rounded-full border"
-                            style={{ backgroundColor: selectedItem.backgroundColor }}
-                          />
-                          <Input 
-                            type="color" 
-                            value={selectedItem.backgroundColor} 
-                            onChange={(e) => updateTimelineItem(
-                              selectedItem.id,
-                              { backgroundColor: e.target.value }
-                            )}
-                          />
-                        </div>
-                      </div>
-                    )}
                     
                     {selectedItem.type === 'flashlight' && selectedItem.pattern && (
                       <>
@@ -511,49 +507,6 @@ const LightShowPage = () => {
               
               <TabsContent value="images" className="flex-1 p-4 overflow-y-auto">
                 <ImageSelector onImageSelect={addImageToTimeline} />
-              </TabsContent>
-              
-              <TabsContent value="colors" className="flex-1 p-4 overflow-y-auto">
-                <div className="space-y-6">
-                  <h3 className="text-lg font-medium">Cores de Fundo</h3>
-                  
-                  <div className="grid grid-cols-5 gap-2">
-                    {colorPalette.map((color, index) => (
-                      <div 
-                        key={index}
-                        className={`aspect-square rounded-md cursor-pointer border-2 
-                          ${selectedColor === color ? 'border-white' : 'border-transparent'}`}
-                        style={{ backgroundColor: color }}
-                        onClick={() => setSelectedColor(color)}
-                      />
-                    ))}
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label>Cor Personalizada</Label>
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-10 h-10 rounded-full border"
-                        style={{ backgroundColor: selectedColor }}
-                      />
-                      <Input 
-                        type="color" 
-                        value={selectedColor} 
-                        onChange={(e) => setSelectedColor(e.target.value)}
-                        className="flex-1"
-                      />
-                    </div>
-                  </div>
-                  
-                  <Button 
-                    onClick={addColorBackgroundToTimeline} 
-                    disabled={!audioFile}
-                    className="w-full hutz-button-primary"
-                  >
-                    <Palette className="h-4 w-4 mr-2" />
-                    Adicionar Cor de Fundo à Timeline
-                  </Button>
-                </div>
               </TabsContent>
               
               <TabsContent value="preview" className="flex-1 p-4 overflow-y-auto flex items-center justify-center">

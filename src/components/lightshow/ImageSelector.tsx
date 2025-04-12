@@ -4,15 +4,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, Image, ImagePlus } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { Label } from '@/components/ui/label';
 
 interface ImageSelectorProps {
-  onImageSelect: (imageUrl: string) => void;
+  onImageSelect: (imageUrl: string, duration?: number) => void;
 }
 
 const ImageSelector = ({ onImageSelect }: ImageSelectorProps) => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imageDuration, setImageDuration] = useState<number>(3);
   
   // Demo images
   const demoImages = [
@@ -45,11 +47,11 @@ const ImageSelector = ({ onImageSelect }: ImageSelectorProps) => {
   
   const handleAddToTimeline = () => {
     if (selectedImage) {
-      onImageSelect(selectedImage);
+      onImageSelect(selectedImage, imageDuration);
       
       toast({
         title: "Imagem adicionada",
-        description: "A imagem foi adicionada à timeline.",
+        description: `A imagem foi adicionada à timeline com duração de ${imageDuration} segundos.`,
       });
     }
   };
@@ -98,16 +100,28 @@ const ImageSelector = ({ onImageSelect }: ImageSelectorProps) => {
         <div className="border border-white/10 rounded-lg p-4">
           <h4 className="text-sm font-medium mb-2">Imagem Selecionada</h4>
           
-          <div className="flex items-center space-x-4">
-            <div className="w-20 h-20 rounded-md overflow-hidden flex-shrink-0">
+          <div className="space-y-4">
+            <div className="w-full rounded-md overflow-hidden">
               <img 
                 src={selectedImage} 
                 alt="Imagem selecionada" 
-                className="w-full h-full object-cover"
+                className="w-full h-auto object-cover max-h-32"
               />
             </div>
             
-            <Button onClick={handleAddToTimeline} className="hutz-button-primary flex-1">
+            <div className="space-y-2">
+              <Label htmlFor="imageDuration">Duração da Imagem (segundos)</Label>
+              <Input 
+                id="imageDuration" 
+                type="number" 
+                min={0.5} 
+                step={0.5} 
+                value={imageDuration} 
+                onChange={(e) => setImageDuration(Number(e.target.value))} 
+              />
+            </div>
+            
+            <Button onClick={handleAddToTimeline} className="hutz-button-primary w-full">
               <Plus className="h-4 w-4 mr-2" />
               Adicionar à Timeline
             </Button>
