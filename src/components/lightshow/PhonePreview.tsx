@@ -10,7 +10,6 @@ interface PhonePreviewProps {
 
 const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewProps) => {
   const [activeFlashlight, setActiveFlashlight] = useState(false);
-  const [flashlightColor, setFlashlightColor] = useState('#FFFFFF');
   const [flashlightIntensity, setFlashlightIntensity] = useState(0);
   const [displayImage, setDisplayImage] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState('#000000');
@@ -68,14 +67,14 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     setDisplayImage(activeImage);
     setBackgroundColor(activeBackgroundColor);
     
-    // Handle flashlight
+    // Handle flashlight - always white light
     if (activeFlashlightItem && activeFlashlightItem.pattern) {
-      const { intensity, blinkRate, color } = activeFlashlightItem.pattern;
-      setFlashlightColor(color);
+      const { intensity, blinkRate } = activeFlashlightItem.pattern;
       
       if (blinkRate > 0) {
-        // Set up flashing with the specified rate - faster blinking (0.2s)
-        const intervalMs = 200; // 0.2 seconds, or 5Hz
+        // Set up flashing with the specified rate
+        // For faster blinking effects, increase the frequency
+        const intervalMs = Math.max(50, 1000 / blinkRate); // Minimum 50ms interval (20Hz max)
         let isOn = true;
         
         setActiveFlashlight(true);
@@ -104,13 +103,13 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           className="relative w-full h-full overflow-hidden"
           style={{ backgroundColor }}
         >
-          {/* Flashlight spot effect at top center */}
+          {/* Flashlight spot effect at top center - always white */}
           {activeFlashlight && (
             <div className="absolute top-10 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none">
               <div 
                 className="w-6 h-6 rounded-full transition-opacity duration-100"
                 style={{ 
-                  boxShadow: `0 0 20px 10px ${flashlightColor}`,
+                  boxShadow: `0 0 20px 10px #FFFFFF`,
                   opacity: flashlightIntensity / 100
                 }}
               ></div>

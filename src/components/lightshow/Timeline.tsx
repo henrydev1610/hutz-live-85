@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -71,8 +70,8 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 1,
       secondaryLabelInterval: 0.2,
-      primaryColor: '#FFFFFF',
-      secondaryColor: 'rgba(255, 255, 255, 0.7)',
+      primaryFontColor: '#FFFFFF',
+      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
@@ -129,7 +128,6 @@ const Timeline = ({
       return (duration / trackDuration) * 100;
     };
     
-    // Clear existing regions
     if (imageTrackRef.current) {
       while (imageTrackRef.current.firstChild) {
         imageTrackRef.current.removeChild(imageTrackRef.current.firstChild);
@@ -169,11 +167,9 @@ const Timeline = ({
         label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + item.duration).toFixed(1)}s`;
         regionElement.appendChild(label);
         
-        // Add resize handle for right edge
         const rightResizeHandle = document.createElement('div');
         rightResizeHandle.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 cursor-ew-resize';
         
-        // Add drag functionality for resize
         let isDragging = false;
         let startX = 0;
         let startWidth = 0;
@@ -189,19 +185,16 @@ const Timeline = ({
             
             const dx = event.clientX - startX;
             const newWidth = startWidth + dx;
-            const minWidth = 5; // Minimum width in pixels
+            const minWidth = 5;
             
             if (newWidth > minWidth) {
               const percentWidth = (newWidth / trackWidth) * 100;
               regionElement.style.width = `${percentWidth}%`;
               
-              // Calculate new duration based on width
               const newDuration = (percentWidth / 100) * trackDuration;
               
-              // Update label
               label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
               
-              // Update item in parent component
               onUpdateItem(item.id, { duration: newDuration });
             }
           };
@@ -233,7 +226,7 @@ const Timeline = ({
         regionElement.className = 'absolute h-full rounded-md flex items-center justify-center';
         regionElement.style.left = `${leftPosition}%`;
         regionElement.style.width = `${widthPercentage}%`;
-        regionElement.style.backgroundColor = item.pattern?.color || 'rgba(139, 92, 246, 0.3)';
+        regionElement.style.backgroundColor = '#FFFFFF';
         regionElement.style.opacity = '0.5';
         regionElement.style.border = selectedItemIndex !== null && 
           timelineItems[selectedItemIndex]?.id === item.id ? '2px solid white' : '';

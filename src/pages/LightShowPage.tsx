@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,16 +19,6 @@ import {
 } from "lucide-react";
 import { FlashlightPattern, TimelineItem } from "@/types/lightshow";
 import { generateUltrasonicAudio } from "@/utils/audioProcessing";
-
-// Flashlight colors for auto-sync
-const flashlightColors = [
-  '#FF0000', '#FF3300', '#FF6600', '#FF9900', '#FFCC00', // Reds to yellows
-  '#FFFF00', '#CCFF00', '#99FF00', '#66FF00', '#33FF00', // Yellows to greens
-  '#00FF00', '#00FF33', '#00FF66', '#00FF99', '#00FFCC', // Greens to cyans
-  '#00FFFF', '#00CCFF', '#0099FF', '#0066FF', '#0033FF', // Cyans to blues
-  '#0000FF', '#3300FF', '#6600FF', '#9900FF', '#CC00FF', // Blues to magentas
-  '#FF00FF', '#FF00CC', '#FF0099', '#FF0066', '#FF0033', // Magentas to pinks
-];
 
 const LightShowPage = () => {
   const { toast } = useToast();
@@ -76,25 +65,25 @@ const LightShowPage = () => {
     // Create more intense, varied patterns (every 0.1s for more intensity)
     for (let time = 0; time < duration; time += 0.1) {
       // Generate random properties for more dramatic effect
-      const randomColorIndex = Math.floor(Math.random() * flashlightColors.length);
-      const randomIntensity = 70 + Math.random() * 30; // Higher base intensity (70-100%)
-      const randomDuration = 0.05 + Math.random() * 0.15; // Shorter flashes for more intensity
-      const randomBlinkRate = 5 + Math.random() * 5; // Faster blink rate
+      const randomIntensity = 80 + Math.random() * 20; // Higher base intensity (80-100%)
+      const randomDuration = 0.05 + Math.random() * 0.1; // Very short flashes for more intensity
+      const randomBlinkRate = 8 + Math.random() * 2; // Fast blink rate (8-10Hz)
       
       // Add variation - occasionally add brighter bursts
-      if (Math.random() > 0.7) {
+      if (Math.random() > 0.4) { // More frequent bursts (60% chance)
         newPatterns.push({
           id: `flash-${Date.now()}-${time}-burst`,
           type: 'flashlight',
           startTime: time,
-          duration: randomDuration * 2,
+          duration: randomDuration,
           pattern: {
             intensity: 100, // Max intensity for bursts
             blinkRate: 10, // Fastest blink rate
-            color: '#FFFFFF' // Bright white for emphasis
+            color: '#FFFFFF' // White light
           }
         });
       } else {
+        // Add rapid strobe effects
         newPatterns.push({
           id: `flash-${Date.now()}-${time}`,
           type: 'flashlight',
@@ -103,25 +92,25 @@ const LightShowPage = () => {
           pattern: {
             intensity: randomIntensity,
             blinkRate: randomBlinkRate,
-            color: flashlightColors[randomColorIndex]
+            color: '#FFFFFF' // White light
           }
         });
       }
     }
     
     // Special effect: Add intense strobe effects at intervals
-    for (let time = 2; time < duration; time += 10) {
-      for (let i = 0; i < 10; i++) {
-        const strokeTime = time + (i * 0.1);
+    for (let time = 1; time < duration; time += 5) {
+      for (let i = 0; i < 15; i++) { // More strobe effects
+        const strokeTime = time + (i * 0.05); // Faster sequence
         newPatterns.push({
           id: `flash-${Date.now()}-strobe-${strokeTime}`,
           type: 'flashlight',
           startTime: strokeTime,
-          duration: 0.05,
+          duration: 0.03, // Very short duration for rapid flashes
           pattern: {
             intensity: 100,
             blinkRate: 10,
-            color: i % 2 === 0 ? '#FFFFFF' : flashlightColors[Math.floor(Math.random() * flashlightColors.length)]
+            color: '#FFFFFF' // White light only
           }
         });
       }
@@ -131,7 +120,7 @@ const LightShowPage = () => {
     
     toast({
       title: "Show de luzes criado!",
-      description: "Um espetáculo intenso de luzes foi criado baseado no seu áudio.",
+      description: "Um espetáculo intenso de luzes piscantes foi criado baseado no seu áudio.",
     });
   };
   
@@ -174,7 +163,7 @@ const LightShowPage = () => {
       pattern: {
         intensity: 100,
         blinkRate: 5,
-        color: '#FFFFFF'
+        color: '#FFFFFF' // Always white for flashlight (phone flashlight)
       }
     };
     
@@ -350,7 +339,7 @@ const LightShowPage = () => {
                     className="bg-green-950/40"
                   >
                     <Wand2 className="h-4 w-4 mr-2" />
-                    Auto Sync
+                    Auto
                   </Button>
                 </div>
               </div>
@@ -436,7 +425,8 @@ const LightShowPage = () => {
                               { 
                                 pattern: { 
                                   ...selectedItem.pattern as FlashlightPattern, 
-                                  intensity: value[0] 
+                                  intensity: value[0],
+                                  color: '#FFFFFF' // Keep white color
                                 } 
                               }
                             )}
@@ -455,34 +445,12 @@ const LightShowPage = () => {
                               { 
                                 pattern: { 
                                   ...selectedItem.pattern as FlashlightPattern, 
-                                  blinkRate: value[0] 
+                                  blinkRate: value[0],
+                                  color: '#FFFFFF' // Keep white color
                                 } 
                               }
                             )}
                           />
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <Label>Cor</Label>
-                          <div className="flex items-center gap-2">
-                            <div 
-                              className="w-10 h-10 rounded-full border"
-                              style={{ backgroundColor: selectedItem.pattern.color }}
-                            />
-                            <Input 
-                              type="color" 
-                              value={selectedItem.pattern.color} 
-                              onChange={(e) => updateTimelineItem(
-                                selectedItem.id,
-                                { 
-                                  pattern: { 
-                                    ...selectedItem.pattern as FlashlightPattern, 
-                                    color: e.target.value 
-                                  } 
-                                }
-                              )}
-                            />
-                          </div>
                         </div>
                       </>
                     )}
