@@ -39,15 +39,12 @@ const Timeline = ({
   const [regions, setRegions] = useState<Record<string, WaveformRegion>>({});
   const [zoomLevel, setZoomLevel] = useState<number>(50);
   
-  // Track references
   const imageTrackRef = useRef<HTMLDivElement>(null);
   const flashlightTrackRef = useRef<HTMLDivElement>(null);
   
-  // Handle zoom change
   const handleZoomChange = (value: number[]) => {
     setZoomLevel(value[0]);
     if (wavesurferRef.current) {
-      // Apply zoom to the waveform (1 is original, higher values zoom in)
       const zoomFactor = value[0] / 50;
       wavesurferRef.current.zoom(Math.max(1, zoomFactor * 10));
     }
@@ -62,8 +59,8 @@ const Timeline = ({
       progressColor: '#9b87f5',
       cursorColor: '#FFFFFF',
       cursorWidth: 2,
-      height: 160, // Increased height for more detailed view
-      barWidth: 1,  // Thinner bars for more detail
+      height: 160,
+      barWidth: 1,
       barGap: 1,
       barRadius: 2,
       normalize: true,
@@ -71,10 +68,10 @@ const Timeline = ({
     
     const timeline = wavesurfer.registerPlugin(TimelinePlugin.create({
       container: '#timeline',
-      primaryLabelInterval: 1, // Increased precision to 1 second intervals
-      secondaryLabelInterval: 0.2, // More precise marking at 0.2 second intervals
-      primaryFontColor: '#FFFFFF',
-      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
+      primaryLabelInterval: 1,
+      secondaryLabelInterval: 0.2,
+      primaryColor: '#FFFFFF',
+      secondaryColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
@@ -86,7 +83,6 @@ const Timeline = ({
     
     wavesurfer.on('ready', () => {
       setDuration(wavesurfer.getDuration());
-      // Apply initial zoom
       const zoomFactor = zoomLevel / 50;
       wavesurfer.zoom(Math.max(1, zoomFactor * 10));
     });
@@ -96,7 +92,6 @@ const Timeline = ({
     });
     
     wavesurfer.on('click', () => {
-      // Deselect when clicking on the waveform
       onItemSelect(null);
     });
     
@@ -118,32 +113,26 @@ const Timeline = ({
   useEffect(() => {
     if (!wavesurferRef.current || !imageTrackRef.current || !flashlightTrackRef.current) return;
     
-    // Clear previous regions
     if (regionsRef.current) {
       regionsRef.current.clearRegions();
     }
     
-    // Get track widths to match waveform
     const trackWidth = containerRef.current?.clientWidth || 0;
     const trackDuration = wavesurferRef.current.getDuration() || 1;
     
-    // Helper to calculate position percentage
     const calculatePosition = (time: number) => {
       return (time / trackDuration) * 100;
     };
     
-    // Helper to calculate width percentage
     const calculateWidth = (duration: number) => {
       return (duration / trackDuration) * 100;
     };
     
-    // Process and create regions for each track
     timelineItems.forEach(item => {
       const leftPosition = calculatePosition(item.startTime);
       const widthPercentage = calculateWidth(item.duration);
       
       if (item.type === 'image' && imageTrackRef.current) {
-        // Create an image region in the image track
         const regionElement = document.createElement('div');
         regionElement.className = 'absolute h-full rounded-md flex items-center justify-center overflow-hidden';
         regionElement.style.left = `${leftPosition}%`;
@@ -153,8 +142,7 @@ const Timeline = ({
           timelineItems[selectedItemIndex]?.id === item.id ? '2px solid white' : '';
         regionElement.style.zIndex = selectedItemIndex !== null && 
           timelineItems[selectedItemIndex]?.id === item.id ? '2' : '1';
-          
-        // Add thumbnail if available
+        
         if (item.imageUrl) {
           const thumbnail = document.createElement('img');
           thumbnail.src = item.imageUrl;
@@ -162,26 +150,22 @@ const Timeline = ({
           regionElement.appendChild(thumbnail);
         }
         
-        // Add label
         const label = document.createElement('div');
         label.className = 'absolute bottom-1 left-2 text-xs text-white bg-black/50 px-1 rounded';
         label.textContent = `${item.startTime.toFixed(1)}s`;
         regionElement.appendChild(label);
         
-        // Add click handler
         regionElement.addEventListener('click', (e) => {
           e.stopPropagation();
           const index = timelineItems.findIndex(i => i.id === item.id);
           onItemSelect(index);
         });
         
-        // Add drag capabilities
         regionElement.setAttribute('draggable', 'true');
         
         imageTrackRef.current.appendChild(regionElement);
       } 
       else if (item.type === 'flashlight' && flashlightTrackRef.current) {
-        // Create a flashlight region in the flashlight track
         const regionElement = document.createElement('div');
         regionElement.className = 'absolute h-full rounded-md flex items-center justify-center';
         regionElement.style.left = `${leftPosition}%`;
@@ -193,13 +177,11 @@ const Timeline = ({
         regionElement.style.zIndex = selectedItemIndex !== null && 
           timelineItems[selectedItemIndex]?.id === item.id ? '2' : '1';
         
-        // Add label
         const label = document.createElement('div');
         label.className = 'absolute bottom-1 left-2 text-xs text-white bg-black/50 px-1 rounded';
         label.textContent = `${item.startTime.toFixed(1)}s`;
         regionElement.appendChild(label);
         
-        // Add intensity indicator
         if (item.pattern) {
           const intensityIndicator = document.createElement('div');
           intensityIndicator.className = 'absolute top-1 right-2 text-xs font-bold';
@@ -207,21 +189,18 @@ const Timeline = ({
           regionElement.appendChild(intensityIndicator);
         }
         
-        // Add click handler
         regionElement.addEventListener('click', (e) => {
           e.stopPropagation();
           const index = timelineItems.findIndex(i => i.id === item.id);
           onItemSelect(index);
         });
         
-        // Add drag capabilities
         regionElement.setAttribute('draggable', 'true');
         
         flashlightTrackRef.current.appendChild(regionElement);
       }
     });
     
-    // Create a timeline marker that follows playback
     const updateMarker = () => {
       const currentPos = calculatePosition(currentTime);
       const markers = document.querySelectorAll('.timeline-marker');
@@ -232,7 +211,6 @@ const Timeline = ({
     
     updateMarker();
     
-    // Clean up function to remove created DOM elements
     return () => {
       if (imageTrackRef.current) {
         while (imageTrackRef.current.firstChild) {
@@ -255,7 +233,6 @@ const Timeline = ({
         <span>{new Date(currentTime * 1000).toISOString().substr(14, 5)} / {new Date((wavesurferRef.current?.getDuration() || 0) * 1000).toISOString().substr(14, 5)}</span>
       </div>
       
-      {/* Zoom controls */}
       <div className="flex items-center gap-2 mb-2">
         <Button 
           variant="ghost" 
@@ -285,16 +262,13 @@ const Timeline = ({
         </Button>
       </div>
       
-      {/* Audio waveform track - now taller for more detail */}
       <div className="relative h-32 bg-black/30 rounded-md">
         <div ref={containerRef} className="h-full" />
         <div className="timeline-marker absolute top-0 h-full w-0.5 bg-white z-10 pointer-events-none"></div>
       </div>
       
-      {/* Time ruler - now with more precise markings */}
       <div id="timeline" className="h-10" />
       
-      {/* Image track */}
       <div className="text-xs text-white/70 font-medium mb-1">Trilha de Imagens</div>
       <div className="relative h-16 bg-black/30 rounded-md">
         <div 
@@ -305,7 +279,6 @@ const Timeline = ({
         <div className="timeline-marker absolute top-0 h-full w-0.5 bg-white z-10 pointer-events-none"></div>
       </div>
       
-      {/* Flashlight track */}
       <div className="text-xs text-white/70 font-medium mb-1">Trilha de Efeitos de Lanterna</div>
       <div className="relative h-16 bg-black/30 rounded-md">
         <div 
