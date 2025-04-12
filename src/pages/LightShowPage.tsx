@@ -62,15 +62,16 @@ const LightShowPage = () => {
     
     const newPatterns: TimelineItem[] = [];
     
-    // Create more intense, varied patterns (every 0.1s for more intensity)
-    for (let time = 0; time < duration; time += 0.1) {
+    // Create more intense, varied patterns with more spacing between flashes
+    // Using a longer interval (0.4s instead of 0.1s) for more distinct flashes
+    for (let time = 0; time < duration; time += 0.4) {
       // Generate random properties for more dramatic effect
       const randomIntensity = 80 + Math.random() * 20; // Higher base intensity (80-100%)
-      const randomDuration = 0.05 + Math.random() * 0.1; // Very short flashes for more intensity
-      const randomBlinkRate = 8 + Math.random() * 2; // Fast blink rate (8-10Hz)
+      const randomDuration = 0.1 + Math.random() * 0.15; // Slightly longer flashes for more distinct on/off states
+      const randomBlinkRate = 3 + Math.random() * 5; // More varied blink rates (3-8Hz)
       
       // Add variation - occasionally add brighter bursts
-      if (Math.random() > 0.4) { // More frequent bursts (60% chance)
+      if (Math.random() > 0.6) { // Less frequent bursts (40% chance)
         newPatterns.push({
           id: `flash-${Date.now()}-${time}-burst`,
           type: 'flashlight',
@@ -78,12 +79,12 @@ const LightShowPage = () => {
           duration: randomDuration,
           pattern: {
             intensity: 100, // Max intensity for bursts
-            blinkRate: 10, // Fastest blink rate
+            blinkRate: 8, // Fast but not too fast
             color: '#FFFFFF' // White light
           }
         });
       } else {
-        // Add rapid strobe effects
+        // Add more spaced out strobe effects
         newPatterns.push({
           id: `flash-${Date.now()}-${time}`,
           type: 'flashlight',
@@ -98,18 +99,18 @@ const LightShowPage = () => {
       }
     }
     
-    // Special effect: Add intense strobe effects at intervals
-    for (let time = 1; time < duration; time += 5) {
-      for (let i = 0; i < 15; i++) { // More strobe effects
-        const strokeTime = time + (i * 0.05); // Faster sequence
+    // Special effect: Add intense strobe effects at intervals with more spacing
+    for (let time = 1; time < duration; time += 8) { // Increased interval from 5 to 8
+      for (let i = 0; i < 10; i++) { // Fewer strobes but more distinct
+        const strokeTime = time + (i * 0.2); // More spacing between flashes
         newPatterns.push({
           id: `flash-${Date.now()}-strobe-${strokeTime}`,
           type: 'flashlight',
           startTime: strokeTime,
-          duration: 0.03, // Very short duration for rapid flashes
+          duration: 0.08, // Slightly longer duration for more visible flashes
           pattern: {
             intensity: 100,
-            blinkRate: 10,
+            blinkRate: 4, // Lower rate makes each flash more distinct
             color: '#FFFFFF' // White light only
           }
         });
@@ -271,15 +272,6 @@ const LightShowPage = () => {
               <Save className="h-4 w-4 mr-2" />
               Salvar Projeto
             </Button>
-            
-            <Button 
-              variant="outline" 
-              className="border-white/20 hover:bg-destructive/20 text-destructive"
-              onClick={handleReset}
-            >
-              <RotateCcw className="h-4 w-4 mr-2" />
-              Reset
-            </Button>
           </div>
         </div>
         
@@ -340,6 +332,17 @@ const LightShowPage = () => {
                   >
                     <Wand2 className="h-4 w-4 mr-2" />
                     Auto
+                  </Button>
+                  
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleReset}
+                    disabled={!audioFile}
+                    className="bg-red-950/40"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Reset
                   </Button>
                 </div>
               </div>
