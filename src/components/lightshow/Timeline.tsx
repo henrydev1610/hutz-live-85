@@ -1,9 +1,11 @@
-
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline';
 import { TimelineItem, WaveformRegion } from '@/types/lightshow';
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { ZoomIn, ZoomOut } from "lucide-react";
 
 interface TimelineProps {
   audioUrl: string | null;
@@ -35,10 +37,21 @@ const Timeline = ({
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const [regions, setRegions] = useState<Record<string, WaveformRegion>>({});
+  const [zoomLevel, setZoomLevel] = useState<number>(50);
   
   // Track references
   const imageTrackRef = useRef<HTMLDivElement>(null);
   const flashlightTrackRef = useRef<HTMLDivElement>(null);
+  
+  // Handle zoom change
+  const handleZoomChange = (value: number[]) => {
+    setZoomLevel(value[0]);
+    if (wavesurferRef.current) {
+      // Apply zoom to the waveform (1 is original, higher values zoom in)
+      const zoomFactor = value[0] / 50;
+      wavesurferRef.current.zoom(Math.max(1, zoomFactor * 10));
+    }
+  };
   
   useEffect(() => {
     if (!containerRef.current || !audioUrl) return;
@@ -60,8 +73,8 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 1, // Increased precision to 1 second intervals
       secondaryLabelInterval: 0.2, // More precise marking at 0.2 second intervals
-      primaryColor: '#FFFFFF',
-      secondaryColor: 'rgba(255, 255, 255, 0.7)',
+      primaryFontColor: '#FFFFFF',
+      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
@@ -73,6 +86,9 @@ const Timeline = ({
     
     wavesurfer.on('ready', () => {
       setDuration(wavesurfer.getDuration());
+      // Apply initial zoom
+      const zoomFactor = zoomLevel / 50;
+      wavesurfer.zoom(Math.max(1, zoomFactor * 10));
     });
     
     wavesurfer.on('timeupdate', (currentTime) => {
@@ -237,6 +253,36 @@ const Timeline = ({
       <div className="text-xs text-white/70 font-medium flex justify-between mb-2">
         <span>Trilha de Áudio</span>
         <span>{new Date(currentTime * 1000).toISOString().substr(14, 5)} / {new Date((wavesurferRef.current?.getDuration() || 0) * 1000).toISOString().substr(14, 5)}</span>
+      </div>
+      
+      {/* Zoom controls */}
+      <div className="flex items-center gap-2 mb-2">
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={() => handleZoomChange([Math.max(10, zoomLevel - 10)])}
+          className="p-1 h-8 w-8"
+        >
+          <ZoomOut className="h-4 w-4" />
+        </Button>
+        
+        <Slider
+          value={[zoomLevel]}
+          min={10}
+          max={150}
+          step={1}
+          className="flex-1"
+          onValueChange={handleZoomChange}
+        />
+        
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={() => handleZoomChange([Math.min(150, zoomLevel + 10)])}
+          className="p-1 h-8 w-8"
+        >
+          <ZoomIn className="h-4 w-4" />
+        </Button>
       </div>
       
       {/* Audio waveform track - now taller for more detail */}

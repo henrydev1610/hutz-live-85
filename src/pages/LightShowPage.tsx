@@ -15,7 +15,7 @@ import AudioUploader from "@/components/lightshow/AudioUploader";
 import ImageSelector from "@/components/lightshow/ImageSelector";
 import { 
   Play, Pause, Save, Music, Image as ImageIcon, 
-  Flashlight, Zap, Download, Upload, Plus, Trash2, Palette, Wand2
+  Flashlight, Zap, Download, Upload, Plus, Trash2, Palette, Wand2, RotateCcw
 } from "lucide-react";
 import { FlashlightPattern, TimelineItem } from "@/types/lightshow";
 import { generateUltrasonicAudio } from "@/utils/audioProcessing";
@@ -221,6 +221,20 @@ const LightShowPage = () => {
     }, 2000);
   };
 
+  const handleReset = () => {
+    if (window.confirm("Tem certeza que deseja resetar todo o projeto? Todas as edições serão perdidas.")) {
+      setTimelineItems([]);
+      setCurrentTime(0);
+      setIsPlaying(false);
+      setSelectedItemIndex(null);
+      
+      toast({
+        title: "Projeto resetado",
+        description: "Todas as edições foram removidas. Você pode começar novamente.",
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-black">
       <div className="container mx-auto py-4 px-4">
@@ -250,6 +264,15 @@ const LightShowPage = () => {
             <Button variant="outline" className="border-white/20 hover:bg-secondary">
               <Save className="h-4 w-4 mr-2" />
               Salvar Projeto
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              className="border-white/20 hover:bg-destructive/20 text-destructive"
+              onClick={handleReset}
+            >
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Reset
             </Button>
           </div>
         </div>
