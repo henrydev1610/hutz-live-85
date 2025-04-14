@@ -14,7 +14,10 @@ interface AudioEditorProps {
     endTrim: number;
   };
   onAudioUpload: (file: File) => void;
-  setAudioEditInfo: (info: typeof audioEditInfo) => void;
+  setAudioEditInfo: (info: {
+    startTrim: number;
+    endTrim: number;
+  }) => void;
   trimAudio: () => void;
 }
 

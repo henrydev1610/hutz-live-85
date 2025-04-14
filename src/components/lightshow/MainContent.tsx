@@ -10,7 +10,6 @@ import ImageSelector from "@/components/lightshow/ImageSelector";
 import ControlPanel from "@/components/lightshow/ControlPanel";
 import PropertiesPanel from "@/components/lightshow/PropertiesPanel";
 import CallToActionPanel from "@/components/lightshow/CallToActionPanel";
-import AudioEditor from "@/components/lightshow/AudioEditor";
 
 interface MainContentProps {
   audioFile: File | null;
@@ -120,6 +119,11 @@ const MainContent = ({
               onRemoveItem={removeTimelineItem}
               onItemSelect={setSelectedItemIndex}
               selectedItemIndex={selectedItemIndex}
+              onAudioUpload={onAudioUpload}
+              audioFile={audioFile}
+              audioEditInfo={audioEditInfo}
+              setAudioEditInfo={setAudioEditInfo}
+              trimAudio={trimAudio}
             />
           )}
         </div>
@@ -129,11 +133,10 @@ const MainContent = ({
       
       <ResizablePanel defaultSize={35} minSize={30}>
         <Tabs defaultValue="properties" className="h-full flex flex-col">
-          <TabsList className="mx-4 mt-4 grid grid-cols-5">
+          <TabsList className="mx-4 mt-4 grid grid-cols-4">
             <TabsTrigger value="properties">Lights</TabsTrigger>
             <TabsTrigger value="images">Imagens</TabsTrigger>
             <TabsTrigger value="cta">Chamada</TabsTrigger>
-            <TabsTrigger value="audio">Áudio</TabsTrigger>
             <TabsTrigger value="preview">Preview</TabsTrigger>
           </TabsList>
           
@@ -161,17 +164,6 @@ const MainContent = ({
               callToAction={callToAction}
               onContentChange={setCallToActionContent}
               onAddToTimeline={addCallToActionToTimeline}
-            />
-          </TabsContent>
-          
-          <TabsContent value="audio" className="flex-1 p-4 overflow-y-auto">
-            <AudioEditor 
-              audioFile={audioFile}
-              duration={duration}
-              audioEditInfo={audioEditInfo}
-              onAudioUpload={onAudioUpload}
-              setAudioEditInfo={setAudioEditInfo}
-              trimAudio={trimAudio}
             />
           </TabsContent>
           

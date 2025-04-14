@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -5,7 +6,8 @@ import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline';
 import { TimelineItem } from '@/types/lightshow';
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { ZoomIn, ZoomOut } from "lucide-react";
+import { ZoomIn, ZoomOut, Scissors, Upload } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 interface TimelineProps {
   audioUrl: string | null;
@@ -19,6 +21,17 @@ interface TimelineProps {
   onRemoveItem: (id: string) => void;
   onItemSelect: (index: number | null) => void;
   selectedItemIndex: number | null;
+  onAudioUpload: (file: File) => void;
+  audioFile: File | null;
+  audioEditInfo: {
+    startTrim: number;
+    endTrim: number;
+  };
+  setAudioEditInfo: (info: {
+    startTrim: number;
+    endTrim: number;
+  }) => void;
+  trimAudio: () => void;
 }
 
 const Timeline = ({
@@ -32,12 +45,20 @@ const Timeline = ({
   onRemoveItem,
   onItemSelect,
   selectedItemIndex,
+  onAudioUpload,
+  audioFile,
+  audioEditInfo,
+  setAudioEditInfo,
+  trimAudio
 }: TimelineProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
-  const [zoomLevel, setZoomLevel] = useState<number>(250); // Increased default zoom level
+  const [zoomLevel, setZoomLevel] = useState<number>(250);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
+  const [splitPoint, setSplitPoint] = useState<number | null>(null);
+  const [showAudioControls, setShowAudioControls] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const imageTrackRef = useRef<HTMLDivElement>(null);
   const flashlightTrackRef = useRef<HTMLDivElement>(null);
@@ -49,8 +70,37 @@ const Timeline = ({
       wavesurferRef.current.zoom(Math.max(1, zoomFactor * 20));
     }
   };
+
+  const handleSplitAudio = () => {
+    if (splitPoint !== null) {
+      // Set the trim points for split operation
+      setAudioEditInfo({
+        startTrim: 0,
+        endTrim: splitPoint
+      });
+      
+      // Trigger the trim operation
+      trimAudio();
+      
+      // Reset the split point
+      setSplitPoint(null);
+    }
+  };
   
-  // Handle delete key press
+  const handleReplaceAudioClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+  
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      onAudioUpload(files[0]);
+    }
+  };
+  
+  // Handle delete key press for timeline items and audio regions
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Delete' && selectedItemIndex !== null) {
@@ -58,6 +108,9 @@ const Timeline = ({
         if (selectedItem) {
           onRemoveItem(selectedItem.id);
         }
+      } else if (e.key === 'Delete' && splitPoint !== null) {
+        // Handle deleting part of the audio when split point is set
+        handleSplitAudio();
       }
     };
 
@@ -65,7 +118,7 @@ const Timeline = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedItemIndex, timelineItems, onRemoveItem]);
+  }, [selectedItemIndex, timelineItems, onRemoveItem, splitPoint]);
   
   useEffect(() => {
     if (!containerRef.current || !audioUrl) return;
@@ -118,8 +171,13 @@ const Timeline = ({
       setCurrentTime(currentTime);
     });
     
-    wavesurfer.on('click', () => {
-      onItemSelect(null);
+    wavesurfer.on('click', (time) => {
+      // If scissors mode is active, set split point at click position
+      if (showAudioControls) {
+        setSplitPoint(time);
+      } else {
+        onItemSelect(null);
+      }
     });
     
     // Add error handling for audio loading
@@ -187,7 +245,30 @@ const Timeline = ({
     markers.forEach(marker => {
       (marker as HTMLElement).style.left = `${markerPosition}%`;
     });
-  }, [currentTime]);
+    
+    // If we have a split point, draw a line at that position
+    if (splitPoint !== null && containerRef.current) {
+      const splitPosition = (splitPoint / trackDuration) * 100;
+      
+      // Remove any existing split markers
+      const existingSplitMarkers = document.querySelectorAll('.split-marker');
+      existingSplitMarkers.forEach(marker => marker.remove());
+      
+      // Create a new split marker
+      const splitMarker = document.createElement('div');
+      splitMarker.className = 'split-marker absolute top-0 h-full w-1 bg-red-500 z-10';
+      splitMarker.style.left = `${splitPosition}%`;
+      
+      // Add a scissors icon
+      const scissorsIcon = document.createElement('div');
+      scissorsIcon.className = 'absolute top-2 -translate-x-1/2 bg-red-500 rounded-full p-1';
+      scissorsIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"></path></svg>';
+      splitMarker.appendChild(scissorsIcon);
+      
+      // Add the split marker to the container
+      containerRef.current.appendChild(splitMarker);
+    }
+  }, [currentTime, splitPoint]);
 
   useEffect(() => {
     if (!wavesurferRef.current || !imageTrackRef.current || !flashlightTrackRef.current) return;
@@ -664,8 +745,63 @@ const Timeline = ({
     <div className="flex flex-col h-full bg-black/50 rounded-lg p-4 space-y-3">
       <div className="text-xs text-white/70 font-medium flex justify-between mb-2">
         <span>Trilha de Áudio</span>
-        <span>{new Date(currentTime * 1000).toISOString().substr(14, 5)} / {new Date((wavesurferRef.current?.getDuration() || 0) * 1000).toISOString().substr(14, 5)}</span>
+        <div className="flex items-center space-x-2">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="p-1 h-8 w-8 text-white/70 hover:text-white"
+            onClick={() => setShowAudioControls(!showAudioControls)}
+            title="Modo de Edição de Áudio"
+          >
+            <Scissors className={`h-4 w-4 ${showAudioControls ? 'text-red-500' : ''}`} />
+          </Button>
+          
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="p-1 h-8 text-white/70 hover:text-white flex items-center"
+            onClick={handleReplaceAudioClick}
+            title="Alterar a música"
+          >
+            <Upload className="h-4 w-4 mr-1" />
+            <span className="text-xs">Alterar a música</span>
+          </Button>
+          
+          <input 
+            type="file" 
+            ref={fileInputRef}
+            accept="audio/*"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          
+          <span>{new Date(currentTime * 1000).toISOString().substr(14, 5)} / {new Date((wavesurferRef.current?.getDuration() || 0) * 1000).toISOString().substr(14, 5)}</span>
+        </div>
       </div>
+      
+      {showAudioControls && splitPoint !== null && (
+        <div className="flex items-center gap-2 mb-2 p-2 bg-black/20 rounded-md">
+          <div className="text-sm text-white">
+            Ponto de corte: {splitPoint.toFixed(2)}s
+          </div>
+          <div className="ml-auto flex space-x-2">
+            <Button 
+              size="sm" 
+              variant="destructive"
+              onClick={() => setSplitPoint(null)}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              size="sm" 
+              variant="default"
+              onClick={handleSplitAudio}
+            >
+              Cortar Aqui
+            </Button>
+          </div>
+        </div>
+      )}
       
       <div className="flex items-center gap-2 mb-2">
         <Button 
@@ -725,7 +861,9 @@ const Timeline = ({
       </div>
       
       <div className="mt-2 text-xs text-white/50 text-center">
-        Clique em uma região para editar • Arraste o item para movê-lo • Arraste as bordas para ajustar a duração • Tecla Delete para remover item selecionado
+        {showAudioControls ? 
+          "Clique na forma de onda para definir um ponto de corte • Tecla Delete para remover parte do áudio" :
+          "Clique em uma região para editar • Arraste o item para movê-lo • Arraste as bordas para ajustar a duração • Tecla Delete para remover item selecionado"}
       </div>
     </div>
   );
