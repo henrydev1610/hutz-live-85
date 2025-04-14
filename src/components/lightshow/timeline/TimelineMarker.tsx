@@ -1,5 +1,5 @@
 
-import React, { useEffect } from 'react';
+import React from 'react';
 
 interface TimelineMarkerProps {
   currentTime: number;
@@ -11,7 +11,7 @@ const TimelineMarker = ({ currentTime, duration }: TimelineMarkerProps) => {
 
   return (
     <div 
-      className="timeline-marker absolute top-0 h-full w-0.5 bg-white z-20 pointer-events-none"
+      className="absolute top-0 h-full w-0.5 bg-white z-20 pointer-events-none"
       style={{ left: `${markerPosition}%` }}
     />
   );
