@@ -1,11 +1,13 @@
+
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
-import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline';
-import { TimelineItem, WaveformRegion } from '@/types/lightshow';
-import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
-import { ZoomIn, ZoomOut } from "lucide-react";
+import { TimelineItem } from '@/types/lightshow';
+import TimelineZoomControls from './timeline/TimelineZoomControls';
+import WaveformDisplay from './timeline/WaveformDisplay';
+import TimelineItemsTrack from './timeline/TimelineItemsTrack';
+import TimelineMarker from './timeline/TimelineMarker';
+import { useTimelineHelpers } from '@/hooks/useTimelineHelpers';
 
 interface TimelineProps {
   audioUrl: string | null;
@@ -27,29 +29,28 @@ const Timeline = ({
   currentTime,
   setCurrentTime,
   setDuration,
+  duration,
   timelineItems,
   onUpdateItem,
   onRemoveItem,
   onItemSelect,
   selectedItemIndex,
 }: TimelineProps) => {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [zoomLevel, setZoomLevel] = useState<number>(250);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
-  const [zoomLevel, setZoomLevel] = useState<number>(250); // Increased default zoom level
-  
-  const imageTrackRef = useRef<HTMLDivElement>(null);
-  const flashlightTrackRef = useRef<HTMLDivElement>(null);
+  const { checkImageOverlap } = useTimelineHelpers();
   
   const handleZoomChange = (value: number[]) => {
     setZoomLevel(value[0]);
-    if (wavesurferRef.current) {
-      const zoomFactor = value[0] / 50;
-      wavesurferRef.current.zoom(Math.max(1, zoomFactor * 20));
-    }
   };
   
-  // Handle delete key press
+  const handleWavesurferReady = (wavesurfer: WaveSurfer, regions: RegionsPlugin) => {
+    wavesurferRef.current = wavesurfer;
+    regionsRef.current = regions;
+  };
+  
+  // Handle delete key press for removing selected items
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Delete' && selectedItemIndex !== null) {
@@ -65,649 +66,61 @@ const Timeline = ({
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [selectedItemIndex, timelineItems, onRemoveItem]);
-  
-  useEffect(() => {
-    if (!containerRef.current || !audioUrl) return;
-    
-    // Clean up any existing wavesurfer instance first
-    if (wavesurferRef.current) {
-      wavesurferRef.current.destroy();
-    }
-    
-    const wavesurfer = WaveSurfer.create({
-      container: containerRef.current,
-      waveColor: '#8E9196',
-      progressColor: '#9b87f5',
-      cursorColor: '#FFFFFF',
-      cursorWidth: 2,
-      height: 160,
-      barWidth: 1,
-      barGap: 1,
-      barRadius: 2,
-      normalize: true,
-    });
-    
-    const timeline = wavesurfer.registerPlugin(TimelinePlugin.create({
-      container: '#timeline',
-      primaryLabelInterval: 1,
-      secondaryLabelInterval: 0.2,
-      style: {
-        fontSize: '10px',
-        color: 'rgba(255, 255, 255, 1)',
-        backgroundColor: 'transparent'
-      }
-    }));
-    
-    const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
-    
-    regionsRef.current = regions;
-    wavesurferRef.current = wavesurfer;
-    
-    wavesurfer.load(audioUrl);
-    
-    wavesurfer.on('ready', () => {
-      setDuration(wavesurfer.getDuration());
-      const zoomFactor = zoomLevel / 50;
-      wavesurfer.zoom(Math.max(1, zoomFactor * 20));
-    });
-    
-    wavesurfer.on('timeupdate', (currentTime) => {
-      setCurrentTime(currentTime);
-    });
-    
-    wavesurfer.on('click', () => {
-      onItemSelect(null);
-    });
-    
-    return () => {
-      if (wavesurfer) {
-        try {
-          wavesurfer.destroy();
-        } catch (error) {
-          console.error("Error destroying wavesurfer:", error);
-        }
-      }
-    };
-  }, [audioUrl]);
-  
-  useEffect(() => {
-    if (!wavesurferRef.current) return;
-    
-    if (isPlaying) {
-      wavesurferRef.current.play();
-    } else {
-      wavesurferRef.current.pause();
-    }
-  }, [isPlaying]);
-  
-  // Helper function to detect overlapping items
-  const checkImageOverlap = (itemId: string, startTime: number, duration: number) => {
-    // Only check for images
-    const images = timelineItems.filter(item => item.type === 'image' && item.id !== itemId);
-    
-    for (const image of images) {
-      const imageEnd = image.startTime + image.duration;
-      const newItemEnd = startTime + duration;
-      
-      // Check if there's any overlap
-      if ((startTime >= image.startTime && startTime < imageEnd) || 
-          (newItemEnd > image.startTime && newItemEnd <= imageEnd) ||
-          (startTime <= image.startTime && newItemEnd >= imageEnd)) {
-        return true;
-      }
-    }
-    
-    return false;
+
+  // Function to check for overlaps of timeline items
+  const checkItemOverlap = (itemId: string, startTime: number, duration: number) => {
+    return checkImageOverlap(itemId, startTime, duration, timelineItems);
   };
-  
-  // Update timeline marker with currentTime
-  useEffect(() => {
-    if (!wavesurferRef.current) return;
-    
-    const trackDuration = wavesurferRef.current.getDuration() || 1;
-    const markerPosition = (currentTime / trackDuration) * 100;
-    
-    // Select all timeline markers and update their position
-    const markers = document.querySelectorAll('.timeline-marker');
-    markers.forEach(marker => {
-      (marker as HTMLElement).style.left = `${markerPosition}%`;
-    });
-  }, [currentTime]);
-  
-  useEffect(() => {
-    if (!wavesurferRef.current || !imageTrackRef.current || !flashlightTrackRef.current) return;
-    
-    if (regionsRef.current) {
-      regionsRef.current.clearRegions();
-    }
-    
-    const trackWidth = containerRef.current?.clientWidth || 0;
-    const trackDuration = wavesurferRef.current.getDuration() || 1;
-    
-    const calculatePosition = (time: number) => {
-      return (time / trackDuration) * 100;
-    };
-    
-    const calculateWidth = (duration: number) => {
-      return (duration / trackDuration) * 100;
-    };
-    
-    // Clear existing elements
-    if (imageTrackRef.current) {
-      while (imageTrackRef.current.firstChild) {
-        imageTrackRef.current.removeChild(imageTrackRef.current.firstChild);
-      }
-    }
-    
-    if (flashlightTrackRef.current) {
-      while (flashlightTrackRef.current.firstChild) {
-        flashlightTrackRef.current.removeChild(flashlightTrackRef.current.firstChild);
-      }
-    }
-    
-    timelineItems.forEach(item => {
-      const leftPosition = calculatePosition(item.startTime);
-      const widthPercentage = calculateWidth(item.duration);
-      
-      if (item.type === 'image' && imageTrackRef.current) {
-        const regionElement = document.createElement('div');
-        regionElement.className = 'absolute h-full rounded-md flex items-center justify-center overflow-hidden';
-        regionElement.style.left = `${leftPosition}%`;
-        regionElement.style.width = `${widthPercentage}%`;
-        regionElement.style.backgroundColor = 'rgba(14, 165, 233, 0.3)';
-        regionElement.style.border = selectedItemIndex !== null && 
-          timelineItems[selectedItemIndex]?.id === item.id ? '2px solid white' : '';
-        regionElement.style.zIndex = selectedItemIndex !== null && 
-          timelineItems[selectedItemIndex]?.id === item.id ? '2' : '1';
-        
-        if (item.imageUrl) {
-          const thumbnail = document.createElement('img');
-          thumbnail.src = item.imageUrl;
-          thumbnail.className = 'h-full object-cover opacity-70';
-          regionElement.appendChild(thumbnail);
-        }
-        
-        const label = document.createElement('div');
-        label.className = 'absolute bottom-1 left-2 text-xs text-white bg-black/50 px-1 rounded';
-        label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + item.duration).toFixed(1)}s`;
-        regionElement.appendChild(label);
-        
-        // Left resize handle with cursor indicator
-        const leftResizeHandle = document.createElement('div');
-        leftResizeHandle.className = 'absolute left-0 top-0 h-full w-4 cursor-ew-resize z-10';
-        
-        // Little visual handle to make it more obvious
-        const leftHandleVisual = document.createElement('div');
-        leftHandleVisual.className = 'absolute left-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
-        leftHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
-        leftResizeHandle.appendChild(leftHandleVisual);
-        
-        // Right resize handle with cursor indicator
-        const rightResizeHandle = document.createElement('div');
-        rightResizeHandle.className = 'absolute right-0 top-0 h-full w-4 cursor-ew-resize z-10';
-        
-        // Little visual handle to make it more obvious
-        const rightHandleVisual = document.createElement('div');
-        rightHandleVisual.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
-        rightHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
-        rightResizeHandle.appendChild(rightHandleVisual);
-        
-        // Drag handle with hand cursor
-        const dragHandle = document.createElement('div');
-        dragHandle.className = 'absolute inset-0 cursor-grab';
-        dragHandle.innerHTML = '<div class="absolute top-2 right-1/2 transform translate-x-1/2 opacity-50"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v2m0 0v2m0-2h6m0 0V3m0 2v2"></path><path d="M9 17v2m0 0v2m0-2h6m0 0v-2m0 2v2"></path><path d="M5 7v10M19 7v10"></path></svg></div>';
-        
-        let isDragging = false;
-        let isResizingLeft = false;
-        let isResizingRight = false;
-        let startX = 0;
-        let startLeft = 0;
-        let startWidth = 0;
-        
-        regionElement.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const index = timelineItems.findIndex(i => i.id === item.id);
-          onItemSelect(index);
-        });
-        
-        // Left resize handle functionality
-        leftResizeHandle.addEventListener('mousedown', (e) => {
-          e.stopPropagation();
-          isResizingLeft = true;
-          startX = e.clientX;
-          startLeft = parseFloat(regionElement.style.left);
-          startWidth = regionElement.offsetWidth;
-          
-          document.body.style.cursor = 'ew-resize';
-          
-          const handleMouseMove = (moveEvent: MouseEvent) => {
-            if (!isResizingLeft) return;
-            
-            moveEvent.preventDefault();
-            
-            const dx = moveEvent.clientX - startX;
-            const newLeft = Math.max(0, startLeft + (dx / trackWidth * 100));
-            const newWidth = Math.max(5, startWidth - dx);
-            
-            const percentWidth = (newWidth / trackWidth) * 100;
-            const maxLeft = 100 - percentWidth;
-            
-            if (newLeft <= maxLeft) {
-              const newStartTime = (newLeft / 100) * trackDuration;
-              const newDuration = (percentWidth / 100) * trackDuration;
-              
-              regionElement.style.left = `${newLeft}%`;
-              regionElement.style.width = `${percentWidth}%`;
-              
-              label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + newDuration).toFixed(1)}s`;
-              
-              // Update the item data - without checking for overlap when actively resizing
-              onUpdateItem(item.id, { 
-                startTime: newStartTime,
-                duration: newDuration 
-              });
-            }
-          };
-          
-          const handleMouseUp = () => {
-            isResizingLeft = false;
-            document.body.style.cursor = '';
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-          };
-          
-          document.addEventListener('mousemove', handleMouseMove);
-          document.addEventListener('mouseup', handleMouseUp);
-        });
-        
-        // Right resize handle functionality
-        rightResizeHandle.addEventListener('mousedown', (e) => {
-          e.stopPropagation();
-          isResizingRight = true;
-          startX = e.clientX;
-          startWidth = regionElement.offsetWidth;
-          
-          document.body.style.cursor = 'ew-resize';
-          
-          const handleMouseMove = (moveEvent: MouseEvent) => {
-            if (!isResizingRight) return;
-            
-            moveEvent.preventDefault();
-            
-            const dx = moveEvent.clientX - startX;
-            const newWidth = Math.max(5, startWidth + dx);
-            const percentWidth = (newWidth / trackWidth) * 100;
-            
-            // Check if the new width would go beyond the track
-            const currentLeft = parseFloat(regionElement.style.left);
-            const maxWidth = (100 - currentLeft);
-            
-            if (percentWidth <= maxWidth) {
-              const newDuration = (percentWidth / 100) * trackDuration;
-              
-              regionElement.style.width = `${percentWidth}%`;
-              
-              label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
-              
-              // Update the item data - without checking for overlap when actively resizing
-              onUpdateItem(item.id, { duration: newDuration });
-            }
-          };
-          
-          const handleMouseUp = () => {
-            isResizingRight = false;
-            document.body.style.cursor = '';
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-          };
-          
-          document.addEventListener('mousemove', handleMouseMove);
-          document.addEventListener('mouseup', handleMouseUp);
-        });
-        
-        // Drag handle functionality
-        dragHandle.addEventListener('mousedown', (e) => {
-          e.stopPropagation();
-          if (isResizingLeft || isResizingRight) return;
-          
-          isDragging = true;
-          startX = e.clientX;
-          startLeft = parseFloat(regionElement.style.left);
-          
-          dragHandle.style.cursor = 'grabbing';
-          document.body.style.cursor = 'grabbing';
-          
-          const handleMouseMove = (moveEvent: MouseEvent) => {
-            if (!isDragging) return;
-            
-            moveEvent.preventDefault();
-            
-            const dx = moveEvent.clientX - startX;
-            const percentDx = (dx / trackWidth) * 100;
-            const newLeft = Math.max(0, Math.min(100 - parseFloat(regionElement.style.width), startLeft + percentDx));
-            
-            const newStartTime = (newLeft / 100) * trackDuration;
-            
-            // Check for overlap with other images
-            if (!checkImageOverlap(item.id, newStartTime, item.duration)) {
-              regionElement.style.left = `${newLeft}%`;
-              
-              label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + item.duration).toFixed(1)}s`;
-              
-              onUpdateItem(item.id, { startTime: newStartTime });
-            }
-          };
-          
-          const handleMouseUp = () => {
-            isDragging = false;
-            dragHandle.style.cursor = 'grab';
-            document.body.style.cursor = '';
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-          };
-          
-          document.addEventListener('mousemove', handleMouseMove);
-          document.addEventListener('mouseup', handleMouseUp);
-        });
-        
-        // Append elements in the correct order for proper z-index handling
-        regionElement.appendChild(dragHandle);
-        regionElement.appendChild(leftResizeHandle);
-        regionElement.appendChild(rightResizeHandle);
-        
-        imageTrackRef.current.appendChild(regionElement);
-      } 
-      else if (item.type === 'flashlight' && flashlightTrackRef.current) {
-        const regionElement = document.createElement('div');
-        regionElement.className = 'absolute h-full rounded-md flex items-center justify-center';
-        regionElement.style.left = `${leftPosition}%`;
-        regionElement.style.width = `${widthPercentage}%`;
-        regionElement.style.backgroundColor = '#FFFFFF';
-        regionElement.style.opacity = '0.5';
-        regionElement.style.border = selectedItemIndex !== null && 
-          timelineItems[selectedItemIndex]?.id === item.id ? '2px solid white' : '';
-        regionElement.style.zIndex = selectedItemIndex !== null && 
-          timelineItems[selectedItemIndex]?.id === item.id ? '2' : '1';
-        
-        const label = document.createElement('div');
-        label.className = 'absolute bottom-1 left-2 text-xs text-white bg-black/50 px-1 rounded';
-        label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + item.duration).toFixed(1)}s`;
-        regionElement.appendChild(label);
-        
-        if (item.pattern) {
-          const intensityIndicator = document.createElement('div');
-          intensityIndicator.className = 'absolute top-1 right-2 text-xs font-bold';
-          intensityIndicator.textContent = `${item.pattern.intensity}%`;
-          regionElement.appendChild(intensityIndicator);
-        }
-        
-        // Add left resize handle with cursor indicator
-        const leftResizeHandle = document.createElement('div');
-        leftResizeHandle.className = 'absolute left-0 top-0 h-full w-4 cursor-ew-resize z-10';
-        
-        // Little visual handle to make it more obvious
-        const leftHandleVisual = document.createElement('div');
-        leftHandleVisual.className = 'absolute left-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
-        leftHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
-        leftResizeHandle.appendChild(leftHandleVisual);
-        
-        // Right resize handle with cursor indicator
-        const rightResizeHandle = document.createElement('div');
-        rightResizeHandle.className = 'absolute right-0 top-0 h-full w-4 cursor-ew-resize z-10';
-        
-        // Little visual handle to make it more obvious
-        const rightHandleVisual = document.createElement('div');
-        rightHandleVisual.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
-        rightHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
-        rightResizeHandle.appendChild(rightHandleVisual);
-        
-        // Drag handle with hand cursor
-        const dragHandle = document.createElement('div');
-        dragHandle.className = 'absolute inset-0 cursor-grab';
-        dragHandle.innerHTML = '<div class="absolute top-2 right-1/2 transform translate-x-1/2 opacity-50"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v2m0 0v2m0-2h6m0 0V3m0 2v2"></path><path d="M9 17v2m0 0v2m0-2h6m0 0v-2m0 2v2"></path><path d="M5 7v10M19 7v10"></path></svg></div>';
-        
-        let isDragging = false;
-        let isResizingLeft = false;
-        let isResizingRight = false;
-        let startX = 0;
-        let startLeft = 0;
-        let startWidth = 0;
-        
-        regionElement.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const index = timelineItems.findIndex(i => i.id === item.id);
-          onItemSelect(index);
-        });
-        
-        // Left resize handle functionality
-        leftResizeHandle.addEventListener('mousedown', (e) => {
-          e.stopPropagation();
-          isResizingLeft = true;
-          startX = e.clientX;
-          startLeft = parseFloat(regionElement.style.left);
-          startWidth = regionElement.offsetWidth;
-          
-          document.body.style.cursor = 'ew-resize';
-          
-          const handleMouseMove = (moveEvent: MouseEvent) => {
-            if (!isResizingLeft) return;
-            
-            moveEvent.preventDefault();
-            
-            const dx = moveEvent.clientX - startX;
-            const newLeft = Math.max(0, startLeft + (dx / trackWidth * 100));
-            const newWidth = Math.max(5, startWidth - dx);
-            
-            const percentWidth = (newWidth / trackWidth) * 100;
-            const maxLeft = 100 - percentWidth;
-            
-            if (newLeft <= maxLeft) {
-              const newStartTime = (newLeft / 100) * trackDuration;
-              const newDuration = (percentWidth / 100) * trackDuration;
-              
-              regionElement.style.left = `${newLeft}%`;
-              regionElement.style.width = `${percentWidth}%`;
-              
-              label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + newDuration).toFixed(1)}s`;
-              
-              // Update the item data
-              onUpdateItem(item.id, { 
-                startTime: newStartTime,
-                duration: newDuration 
-              });
-            }
-          };
-          
-          const handleMouseUp = () => {
-            isResizingLeft = false;
-            document.body.style.cursor = '';
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-          };
-          
-          document.addEventListener('mousemove', handleMouseMove);
-          document.addEventListener('mouseup', handleMouseUp);
-        });
-        
-        // Right resize handle functionality
-        rightResizeHandle.addEventListener('mousedown', (e) => {
-          e.stopPropagation();
-          isResizingRight = true;
-          startX = e.clientX;
-          startWidth = regionElement.offsetWidth;
-          
-          document.body.style.cursor = 'ew-resize';
-          
-          const handleMouseMove = (moveEvent: MouseEvent) => {
-            if (!isResizingRight) return;
-            
-            moveEvent.preventDefault();
-            
-            const dx = moveEvent.clientX - startX;
-            const newWidth = Math.max(5, startWidth + dx);
-            const percentWidth = (newWidth / trackWidth) * 100;
-            
-            // Check if the new width would go beyond the track
-            const currentLeft = parseFloat(regionElement.style.left);
-            const maxWidth = (100 - currentLeft);
-            
-            if (percentWidth <= maxWidth) {
-              const newDuration = (percentWidth / 100) * trackDuration;
-              
-              regionElement.style.width = `${percentWidth}%`;
-              
-              label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
-              
-              // Update the item data
-              onUpdateItem(item.id, { duration: newDuration });
-            }
-          };
-          
-          const handleMouseUp = () => {
-            isResizingRight = false;
-            document.body.style.cursor = '';
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-          };
-          
-          document.addEventListener('mousemove', handleMouseMove);
-          document.addEventListener('mouseup', handleMouseUp);
-        });
-        
-        // Drag handle functionality
-        dragHandle.addEventListener('mousedown', (e) => {
-          e.stopPropagation();
-          if (isResizingLeft || isResizingRight) return;
-          
-          isDragging = true;
-          startX = e.clientX;
-          startLeft = parseFloat(regionElement.style.left);
-          
-          dragHandle.style.cursor = 'grabbing';
-          document.body.style.cursor = 'grabbing';
-          
-          const handleMouseMove = (moveEvent: MouseEvent) => {
-            if (!isDragging) return;
-            
-            moveEvent.preventDefault();
-            
-            const dx = moveEvent.clientX - startX;
-            const percentDx = (dx / trackWidth) * 100;
-            const newLeft = Math.max(0, Math.min(100 - parseFloat(regionElement.style.width), startLeft + percentDx));
-            
-            const newStartTime = (newLeft / 100) * trackDuration;
-            
-            regionElement.style.left = `${newLeft}%`;
-            label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + item.duration).toFixed(1)}s`;
-            
-            onUpdateItem(item.id, { startTime: newStartTime });
-          };
-          
-          const handleMouseUp = () => {
-            isDragging = false;
-            dragHandle.style.cursor = 'grab';
-            document.body.style.cursor = '';
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-          };
-          
-          document.addEventListener('mousemove', handleMouseMove);
-          document.addEventListener('mouseup', handleMouseUp);
-        });
-        
-        // Append elements in the correct order for proper z-index handling
-        regionElement.appendChild(dragHandle);
-        regionElement.appendChild(leftResizeHandle);
-        regionElement.appendChild(rightResizeHandle);
-        
-        flashlightTrackRef.current.appendChild(regionElement);
-      }
-    });
-    
-    // Add a single unified marker for all tracks
-    const marker = document.createElement('div');
-    marker.className = 'timeline-marker absolute top-0 h-full w-0.5 bg-white z-20 pointer-events-none';
-    const markerPosition = calculatePosition(currentTime);
-    marker.style.left = `${markerPosition}%`;
-    
-    return () => {
-      if (imageTrackRef.current) {
-        while (imageTrackRef.current.firstChild) {
-          imageTrackRef.current.removeChild(imageTrackRef.current.firstChild);
-        }
-      }
-      
-      if (flashlightTrackRef.current) {
-        while (flashlightTrackRef.current.firstChild) {
-          flashlightTrackRef.current.removeChild(flashlightTrackRef.current.firstChild);
-        }
-      }
-    };
-  }, [timelineItems, selectedItemIndex, currentTime, isPlaying]);
 
   return (
     <div className="flex flex-col h-full bg-black/50 rounded-lg p-4 space-y-3">
       <div className="text-xs text-white/70 font-medium flex justify-between mb-2">
         <span>Trilha de Áudio</span>
-        <span>{new Date(currentTime * 1000).toISOString().substr(14, 5)} / {new Date((wavesurferRef.current?.getDuration() || 0) * 1000).toISOString().substr(14, 5)}</span>
+        <span>
+          {new Date(currentTime * 1000).toISOString().substr(14, 5)} / 
+          {new Date((wavesurferRef.current?.getDuration() || 0) * 1000).toISOString().substr(14, 5)}
+        </span>
       </div>
       
-      <div className="flex items-center gap-2 mb-2">
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          onClick={() => handleZoomChange([Math.max(10, zoomLevel - 20)])}
-          className="p-1 h-8 w-8"
-        >
-          <ZoomOut className="h-4 w-4" />
-        </Button>
-        
-        <Slider
-          value={[zoomLevel]}
-          min={10}
-          max={400}
-          step={10}
-          className="flex-1"
-          onValueChange={handleZoomChange}
+      <TimelineZoomControls 
+        zoomLevel={zoomLevel}
+        onZoomChange={handleZoomChange}
+      />
+      
+      <div className="relative">
+        <WaveformDisplay 
+          audioUrl={audioUrl}
+          isPlaying={isPlaying}
+          currentTime={currentTime}
+          setCurrentTime={setCurrentTime}
+          setDuration={setDuration}
+          zoomLevel={zoomLevel}
+          onWavesurferReady={handleWavesurferReady}
+          onItemSelect={onItemSelect}
         />
-        
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          onClick={() => handleZoomChange([Math.min(400, zoomLevel + 20)])}
-          className="p-1 h-8 w-8"
-        >
-          <ZoomIn className="h-4 w-4" />
-        </Button>
+        <TimelineMarker currentTime={currentTime} duration={duration} />
       </div>
       
-      <div className="relative h-32 bg-black/30 rounded-md">
-        <div ref={containerRef} className="h-full" />
-        {/* Single unified marker for all tracks */}
-        <div className="timeline-marker absolute top-0 h-full w-0.5 bg-white z-20 pointer-events-none"></div>
-      </div>
+      <TimelineItemsTrack 
+        type="image"
+        title="Trilha de Imagens"
+        timelineItems={timelineItems}
+        trackDuration={duration}
+        selectedItemIndex={selectedItemIndex}
+        onItemSelect={onItemSelect}
+        onUpdateItem={onUpdateItem}
+        checkOverlap={checkItemOverlap}
+      />
       
-      <div id="timeline" className="h-10" />
-      
-      <div className="text-xs text-white/70 font-medium mb-1">Trilha de Imagens</div>
-      <div className="relative h-16 bg-black/30 rounded-md">
-        <div 
-          ref={imageTrackRef} 
-          className="relative h-full cursor-pointer"
-          onClick={() => onItemSelect(null)}
-        ></div>
-        {/* Remove separate marker here */}
-      </div>
-      
-      <div className="text-xs text-white/70 font-medium mb-1">Trilha de Efeitos de Lanterna</div>
-      <div className="relative h-16 bg-black/30 rounded-md">
-        <div 
-          ref={flashlightTrackRef} 
-          className="relative h-full cursor-pointer"
-          onClick={() => onItemSelect(null)}
-        ></div>
-        {/* Remove separate marker here */}
-      </div>
+      <TimelineItemsTrack 
+        type="flashlight"
+        title="Trilha de Efeitos de Lanterna"
+        timelineItems={timelineItems}
+        trackDuration={duration}
+        selectedItemIndex={selectedItemIndex}
+        onItemSelect={onItemSelect}
+        onUpdateItem={onUpdateItem}
+      />
       
       <div className="mt-2 text-xs text-white/50 text-center">
         Clique em uma região para editar • Arraste o item para movê-lo • Arraste as bordas para ajustar a duração • Tecla Delete para remover item selecionado
