@@ -17,6 +17,8 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const [userClosedImage, setUserClosedImage] = useState(false);
   const [isCallToAction, setIsCallToAction] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [externalUrl, setExternalUrl] = useState<string | null>(null);
+  const [callToActionType, setCallToActionType] = useState<string | null>(null);
   const flashIntervalRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const frameIdRef = useRef<number | null>(null);
@@ -88,7 +90,10 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       setFlashlightIntensity(0);
       
       if (!userClosedImage) {
-        setDisplayImage(activeCallToActions[activeCallToActions.length - 1].content?.imageUrl || null);
+        const callToAction = activeCallToActions[activeCallToActions.length - 1];
+        setDisplayImage(callToAction.content?.imageUrl || null);
+        setExternalUrl(callToAction.content?.externalUrl || null);
+        setCallToActionType(callToAction.content?.type || null);
       }
       setIsCallToAction(true);
       setBackgroundColor('#000000');
@@ -97,6 +102,8 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     
     // If no call to action is active, proceed with normal behavior
     setIsCallToAction(false);
+    setExternalUrl(null);
+    setCallToActionType(null);
     setActiveFlashlight(false);
     setFlashlightIntensity(0);
     
@@ -170,6 +177,13 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     console.log('Start recording button clicked');
     // In a real app, this would start video recording
   };
+  
+  const handleCallToActionClick = () => {
+    if (externalUrl && (callToActionType === 'imageWithButton' || callToActionType === 'coupon')) {
+      console.log(`Navigating to: ${externalUrl}`);
+      window.open(externalUrl, '_blank');
+    }
+  };
 
   useEffect(() => {
     if (!displayImage && !userClosedImage) {
@@ -182,7 +196,10 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       );
       
       if (activeCallToActions.length > 0) {
-        setDisplayImage(activeCallToActions[activeCallToActions.length - 1].content?.imageUrl || null);
+        const callToAction = activeCallToActions[activeCallToActions.length - 1];
+        setDisplayImage(callToAction.content?.imageUrl || null);
+        setExternalUrl(callToAction.content?.externalUrl || null);
+        setCallToActionType(callToAction.content?.type || null);
         setIsCallToAction(true);
         // Make sure flashlight is off when call to action is active
         setActiveFlashlight(false);
@@ -279,11 +296,35 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
                   <X className="h-5 w-5 text-white" />
                 </button>
               )}
-              <img 
-                src={displayImage} 
-                alt="Display content" 
-                className="max-w-full max-h-full object-contain z-10"
-              />
+              {/* Make the image clickable when it's a link or coupon call to action */}
+              {isCallToAction && (callToActionType === 'imageWithButton' || callToActionType === 'coupon') && externalUrl ? (
+                <div 
+                  className="cursor-pointer relative flex flex-col items-center"
+                  onClick={handleCallToActionClick}
+                >
+                  <img 
+                    src={displayImage} 
+                    alt="Click to open link"
+                    className="max-w-full max-h-full object-contain z-10"
+                  />
+                  {callToActionType === 'imageWithButton' && (
+                    <div className="mt-2 bg-white/20 text-white text-sm px-4 py-1 rounded-full backdrop-blur-sm hover:bg-white/30 transition-colors">
+                      Abrir Link
+                    </div>
+                  )}
+                  {callToActionType === 'coupon' && (
+                    <div className="mt-2 bg-white/20 text-white text-sm px-4 py-1 rounded-full backdrop-blur-sm hover:bg-white/30 transition-colors">
+                      Resgatar Cupom
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <img 
+                  src={displayImage} 
+                  alt="Display content" 
+                  className="max-w-full max-h-full object-contain z-10"
+                />
+              )}
             </div>
           )}
           

@@ -124,7 +124,7 @@ const CallToActionPanel = ({
             
             <TabsContent value="imageWithButton" className="space-y-4">
               <div className="space-y-2">
-                <Label>Imagem</Label>
+                <Label>Imagem Clicável</Label>
                 <div className="flex space-x-2">
                   <Button 
                     onClick={handleUploadClick} 
@@ -135,6 +135,9 @@ const CallToActionPanel = ({
                     Carregar Imagem
                   </Button>
                 </div>
+                <p className="text-xs text-white/60 italic mt-1">
+                  A imagem será clicável e direcionará para o link abaixo
+                </p>
               </div>
               
               <div className="space-y-2">
@@ -149,20 +152,27 @@ const CallToActionPanel = ({
               </div>
               
               {callToAction.imageUrl && (
-                <div className="mt-4 border border-white/10 rounded-md p-2 flex flex-col items-center justify-center h-60">
+                <div className="mt-4 border border-white/10 rounded-md p-2 flex flex-col items-center justify-center h-60 relative">
+                  <div className="absolute top-2 right-2 bg-black/50 px-2 py-1 rounded text-xs text-white/80">
+                    Imagem Clicável
+                  </div>
                   <img 
                     src={callToAction.imageUrl} 
                     alt="Prévia" 
                     className="max-h-52 object-contain mb-2"
                     onError={(e) => (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x300?text=Imagem+Inválida'}
                   />
+                  <Button size="sm" variant="secondary" className="mt-2">
+                    <Link className="h-3 w-3 mr-1" />
+                    Abrir Link
+                  </Button>
                 </div>
               )}
             </TabsContent>
             
             <TabsContent value="coupon" className="space-y-4">
               <div className="space-y-2">
-                <Label>Imagem</Label>
+                <Label>Imagem do Cupom</Label>
                 <div className="flex space-x-2">
                   <Button 
                     onClick={handleUploadClick} 
@@ -173,6 +183,9 @@ const CallToActionPanel = ({
                     Carregar Imagem
                   </Button>
                 </div>
+                <p className="text-xs text-white/60 italic mt-1">
+                  A imagem será clicável e direcionará para a URL de resgate
+                </p>
               </div>
               
               <div className="space-y-2">
@@ -186,7 +199,10 @@ const CallToActionPanel = ({
                 />
               </div>
               
-              <div className="mt-4 border border-white/10 rounded-md p-4 flex flex-col items-center justify-center h-60">
+              <div className="mt-4 border border-white/10 rounded-md p-4 flex flex-col items-center justify-center h-60 relative">
+                <div className="absolute top-2 right-2 bg-black/50 px-2 py-1 rounded text-xs text-white/80">
+                  Cupom Clicável
+                </div>
                 {callToAction.imageUrl && (
                   <img 
                     src={callToAction.imageUrl} 
@@ -197,7 +213,8 @@ const CallToActionPanel = ({
                 <div className="text-lg font-bold mb-2">Cupom de Desconto</div>
                 
                 <Button size="sm" variant="secondary">
-                  Resgatar
+                  <Ticket className="h-3 w-3 mr-1" />
+                  Resgatar Cupom
                 </Button>
               </div>
             </TabsContent>
