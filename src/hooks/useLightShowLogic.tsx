@@ -1,4 +1,3 @@
-
 import { useState, useRef } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { TimelineItem, CallToActionType } from "@/types/lightshow";
@@ -69,16 +68,16 @@ export function useLightShowLogic() {
       
       const newPatterns: TimelineItem[] = [];
       
-      // Create sequential flashes for beats with much smaller spacing
+      // Create sequential flashes for beats with increased spacing between effects
       beats.forEach((time, index) => {
         if (time < duration) {
-          // Much less spacing between beats to allow more flashes
+          // Increase minimum spacing to 0.12s to prevent overlaps
           const tooClose = newPatterns.some(item => 
-            Math.abs(item.startTime - time) < 0.08 // 80ms minimum spacing (was 150ms)
+            Math.abs(item.startTime - time) < 0.12
           );
           
           if (!tooClose) {
-            const flashDuration = 0.02; // 20ms ultra-short flash (was 30ms)
+            const flashDuration = 0.015; // Even shorter 15ms flash for faster effects
             
             newPatterns.push({
               id: `flash-beat-${Date.now()}-${index}`,
@@ -87,7 +86,7 @@ export function useLightShowLogic() {
               duration: flashDuration,
               pattern: {
                 intensity: 100, // Full intensity
-                blinkRate: 160, // 160 Hz (faster than before - was 120)
+                blinkRate: 200, // 200 Hz (even faster)
                 color: '#FFFFFF'
               }
             });
@@ -95,16 +94,16 @@ export function useLightShowLogic() {
         }
       });
       
-      // Add bass beats with smaller spacing
+      // Add bass beats with better spacing
       bassBeats.forEach((time, index) => {
         if (time < duration) {
-          // Check if this beat is too close to others
+          // Check if this beat is too close to others - increase spacing
           const tooClose = newPatterns.some(item => 
-            Math.abs(item.startTime - time) < 0.1 // 100ms spacing (was 200ms)
+            Math.abs(item.startTime - time) < 0.15 // 150ms spacing to prevent overlap
           );
           
           if (!tooClose) {
-            const flashDuration = 0.04; // 40ms (slightly shorter - was 50ms)
+            const flashDuration = 0.025; // 25ms (shorter)
             
             newPatterns.push({
               id: `flash-bass-${Date.now()}-${index}`,
@@ -113,7 +112,7 @@ export function useLightShowLogic() {
               duration: flashDuration,
               pattern: {
                 intensity: 100, // Full intensity
-                blinkRate: 120, // 120 Hz (was 90)
+                blinkRate: 180, // 180 Hz (faster)
                 color: '#FFFFFF'
               }
             });
@@ -121,16 +120,16 @@ export function useLightShowLogic() {
         }
       });
       
-      // Add treble beats with smaller spacing - use more of them
+      // Add treble beats with better spacing
       trebleBeats.forEach((time, index) => {
-        if (time < duration) { // Use all treble beats (was every 2nd)
+        if (time < duration && index % 2 === 0) { // Take every 2nd treble beat to reduce density
           // Check if this beat is too close to others
           const tooClose = newPatterns.some(item => 
-            Math.abs(item.startTime - time) < 0.12 // 120ms spacing (was 180ms)
+            Math.abs(item.startTime - time) < 0.18 // 180ms spacing
           );
           
           if (!tooClose) {
-            const flashDuration = 0.015; // 15ms (very short, was 20ms)
+            const flashDuration = 0.01; // 10ms (very short)
             
             newPatterns.push({
               id: `flash-treble-${Date.now()}-${index}`,
@@ -138,8 +137,8 @@ export function useLightShowLogic() {
               startTime: time,
               duration: flashDuration,
               pattern: {
-                intensity: 100, // 100% (was 95)
-                blinkRate: 180, // 180 Hz (extremely fast, was 150)
+                intensity: 100,
+                blinkRate: 220, // 220 Hz (extremely fast)
                 color: '#FFFFFF'
               }
             });
@@ -147,27 +146,27 @@ export function useLightShowLogic() {
         }
       });
       
-      // Add more strobe effects with better spacing and timing
-      for (let time = 1; time < duration; time += 3) { // Every 3 seconds (was 5)
-        // Skip if there are already flashes close to this time
+      // Add strobe effects with better spacing
+      for (let time = 2; time < duration; time += 4) { // Every 4 seconds
+        // Check for existing flashes within a wider window
         const hasNearbyFlashes = newPatterns.some(item => 
-          Math.abs(item.startTime - time) < 0.3 // Check for flashes within 0.3s (was 0.5)
+          Math.abs(item.startTime - time) < 0.8 // Check for flashes within 0.8s
         );
         
         if (!hasNearbyFlashes) {
-          const clusterSize = 6; // 6 flashes in rapid succession (was 4)
+          const clusterSize = 3; // Reduce to 3 flashes to avoid overwhelming
           for (let i = 0; i < clusterSize; i++) {
-            const strokeTime = time + (i * 0.06); // 60ms spacing between flashes (was 80ms)
+            const strokeTime = time + (i * 0.12); // Increase to 120ms spacing between flashes
             
             if (strokeTime < duration) {
               newPatterns.push({
                 id: `flash-strobe-${Date.now()}-${time}-${i}`,
                 type: 'flashlight',
                 startTime: strokeTime,
-                duration: 0.02, // 20ms (was 30ms)
+                duration: 0.01, // 10ms (very short)
                 pattern: {
                   intensity: 100,
-                  blinkRate: 140, // 140 Hz (was 100)
+                  blinkRate: 200, // 200 Hz (very fast)
                   color: '#FFFFFF'
                 }
               });
@@ -179,15 +178,15 @@ export function useLightShowLogic() {
       // Sort patterns by start time 
       newPatterns.sort((a, b) => a.startTime - b.startTime);
       
-      // Do a final pass to avoid overlaps but allow closer spacing than before
+      // Final pass to prevent overlapping - stricter check
       const finalPatterns: TimelineItem[] = [];
       let lastEndTime = 0;
       
       for (const pattern of newPatterns) {
-        // Allow a slight overlap to increase density (reduce minimum gap)
-        if (pattern.startTime >= (lastEndTime - 0.01)) { // Allow 10ms overlap
+        // No overlap allowed to ensure clean effects
+        if (pattern.startTime >= lastEndTime) {
           finalPatterns.push(pattern);
-          lastEndTime = pattern.startTime + pattern.duration;
+          lastEndTime = pattern.startTime + pattern.duration + 0.05; // Add 50ms buffer between effects
         }
       }
       
