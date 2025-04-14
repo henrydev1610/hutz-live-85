@@ -164,14 +164,14 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           {activeFlashlight && (
             <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center z-20 pointer-events-none">
               <div 
-                className="w-16 h-16 rounded-full" // Increased size from w-4.5 h-4.5 to w-16 h-16
+                className="w-24 h-24 rounded-full" // Increased from w-16 h-16 to w-24 h-24 (6x6)
                 style={{ 
-                  boxShadow: `0 0 100px 50px rgba(255, 255, 255, ${flashlightIntensity / 100})`, // Increased shadow size and intensity
+                  boxShadow: `0 0 120px 60px rgba(255, 255, 255, ${flashlightIntensity / 100})`, // Adjusted shadow for larger size
                   transition: 'opacity 0.1ms linear', 
                   position: 'absolute',
-                  top: '30%', // Moved further down
+                  top: '8%', // Moved to 8% from the top as requested
                   opacity: flashlightIntensity / 100,
-                  background: 'radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.2) 70%)', // Added gradient for more visual impact
+                  background: 'radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.2) 70%)',
                 }}
               ></div>
             </div>

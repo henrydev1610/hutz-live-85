@@ -1,4 +1,3 @@
-
 import { useState, useRef } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { TimelineItem, CallToActionType } from "@/types/lightshow";
@@ -71,48 +70,85 @@ export function useLightShowLogic() {
       
       const totalSeconds = Math.ceil(duration);
       
-      // Create base rhythm of 2-3 flashes per second throughout the entire audio
-      for (let second = 0; second < totalSeconds; second++) {
-        // Randomly decide if this second will have 2 or 3 flashes
-        const flashesPerSecond = Math.random() > 0.5 ? 3 : 2;
+      // Create patterns with 1.5, 2.0, or 2.5 flashes per second
+      for (let second = 0; second < totalSeconds; second += 3) {
+        // Regularly alternate between 1.5, 2.0, and 2.5 flashes per second
+        const flashRates = [1.5, 2.0, 2.5];
+        const flashesPerSecond = flashRates[second % 3];
         
-        for (let i = 0; i < flashesPerSecond; i++) {
-          const startTime = second + (i * (1 / flashesPerSecond));
-          const blinkRate = 100 + Math.random() * 100; // Vary between 100-200 Hz
-          const intensity = 85 + Math.random() * 15; // Vary between 85-100%
-          
-          newPatterns.push({
-            id: `flash-auto-${Date.now()}-${second}-${i}`,
-            type: 'flashlight',
-            startTime: startTime,
-            duration: 0.02 + (Math.random() * 0.02), // 0.02-0.04s duration
-            pattern: {
-              intensity: intensity,
-              blinkRate: blinkRate,
-              color: '#FFFFFF'
+        // Create pattern for a 3-second chunk
+        for (let i = 0; i < 3; i++) {
+          if (second + i < totalSeconds) {
+            // Calculate number of flashes for this specific second
+            const flashesThisSecond = flashesPerSecond;
+            const flashesCount = Math.floor(flashesThisSecond);
+            const partialFlash = flashesThisSecond - flashesCount;
+            
+            // Add whole flashes
+            for (let j = 0; j < flashesCount; j++) {
+              const startTime = (second + i) + (j * (1 / flashesThisSecond));
+              const blinkRate = 120 + Math.random() * 30; // Slight variation in blink rate
+              const intensity = 90 + Math.random() * 10; // High intensity (90-100%)
+              
+              newPatterns.push({
+                id: `flash-auto-${Date.now()}-${second + i}-${j}`,
+                type: 'flashlight',
+                startTime: startTime,
+                duration: 0.03 + (Math.random() * 0.02), // 0.03-0.05s duration
+                pattern: {
+                  intensity: intensity,
+                  blinkRate: blinkRate,
+                  color: '#FFFFFF'
+                }
+              });
             }
-          });
+            
+            // Add partial flash if needed
+            if (partialFlash > 0) {
+              const startTime = (second + i) + (flashesCount * (1 / flashesThisSecond));
+              const intensity = 90 + Math.random() * 10;
+              
+              newPatterns.push({
+                id: `flash-auto-partial-${Date.now()}-${second + i}`,
+                type: 'flashlight',
+                startTime: startTime,
+                duration: 0.03 * partialFlash, // Shorter duration for partial flash
+                pattern: {
+                  intensity: intensity,
+                  blinkRate: 100,
+                  color: '#FFFFFF'
+                }
+              });
+            }
+          }
+        }
+        
+        // Randomly decide if we want a pause after this 3-second chunk
+        // This creates intervals >2 seconds as requested
+        if (Math.random() > 0.7 && second + 5 < totalSeconds) {
+          // Skip the next 2-3 seconds to create a pause
+          const pauseLength = 2 + Math.floor(Math.random() * 1.5);
+          second += pauseLength;
         }
       }
       
-      // Add special emphasis on bass and treble beats with 0.2s intervals after them
+      // Add special emphasis on bass and treble beats with intervals after them
       if (bassBeats.length > 0 && trebleBeats.length > 0) {
         // Process bass beats
         for (let i = 0; i < bassBeats.length; i++) {
           if (bassBeats[i] < duration) {
-            // Add a 0.2s pause after important bass beats
+            // Every fourth bass beat gets a 0.2s pause followed by a bright flash
             if (i % 4 === 0) {
-              // Create a subtle flash after the pause
               const pauseEnd = Math.min(bassBeats[i] + 0.2, duration - 0.05);
               
               newPatterns.push({
                 id: `flash-bass-${Date.now()}-${i}`,
                 type: 'flashlight',
                 startTime: pauseEnd,
-                duration: 0.03,
+                duration: 0.04,
                 pattern: {
                   intensity: 100,
-                  blinkRate: 220,
+                  blinkRate: 200,
                   color: '#FFFFFF'
                 }
               });
@@ -123,11 +159,11 @@ export function useLightShowLogic() {
         // Process treble beats
         for (let i = 0; i < trebleBeats.length; i++) {
           if (trebleBeats[i] < duration) {
-            // Add a 0.2s pause after important treble beats
+            // Every fifth treble beat gets a 0.2s pause followed by quick flash sequence
             if (i % 5 === 0) {
-              // Create a quick flash sequence after the pause
               const pauseEnd = Math.min(trebleBeats[i] + 0.2, duration - 0.1);
               
+              // Double flash after the pause
               for (let j = 0; j < 2; j++) {
                 newPatterns.push({
                   id: `flash-treble-${Date.now()}-${i}-${j}`,
@@ -136,7 +172,7 @@ export function useLightShowLogic() {
                   duration: 0.02,
                   pattern: {
                     intensity: 100,
-                    blinkRate: 250,
+                    blinkRate: 220,
                     color: '#FFFFFF'
                   }
                 });
@@ -149,7 +185,7 @@ export function useLightShowLogic() {
       // Sort all patterns by start time
       const sortedPatterns = [...newPatterns].sort((a, b) => a.startTime - b.startTime);
       
-      // Check for gaps greater than 1 second and fill them
+      // Check for gaps greater than 2 seconds and fill them
       const finalPatterns: TimelineItem[] = [];
       for (let i = 0; i < sortedPatterns.length; i++) {
         finalPatterns.push(sortedPatterns[i]);
@@ -159,20 +195,26 @@ export function useLightShowLogic() {
           const currentEnd = sortedPatterns[i].startTime + sortedPatterns[i].duration;
           const nextStart = sortedPatterns[i + 1].startTime;
           
-          // If gap is more than 1 second, add a filler flash
-          if (nextStart - currentEnd > 1) {
-            const fillerTime = currentEnd + 0.5; // Add a flash in the middle of the gap
-            finalPatterns.push({
-              id: `flash-filler-${Date.now()}-${i}`,
-              type: 'flashlight',
-              startTime: fillerTime,
-              duration: 0.03,
-              pattern: {
-                intensity: 90,
-                blinkRate: 150,
-                color: '#FFFFFF'
-              }
-            });
+          // If gap is more than 2 seconds, add filler flashes
+          if (nextStart - currentEnd > 2) {
+            // Add a sequence of flashes in the middle of the gap
+            const gapMiddle = currentEnd + ((nextStart - currentEnd) / 2);
+            const flashRate = [1.5, 2.0, 2.5][Math.floor(Math.random() * 3)];
+            
+            // Add a sequence of 3 flashes with the chosen rate
+            for (let j = 0; j < 3; j++) {
+              finalPatterns.push({
+                id: `flash-filler-${Date.now()}-${i}-${j}`,
+                type: 'flashlight',
+                startTime: gapMiddle + (j * (1 / flashRate)),
+                duration: 0.03,
+                pattern: {
+                  intensity: 95,
+                  blinkRate: 150,
+                  color: '#FFFFFF'
+                }
+              });
+            }
           }
         }
       }
@@ -351,7 +393,7 @@ export function useLightShowLogic() {
     if (!audioFile || !timelineItems.length) {
       toast({
         title: "Não foi possível gerar o arquivo",
-        description: "É necessário um áudio e pelo menos um item na timeline.",
+        description: "É necessário um ��udio e pelo menos um item na timeline.",
         variant: "destructive"
       });
       return;
