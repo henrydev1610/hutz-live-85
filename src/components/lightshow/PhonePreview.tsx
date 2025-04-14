@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { TimelineItem } from '@/types/lightshow';
 
@@ -164,12 +163,12 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           {activeFlashlight && (
             <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center z-20 pointer-events-none">
               <div 
-                className="w-24 h-24 rounded-full" // Increased from w-16 h-16 to w-24 h-24 (6x6)
+                className="w-16 h-16 rounded-full" // Changed from w-24 h-24 to w-16 h-16
                 style={{ 
-                  boxShadow: `0 0 120px 60px rgba(255, 255, 255, ${flashlightIntensity / 100})`, // Adjusted shadow for larger size
+                  boxShadow: `0 0 100px 50px rgba(255, 255, 255, ${flashlightIntensity / 100})`, // Adjusted shadow for smaller size
                   transition: 'opacity 0.1ms linear', 
                   position: 'absolute',
-                  top: '8%', // Moved to 8% from the top as requested
+                  top: '8%', // Keep at 8% from the top
                   opacity: flashlightIntensity / 100,
                   background: 'radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.2) 70%)',
                 }}

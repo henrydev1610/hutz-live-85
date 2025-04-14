@@ -132,19 +132,17 @@ export function useLightShowLogic() {
         }
       }
       
-      // Add special emphasis on bass and treble beats with intervals after them
+      // Add emphasis on bass and treble beats without the 0.2s pauses
       if (bassBeats.length > 0 && trebleBeats.length > 0) {
         // Process bass beats
         for (let i = 0; i < bassBeats.length; i++) {
           if (bassBeats[i] < duration) {
-            // Every fourth bass beat gets a 0.2s pause followed by a bright flash
+            // Every fourth bass beat gets a bright flash (without the 0.2s pause)
             if (i % 4 === 0) {
-              const pauseEnd = Math.min(bassBeats[i] + 0.2, duration - 0.05);
-              
               newPatterns.push({
                 id: `flash-bass-${Date.now()}-${i}`,
                 type: 'flashlight',
-                startTime: pauseEnd,
+                startTime: bassBeats[i],
                 duration: 0.04,
                 pattern: {
                   intensity: 100,
@@ -159,16 +157,14 @@ export function useLightShowLogic() {
         // Process treble beats
         for (let i = 0; i < trebleBeats.length; i++) {
           if (trebleBeats[i] < duration) {
-            // Every fifth treble beat gets a 0.2s pause followed by quick flash sequence
+            // Every fifth treble beat gets quick flash sequence (without the 0.2s pause)
             if (i % 5 === 0) {
-              const pauseEnd = Math.min(trebleBeats[i] + 0.2, duration - 0.1);
-              
-              // Double flash after the pause
+              // Double flash at the treble beat
               for (let j = 0; j < 2; j++) {
                 newPatterns.push({
                   id: `flash-treble-${Date.now()}-${i}-${j}`,
                   type: 'flashlight',
-                  startTime: pauseEnd + (j * 0.03),
+                  startTime: trebleBeats[i] + (j * 0.03),
                   duration: 0.02,
                   pattern: {
                     intensity: 100,
@@ -185,7 +181,7 @@ export function useLightShowLogic() {
       // Sort all patterns by start time
       const sortedPatterns = [...newPatterns].sort((a, b) => a.startTime - b.startTime);
       
-      // Check for gaps greater than 2 seconds and fill them
+      // Check for gaps greater than 1 second and fill them
       const finalPatterns: TimelineItem[] = [];
       for (let i = 0; i < sortedPatterns.length; i++) {
         finalPatterns.push(sortedPatterns[i]);
@@ -195,8 +191,8 @@ export function useLightShowLogic() {
           const currentEnd = sortedPatterns[i].startTime + sortedPatterns[i].duration;
           const nextStart = sortedPatterns[i + 1].startTime;
           
-          // If gap is more than 2 seconds, add filler flashes
-          if (nextStart - currentEnd > 2) {
+          // If gap is more than 1 second, add filler flashes
+          if (nextStart - currentEnd > 1) {
             // Add a sequence of flashes in the middle of the gap
             const gapMiddle = currentEnd + ((nextStart - currentEnd) / 2);
             const flashRate = [1.5, 2.0, 2.5][Math.floor(Math.random() * 3)];

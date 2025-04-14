@@ -111,7 +111,7 @@ const CallToActionPanel = ({
               </div>
               
               {callToAction.imageUrl && (
-                <div className="mt-4 border border-white/10 rounded-md p-2 flex items-center justify-center h-40">
+                <div className="mt-4 border border-white/10 rounded-md p-2 flex items-center justify-center h-60">
                   <img 
                     src={callToAction.imageUrl} 
                     alt="Prévia" 
@@ -149,11 +149,11 @@ const CallToActionPanel = ({
               </div>
               
               {callToAction.imageUrl && (
-                <div className="mt-4 border border-white/10 rounded-md p-2 flex flex-col items-center justify-center h-48">
+                <div className="mt-4 border border-white/10 rounded-md p-2 flex flex-col items-center justify-center h-60">
                   <img 
                     src={callToAction.imageUrl} 
                     alt="Prévia" 
-                    className="max-h-40 object-contain mb-2"
+                    className="max-h-52 object-contain mb-2"
                     onError={(e) => (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x300?text=Imagem+Inválida'}
                   />
                 </div>
@@ -186,12 +186,12 @@ const CallToActionPanel = ({
                 />
               </div>
               
-              <div className="mt-4 border border-white/10 rounded-md p-4 flex flex-col items-center justify-center">
+              <div className="mt-4 border border-white/10 rounded-md p-4 flex flex-col items-center justify-center h-60">
                 {callToAction.imageUrl && (
                   <img 
                     src={callToAction.imageUrl} 
                     alt="Prévia" 
-                    className="max-h-32 object-contain mb-2"
+                    className="max-h-40 object-contain mb-2"
                   />
                 )}
                 <div className="text-lg font-bold mb-2">Cupom de Desconto</div>
