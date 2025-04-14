@@ -62,6 +62,29 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       frameIdRef.current = null;
     }
     
+    // First check if there's an active Call to Action
+    const activeCallToActions = timelineItems.filter(item => 
+      item.type === 'callToAction' && 
+      item.content?.imageUrl &&
+      time >= item.startTime && 
+      time < (item.startTime + item.duration)
+    );
+    
+    if (activeCallToActions.length > 0) {
+      // If there's a call to action, disable flashlight and show call to action image
+      setActiveFlashlight(false);
+      setFlashlightIntensity(0);
+      
+      if (!userClosedImage) {
+        setDisplayImage(activeCallToActions[activeCallToActions.length - 1].content?.imageUrl || null);
+      }
+      setIsCallToAction(true);
+      setBackgroundColor('#000000');
+      return; // Exit early to prevent other items from being processed
+    }
+    
+    // If no call to action is active, proceed with normal behavior
+    setIsCallToAction(false);
     setActiveFlashlight(false);
     setFlashlightIntensity(0);
     
@@ -72,7 +95,6 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     let activeImage: string | null = null;
     let activeBackgroundColor: string = '#000000';
     let activeFlashlightItem: TimelineItem | null = null;
-    let isCtaActive = false;
     
     activeItems.forEach(item => {
       if (item.type === 'image') {
@@ -83,13 +105,8 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
         }
       } else if (item.type === 'flashlight' && item.pattern) {
         activeFlashlightItem = item;
-      } else if (item.type === 'callToAction' && item.content?.imageUrl) {
-        activeImage = item.content.imageUrl;
-        isCtaActive = true;
       }
     });
-    
-    setIsCallToAction(isCtaActive);
     
     if (!userClosedImage) {
       setDisplayImage(activeImage);
@@ -134,6 +151,24 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
 
   useEffect(() => {
     if (!displayImage && !userClosedImage) {
+      // First check if there's an active Call to Action
+      const activeCallToActions = timelineItems.filter(item => 
+        item.type === 'callToAction' && 
+        item.content?.imageUrl &&
+        currentTime >= item.startTime && 
+        currentTime < (item.startTime + item.duration)
+      );
+      
+      if (activeCallToActions.length > 0) {
+        setDisplayImage(activeCallToActions[activeCallToActions.length - 1].content?.imageUrl || null);
+        setIsCallToAction(true);
+        // Make sure flashlight is off when call to action is active
+        setActiveFlashlight(false);
+        setFlashlightIntensity(0);
+        return;
+      }
+      
+      // If no call to action, check for active images
       const activeImages = timelineItems.filter(item => 
         item.type === 'image' && 
         item.imageUrl &&
@@ -147,19 +182,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
         return;
       }
       
-      const activeCallToActions = timelineItems.filter(item => 
-        item.type === 'callToAction' && 
-        item.content?.imageUrl &&
-        currentTime >= item.startTime && 
-        currentTime < (item.startTime + item.duration)
-      );
-      
-      if (activeCallToActions.length > 0) {
-        setDisplayImage(activeCallToActions[activeCallToActions.length - 1].content?.imageUrl || null);
-        setIsCallToAction(true);
-        return;
-      }
-      
+      // If there are no active items, try to find the closest one
       const sortedItems = timelineItems
         .filter(item => (item.type === 'image' && item.imageUrl) || 
                        (item.type === 'callToAction' && item.content?.imageUrl))
@@ -191,6 +214,9 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
         } else if (firstItem.type === 'callToAction') {
           setDisplayImage(firstItem.content?.imageUrl || null);
           setIsCallToAction(true);
+          // Make sure flashlight is off when call to action is active
+          setActiveFlashlight(false);
+          setFlashlightIntensity(0);
         }
       }
     }
@@ -205,7 +231,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           className="relative w-full h-full overflow-hidden"
           style={{ backgroundColor }}
         >
-          {activeFlashlight && (
+          {activeFlashlight && !isCallToAction && (
             <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center z-20 pointer-events-none">
               <div 
                 className="w-16 h-16 rounded-full"
