@@ -68,10 +68,10 @@ export function useLightShowLogic() {
       
       const newPatterns: TimelineItem[] = [];
       
-      // Create faster flashes for beats (10-15ms)
+      // Create faster flashes for beats (5-8ms)
       beats.forEach((time, index) => {
         if (time < duration) {
-          const flashDuration = 0.01 + Math.random() * 0.005; // 10-15ms (shorter)
+          const flashDuration = 0.005 + Math.random() * 0.003; // 5-8ms (very short)
           
           newPatterns.push({
             id: `flash-beat-${Date.now()}-${index}`,
@@ -80,17 +80,17 @@ export function useLightShowLogic() {
             duration: flashDuration,
             pattern: {
               intensity: 95 + Math.random() * 5, // 95-100%
-              blinkRate: 25 + Math.random() * 10, // 25-35 Hz (faster)
+              blinkRate: 40 + Math.random() * 10, // 40-50 Hz (ultra fast)
               color: '#FFFFFF'
             }
           });
         }
       });
       
-      // Create slightly longer flashes for bass (15-20ms)
+      // Create slightly longer flashes for bass (8-12ms)
       bassBeats.forEach((time, index) => {
         if (time < duration) {
-          const flashDuration = 0.015 + Math.random() * 0.005; // 15-20ms (shorter)
+          const flashDuration = 0.008 + Math.random() * 0.004; // 8-12ms (short)
           
           newPatterns.push({
             id: `flash-bass-${Date.now()}-${index}`,
@@ -99,17 +99,17 @@ export function useLightShowLogic() {
             duration: flashDuration,
             pattern: {
               intensity: 100, // Full intensity for bass
-              blinkRate: 15 + Math.random() * 10, // 15-25 Hz (faster)
+              blinkRate: 30 + Math.random() * 15, // 30-45 Hz (very fast)
               color: '#FFFFFF'
             }
           });
         }
       });
       
-      // Create very short flashes for treble (8-12ms)
+      // Create very short flashes for treble (3-6ms)
       trebleBeats.forEach((time, index) => {
         if (time < duration) {
-          const flashDuration = 0.008 + Math.random() * 0.004; // 8-12ms (shorter)
+          const flashDuration = 0.003 + Math.random() * 0.003; // 3-6ms (ultra short)
           
           newPatterns.push({
             id: `flash-treble-${Date.now()}-${index}`,
@@ -118,29 +118,28 @@ export function useLightShowLogic() {
             duration: flashDuration,
             pattern: {
               intensity: 90 + Math.random() * 10, // 90-100%
-              blinkRate: 30 + Math.random() * 15, // 30-45 Hz (faster)
+              blinkRate: 50 + Math.random() * 20, // 50-70 Hz (extremely fast)
               color: '#FFFFFF'
             }
           });
         }
       });
       
-      // Add intense strobe effects with proper spacing
-      // Instead of continuous lighting, we'll add spaced strobe clusters
-      for (let time = 0; time < duration; time += 1.5) { // Increased spacing between clusters (1.5s)
-        const clusterSize = 5 + Math.floor(Math.random() * 5); // 5-9 flashes per cluster
+      // Add intense strobe effects with better spacing
+      for (let time = 0; time < duration; time += 3) { // Increased spacing between strobe clusters (3s)
+        const clusterSize = 6 + Math.floor(Math.random() * 6); // 6-11 flashes per cluster
         for (let i = 0; i < clusterSize; i++) {
-          const strokeTime = time + (i * 0.015); // Faster strobe timing (15ms spacing)
+          const strokeTime = time + (i * 0.008); // Ultra-fast strobe timing (8ms spacing)
           
           if (strokeTime < duration) {
             newPatterns.push({
               id: `flash-strobe-${Date.now()}-${time}-${i}`,
               type: 'flashlight',
               startTime: strokeTime,
-              duration: 0.01, // 10ms (very short flash)
+              duration: 0.004, // 4ms (extremely short flash)
               pattern: {
                 intensity: 100,
-                blinkRate: 40 + Math.random() * 20, // 40-60 Hz (much faster)
+                blinkRate: 70 + Math.random() * 30, // 70-100 Hz (ultra fast)
                 color: '#FFFFFF'
               }
             });
@@ -148,14 +147,14 @@ export function useLightShowLogic() {
         }
       }
       
-      // Add more random flashes throughout the track, but with proper spacing
-      const randomFlashCount = Math.floor(duration * 10); // Increased number but will be spaced
+      // Add more spaced random flashes throughout the track
+      const randomFlashCount = Math.floor(duration * 5); // 5 flashes per second average
       for (let i = 0; i < randomFlashCount; i++) {
         const randomTime = Math.random() * duration;
         
-        // Check if this random time is too close to existing flashes
+        // Ensure spacing between flashes
         const tooClose = newPatterns.some(item => 
-          Math.abs(item.startTime - randomTime) < 0.05 // Minimum 50ms spacing
+          Math.abs(item.startTime - randomTime) < 0.08 // Minimum 80ms spacing
         );
         
         if (!tooClose) {
@@ -163,10 +162,10 @@ export function useLightShowLogic() {
             id: `flash-random-${Date.now()}-${i}`,
             type: 'flashlight',
             startTime: randomTime,
-            duration: 0.01 + Math.random() * 0.01, // 10-20ms (shorter)
+            duration: 0.005 + Math.random() * 0.005, // 5-10ms (very short)
             pattern: {
               intensity: 95 + Math.random() * 5, // 95-100%
-              blinkRate: 25 + Math.random() * 25, // 25-50 Hz (faster)
+              blinkRate: 50 + Math.random() * 50, // 50-100 Hz (extremely fast)
               color: '#FFFFFF'
             }
           });
@@ -177,7 +176,7 @@ export function useLightShowLogic() {
       
       toast({
         title: "Show de luzes criado!",
-        description: "Um espetáculo intenso de luzes rápidas foi criado baseado nas batidas da música.",
+        description: "Um espetáculo intenso de luzes ultra-rápidas foi sincronizado com as batidas da música.",
       });
     } catch (error) {
       console.error("Error generating auto-sync patterns:", error);
@@ -298,10 +297,10 @@ export function useLightShowLogic() {
       id: `flash-${Date.now()}`,
       type: 'flashlight',
       startTime: currentTime,
-      duration: 0.2,
+      duration: 0.05, // Shorter 50ms duration for quick flash
       pattern: {
         intensity: 100,
-        blinkRate: 5,
+        blinkRate: 50, // Much faster blinking at 50Hz
         color: '#FFFFFF'
       }
     };

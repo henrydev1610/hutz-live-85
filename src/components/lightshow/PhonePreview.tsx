@@ -214,7 +214,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
                 style={{ 
                   boxShadow: `0 0 20px 10px #FFFFFF`,
                   opacity: flashlightIntensity / 100,
-                  transition: 'opacity 30ms linear' // Even faster transitions for better sync
+                  transition: 'opacity 20ms linear' // Even faster transitions for better sync with ultra-fast flashing
                 }}
               ></div>
             </div>
