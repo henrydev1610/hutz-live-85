@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -200,6 +199,7 @@ const LightShowPage = () => {
     
     const imageDuration = 10; // Set each image to 10 seconds as requested
     
+    // Process all selected images, not just the last one
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * imageDuration);
       addImageToTimeline(imageUrl, imageDuration, startTime);
@@ -210,6 +210,7 @@ const LightShowPage = () => {
       description: `${selectedImages.length} imagens foram adicionadas à timeline em sequência.`,
     });
     
+    // Clear selection after adding all images to timeline
     setSelectedImages([]);
   };
   

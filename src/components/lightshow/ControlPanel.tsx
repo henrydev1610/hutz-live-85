@@ -15,8 +15,8 @@ interface ControlPanelProps {
   generateAutoSyncPatterns: () => void;
   generateAutoImageSequence?: () => void; // Optional
   handleReset: () => void;
-  selectedImages?: string[]; // Added selected images prop
-  onAddSelectedImages?: () => void; // Added callback for adding selected images
+  selectedImages?: string[]; // Array of selected images
+  onAddSelectedImages?: () => void; // Callback to add selected images to timeline
 }
 
 const ControlPanel = ({

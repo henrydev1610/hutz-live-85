@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +22,6 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
   
   const [footballImages, setFootballImages] = useState<string[]>([]);
   
-  // Update parent component when selected images change
   useEffect(() => {
     if (onSelectedImagesChange) {
       onSelectedImagesChange(selectedImages);
@@ -48,9 +46,9 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
         'https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=600&q=80',
         'https://images.unsplash.com/photo-1601457625912-2d3cb243c8c8?w=600&q=80',
         'https://images.unsplash.com/photo-1570498839593-e565b39455fc?w=600&q=80',
-        'https://images.unsplash.com/photo-1628891890467-b79f2c8ba7d9?w=600&q=80',
-        'https://images.unsplash.com/photo-1574680178050-55c6a6a96e0a?w=600&q=80',
         'https://images.unsplash.com/photo-1624526267791-3c9a231fbb70?w=600&q=80',
+        'https://images.unsplash.com/photo-1574680178050-55c6a6a96e0a?w=600&q=80',
+        'https://images.unsplash.com/photo-1624526267717-fc94537388a4?w=600&q=80',
         'https://images.unsplash.com/photo-1543326727-cf6c39e8f84c?w=600&q=80',
         'https://images.unsplash.com/photo-1504450758481-7338eba7524a?w=600&q=80',
         'https://images.unsplash.com/photo-1518091043644-c1d4457512c6?w=600&q=80',
@@ -174,7 +172,7 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
       });
     }
     
-    const imageDuration = 10; // Changed to 10 seconds as requested
+    const imageDuration = 10; // 10 seconds per image
     
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * imageDuration);
