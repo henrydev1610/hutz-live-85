@@ -1,3 +1,4 @@
+
 import { useState, useRef } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { TimelineItem, CallToActionType } from "@/types/lightshow";
@@ -69,12 +70,64 @@ export function useLightShowLogic() {
       const newPatterns: TimelineItem[] = [];
       const totalSeconds = Math.ceil(duration);
       
+      // Create beat intervals array to analyze tempo
+      const beatIntervals: number[] = [];
+      for (let i = 1; i < beats.length; i++) {
+        beatIntervals.push(beats[i] - beats[i-1]);
+      }
+      
+      // Calculate average beat interval for tempo analysis
+      const averageInterval = beatIntervals.length > 0 
+        ? beatIntervals.reduce((sum, interval) => sum + interval, 0) / beatIntervals.length
+        : 0.5; // default if no beats detected
+      
       if (beats.length > 0) {
         beats.forEach((beat, index) => {
           if (beat < duration) {
+            // Determine if this is a strong beat
             const isStrongBeat = index % 4 === 0;
+            
+            // Get local tempo (using 5 surrounding beats if available)
+            const startIdx = Math.max(0, index - 2);
+            const endIdx = Math.min(beats.length - 2, index + 2);
+            const localIntervals: number[] = [];
+            
+            for (let i = startIdx; i <= endIdx; i++) {
+              if (i + 1 < beats.length) {
+                localIntervals.push(beats[i+1] - beats[i]);
+              }
+            }
+            
+            const localTempo = localIntervals.length > 0
+              ? localIntervals.reduce((sum, interval) => sum + interval, 0) / localIntervals.length
+              : averageInterval;
+            
+            // Determine if this is a fast or slow section
+            const isFastSection = localTempo < 0.3; // Faster than 200 BPM
+            const isVeryFastSection = localTempo < 0.2; // Faster than 300 BPM
+            const isSlowSection = localTempo > 0.6; // Slower than 100 BPM
+            
+            // Adjust blink rate based on tempo
+            let blinkRate = 120; // default
+            
+            if (isVeryFastSection) {
+              blinkRate = 300; // 3 blinks per second for very fast sections
+            } else if (isFastSection) {
+              blinkRate = 240; // ~2.5 blinks per second for fast sections
+            } else if (isSlowSection) {
+              blinkRate = 100; // 1 blink per second for slow sections
+            } else {
+              blinkRate = 180; // ~2 blinks per second for normal tempo
+            }
+            
+            // Adjust intensity and duration based on beat strength and tempo
             const beatIntensity = isStrongBeat ? 100 : 80 + Math.random() * 20;
-            const beatDuration = Math.max(0.1, isStrongBeat ? 0.25 : 0.15);
+            
+            // Longer flash duration for slower beats, shorter for faster beats
+            // But never less than 0.1s
+            const beatDuration = Math.max(0.1, isStrongBeat 
+              ? (isSlowSection ? 0.35 : 0.25) 
+              : (isSlowSection ? 0.2 : 0.15));
             
             newPatterns.push({
               id: `flash-beat-${Date.now()}-${index}`,
@@ -83,22 +136,26 @@ export function useLightShowLogic() {
               duration: beatDuration,
               pattern: {
                 intensity: beatIntensity,
-                blinkRate: isStrongBeat ? 200 : 120 + Math.random() * 40,
+                blinkRate: blinkRate,
                 color: '#FFFFFF'
               }
             });
             
-            if (index % 8 === 0 && index > 0) {
-              const flashCount = 3;
+            // Add more complex patterns for strong beats
+            if (isStrongBeat && index > 0) {
+              const flashCount = isFastSection ? 4 : 3;
               for (let i = 0; i < flashCount; i++) {
+                const flashDelay = isFastSection ? 0.08 + (i * 0.08) : 0.12 + (i * 0.12);
+                const flashDuration = Math.max(0.1, isFastSection ? 0.1 : 0.15);
+                
                 newPatterns.push({
                   id: `flash-cluster-${Date.now()}-${index}-${i}`,
                   type: 'flashlight',
-                  startTime: beat + (i * 0.12),
-                  duration: Math.max(0.1, 0.12),
+                  startTime: beat + flashDelay,
+                  duration: flashDuration,
                   pattern: {
                     intensity: 90 + (i * 5),
-                    blinkRate: 180 + (i * 20),
+                    blinkRate: isFastSection ? 300 : 180 + (i * 20),
                     color: '#FFFFFF'
                   }
                 });
@@ -111,8 +168,41 @@ export function useLightShowLogic() {
       if (bassBeats.length > 0) {
         bassBeats.forEach((bassBeat, index) => {
           if (bassBeat < duration) {
-            const bassIntensity = 100;
-            const bassDuration = Math.max(0.1, 0.3);
+            // Find the closest main beat to determine tempo context
+            let closestBeatIndex = 0;
+            let minDistance = Number.MAX_VALUE;
+            
+            for (let i = 0; i < beats.length; i++) {
+              const distance = Math.abs(beats[i] - bassBeat);
+              if (distance < minDistance) {
+                minDistance = distance;
+                closestBeatIndex = i;
+              }
+            }
+            
+            // Determine local tempo
+            const startIdx = Math.max(0, closestBeatIndex - 2);
+            const endIdx = Math.min(beats.length - 2, closestBeatIndex + 2);
+            const localIntervals: number[] = [];
+            
+            for (let i = startIdx; i <= endIdx; i++) {
+              if (i + 1 < beats.length) {
+                localIntervals.push(beats[i+1] - beats[i]);
+              }
+            }
+            
+            const localTempo = localIntervals.length > 0
+              ? localIntervals.reduce((sum, interval) => sum + interval, 0) / localIntervals.length
+              : averageInterval;
+            
+            const isFastSection = localTempo < 0.3;
+            const isSlowSection = localTempo > 0.6;
+            
+            // Adjust blink rate for bass beats based on tempo
+            const bassBlinkRate = isFastSection ? 300 : (isSlowSection ? 100 : 180);
+            
+            // Bass beats usually need slightly longer duration
+            const bassDuration = Math.max(0.1, isFastSection ? 0.2 : (isSlowSection ? 0.4 : 0.3));
             
             newPatterns.push({
               id: `flash-bass-${Date.now()}-${index}`,
@@ -120,23 +210,28 @@ export function useLightShowLogic() {
               startTime: bassBeat,
               duration: bassDuration,
               pattern: {
-                intensity: bassIntensity,
-                blinkRate: 180,
+                intensity: 100,
+                blinkRate: bassBlinkRate,
                 color: '#FFFFFF'
               }
             });
             
+            // For bass beats, add decay flashes
             if (index % 3 === 0) {
-              const decayCount = 2;
+              const decayCount = isSlowSection ? 3 : 2;
               for (let i = 1; i <= decayCount; i++) {
+                // Adjust timing based on tempo
+                const decayDelay = isFastSection ? i * 0.15 : i * 0.2;
+                const decayDuration = Math.max(0.1, 0.2 - (i * 0.05));
+                
                 newPatterns.push({
                   id: `flash-bass-decay-${Date.now()}-${index}-${i}`,
                   type: 'flashlight',
-                  startTime: bassBeat + (i * 0.2),
-                  duration: Math.max(0.1, 0.2 - (i * 0.05)),
+                  startTime: bassBeat + decayDelay,
+                  duration: decayDuration,
                   pattern: {
                     intensity: 100 - (i * 25),
-                    blinkRate: 160 - (i * 20),
+                    blinkRate: isFastSection ? 240 - (i * 30) : 160 - (i * 20),
                     color: '#FFFFFF'
                   }
                 });
@@ -149,8 +244,40 @@ export function useLightShowLogic() {
       if (trebleBeats.length > 0) {
         trebleBeats.forEach((trebleBeat, index) => {
           if (trebleBeat < duration) {
-            const trebleIntensity = 90;
-            const trebleDuration = Math.max(0.1, 0.15);
+            // Find closest beat for tempo context
+            let closestBeatIndex = 0;
+            let minDistance = Number.MAX_VALUE;
+            
+            for (let i = 0; i < beats.length; i++) {
+              const distance = Math.abs(beats[i] - trebleBeat);
+              if (distance < minDistance) {
+                minDistance = distance;
+                closestBeatIndex = i;
+              }
+            }
+            
+            const startIdx = Math.max(0, closestBeatIndex - 2);
+            const endIdx = Math.min(beats.length - 2, closestBeatIndex + 2);
+            const localIntervals: number[] = [];
+            
+            for (let i = startIdx; i <= endIdx; i++) {
+              if (i + 1 < beats.length) {
+                localIntervals.push(beats[i+1] - beats[i]);
+              }
+            }
+            
+            const localTempo = localIntervals.length > 0
+              ? localIntervals.reduce((sum, interval) => sum + interval, 0) / localIntervals.length
+              : averageInterval;
+            
+            const isFastSection = localTempo < 0.3;
+            const isSlowSection = localTempo > 0.6;
+            
+            // For treble, faster blinking in fast sections
+            const trebleBlinkRate = isFastSection ? 300 : (isSlowSection ? 100 : 220);
+            
+            // Faster sections get shorter flashes
+            const trebleDuration = Math.max(0.1, isFastSection ? 0.1 : (isSlowSection ? 0.2 : 0.15));
             
             if (index % 2 === 0) {
               newPatterns.push({
@@ -159,22 +286,25 @@ export function useLightShowLogic() {
                 startTime: trebleBeat,
                 duration: trebleDuration,
                 pattern: {
-                  intensity: trebleIntensity,
-                  blinkRate: 220,
+                  intensity: 90,
+                  blinkRate: trebleBlinkRate,
                   color: '#FFFFFF'
                 }
               });
             }
             
+            // Add quick double flashes for impact in faster sections
             if (index % 4 === 0) {
+              const doubleDelay = isFastSection ? 0.08 : 0.1;
+              
               newPatterns.push({
                 id: `flash-treble-double-${Date.now()}-${index}`,
                 type: 'flashlight',
-                startTime: trebleBeat + 0.1,
+                startTime: trebleBeat + doubleDelay,
                 duration: Math.max(0.1, 0.12),
                 pattern: {
                   intensity: 95,
-                  blinkRate: 240,
+                  blinkRate: isFastSection ? 300 : 240,
                   color: '#FFFFFF'
                 }
               });
@@ -194,18 +324,25 @@ export function useLightShowLogic() {
           const nextStart = sortedPatterns[i + 1].startTime;
           const gap = nextStart - currentEnd;
           
+          // Fill longer gaps based on average tempo
           if (gap > 2) {
-            const rhythmCount = Math.floor(gap / 0.5);
+            // Determine rhythm rate based on average tempo
+            const rhythmInterval = averageInterval < 0.3 ? 0.3 : (averageInterval > 0.6 ? 0.7 : 0.5);
+            const rhythmCount = Math.floor(gap / rhythmInterval);
+            
             for (let j = 0; j < rhythmCount; j++) {
               if (j % 2 === 0) {
+                // Use slower blink rate for gap fillers
+                const blinkRate = averageInterval < 0.3 ? 200 : (averageInterval > 0.6 ? 100 : 140);
+                
                 gapFilledPatterns.push({
                   id: `flash-gap-${Date.now()}-${i}-${j}`,
                   type: 'flashlight',
-                  startTime: currentEnd + (j * 0.5),
+                  startTime: currentEnd + (j * rhythmInterval),
                   duration: Math.max(0.1, 0.15),
                   pattern: {
                     intensity: 70 + Math.random() * 20,
-                    blinkRate: 100 + Math.random() * 30,
+                    blinkRate: blinkRate,
                     color: '#FFFFFF'
                   }
                 });
@@ -215,13 +352,18 @@ export function useLightShowLogic() {
         }
       }
       
+      // Add extra effects for tempo changes (buildups, drops)
       if (beats.length > 10) {
         for (let i = 10; i < beats.length; i++) {
           const currentInterval = beats[i] - beats[i-1];
           const previousInterval = beats[i-1] - beats[i-2];
           
+          // Detect when beat pattern is accelerating (potential buildup)
           if (currentInterval < previousInterval * 0.8 && currentInterval < 0.5) {
             for (let j = 0; j < 5; j++) {
+              // Increase blink rate for faster sections
+              const blinkRate = 150 + (j * 40); // Gradually increase to 300+ for buildup
+              
               gapFilledPatterns.push({
                 id: `flash-buildup-${Date.now()}-${i}-${j}`,
                 type: 'flashlight',
@@ -229,7 +371,7 @@ export function useLightShowLogic() {
                 duration: Math.max(0.1, 0.15),
                 pattern: {
                   intensity: 60 + (j * 10),
-                  blinkRate: 100 + (j * 30),
+                  blinkRate: blinkRate,
                   color: '#FFFFFF'
                 }
               });
@@ -244,6 +386,7 @@ export function useLightShowLogic() {
       for (let i = 0; i < sortedFinalPatterns.length; i++) {
         const current = sortedFinalPatterns[i];
         
+        // Ensure minimum duration is maintained
         current.duration = Math.max(0.1, current.duration);
         
         if (i < sortedFinalPatterns.length - 1) {
