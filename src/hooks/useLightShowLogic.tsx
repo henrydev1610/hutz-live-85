@@ -66,114 +66,89 @@ export function useLightShowLogic() {
     try {
       const { beats, bassBeats, trebleBeats } = await detectBeats(audioFile);
       
-      let allPotentialTimes: number[] = [];
-      
-      allPotentialTimes.push(...beats);
-      allPotentialTimes.push(...bassBeats);
-      allPotentialTimes.push(...trebleBeats);
-      
-      const intervalStep = 0.1;
-      for (let time = 0; time < duration; time += intervalStep) {
-        allPotentialTimes.push(time);
-      }
-      
-      allPotentialTimes.sort((a, b) => a - b);
-      const filteredTimes: number[] = [];
-      const minInterval = 0.03;
-      
-      for (let i = 0; i < allPotentialTimes.length; i++) {
-        if (i === 0 || allPotentialTimes[i] - allPotentialTimes[i-1] > minInterval) {
-          filteredTimes.push(allPotentialTimes[i]);
-        }
-      }
-      
       const newPatterns: TimelineItem[] = [];
       
-      filteredTimes.forEach((time, index) => {
-        if (time < duration) {
-          const flashDuration = 0.01;
-          
-          let intensity = 90 + (index % 3) * 3;
-          let blinkRate = 0;
-          
-          if (index % 8 === 0) {
-            blinkRate = 220 + (index % 5) * 20;
-          } 
-          else if (index % 5 === 0) {
-            blinkRate = 180 + (index % 6) * 15;
-          } 
-          else {
-            blinkRate = 150 + (index % 10) * 10;
+      const totalSeconds = Math.ceil(duration);
+      
+      for (let second = 0; second < totalSeconds; second++) {
+        newPatterns.push({
+          id: `flash-auto-${Date.now()}-${second}-1`,
+          type: 'flashlight',
+          startTime: second,
+          duration: 0.05,
+          pattern: {
+            intensity: 95,
+            blinkRate: 180,
+            color: '#FFFFFF'
           }
-          
-          if (index % 12 === 0 && time + 0.25 < duration) {
-            for (let j = 0; j < 3; j++) {
-              newPatterns.push({
-                id: `flash-burst-${Date.now()}-${index}-${j}`,
-                type: 'flashlight',
-                startTime: time + (j * 0.02),
-                duration: 0.008,
-                pattern: {
-                  intensity: 100,
-                  blinkRate: 250 + (j * 20),
-                  color: '#FFFFFF'
-                }
-              });
-            }
-          } else {
+        });
+        
+        newPatterns.push({
+          id: `flash-auto-${Date.now()}-${second}-2`,
+          type: 'flashlight',
+          startTime: second + 0.5,
+          duration: 0.05,
+          pattern: {
+            intensity: 90,
+            blinkRate: 160,
+            color: '#FFFFFF'
+          }
+        });
+      }
+      
+      if (bassBeats.length > 0 && trebleBeats.length > 0) {
+        for (let i = 0; i < bassBeats.length; i += 3) {
+          if (bassBeats[i] < duration) {
+            const pauseEnd = Math.min(bassBeats[i] + 0.2, duration - 0.05);
+            
             newPatterns.push({
-              id: `flash-auto-${Date.now()}-${index}`,
+              id: `flash-bass-${Date.now()}-${i}`,
               type: 'flashlight',
-              startTime: time,
-              duration: flashDuration,
+              startTime: pauseEnd,
+              duration: 0.04,
               pattern: {
-                intensity: intensity,
-                blinkRate: blinkRate,
+                intensity: 100,
+                blinkRate: 210,
                 color: '#FFFFFF'
               }
             });
           }
         }
-      });
-      
-      const sortedPatterns = [...newPatterns].sort((a, b) => a.startTime - b.startTime);
-      const gapFillers: TimelineItem[] = [];
-      
-      for (let i = 0; i < sortedPatterns.length - 1; i++) {
-        const currentEnd = sortedPatterns[i].startTime + sortedPatterns[i].duration;
-        const nextStart = sortedPatterns[i + 1].startTime;
-        const gap = nextStart - currentEnd;
         
-        if (gap > 0.3) {
-          const fillerTime = currentEnd + (gap / 2);
-          gapFillers.push({
-            id: `flash-filler-${Date.now()}-${i}`,
-            type: 'flashlight',
-            startTime: fillerTime,
-            duration: 0.01,
-            pattern: {
-              intensity: 95,
-              blinkRate: 200,
-              color: '#FFFFFF'
+        for (let i = 0; i < trebleBeats.length; i += 4) {
+          if (trebleBeats[i] < duration) {
+            const pauseEnd = Math.min(trebleBeats[i] + 0.2, duration - 0.1);
+            
+            for (let j = 0; j < 2; j++) {
+              newPatterns.push({
+                id: `flash-treble-${Date.now()}-${i}-${j}`,
+                type: 'flashlight',
+                startTime: pauseEnd + (j * 0.04),
+                duration: 0.03,
+                pattern: {
+                  intensity: 100,
+                  blinkRate: 230 + (j * 20),
+                  color: '#FFFFFF'
+                }
+              });
             }
-          });
+          }
         }
       }
       
-      newPatterns.push(...gapFillers);
+      const sortedPatterns = [...newPatterns].sort((a, b) => a.startTime - b.startTime);
       
       const finalPatterns: TimelineItem[] = [];
-      const sortedFinalPatterns = [...newPatterns].sort((a, b) => a.startTime - b.startTime);
       
-      for (let i = 0; i < sortedFinalPatterns.length; i++) {
-        const current = sortedFinalPatterns[i];
-        const currentEnd = current.startTime + current.duration;
+      for (let i = 0; i < sortedPatterns.length; i++) {
+        const current = sortedPatterns[i];
         
-        if (i < sortedFinalPatterns.length - 1) {
-          const next = sortedFinalPatterns[i + 1];
+        if (i < sortedPatterns.length - 1) {
+          const next = sortedPatterns[i + 1];
+          const currentEnd = current.startTime + current.duration;
           
           if (currentEnd > next.startTime) {
-            current.duration = Math.max(0.005, next.startTime - current.startTime - 0.001);
+            current.duration = Math.max(0.02, next.startTime - current.startTime - 0.005);
           }
         }
         

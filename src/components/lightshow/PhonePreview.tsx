@@ -32,7 +32,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   }, []);
   
   useEffect(() => {
-    if (Math.abs(currentTime - lastTimeRef.current) > 0.05) { // More frequent updates
+    if (Math.abs(currentTime - lastTimeRef.current) > 0.02) { // More frequent updates (0.02 instead of 0.05)
       updateActiveElements(currentTime);
     }
     lastTimeRef.current = currentTime;
@@ -164,10 +164,10 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           {activeFlashlight && (
             <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center z-20 pointer-events-none">
               <div 
-                className="w-4 h-4 rounded-full"
+                className="w-3 h-3 rounded-full"
                 style={{ 
-                  boxShadow: `0 0 10px 5px rgba(255, 255, 255, ${flashlightIntensity / 100})`,
-                  transition: 'opacity 0.5ms linear', // Ultra fast transition
+                  boxShadow: `0 0 8px 3px rgba(255, 255, 255, ${flashlightIntensity / 100})`,
+                  transition: 'opacity 0.1ms linear', // Ultra fast transition
                   position: 'absolute',
                   top: '2%', // Position at the very top
                   opacity: flashlightIntensity / 100
