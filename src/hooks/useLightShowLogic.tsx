@@ -69,23 +69,18 @@ export function useLightShowLogic() {
       const newPatterns: TimelineItem[] = [];
       const totalSeconds = Math.ceil(duration);
       
-      // Create beat intervals array to analyze tempo
       const beatIntervals: number[] = [];
       for (let i = 1; i < beats.length; i++) {
         beatIntervals.push(beats[i] - beats[i-1]);
       }
       
-      // Calculate average beat interval for tempo analysis
       const averageInterval = beatIntervals.length > 0 
         ? beatIntervals.reduce((sum, interval) => sum + interval, 0) / beatIntervals.length
-        : 0.5; // default if no beats detected
+        : 0.5;
       
-      // Ensure even distribution of light patterns throughout the song
-      // Add regular beat patterns throughout the entire duration
-      const beatSpacing = Math.max(0.5, Math.min(2, totalSeconds / 250)); // Adjust spacing based on song length
+      const beatSpacing = Math.max(0.5, Math.min(2, totalSeconds / 250));
       
       for (let time = 0; time < totalSeconds; time += beatSpacing) {
-        // Determine local tempo by finding beats near this time
         const nearbyBeats = beats.filter(b => Math.abs(b - time) < 1.5);
         const localIntervals: number[] = [];
         
@@ -97,27 +92,23 @@ export function useLightShowLogic() {
           ? localIntervals.reduce((sum, interval) => sum + interval, 0) / localIntervals.length
           : averageInterval;
         
-        // Determine tempo category
-        const isFastSection = localTempo < 0.3; // Faster than 200 BPM
-        const isSlowSection = localTempo > 0.6; // Slower than 100 BPM
+        const isFastSection = localTempo < 0.3;
+        const isSlowSection = localTempo > 0.6;
         
-        // Adjust blink rate based on tempo - as per requirements
-        let blinkRate = 240; // Medium pace - 1.5 blinks per second (180-240Hz)
+        let blinkRate = 240;
         
         if (isFastSection) {
-          blinkRate = 300; // Fast pace - 2 blinks per second (300Hz)
+          blinkRate = 300;
         } else if (isSlowSection) {
-          blinkRate = 100; // Slow pace - 1 blink per second (100Hz)
+          blinkRate = 100;
         }
         
-        // Determine intensity based on whether this time is close to a detected beat
         const isNearBeat = beats.some(b => Math.abs(b - time) < 0.2);
         const isNearBassBeat = bassBeats.some(b => Math.abs(b - time) < 0.2);
         
         let intensity = isNearBeat ? 90 : 70;
-        if (isNearBassBeat) intensity = 100; // Bass beats get maximum intensity
+        if (isNearBassBeat) intensity = 100;
         
-        // Longer flash duration for slower beats, shorter for faster beats
         const flashDuration = Math.max(0.1, isNearBassBeat 
           ? (isSlowSection ? 0.35 : 0.25) 
           : (isSlowSection ? 0.2 : 0.15));
@@ -135,11 +126,9 @@ export function useLightShowLogic() {
         });
       }
       
-      // Add special emphasis on actual beats for more dynamics
       if (beats.length > 0) {
         beats.forEach((beat, index) => {
-          if (beat < duration && index % 3 === 0) { // Only use every third beat to avoid too much density
-            // Determine local tempo
+          if (beat < duration && index % 3 === 0) {
             const startIdx = Math.max(0, index - 2);
             const endIdx = Math.min(beats.length - 2, index + 2);
             const localIntervals: number[] = [];
@@ -154,20 +143,17 @@ export function useLightShowLogic() {
               ? localIntervals.reduce((sum, interval) => sum + interval, 0) / localIntervals.length
               : averageInterval;
             
-            // Determine tempo category
             const isFastSection = localTempo < 0.3;
             const isSlowSection = localTempo > 0.6;
             
-            // Adjust blink rate based on tempo
-            let blinkRate = 240; // Medium pace
+            let blinkRate = 240;
             
             if (isFastSection) {
-              blinkRate = 300; // Fast pace
+              blinkRate = 300;
             } else if (isSlowSection) {
-              blinkRate = 100; // Slow pace
+              blinkRate = 100;
             }
             
-            // Adjust duration based on tempo
             const beatDuration = Math.max(0.1, isSlowSection ? 0.3 : 0.2);
             
             newPatterns.push({
@@ -185,11 +171,9 @@ export function useLightShowLogic() {
         });
       }
       
-      // Add bass emphasis patterns
       if (bassBeats.length > 0) {
         bassBeats.forEach((bassBeat, index) => {
-          if (bassBeat < duration && index % 2 === 0) { // Use every second bass beat
-            // Find the closest beat to determine tempo context
+          if (bassBeat < duration && index % 2 === 0) {
             let closestBeatIndex = 0;
             let minDistance = Number.MAX_VALUE;
             
@@ -201,7 +185,6 @@ export function useLightShowLogic() {
               }
             }
             
-            // Determine local tempo
             const startIdx = Math.max(0, closestBeatIndex - 2);
             const endIdx = Math.min(beats.length - 2, closestBeatIndex + 2);
             const localIntervals: number[] = [];
@@ -219,10 +202,8 @@ export function useLightShowLogic() {
             const isFastSection = localTempo < 0.3;
             const isSlowSection = localTempo > 0.6;
             
-            // Adjust blink rate for bass beats based on tempo
             const bassBlinkRate = isFastSection ? 300 : (isSlowSection ? 100 : 240);
             
-            // Bass beats usually need slightly longer duration
             const bassDuration = Math.max(0.1, isSlowSection ? 0.4 : 0.3);
             
             newPatterns.push({
@@ -240,24 +221,19 @@ export function useLightShowLogic() {
         });
       }
       
-      // Sort all patterns by start time and remove any overlaps
       const sortedPatterns = [...newPatterns].sort((a, b) => a.startTime - b.startTime);
       const finalPatterns: TimelineItem[] = [];
       
-      // Process patterns to avoid excessive density
-      let lastEndTime = -0.5; // Start negative to allow immediate first pattern
+      let lastEndTime = -0.5;
       
       for (const pattern of sortedPatterns) {
-        // Ensure minimum spacing between patterns
         if (pattern.startTime >= lastEndTime) {
-          // Ensure minimum duration
           pattern.duration = Math.max(0.1, pattern.duration);
           finalPatterns.push(pattern);
-          lastEndTime = pattern.startTime + pattern.duration + 0.05; // Add small buffer
+          lastEndTime = pattern.startTime + pattern.duration + 0.05;
         }
       }
       
-      // Fill any large gaps in the timeline
       const gapFilledPatterns = [...finalPatterns];
       
       for (let i = 0; i < finalPatterns.length - 1; i++) {
@@ -265,7 +241,6 @@ export function useLightShowLogic() {
         const nextStart = finalPatterns[i + 1].startTime;
         const gap = nextStart - currentEnd;
         
-        // Fill gaps larger than 3 seconds
         if (gap > 3) {
           const midPoint = currentEnd + (gap / 2);
           
@@ -283,7 +258,6 @@ export function useLightShowLogic() {
         }
       }
       
-      // Sort once more to include gap fillers
       const finalSortedPatterns = [...gapFilledPatterns].sort((a, b) => a.startTime - b.startTime);
       
       setTimelineItems([...nonFlashlightItems, ...finalSortedPatterns]);
@@ -610,6 +584,7 @@ export function useLightShowLogic() {
     setCallToActionContent,
     addCallToActionToTimeline,
     setAudioEditInfo,
-    trimAudio
+    trimAudio,
+    handleAddSelectedImages
   };
 }
