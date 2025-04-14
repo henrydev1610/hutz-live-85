@@ -88,15 +88,14 @@ export function useLightShowLogic() {
             for (let j = 0; j < flashesCount; j++) {
               const startTime = (second + i) + (j * (1 / flashesThisSecond));
               const blinkRate = 120 + Math.random() * 30; // Slight variation in blink rate
-              const intensity = 90 + Math.random() * 10; // High intensity (90-100%)
               
               newPatterns.push({
                 id: `flash-auto-${Date.now()}-${second + i}-${j}`,
                 type: 'flashlight',
                 startTime: startTime,
-                duration: 0.03 + (Math.random() * 0.02), // 0.03-0.05s duration
+                duration: 0.2, // Minimum 0.2 seconds duration
                 pattern: {
-                  intensity: intensity,
+                  intensity: 100, // Always 100% intensity
                   blinkRate: blinkRate,
                   color: '#FFFFFF'
                 }
@@ -106,15 +105,14 @@ export function useLightShowLogic() {
             // Add partial flash if needed
             if (partialFlash > 0) {
               const startTime = (second + i) + (flashesCount * (1 / flashesThisSecond));
-              const intensity = 90 + Math.random() * 10;
               
               newPatterns.push({
                 id: `flash-auto-partial-${Date.now()}-${second + i}`,
                 type: 'flashlight',
                 startTime: startTime,
-                duration: 0.03 * partialFlash, // Shorter duration for partial flash
+                duration: 0.2 * partialFlash, // Minimum 0.2 seconds duration
                 pattern: {
-                  intensity: intensity,
+                  intensity: 100, // Always 100% intensity
                   blinkRate: 100,
                   color: '#FFFFFF'
                 }
@@ -124,7 +122,6 @@ export function useLightShowLogic() {
         }
         
         // Randomly decide if we want a pause after this 3-second chunk
-        // This creates intervals >2 seconds as requested
         if (Math.random() > 0.7 && second + 5 < totalSeconds) {
           // Skip the next 2-3 seconds to create a pause
           const pauseLength = 2 + Math.floor(Math.random() * 1.5);
@@ -132,18 +129,18 @@ export function useLightShowLogic() {
         }
       }
       
-      // Add emphasis on bass and treble beats without the 0.2s pauses
+      // Process bass and treble beats
       if (bassBeats.length > 0 && trebleBeats.length > 0) {
         // Process bass beats
         for (let i = 0; i < bassBeats.length; i++) {
           if (bassBeats[i] < duration) {
-            // Every fourth bass beat gets a bright flash (without the 0.2s pause)
+            // Every fourth bass beat gets a bright flash
             if (i % 4 === 0) {
               newPatterns.push({
                 id: `flash-bass-${Date.now()}-${i}`,
                 type: 'flashlight',
                 startTime: bassBeats[i],
-                duration: 0.04,
+                duration: 0.2,
                 pattern: {
                   intensity: 100,
                   blinkRate: 200,
@@ -157,15 +154,15 @@ export function useLightShowLogic() {
         // Process treble beats
         for (let i = 0; i < trebleBeats.length; i++) {
           if (trebleBeats[i] < duration) {
-            // Every fifth treble beat gets quick flash sequence (without the 0.2s pause)
+            // Every fifth treble beat gets quick flash sequence
             if (i % 5 === 0) {
               // Double flash at the treble beat
               for (let j = 0; j < 2; j++) {
                 newPatterns.push({
                   id: `flash-treble-${Date.now()}-${i}-${j}`,
                   type: 'flashlight',
-                  startTime: trebleBeats[i] + (j * 0.03),
-                  duration: 0.02,
+                  startTime: trebleBeats[i] + (j * 0.2),
+                  duration: 0.2,
                   pattern: {
                     intensity: 100,
                     blinkRate: 220,
@@ -203,9 +200,9 @@ export function useLightShowLogic() {
                 id: `flash-filler-${Date.now()}-${i}-${j}`,
                 type: 'flashlight',
                 startTime: gapMiddle + (j * (1 / flashRate)),
-                duration: 0.03,
+                duration: 0.2,
                 pattern: {
-                  intensity: 95,
+                  intensity: 100,
                   blinkRate: 150,
                   color: '#FFFFFF'
                 }
@@ -227,7 +224,7 @@ export function useLightShowLogic() {
           
           if (currentEnd > next.startTime) {
             // Adjust current duration to prevent overlap
-            current.duration = Math.max(0.01, next.startTime - current.startTime - 0.005);
+            current.duration = Math.max(0.2, next.startTime - current.startTime - 0.005);
           }
         }
         
