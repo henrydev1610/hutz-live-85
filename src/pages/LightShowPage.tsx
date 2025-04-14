@@ -180,7 +180,7 @@ const LightShowPage = () => {
     const nonImageItems = timelineItems.filter(item => item.type !== 'image');
     
     // Create a sequence of images throughout the duration
-    const imageDuration = 5; // Each image shows for 5 seconds (updated from 3)
+    const imageDuration = 5; // Each image shows for 5 seconds
     const totalImages = selectedImages.length;
     const newImageItems: TimelineItem[] = [];
     
@@ -195,13 +195,30 @@ const LightShowPage = () => {
       // Don't add images beyond the audio duration
       if (startTime + imageDuration > duration) break;
       
-      newImageItems.push({
-        id: `img-${Date.now()}-${i}`,
-        type: 'image',
-        startTime: startTime,
-        duration: imageDuration,
-        imageUrl: selectedImages[imageIndex]
-      });
+      // Check for overlap with existing images or other new images
+      let hasOverlap = false;
+      const newItemEnd = startTime + imageDuration;
+      
+      // Check against existing image items in the new set
+      for (const existingItem of newImageItems) {
+        const existingItemEnd = existingItem.startTime + existingItem.duration;
+        if ((startTime >= existingItem.startTime && startTime < existingItemEnd) || 
+            (newItemEnd > existingItem.startTime && newItemEnd <= existingItemEnd) ||
+            (startTime <= existingItem.startTime && newItemEnd >= existingItemEnd)) {
+          hasOverlap = true;
+          break;
+        }
+      }
+      
+      if (!hasOverlap) {
+        newImageItems.push({
+          id: `img-${Date.now()}-${i}`,
+          type: 'image',
+          startTime: startTime,
+          duration: imageDuration,
+          imageUrl: selectedImages[imageIndex]
+        });
+      }
     }
     
     setTimelineItems([...nonImageItems, ...newImageItems]);
@@ -212,7 +229,7 @@ const LightShowPage = () => {
     });
   };
   
-  const addImageToTimeline = (imageUrl: string, duration: number = 5) => { // Changed to 5 seconds
+  const addImageToTimeline = (imageUrl: string, duration: number = 5) => {
     if (!audioFile) {
       toast({
         title: "Erro",

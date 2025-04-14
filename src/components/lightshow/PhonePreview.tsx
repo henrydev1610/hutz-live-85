@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { TimelineItem } from '@/types/lightshow';
 
@@ -36,8 +35,6 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     setActiveFlashlight(false);
     setFlashlightIntensity(0);
     
-    if (!isPlaying) return;
-    
     // Find active items at current time
     const activeItems = timelineItems.filter(item => 
       currentTime >= item.startTime && currentTime < (item.startTime + item.duration)
@@ -67,8 +64,8 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     setDisplayImage(activeImage);
     setBackgroundColor(activeBackgroundColor);
     
-    // Handle flashlight - always white light
-    if (activeFlashlightItem && activeFlashlightItem.pattern) {
+    // Handle flashlight - only when playing
+    if (isPlaying && activeFlashlightItem && activeFlashlightItem.pattern) {
       const { intensity, blinkRate } = activeFlashlightItem.pattern;
       
       if (blinkRate > 0) {
@@ -91,6 +88,32 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       }
     }
   }, [currentTime, isPlaying, timelineItems]);
+
+  // Find an image to display even when not playing
+  useEffect(() => {
+    // If we're not playing and don't have an active image, find the first image
+    // at or after the current position to preview
+    if (!isPlaying && !displayImage) {
+      // Sort timeline items to find the closest image to current time
+      const imageItems = timelineItems
+        .filter(item => item.type === 'image' && item.imageUrl)
+        .sort((a, b) => {
+          // If one item contains the current time, prefer it
+          const aContains = currentTime >= a.startTime && currentTime < (a.startTime + a.duration);
+          const bContains = currentTime >= b.startTime && currentTime < (b.startTime + b.duration);
+          
+          if (aContains && !bContains) return -1;
+          if (!aContains && bContains) return 1;
+          
+          // Otherwise, prefer items closest to or just after current time
+          return Math.abs(a.startTime - currentTime) - Math.abs(b.startTime - currentTime);
+        });
+      
+      if (imageItems.length > 0) {
+        setDisplayImage(imageItems[0].imageUrl || null);
+      }
+    }
+  }, [isPlaying, displayImage, timelineItems, currentTime]);
 
   return (
     <div className="flex flex-col items-center">
@@ -128,7 +151,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           )}
           
           {/* Default content when nothing is playing */}
-          {!isPlaying && !displayImage && (
+          {!displayImage && (
             <div className="flex flex-col items-center justify-center h-full text-white/70 p-4">
               <div className="text-center">
                 <p className="mb-2">Aponte a câmera</p>
