@@ -76,12 +76,24 @@ const ImageSelector = ({ onImageSelect }: ImageSelectorProps) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       const fileUrl = URL.createObjectURL(file);
-      setSelectedImage(fileUrl);
+      
+      // Instead of setting as selected image, add to library
+      setFootballImages(prev => {
+        const newImages = [...prev, fileUrl];
+        // Save to localStorage
+        localStorage.setItem('footballImages', JSON.stringify(newImages));
+        return newImages;
+      });
       
       toast({
-        title: "Imagem selecionada",
-        description: "Clique em 'Adicionar à Timeline' para usá-la no show.",
+        title: "Imagem adicionada",
+        description: "A imagem foi adicionada à biblioteca com sucesso.",
       });
+      
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
   
@@ -189,7 +201,7 @@ const ImageSelector = ({ onImageSelect }: ImageSelectorProps) => {
       </div>
       
       <div className="border border-white/10 rounded-lg p-4">
-        <h4 className="text-sm font-medium mb-2">Enviar Imagem Personalizada</h4>
+        <h4 className="text-sm font-medium mb-2">Adicionar Imagem à Biblioteca</h4>
         
         <div className="flex flex-col space-y-2">
           <input 

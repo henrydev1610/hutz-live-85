@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -68,6 +69,11 @@ const Timeline = ({
   
   useEffect(() => {
     if (!containerRef.current || !audioUrl) return;
+    
+    // Clean up any existing wavesurfer instance first
+    if (wavesurferRef.current) {
+      wavesurferRef.current.destroy();
+    }
     
     const wavesurfer = WaveSurfer.create({
       container: containerRef.current,
@@ -155,21 +161,18 @@ const Timeline = ({
     return false;
   };
   
-  // Synchronize the timeline marker between all tracks
+  // Update timeline marker with currentTime
   useEffect(() => {
-    const updateMarker = () => {
-      if (!wavesurferRef.current) return;
-      
-      const trackDuration = wavesurferRef.current.getDuration() || 1;
-      const markerPosition = (currentTime / trackDuration) * 100;
-      
-      const markers = document.querySelectorAll('.timeline-marker');
-      markers.forEach(marker => {
-        (marker as HTMLElement).style.left = `${markerPosition}%`;
-      });
-    };
+    if (!wavesurferRef.current) return;
     
-    updateMarker();
+    const trackDuration = wavesurferRef.current.getDuration() || 1;
+    const markerPosition = (currentTime / trackDuration) * 100;
+    
+    // Select all timeline markers and update their position
+    const markers = document.querySelectorAll('.timeline-marker');
+    markers.forEach(marker => {
+      (marker as HTMLElement).style.left = `${markerPosition}%`;
+    });
   }, [currentTime]);
   
   useEffect(() => {
@@ -190,6 +193,7 @@ const Timeline = ({
       return (duration / trackDuration) * 100;
     };
     
+    // Clear existing elements
     if (imageTrackRef.current) {
       while (imageTrackRef.current.firstChild) {
         imageTrackRef.current.removeChild(imageTrackRef.current.firstChild);
@@ -231,7 +235,7 @@ const Timeline = ({
         
         // Left resize handle with cursor indicator
         const leftResizeHandle = document.createElement('div');
-        leftResizeHandle.className = 'absolute left-0 top-0 h-full w-4 cursor-ew-resize';
+        leftResizeHandle.className = 'absolute left-0 top-0 h-full w-4 cursor-ew-resize z-10';
         
         // Little visual handle to make it more obvious
         const leftHandleVisual = document.createElement('div');
@@ -241,7 +245,7 @@ const Timeline = ({
         
         // Right resize handle with cursor indicator
         const rightResizeHandle = document.createElement('div');
-        rightResizeHandle.className = 'absolute right-0 top-0 h-full w-4 cursor-ew-resize';
+        rightResizeHandle.className = 'absolute right-0 top-0 h-full w-4 cursor-ew-resize z-10';
         
         // Little visual handle to make it more obvious
         const rightHandleVisual = document.createElement('div');
@@ -407,9 +411,10 @@ const Timeline = ({
           document.addEventListener('mouseup', handleMouseUp);
         });
         
+        // Append elements in the correct order for proper z-index handling
+        regionElement.appendChild(dragHandle);
         regionElement.appendChild(leftResizeHandle);
         regionElement.appendChild(rightResizeHandle);
-        regionElement.appendChild(dragHandle);
         
         imageTrackRef.current.appendChild(regionElement);
       } 
@@ -447,18 +452,11 @@ const Timeline = ({
       }
     });
     
-    // Update the marker on all tracks
-    const updateAllMarkers = () => {
-      if (!wavesurferRef.current) return;
-      
-      const markerPosition = calculatePosition(currentTime);
-      const markers = document.querySelectorAll('.timeline-marker');
-      markers.forEach(marker => {
-        (marker as HTMLElement).style.left = `${markerPosition}%`;
-      });
-    };
-    
-    updateAllMarkers();
+    // Add a single unified marker for all tracks
+    const marker = document.createElement('div');
+    marker.className = 'timeline-marker absolute top-0 h-full w-0.5 bg-white z-20 pointer-events-none';
+    const markerPosition = calculatePosition(currentTime);
+    marker.style.left = `${markerPosition}%`;
     
     return () => {
       if (imageTrackRef.current) {

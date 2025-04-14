@@ -92,10 +92,9 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
 
   // Find an image to display even when not playing
   useEffect(() => {
-    // If we don't have an active image, find the first image 
-    // at or after the current position to preview, regardless of playback state
+    // If we don't have an active image from the timeline, find the closest image to display
     if (!displayImage) {
-      // Find images that contain the current time
+      // First try to find images that contain the current time
       const activeImages = timelineItems.filter(item => 
         item.type === 'image' && 
         item.imageUrl &&
@@ -109,8 +108,8 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
         return;
       }
       
-      // Sort timeline items to find the closest image to current time
-      const imageItems = timelineItems
+      // If no active images, find the closest one
+      const sortedImages = timelineItems
         .filter(item => item.type === 'image' && item.imageUrl)
         .sort((a, b) => {
           // If one item contains the current time, prefer it
@@ -120,25 +119,26 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           if (aContains && !bContains) return -1;
           if (!aContains && bContains) return 1;
           
-          // If both are in the future, prefer the closest one
-          if (a.startTime > currentTime && b.startTime > currentTime) {
-            return a.startTime - b.startTime;
-          }
+          // Calculate distance to current time
+          const aDistance = Math.min(
+            Math.abs(currentTime - a.startTime),
+            Math.abs(currentTime - (a.startTime + a.duration))
+          );
           
-          // If both are in the past, prefer the most recent one
-          if (a.startTime + a.duration <= currentTime && b.startTime + b.duration <= currentTime) {
-            return (b.startTime + b.duration) - (a.startTime + a.duration);
-          }
+          const bDistance = Math.min(
+            Math.abs(currentTime - b.startTime),
+            Math.abs(currentTime - (b.startTime + b.duration))
+          );
           
-          // Otherwise, prefer the closest one
-          return Math.abs(a.startTime - currentTime) - Math.abs(b.startTime - currentTime);
+          // Return the closest one
+          return aDistance - bDistance;
         });
       
-      if (imageItems.length > 0) {
-        setDisplayImage(imageItems[0].imageUrl || null);
+      if (sortedImages.length > 0) {
+        setDisplayImage(sortedImages[0].imageUrl);
       }
     }
-  }, [displayImage, timelineItems, currentTime]);
+  }, [timelineItems, currentTime]);
 
   return (
     <div className="flex flex-col items-center">
