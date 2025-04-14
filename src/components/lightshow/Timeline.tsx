@@ -51,6 +51,23 @@ const Timeline = ({
     }
   };
   
+  // Handle delete key press
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' && selectedItemIndex !== null) {
+        const selectedItem = timelineItems[selectedItemIndex];
+        if (selectedItem) {
+          onRemoveItem(selectedItem.id);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedItemIndex, timelineItems, onRemoveItem]);
+  
   useEffect(() => {
     if (!containerRef.current || !audioUrl) return;
     
@@ -71,8 +88,8 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 1,
       secondaryLabelInterval: 0.2,
-      primaryColor: '#FFFFFF',
-      secondaryColor: 'rgba(255, 255, 255, 0.7)',
+      primaryFontColor: '#FFFFFF',
+      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
@@ -168,17 +185,20 @@ const Timeline = ({
         label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + item.duration).toFixed(1)}s`;
         regionElement.appendChild(label);
         
+        // Left resize handle with cursor indicator
         const leftResizeHandle = document.createElement('div');
         leftResizeHandle.className = 'absolute left-0 top-0 h-full w-2 bg-white/30 cursor-ew-resize flex items-center justify-center';
-        leftResizeHandle.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>';
+        leftResizeHandle.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 9 -5 5 -5 -5"></path><path d="m19 15 -5 5 -5 -5"></path></svg>';
         
+        // Right resize handle with cursor indicator
         const rightResizeHandle = document.createElement('div');
         rightResizeHandle.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 cursor-ew-resize flex items-center justify-center';
-        rightResizeHandle.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>';
+        rightResizeHandle.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 9 -5 5 -5 -5"></path><path d="m19 15 -5 5 -5 -5"></path></svg>';
         
+        // Drag handle with hand cursor
         const dragHandle = document.createElement('div');
         dragHandle.className = 'absolute inset-0 cursor-grab';
-        dragHandle.innerHTML = '<div class="absolute top-2 right-1/2 transform translate-x-1/2 opacity-50"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6"></path><path d="M9 17h6"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v10"></path></svg></div>';
+        dragHandle.innerHTML = '<div class="absolute top-2 right-1/2 transform translate-x-1/2 opacity-50"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v2m0 0v2m0-2h6m0 0V3m0 2v2"></path><path d="M9 17v2m0 0v2m0-2h6m0 0v-2m0 2v2"></path><path d="M5 7v10M19 7v10"></path></svg></div>';
         
         let isDragging = false;
         let isResizingLeft = false;
@@ -187,6 +207,13 @@ const Timeline = ({
         let startLeft = 0;
         let startWidth = 0;
         
+        regionElement.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const index = timelineItems.findIndex(i => i.id === item.id);
+          onItemSelect(index);
+        });
+        
+        // Left resize handle functionality
         leftResizeHandle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
           isResizingLeft = true;
@@ -235,6 +262,7 @@ const Timeline = ({
           document.addEventListener('mouseup', handleMouseUp);
         });
         
+        // Right resize handle functionality
         rightResizeHandle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
           isResizingRight = true;
@@ -252,12 +280,18 @@ const Timeline = ({
             const newWidth = Math.max(5, startWidth + dx);
             const percentWidth = (newWidth / trackWidth) * 100;
             
-            regionElement.style.width = `${percentWidth}%`;
+            // Check if the new width would go beyond the track
+            const currentLeft = parseFloat(regionElement.style.left);
+            const maxWidth = (100 - currentLeft);
             
-            const newDuration = (percentWidth / 100) * trackDuration;
-            label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
-            
-            onUpdateItem(item.id, { duration: newDuration });
+            if (percentWidth <= maxWidth) {
+              regionElement.style.width = `${percentWidth}%`;
+              
+              const newDuration = (percentWidth / 100) * trackDuration;
+              label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
+              
+              onUpdateItem(item.id, { duration: newDuration });
+            }
           };
           
           const handleMouseUp = () => {
@@ -271,6 +305,7 @@ const Timeline = ({
           document.addEventListener('mouseup', handleMouseUp);
         });
         
+        // Drag handle functionality
         dragHandle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
           if (isResizingLeft || isResizingRight) return;
@@ -440,7 +475,7 @@ const Timeline = ({
       </div>
       
       <div className="mt-2 text-xs text-white/50 text-center">
-        Clique em uma região para editar • Arraste o item para movê-lo • Arraste as bordas para ajustar a duração
+        Clique em uma região para editar • Arraste o item para movê-lo • Arraste as bordas para ajustar a duração • Tecla Delete para remover item selecionado
       </div>
     </div>
   );
