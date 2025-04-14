@@ -29,6 +29,7 @@ const ControlPanel = ({
   generateAutoImageSequence,
   handleReset
 }: ControlPanelProps) => {
+  const { toast } = useToast();
 
   return (
     <div className="mb-4 flex items-center space-x-2">

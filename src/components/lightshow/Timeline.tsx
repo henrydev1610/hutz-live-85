@@ -88,8 +88,9 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 1,
       secondaryLabelInterval: 0.2,
-      primaryColor: 'rgba(255, 255, 255, 1)',
-      secondaryColor: 'rgba(255, 255, 255, 0.7)',
+      // Fixed: Removed incorrect options
+      primaryFontColor: 'rgba(255, 255, 255, 1)',
+      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());

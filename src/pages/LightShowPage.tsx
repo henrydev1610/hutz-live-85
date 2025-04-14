@@ -156,20 +156,31 @@ const LightShowPage = () => {
     const selectedImages: string[] = [];
     checkboxes.forEach((checkbox) => {
       const id = checkbox.id;
-      const index = parseInt(id.replace('image-', ''));
       
       // Get the image element next to the checkbox
-      const imageElement = checkbox.closest('.relative')?.querySelector('img');
-      if (imageElement) {
-        selectedImages.push(imageElement.src);
+      const parentDiv = checkbox.closest('.relative');
+      if (parentDiv) {
+        const imageElement = parentDiv.querySelector('img');
+        if (imageElement && imageElement.src) {
+          selectedImages.push(imageElement.src);
+        }
       }
     });
+    
+    if (selectedImages.length === 0) {
+      toast({
+        title: "Erro ao obter imagens",
+        description: "Não foi possível encontrar as imagens selecionadas.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     // Remove any existing image items
     const nonImageItems = timelineItems.filter(item => item.type !== 'image');
     
     // Create a sequence of images throughout the duration
-    const imageDuration = 3; // Each image shows for 3 seconds
+    const imageDuration = 5; // Each image shows for 5 seconds (updated from 3)
     const totalImages = selectedImages.length;
     const newImageItems: TimelineItem[] = [];
     
@@ -201,7 +212,7 @@ const LightShowPage = () => {
     });
   };
   
-  const addImageToTimeline = (imageUrl: string, duration: number = 3) => {
+  const addImageToTimeline = (imageUrl: string, duration: number = 5) => { // Changed to 5 seconds
     if (!audioFile) {
       toast({
         title: "Erro",
