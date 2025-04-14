@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -5,7 +6,7 @@ import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline';
 import { TimelineItem, WaveformRegion } from '@/types/lightshow';
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { ZoomIn, ZoomOut, ArrowsUpDown, Hand } from "lucide-react";
+import { ZoomIn, ZoomOut, ArrowUpDown, Hand } from "lucide-react";
 
 interface TimelineProps {
   audioUrl: string | null;
@@ -70,8 +71,8 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 1,
       secondaryLabelInterval: 0.2,
-      primaryFontColor: '#FFFFFF',
-      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
+      primaryColor: '#FFFFFF',
+      secondaryColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
