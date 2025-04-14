@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ const LightShowPage = () => {
   const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([]);
   const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
   const [autoSync, setAutoSync] = useState(true);
+  const [selectedImages, setSelectedImages] = useState<string[]>([]);
   
   const selectedItem = selectedItemIndex !== null ? timelineItems[selectedItemIndex] : null;
   const imageSelector = useRef<HTMLDivElement>(null);
@@ -174,6 +176,43 @@ const LightShowPage = () => {
     setTimelineItems([...timelineItems, newImage]);
   };
   
+  const handleAddSelectedImages = () => {
+    if (selectedImages.length === 0) {
+      toast({
+        title: "Nenhuma imagem selecionada",
+        description: "Selecione pelo menos uma imagem para adicionar à timeline.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    let lastImageEndTime = 0;
+    const imageItems = timelineItems.filter(item => item.type === 'image');
+    
+    if (imageItems.length > 0) {
+      imageItems.forEach(item => {
+        const endTime = item.startTime + item.duration;
+        if (endTime > lastImageEndTime) {
+          lastImageEndTime = endTime;
+        }
+      });
+    }
+    
+    const imageDuration = 10; // Set each image to 10 seconds as requested
+    
+    selectedImages.forEach((imageUrl, index) => {
+      const startTime = lastImageEndTime + (index * imageDuration);
+      addImageToTimeline(imageUrl, imageDuration, startTime);
+    });
+    
+    toast({
+      title: "Imagens adicionadas",
+      description: `${selectedImages.length} imagens foram adicionadas à timeline em sequência.`,
+    });
+    
+    setSelectedImages([]);
+  };
+  
   const addFlashlightPattern = () => {
     if (!audioFile) {
       toast({
@@ -318,8 +357,9 @@ const LightShowPage = () => {
                 addFlashlightPattern={addFlashlightPattern}
                 addImageToTimeline={addImageToTimeline}
                 generateAutoSyncPatterns={generateAutoSyncPatterns}
-                generateAutoImageSequence={generateAutoImageSequence}
                 handleReset={handleReset}
+                selectedImages={selectedImages}
+                onAddSelectedImages={handleAddSelectedImages}
               />
               
               {!audioFile ? (
@@ -365,7 +405,8 @@ const LightShowPage = () => {
                 <div ref={imageSelector}>
                   <ImageSelector 
                     onImageSelect={addImageToTimeline} 
-                    timelineItems={timelineItems} 
+                    timelineItems={timelineItems}
+                    onSelectedImagesChange={setSelectedImages}
                   />
                 </div>
               </TabsContent>

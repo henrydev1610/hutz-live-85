@@ -13,8 +13,10 @@ interface ControlPanelProps {
   addFlashlightPattern: () => void;
   addImageToTimeline: (imageUrl: string, duration?: number, startTime?: number) => void;
   generateAutoSyncPatterns: () => void;
-  generateAutoImageSequence?: () => void; // Make this optional
+  generateAutoImageSequence?: () => void; // Optional
   handleReset: () => void;
+  selectedImages?: string[]; // Added selected images prop
+  onAddSelectedImages?: () => void; // Added callback for adding selected images
 }
 
 const ControlPanel = ({
@@ -27,7 +29,9 @@ const ControlPanel = ({
   addImageToTimeline,
   generateAutoSyncPatterns,
   generateAutoImageSequence,
-  handleReset
+  handleReset,
+  selectedImages = [],
+  onAddSelectedImages
 }: ControlPanelProps) => {
   const { toast } = useToast();
 
@@ -55,12 +59,12 @@ const ControlPanel = ({
         <Button
           size="sm"
           variant="outline"
-          onClick={() => addImageToTimeline("https://via.placeholder.com/300/000000/FFFFFF/?text=Selecione+Imagem")}
-          disabled={!audioFile}
+          onClick={onAddSelectedImages}
+          disabled={!audioFile || selectedImages.length === 0}
           className="bg-sky-950/40"
         >
           <ImageIcon className="h-4 w-4 mr-2" />
-          Adicionar Imagem
+          Adicionar Imagem{selectedImages.length > 1 ? "s" : ""}
         </Button>
         
         <Button

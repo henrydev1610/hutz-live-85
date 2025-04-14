@@ -11,9 +11,10 @@ import { Separator } from '@/components/ui/separator';
 interface ImageSelectorProps {
   onImageSelect: (imageUrl: string, duration?: number, startTime?: number) => void;
   timelineItems: any[]; // Timeline items to check for last image position
+  onSelectedImagesChange?: (selectedImages: string[]) => void; // New prop to expose selected images
 }
 
-const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => {
+const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }: ImageSelectorProps) => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -21,6 +22,13 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   
   const [footballImages, setFootballImages] = useState<string[]>([]);
+  
+  // Update parent component when selected images change
+  useEffect(() => {
+    if (onSelectedImagesChange) {
+      onSelectedImagesChange(selectedImages);
+    }
+  }, [selectedImages, onSelectedImagesChange]);
   
   useEffect(() => {
     const savedImages = localStorage.getItem('footballImages');
@@ -166,7 +174,7 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
       });
     }
     
-    const imageDuration = 5;
+    const imageDuration = 10; // Changed to 10 seconds as requested
     
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * imageDuration);
