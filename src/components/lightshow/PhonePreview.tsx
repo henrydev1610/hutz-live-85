@@ -15,6 +15,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const [displayImage, setDisplayImage] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState('#000000');
   const [userClosedImage, setUserClosedImage] = useState(false);
+  const [isCallToAction, setIsCallToAction] = useState(false);
   const flashIntervalRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const frameIdRef = useRef<number | null>(null);
@@ -71,6 +72,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     let activeImage: string | null = null;
     let activeBackgroundColor: string = '#000000';
     let activeFlashlightItem: TimelineItem | null = null;
+    let isCtaActive = false;
     
     activeItems.forEach(item => {
       if (item.type === 'image') {
@@ -81,8 +83,13 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
         }
       } else if (item.type === 'flashlight' && item.pattern) {
         activeFlashlightItem = item;
+      } else if (item.type === 'callToAction' && item.content?.imageUrl) {
+        activeImage = item.content.imageUrl;
+        isCtaActive = true;
       }
     });
+    
+    setIsCallToAction(isCtaActive);
     
     if (!userClosedImage) {
       setDisplayImage(activeImage);
@@ -136,11 +143,26 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       
       if (activeImages.length > 0) {
         setDisplayImage(activeImages[activeImages.length - 1].imageUrl || null);
+        setIsCallToAction(false);
         return;
       }
       
-      const sortedImages = timelineItems
-        .filter(item => item.type === 'image' && item.imageUrl)
+      const activeCallToActions = timelineItems.filter(item => 
+        item.type === 'callToAction' && 
+        item.content?.imageUrl &&
+        currentTime >= item.startTime && 
+        currentTime < (item.startTime + item.duration)
+      );
+      
+      if (activeCallToActions.length > 0) {
+        setDisplayImage(activeCallToActions[activeCallToActions.length - 1].content?.imageUrl || null);
+        setIsCallToAction(true);
+        return;
+      }
+      
+      const sortedItems = timelineItems
+        .filter(item => (item.type === 'image' && item.imageUrl) || 
+                       (item.type === 'callToAction' && item.content?.imageUrl))
         .sort((a, b) => {
           const aContains = currentTime >= a.startTime && currentTime < (a.startTime + a.duration);
           const bContains = currentTime >= b.startTime && currentTime < (b.startTime + b.duration);
@@ -161,8 +183,15 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           return aDistance - bDistance;
         });
       
-      if (sortedImages.length > 0) {
-        setDisplayImage(sortedImages[0].imageUrl);
+      if (sortedItems.length > 0) {
+        const firstItem = sortedItems[0];
+        if (firstItem.type === 'image') {
+          setDisplayImage(firstItem.imageUrl);
+          setIsCallToAction(false);
+        } else if (firstItem.type === 'callToAction') {
+          setDisplayImage(firstItem.content?.imageUrl || null);
+          setIsCallToAction(true);
+        }
       }
     }
   }, [timelineItems, currentTime, displayImage, userClosedImage]);
@@ -194,12 +223,14 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           
           {displayImage && (
             <div className="flex items-center justify-center h-full relative">
-              <button 
-                className="absolute top-2 right-2 z-30 bg-black/50 rounded-full p-1 hover:bg-black/70 transition-colors"
-                onClick={handleCloseImage}
-              >
-                <X className="h-5 w-5 text-white" />
-              </button>
+              {isCallToAction && (
+                <button 
+                  className="absolute top-2 right-2 z-30 bg-black/50 rounded-full p-1 hover:bg-black/70 transition-colors"
+                  onClick={handleCloseImage}
+                >
+                  <X className="h-5 w-5 text-white" />
+                </button>
+              )}
               <img 
                 src={displayImage} 
                 alt="Display content" 

@@ -484,8 +484,8 @@ export function useLightShowLogic() {
       return;
     }
     
-    const ctaDuration = 10; // 10 seconds for call to action
-    const ctaStartTime = Math.max(0, duration - ctaDuration);
+    const ctaDuration = 20; // Changed from 10 to 20 seconds for call to action
+    const ctaStartTime = duration; // Start exactly when the song ends
     
     console.log(`Adding call to action at time: ${ctaStartTime}s, audio duration: ${duration}s`);
     
