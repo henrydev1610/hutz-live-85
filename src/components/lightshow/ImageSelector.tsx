@@ -57,13 +57,6 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
       });
       return;
     }
-
-    // Simply delegate to the parent component handler
-    // This ensures we use the same logic in both places
-    if (onSelectedImagesChange) {
-      // Update the selected images first to make sure parent has access to them
-      onSelectedImagesChange(selectedImages);
-    }
     
     // Get the lastEndTime first
     let lastImageEndTime = 0;
@@ -80,7 +73,7 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
     
     const fixedDuration = 10; // 10 seconds duration as requested
     
-    // Add each selected image to the timeline sequentially
+    // We'll directly call the parent's handler for each image
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * fixedDuration);
       onImageSelect(imageUrl, fixedDuration, startTime);

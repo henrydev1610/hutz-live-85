@@ -322,7 +322,9 @@ export function useLightShowLogic() {
       }
     }
     
-    setTimelineItems([...timelineItems, newImage]);
+    setTimelineItems(prevItems => [...prevItems, newImage]);
+    
+    console.log(`Added image to timeline: ${imageUrl} at ${actualStartTime}s with duration ${duration}s`);
   };
   
   const handleAddSelectedImages = () => {
@@ -348,12 +350,12 @@ export function useLightShowLogic() {
     }
     
     const imageDuration = 10;
-    const newItems: TimelineItem[] = [];
+    
+    const updatedTimelineItems = [...timelineItems];
     
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * imageDuration);
-      
-      newItems.push({
+      updatedTimelineItems.push({
         id: `img-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
         type: 'image',
         startTime: startTime,
@@ -362,7 +364,7 @@ export function useLightShowLogic() {
       });
     });
     
-    setTimelineItems([...timelineItems, ...newItems]);
+    setTimelineItems(updatedTimelineItems);
     
     toast({
       title: "Imagens adicionadas",
