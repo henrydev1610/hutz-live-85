@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -6,7 +5,7 @@ import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline';
 import { TimelineItem, WaveformRegion } from '@/types/lightshow';
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { ZoomIn, ZoomOut } from "lucide-react";
+import { ZoomIn, ZoomOut, ArrowsUpDown, Hand } from "lucide-react";
 
 interface TimelineProps {
   audioUrl: string | null;
@@ -38,7 +37,7 @@ const Timeline = ({
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const [regions, setRegions] = useState<Record<string, WaveformRegion>>({});
-  const [zoomLevel, setZoomLevel] = useState<number>(200); // Increased default zoom level
+  const [zoomLevel, setZoomLevel] = useState<number>(250); // Increased default zoom level
   
   const imageTrackRef = useRef<HTMLDivElement>(null);
   const flashlightTrackRef = useRef<HTMLDivElement>(null);
@@ -71,8 +70,8 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 1,
       secondaryLabelInterval: 0.2,
-      primaryColor: '#FFFFFF',
-      secondaryColor: 'rgba(255, 255, 255, 0.7)',
+      primaryFontColor: '#FFFFFF',
+      secondaryFontColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
@@ -168,57 +167,152 @@ const Timeline = ({
         label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + item.duration).toFixed(1)}s`;
         regionElement.appendChild(label);
         
+        const leftResizeHandle = document.createElement('div');
+        leftResizeHandle.className = 'absolute left-0 top-0 h-full w-2 bg-white/30 cursor-ew-resize flex items-center justify-center';
+        leftResizeHandle.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>';
+        
         const rightResizeHandle = document.createElement('div');
-        rightResizeHandle.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 cursor-ew-resize';
+        rightResizeHandle.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 cursor-ew-resize flex items-center justify-center';
+        rightResizeHandle.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>';
+        
+        const dragHandle = document.createElement('div');
+        dragHandle.className = 'absolute inset-0 cursor-grab';
+        dragHandle.innerHTML = '<div class="absolute top-2 right-1/2 transform translate-x-1/2 opacity-50"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6"></path><path d="M9 17h6"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v10"></path></svg></div>';
         
         let isDragging = false;
+        let isResizingLeft = false;
+        let isResizingRight = false;
         let startX = 0;
+        let startLeft = 0;
         let startWidth = 0;
         
-        rightResizeHandle.addEventListener('mousedown', (e) => {
+        leftResizeHandle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
-          isDragging = true;
+          isResizingLeft = true;
           startX = e.clientX;
+          startLeft = parseFloat(regionElement.style.left);
           startWidth = regionElement.offsetWidth;
           
-          const onMouseMove = (event: MouseEvent) => {
-            if (!isDragging) return;
+          document.body.style.cursor = 'ew-resize';
+          
+          const handleMouseMove = (moveEvent: MouseEvent) => {
+            if (!isResizingLeft) return;
             
-            const dx = event.clientX - startX;
-            const newWidth = startWidth + dx;
-            const minWidth = 5;
+            moveEvent.preventDefault();
             
-            if (newWidth > minWidth) {
-              const percentWidth = (newWidth / trackWidth) * 100;
+            const dx = moveEvent.clientX - startX;
+            const newLeft = Math.max(0, startLeft + (dx / trackWidth * 100));
+            const newWidth = Math.max(5, startWidth - dx);
+            
+            const percentWidth = (newWidth / trackWidth) * 100;
+            const maxLeft = 100 - percentWidth;
+            
+            if (newLeft <= maxLeft) {
+              regionElement.style.left = `${newLeft}%`;
               regionElement.style.width = `${percentWidth}%`;
               
+              const newStartTime = (newLeft / 100) * trackDuration;
               const newDuration = (percentWidth / 100) * trackDuration;
               
-              label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
+              label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + newDuration).toFixed(1)}s`;
               
-              onUpdateItem(item.id, { duration: newDuration });
+              onUpdateItem(item.id, { 
+                startTime: newStartTime,
+                duration: newDuration 
+              });
             }
           };
           
-          const onMouseUp = () => {
-            isDragging = false;
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
+          const handleMouseUp = () => {
+            isResizingLeft = false;
+            document.body.style.cursor = '';
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
           };
           
-          document.addEventListener('mousemove', onMouseMove);
-          document.addEventListener('mouseup', onMouseUp);
+          document.addEventListener('mousemove', handleMouseMove);
+          document.addEventListener('mouseup', handleMouseUp);
         });
         
-        regionElement.appendChild(rightResizeHandle);
-        
-        regionElement.addEventListener('click', (e) => {
+        rightResizeHandle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
-          const index = timelineItems.findIndex(i => i.id === item.id);
-          onItemSelect(index);
+          isResizingRight = true;
+          startX = e.clientX;
+          startWidth = regionElement.offsetWidth;
+          
+          document.body.style.cursor = 'ew-resize';
+          
+          const handleMouseMove = (moveEvent: MouseEvent) => {
+            if (!isResizingRight) return;
+            
+            moveEvent.preventDefault();
+            
+            const dx = moveEvent.clientX - startX;
+            const newWidth = Math.max(5, startWidth + dx);
+            const percentWidth = (newWidth / trackWidth) * 100;
+            
+            regionElement.style.width = `${percentWidth}%`;
+            
+            const newDuration = (percentWidth / 100) * trackDuration;
+            label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
+            
+            onUpdateItem(item.id, { duration: newDuration });
+          };
+          
+          const handleMouseUp = () => {
+            isResizingRight = false;
+            document.body.style.cursor = '';
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+          };
+          
+          document.addEventListener('mousemove', handleMouseMove);
+          document.addEventListener('mouseup', handleMouseUp);
         });
         
-        regionElement.setAttribute('draggable', 'true');
+        dragHandle.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          if (isResizingLeft || isResizingRight) return;
+          
+          isDragging = true;
+          startX = e.clientX;
+          startLeft = parseFloat(regionElement.style.left);
+          
+          dragHandle.style.cursor = 'grabbing';
+          document.body.style.cursor = 'grabbing';
+          
+          const handleMouseMove = (moveEvent: MouseEvent) => {
+            if (!isDragging) return;
+            
+            moveEvent.preventDefault();
+            
+            const dx = moveEvent.clientX - startX;
+            const percentDx = (dx / trackWidth) * 100;
+            const newLeft = Math.max(0, Math.min(100 - parseFloat(regionElement.style.width), startLeft + percentDx));
+            
+            regionElement.style.left = `${newLeft}%`;
+            
+            const newStartTime = (newLeft / 100) * trackDuration;
+            label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + item.duration).toFixed(1)}s`;
+            
+            onUpdateItem(item.id, { startTime: newStartTime });
+          };
+          
+          const handleMouseUp = () => {
+            isDragging = false;
+            dragHandle.style.cursor = 'grab';
+            document.body.style.cursor = '';
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+          };
+          
+          document.addEventListener('mousemove', handleMouseMove);
+          document.addEventListener('mouseup', handleMouseUp);
+        });
+        
+        regionElement.appendChild(leftResizeHandle);
+        regionElement.appendChild(rightResizeHandle);
+        regionElement.appendChild(dragHandle);
         
         imageTrackRef.current.appendChild(regionElement);
       } 
@@ -251,8 +345,6 @@ const Timeline = ({
           const index = timelineItems.findIndex(i => i.id === item.id);
           onItemSelect(index);
         });
-        
-        regionElement.setAttribute('draggable', 'true');
         
         flashlightTrackRef.current.appendChild(regionElement);
       }
@@ -303,7 +395,7 @@ const Timeline = ({
         <Slider
           value={[zoomLevel]}
           min={10}
-          max={300}
+          max={400}
           step={10}
           className="flex-1"
           onValueChange={handleZoomChange}
@@ -312,7 +404,7 @@ const Timeline = ({
         <Button 
           variant="ghost" 
           size="sm" 
-          onClick={() => handleZoomChange([Math.min(300, zoomLevel + 20)])}
+          onClick={() => handleZoomChange([Math.min(400, zoomLevel + 20)])}
           className="p-1 h-8 w-8"
         >
           <ZoomIn className="h-4 w-4" />
@@ -347,7 +439,7 @@ const Timeline = ({
       </div>
       
       <div className="mt-2 text-xs text-white/50 text-center">
-        Clique em uma região para editar • Arraste a borda direita de uma imagem para alterar sua duração
+        Clique em uma região para editar • Arraste o item para movê-lo • Arraste as bordas para ajustar a duração
       </div>
     </div>
   );
