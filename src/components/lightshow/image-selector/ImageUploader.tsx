@@ -14,14 +14,21 @@ const ImageUploader = ({ onImageUpload }: ImageUploaderProps) => {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
+      // Create an array from FileList to properly track processing
+      const files = Array.from(e.target.files);
+      
       // Process each file in the selection
-      Array.from(e.target.files).forEach(file => {
+      files.forEach(file => {
+        // Create a unique object URL for each file
         const fileUrl = URL.createObjectURL(file);
+        // Pass each image URL to the callback
         onImageUpload(fileUrl);
+        
+        console.log(`Processing image: ${file.name}, URL: ${fileUrl}`);
       });
       
       // Show a single toast for all images
-      const fileCount = e.target.files.length;
+      const fileCount = files.length;
       toast({
         title: fileCount > 1 ? "Imagens adicionadas" : "Imagem adicionada",
         description: fileCount > 1 
@@ -29,6 +36,7 @@ const ImageUploader = ({ onImageUpload }: ImageUploaderProps) => {
           : "A imagem foi adicionada à biblioteca com sucesso.",
       });
       
+      // Reset the file input to allow selecting the same files again
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
