@@ -58,7 +58,7 @@ export function useLightShowLogic() {
     
     toast({
       title: "Gerando sincronização automática",
-      description: "Processando o áudio e criando um show de luzes intenso...",
+      description: "Processando o áudio e criando um show de luzes...",
     });
     
     const nonFlashlightItems = timelineItems.filter(item => item.type !== 'flashlight');
@@ -68,115 +68,134 @@ export function useLightShowLogic() {
       
       const newPatterns: TimelineItem[] = [];
       
-      // Create faster flashes for beats (5-8ms)
+      // Create sequential flashes for beats with better spacing
       beats.forEach((time, index) => {
         if (time < duration) {
-          const flashDuration = 0.005 + Math.random() * 0.003; // 5-8ms (very short)
+          // Check if this beat is too close to others
+          const tooClose = newPatterns.some(item => 
+            Math.abs(item.startTime - time) < 0.12 // Minimum 120ms spacing between flashes
+          );
           
-          newPatterns.push({
-            id: `flash-beat-${Date.now()}-${index}`,
-            type: 'flashlight',
-            startTime: time,
-            duration: flashDuration,
-            pattern: {
-              intensity: 95 + Math.random() * 5, // 95-100%
-              blinkRate: 40 + Math.random() * 10, // 40-50 Hz (ultra fast)
-              color: '#FFFFFF'
-            }
-          });
-        }
-      });
-      
-      // Create slightly longer flashes for bass (8-12ms)
-      bassBeats.forEach((time, index) => {
-        if (time < duration) {
-          const flashDuration = 0.008 + Math.random() * 0.004; // 8-12ms (short)
-          
-          newPatterns.push({
-            id: `flash-bass-${Date.now()}-${index}`,
-            type: 'flashlight',
-            startTime: time,
-            duration: flashDuration,
-            pattern: {
-              intensity: 100, // Full intensity for bass
-              blinkRate: 30 + Math.random() * 15, // 30-45 Hz (very fast)
-              color: '#FFFFFF'
-            }
-          });
-        }
-      });
-      
-      // Create very short flashes for treble (3-6ms)
-      trebleBeats.forEach((time, index) => {
-        if (time < duration) {
-          const flashDuration = 0.003 + Math.random() * 0.003; // 3-6ms (ultra short)
-          
-          newPatterns.push({
-            id: `flash-treble-${Date.now()}-${index}`,
-            type: 'flashlight',
-            startTime: time,
-            duration: flashDuration,
-            pattern: {
-              intensity: 90 + Math.random() * 10, // 90-100%
-              blinkRate: 50 + Math.random() * 20, // 50-70 Hz (extremely fast)
-              color: '#FFFFFF'
-            }
-          });
-        }
-      });
-      
-      // Add intense strobe effects with better spacing
-      for (let time = 0; time < duration; time += 3) { // Increased spacing between strobe clusters (3s)
-        const clusterSize = 6 + Math.floor(Math.random() * 6); // 6-11 flashes per cluster
-        for (let i = 0; i < clusterSize; i++) {
-          const strokeTime = time + (i * 0.008); // Ultra-fast strobe timing (8ms spacing)
-          
-          if (strokeTime < duration) {
+          if (!tooClose) {
+            const flashDuration = 0.05; // 50ms flash
+            
             newPatterns.push({
-              id: `flash-strobe-${Date.now()}-${time}-${i}`,
+              id: `flash-beat-${Date.now()}-${index}`,
               type: 'flashlight',
-              startTime: strokeTime,
-              duration: 0.004, // 4ms (extremely short flash)
+              startTime: time,
+              duration: flashDuration,
               pattern: {
-                intensity: 100,
-                blinkRate: 70 + Math.random() * 30, // 70-100 Hz (ultra fast)
+                intensity: 95, // 95%
+                blinkRate: 10, // 10 Hz (more visible)
                 color: '#FFFFFF'
               }
             });
           }
         }
-      }
+      });
       
-      // Add more spaced random flashes throughout the track
-      const randomFlashCount = Math.floor(duration * 5); // 5 flashes per second average
-      for (let i = 0; i < randomFlashCount; i++) {
-        const randomTime = Math.random() * duration;
-        
-        // Ensure spacing between flashes
-        const tooClose = newPatterns.some(item => 
-          Math.abs(item.startTime - randomTime) < 0.08 // Minimum 80ms spacing
+      // Add bass beats with more spacing (less dense)
+      bassBeats.forEach((time, index) => {
+        if (time < duration) {
+          // Check if this beat is too close to others
+          const tooClose = newPatterns.some(item => 
+            Math.abs(item.startTime - time) < 0.15 // Minimum 150ms spacing
+          );
+          
+          if (!tooClose) {
+            const flashDuration = 0.08; // 80ms (longer for bass beats)
+            
+            newPatterns.push({
+              id: `flash-bass-${Date.now()}-${index}`,
+              type: 'flashlight',
+              startTime: time,
+              duration: flashDuration,
+              pattern: {
+                intensity: 100, // Full intensity for bass
+                blinkRate: 8, // 8 Hz (more visible)
+                color: '#FFFFFF'
+              }
+            });
+          }
+        }
+      });
+      
+      // Add treble beats with careful spacing
+      trebleBeats.forEach((time, index) => {
+        if (time < duration && index % 3 === 0) { // Only use every 3rd treble beat
+          // Check if this beat is too close to others
+          const tooClose = newPatterns.some(item => 
+            Math.abs(item.startTime - time) < 0.18 // Minimum 180ms spacing
+          );
+          
+          if (!tooClose) {
+            const flashDuration = 0.04; // 40ms (short for treble)
+            
+            newPatterns.push({
+              id: `flash-treble-${Date.now()}-${index}`,
+              type: 'flashlight',
+              startTime: time,
+              duration: flashDuration,
+              pattern: {
+                intensity: 90, // 90%
+                blinkRate: 12, // 12 Hz
+                color: '#FFFFFF'
+              }
+            });
+          }
+        }
+      });
+      
+      // Add moderate strobe effects with much better spacing
+      for (let time = 0; time < duration; time += 8) { // Much increased spacing between strobe clusters (8s)
+        // Skip if there are already flashes close to this time
+        const hasNearbyFlashes = newPatterns.some(item => 
+          Math.abs(item.startTime - time) < 0.5 // Check for flashes within 0.5s
         );
         
-        if (!tooClose) {
-          newPatterns.push({
-            id: `flash-random-${Date.now()}-${i}`,
-            type: 'flashlight',
-            startTime: randomTime,
-            duration: 0.005 + Math.random() * 0.005, // 5-10ms (very short)
-            pattern: {
-              intensity: 95 + Math.random() * 5, // 95-100%
-              blinkRate: 50 + Math.random() * 50, // 50-100 Hz (extremely fast)
-              color: '#FFFFFF'
+        if (!hasNearbyFlashes) {
+          const clusterSize = 3; // Reduced to just 3 flashes per cluster
+          for (let i = 0; i < clusterSize; i++) {
+            const strokeTime = time + (i * 0.12); // Much slower strobe timing (120ms spacing)
+            
+            if (strokeTime < duration) {
+              newPatterns.push({
+                id: `flash-strobe-${Date.now()}-${time}-${i}`,
+                type: 'flashlight',
+                startTime: strokeTime,
+                duration: 0.06, // 60ms (more visible)
+                pattern: {
+                  intensity: 100,
+                  blinkRate: 8, // 8 Hz (more visible)
+                  color: '#FFFFFF'
+                }
+              });
             }
-          });
+          }
         }
       }
       
-      setTimelineItems([...nonFlashlightItems, ...newPatterns]);
+      // Sort patterns by start time 
+      newPatterns.sort((a, b) => a.startTime - b.startTime);
+      
+      // Do a final pass to remove any remaining overlaps
+      const finalPatterns: TimelineItem[] = [];
+      let lastEndTime = 0;
+      
+      for (const pattern of newPatterns) {
+        const patternEndTime = pattern.startTime + pattern.duration;
+        
+        if (pattern.startTime >= lastEndTime) {
+          finalPatterns.push(pattern);
+          lastEndTime = patternEndTime;
+        }
+      }
+      
+      setTimelineItems([...nonFlashlightItems, ...finalPatterns]);
       
       toast({
         title: "Show de luzes criado!",
-        description: "Um espetáculo intenso de luzes ultra-rápidas foi sincronizado com as batidas da música.",
+        description: "Um show de luzes foi sincronizado com as batidas da música.",
       });
     } catch (error) {
       console.error("Error generating auto-sync patterns:", error);

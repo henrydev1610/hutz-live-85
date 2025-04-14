@@ -1,20 +1,20 @@
 
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { CheckSquare, Trash2 } from 'lucide-react';
+import { CheckSquare, Plus } from 'lucide-react';
 
 interface ImageSelectionControlsProps {
   selectedImagesCount: number;
   totalImagesCount: number;
   onSelectAll: () => void;
-  onDeleteSelected: () => void;
+  onAddSelected: () => void;
 }
 
 const ImageSelectionControls = ({
   selectedImagesCount,
   totalImagesCount,
   onSelectAll,
-  onDeleteSelected
+  onAddSelected
 }: ImageSelectionControlsProps) => {
   if (selectedImagesCount === 0) {
     return null;
@@ -36,11 +36,11 @@ const ImageSelectionControls = ({
         <Button 
           variant="outline" 
           size="sm" 
-          onClick={onDeleteSelected}
-          className="flex-1 text-red-500 hover:text-red-400"
+          onClick={onAddSelected}
+          className="flex-1 text-green-500 hover:text-green-400"
         >
-          <Trash2 className="h-4 w-4 mr-1" />
-          Excluir Selecionadas
+          <Plus className="h-4 w-4 mr-1" />
+          Adicionar Selecionadas
         </Button>
       </div>
       <Separator className="bg-white/10 my-4" />
