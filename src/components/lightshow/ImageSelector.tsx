@@ -81,8 +81,6 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
       title: "Imagens adicionadas",
       description: `${selectedImages.length} imagens foram adicionadas à timeline em sequência.`,
     });
-    
-    setSelectedImages([]);
   };
 
   return (
