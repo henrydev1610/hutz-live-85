@@ -415,7 +415,7 @@ export function useLightShowLogic() {
     if (!audioFile || !timelineItems.length) {
       toast({
         title: "Não foi possível gerar o arquivo",
-        description: "É necessário um ��udio e pelo menos um item na timeline.",
+        description: "É necessário um udio e pelo menos um item na timeline.",
         variant: "destructive"
       });
       return;
@@ -584,7 +584,6 @@ export function useLightShowLogic() {
     setCallToActionContent,
     addCallToActionToTimeline,
     setAudioEditInfo,
-    trimAudio,
-    handleAddSelectedImages
+    trimAudio
   };
 }
