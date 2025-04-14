@@ -1,3 +1,4 @@
+
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TimelineItem, CallToActionType } from "@/types/lightshow";
@@ -95,7 +96,7 @@ const MainContent = ({
   return (
     <ResizablePanelGroup
       direction="horizontal"
-      className="min-h-[calc(100vh-200px)] border rounded-lg border-white/10 bg-secondary/40 backdrop-blur-lg"
+      className="min-h-[calc(100vh-150px)] border rounded-lg border-white/10 bg-secondary/40 backdrop-blur-lg"
     >
       <ResizablePanel defaultSize={65} minSize={30}>
         <div className="h-full flex flex-col p-4">
@@ -147,7 +148,7 @@ const MainContent = ({
             <TabsTrigger value="preview">Preview</TabsTrigger>
           </TabsList>
           
-          <TabsContent value="properties" className="flex-1 p-4 overflow-y-auto">
+          <TabsContent value="properties" className="flex-1 p-4 overflow-y-auto max-h-[calc(100vh-200px)]">
             <PropertiesPanel 
               selectedItem={selectedItem}
               updateTimelineItem={updateTimelineItem}
@@ -156,7 +157,7 @@ const MainContent = ({
             />
           </TabsContent>
           
-          <TabsContent value="images" className="flex-1 p-4 overflow-y-auto h-120">
+          <TabsContent value="images" className="flex-1 p-4 overflow-y-auto h-120 max-h-[calc(100vh-200px)]">
             <div ref={imageSelector}>
               <ImageSelector 
                 onImageSelect={addImageToTimeline} 
@@ -166,7 +167,7 @@ const MainContent = ({
             </div>
           </TabsContent>
           
-          <TabsContent value="cta" className="flex-1 p-4 overflow-y-auto h-120">
+          <TabsContent value="cta" className="flex-1 p-4 overflow-y-auto h-120 max-h-[calc(100vh-200px)]">
             <CallToActionPanel 
               callToAction={callToAction}
               onContentChange={setCallToActionContent}
@@ -174,7 +175,7 @@ const MainContent = ({
             />
           </TabsContent>
           
-          <TabsContent value="preview" className="flex-1 p-4 overflow-y-auto flex items-center justify-center">
+          <TabsContent value="preview" className="flex-1 p-4 overflow-y-auto flex items-center justify-center max-h-[calc(100vh-200px)]">
             <PhonePreview 
               isPlaying={isPlaying}
               currentTime={currentTime}
