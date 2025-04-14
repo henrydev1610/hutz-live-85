@@ -195,7 +195,7 @@ const LightShowPage = () => {
     });
   };
   
-  const addImageToTimeline = (imageUrl: string, duration: number = 5) => {
+  const addImageToTimeline = (imageUrl: string, duration: number = 5, startTime?: number) => {
     if (!audioFile) {
       toast({
         title: "Erro",
@@ -205,10 +205,12 @@ const LightShowPage = () => {
       return;
     }
     
+    const actualStartTime = startTime !== undefined ? startTime : currentTime;
+    
     const newImage: TimelineItem = {
       id: `img-${Date.now()}`,
       type: 'image',
-      startTime: currentTime,
+      startTime: actualStartTime,
       duration: duration,
       imageUrl
     };
@@ -216,15 +218,17 @@ const LightShowPage = () => {
     const images = timelineItems.filter(item => item.type === 'image');
     let hasOverlap = false;
     
-    for (const image of images) {
-      const imageEnd = image.startTime + image.duration;
-      const newItemEnd = newImage.startTime + newImage.duration;
-      
-      if ((newImage.startTime >= image.startTime && newImage.startTime < imageEnd) || 
-          (newItemEnd > image.startTime && newItemEnd <= imageEnd) ||
-          (newImage.startTime <= image.startTime && newItemEnd >= imageEnd)) {
-        hasOverlap = true;
-        break;
+    if (startTime === undefined) {
+      for (const image of images) {
+        const imageEnd = image.startTime + image.duration;
+        const newItemEnd = newImage.startTime + newImage.duration;
+        
+        if ((newImage.startTime >= image.startTime && newImage.startTime < imageEnd) || 
+            (newItemEnd > image.startTime && newItemEnd <= imageEnd) ||
+            (newImage.startTime <= image.startTime && newItemEnd >= imageEnd)) {
+          hasOverlap = true;
+          break;
+        }
       }
     }
     
@@ -429,7 +433,10 @@ const LightShowPage = () => {
               
               <TabsContent value="images" className="flex-1 p-4 overflow-y-auto">
                 <div ref={imageSelector}>
-                  <ImageSelector onImageSelect={addImageToTimeline} />
+                  <ImageSelector 
+                    onImageSelect={addImageToTimeline} 
+                    timelineItems={timelineItems} 
+                  />
                 </div>
               </TabsContent>
               

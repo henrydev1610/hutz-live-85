@@ -2,16 +2,17 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Image, ImagePlus, Trash2 } from 'lucide-react';
+import { Plus, Image, ImagePlus, Trash2, ListPlus } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 
 interface ImageSelectorProps {
   onImageSelect: (imageUrl: string, duration?: number) => void;
+  timelineItems: any[]; // Timeline items to check for last image position
 }
 
-const ImageSelector = ({ onImageSelect }: ImageSelectorProps) => {
+const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -152,6 +153,49 @@ const ImageSelector = ({ onImageSelect }: ImageSelectorProps) => {
     });
   };
 
+  // NEW FUNCTION: Add all selected images to timeline in sequence
+  const handleAddSelectedToTimeline = () => {
+    if (selectedImages.length === 0) {
+      toast({
+        title: "Nenhuma imagem selecionada",
+        description: "Selecione pelo menos uma imagem para adicionar à timeline.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Find last image position in timeline
+    let lastImageEndTime = 0;
+    const imageItems = timelineItems.filter(item => item.type === 'image');
+    
+    if (imageItems.length > 0) {
+      // Find the image with the latest end time
+      imageItems.forEach(item => {
+        const endTime = item.startTime + item.duration;
+        if (endTime > lastImageEndTime) {
+          lastImageEndTime = endTime;
+        }
+      });
+    }
+    
+    // Default duration for each image (10 seconds)
+    const imageDuration = 10;
+    
+    // Add each selected image to the timeline in sequence
+    selectedImages.forEach((imageUrl, index) => {
+      const startTime = lastImageEndTime + (index * imageDuration);
+      onImageSelect(imageUrl, imageDuration, startTime); // Modified onImageSelect to accept startTime parameter
+    });
+    
+    toast({
+      title: "Imagens adicionadas",
+      description: `${selectedImages.length} imagens foram adicionadas à timeline em sequência.`,
+    });
+    
+    // Clear selection after adding to timeline
+    setSelectedImages([]);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -161,15 +205,28 @@ const ImageSelector = ({ onImageSelect }: ImageSelectorProps) => {
             {selectedImages.length} imagens selecionadas
           </div>
           {selectedImages.length > 0 && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={handleDeleteSelected}
-              className="text-red-500 hover:text-red-400 hover:bg-red-950/20"
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              Excluir
-            </Button>
+            <>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={handleDeleteSelected}
+                className="text-red-500 hover:text-red-400 hover:bg-red-950/20"
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Excluir
+              </Button>
+              
+              {/* New button to add selected images to timeline */}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleAddSelectedToTimeline}
+                className="text-accent hover:text-accent-foreground"
+              >
+                <ListPlus className="h-4 w-4 mr-1" />
+                Adicionar à trilha
+              </Button>
+            </>
           )}
         </div>
       </div>
