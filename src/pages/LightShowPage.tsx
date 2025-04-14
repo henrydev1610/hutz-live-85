@@ -134,7 +134,7 @@ const LightShowPage = () => {
       return;
     }
     
-    // Get all selected images from the ImageSelector component
+    // Get all images with checked checkboxes from the ImageSelector component
     const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
     
     if (checkboxes.length === 0) {

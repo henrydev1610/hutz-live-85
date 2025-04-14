@@ -18,7 +18,7 @@ const ImageSelector = ({ onImageSelect }: ImageSelectorProps) => {
   const [imageDuration, setImageDuration] = useState<number>(5);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   
-  // Use localStorage to persist deleted images
+  // Use localStorage to persist images
   const [footballImages, setFootballImages] = useState<string[]>([]);
   
   // Load images from localStorage on component mount
@@ -77,13 +77,10 @@ const ImageSelector = ({ onImageSelect }: ImageSelectorProps) => {
       const file = e.target.files[0];
       const fileUrl = URL.createObjectURL(file);
       
-      // Instead of setting as selected image, add to library
-      setFootballImages(prev => {
-        const newImages = [...prev, fileUrl];
-        // Save to localStorage
-        localStorage.setItem('footballImages', JSON.stringify(newImages));
-        return newImages;
-      });
+      // Add to library and save to localStorage
+      const newImages = [...footballImages, fileUrl];
+      setFootballImages(newImages);
+      localStorage.setItem('footballImages', JSON.stringify(newImages));
       
       toast({
         title: "Imagem adicionada",
@@ -137,6 +134,9 @@ const ImageSelector = ({ onImageSelect }: ImageSelectorProps) => {
     // Filter out selected images and update state
     const updatedImages = footballImages.filter(image => !selectedImages.includes(image));
     setFootballImages(updatedImages);
+    
+    // Save to localStorage immediately after deletion
+    localStorage.setItem('footballImages', JSON.stringify(updatedImages));
     
     // If the currently selected image is in the deleted set, clear it
     if (selectedImage && selectedImages.includes(selectedImage)) {

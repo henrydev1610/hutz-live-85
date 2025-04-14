@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -511,7 +510,8 @@ const Timeline = ({
       
       <div className="relative h-32 bg-black/30 rounded-md">
         <div ref={containerRef} className="h-full" />
-        <div className="timeline-marker absolute top-0 h-full w-0.5 bg-white z-10 pointer-events-none"></div>
+        {/* Single unified marker for all tracks */}
+        <div className="timeline-marker absolute top-0 h-full w-0.5 bg-white z-20 pointer-events-none"></div>
       </div>
       
       <div id="timeline" className="h-10" />
@@ -523,7 +523,7 @@ const Timeline = ({
           className="relative h-full cursor-pointer"
           onClick={() => onItemSelect(null)}
         ></div>
-        <div className="timeline-marker absolute top-0 h-full w-0.5 bg-white z-10 pointer-events-none"></div>
+        {/* Remove separate marker here */}
       </div>
       
       <div className="text-xs text-white/70 font-medium mb-1">Trilha de Efeitos de Lanterna</div>
@@ -533,7 +533,7 @@ const Timeline = ({
           className="relative h-full cursor-pointer"
           onClick={() => onItemSelect(null)}
         ></div>
-        <div className="timeline-marker absolute top-0 h-full w-0.5 bg-white z-10 pointer-events-none"></div>
+        {/* Remove separate marker here */}
       </div>
       
       <div className="mt-2 text-xs text-white/50 text-center">
