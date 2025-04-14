@@ -13,6 +13,7 @@ interface ControlPanelProps {
   addFlashlightPattern: () => void;
   addImageToTimeline: (imageUrl: string, duration?: number) => void;
   generateAutoSyncPatterns: () => void;
+  generateAutoImageSequence: () => void;
   handleReset: () => void;
 }
 
@@ -25,6 +26,7 @@ const ControlPanel = ({
   addFlashlightPattern,
   addImageToTimeline,
   generateAutoSyncPatterns,
+  generateAutoImageSequence,
   handleReset
 }: ControlPanelProps) => {
 
@@ -74,12 +76,23 @@ const ControlPanel = ({
         <Button
           size="sm"
           variant="outline"
+          onClick={generateAutoImageSequence}
+          disabled={!audioFile}
+          className="bg-sky-950/40"
+        >
+          <ImageIcon className="h-4 w-4 mr-2" />
+          Auto Imagem
+        </Button>
+        
+        <Button
+          size="sm"
+          variant="outline"
           onClick={generateAutoSyncPatterns}
           disabled={!audioFile}
           className="bg-green-950/40"
         >
           <Wand2 className="h-4 w-4 mr-2" />
-          Auto
+          Auto Light
         </Button>
         
         <Button

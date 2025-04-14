@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -87,7 +88,7 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 1,
       secondaryLabelInterval: 0.2,
-      primaryColor: '#FFFFFF',
+      primaryColor: 'rgba(255, 255, 255, 1)',
       secondaryColor: 'rgba(255, 255, 255, 0.7)',
     }));
     
@@ -126,6 +127,26 @@ const Timeline = ({
       wavesurferRef.current.pause();
     }
   }, [isPlaying]);
+  
+  // Helper function to detect overlapping items
+  const checkImageOverlap = (itemId: string, startTime: number, duration: number) => {
+    // Only check for images
+    const images = timelineItems.filter(item => item.type === 'image' && item.id !== itemId);
+    
+    for (const image of images) {
+      const imageEnd = image.startTime + image.duration;
+      const newItemEnd = startTime + duration;
+      
+      // Check if there's any overlap
+      if ((startTime >= image.startTime && startTime < imageEnd) || 
+          (newItemEnd > image.startTime && newItemEnd <= imageEnd) ||
+          (startTime <= image.startTime && newItemEnd >= imageEnd)) {
+        return true;
+      }
+    }
+    
+    return false;
+  };
   
   useEffect(() => {
     if (!wavesurferRef.current || !imageTrackRef.current || !flashlightTrackRef.current) return;
@@ -235,18 +256,21 @@ const Timeline = ({
             const maxLeft = 100 - percentWidth;
             
             if (newLeft <= maxLeft) {
-              regionElement.style.left = `${newLeft}%`;
-              regionElement.style.width = `${percentWidth}%`;
-              
               const newStartTime = (newLeft / 100) * trackDuration;
               const newDuration = (percentWidth / 100) * trackDuration;
               
-              label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + newDuration).toFixed(1)}s`;
-              
-              onUpdateItem(item.id, { 
-                startTime: newStartTime,
-                duration: newDuration 
-              });
+              // Check for overlap with other images
+              if (!checkImageOverlap(item.id, newStartTime, newDuration)) {
+                regionElement.style.left = `${newLeft}%`;
+                regionElement.style.width = `${percentWidth}%`;
+                
+                label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + newDuration).toFixed(1)}s`;
+                
+                onUpdateItem(item.id, { 
+                  startTime: newStartTime,
+                  duration: newDuration 
+                });
+              }
             }
           };
           
@@ -284,12 +308,16 @@ const Timeline = ({
             const maxWidth = (100 - currentLeft);
             
             if (percentWidth <= maxWidth) {
-              regionElement.style.width = `${percentWidth}%`;
-              
               const newDuration = (percentWidth / 100) * trackDuration;
-              label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
               
-              onUpdateItem(item.id, { duration: newDuration });
+              // Check for overlap with other images
+              if (!checkImageOverlap(item.id, item.startTime, newDuration)) {
+                regionElement.style.width = `${percentWidth}%`;
+                
+                label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
+                
+                onUpdateItem(item.id, { duration: newDuration });
+              }
             }
           };
           
@@ -325,12 +353,16 @@ const Timeline = ({
             const percentDx = (dx / trackWidth) * 100;
             const newLeft = Math.max(0, Math.min(100 - parseFloat(regionElement.style.width), startLeft + percentDx));
             
-            regionElement.style.left = `${newLeft}%`;
-            
             const newStartTime = (newLeft / 100) * trackDuration;
-            label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + item.duration).toFixed(1)}s`;
             
-            onUpdateItem(item.id, { startTime: newStartTime });
+            // Check for overlap with other images
+            if (!checkImageOverlap(item.id, newStartTime, item.duration)) {
+              regionElement.style.left = `${newLeft}%`;
+              
+              label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + item.duration).toFixed(1)}s`;
+              
+              onUpdateItem(item.id, { startTime: newStartTime });
+            }
           };
           
           const handleMouseUp = () => {

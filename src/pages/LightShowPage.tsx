@@ -32,6 +32,7 @@ const LightShowPage = () => {
   const [autoSync, setAutoSync] = useState(true);
   
   const selectedItem = selectedItemIndex !== null ? timelineItems[selectedItemIndex] : null;
+  const imageSelector = useRef<HTMLDivElement>(null);
 
   const handleAudioUpload = (file: File) => {
     setAudioFile(file);
@@ -123,6 +124,82 @@ const LightShowPage = () => {
       description: "Um espetáculo intenso de luzes piscantes foi criado baseado no seu áudio.",
     });
   };
+
+  const generateAutoImageSequence = () => {
+    if (!duration || !audioFile) {
+      toast({
+        title: "Erro",
+        description: "Por favor, carregue um áudio primeiro.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Get all selected images from the ImageSelector component
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+    
+    if (checkboxes.length === 0) {
+      toast({
+        title: "Nenhuma imagem selecionada",
+        description: "Por favor, selecione pelo menos uma imagem na biblioteca de imagens.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    toast({
+      title: "Gerando sequência de imagens",
+      description: "Criando uma sequência automática de imagens...",
+    });
+    
+    // Get all image URLs from selected checkboxes
+    const selectedImages: string[] = [];
+    checkboxes.forEach((checkbox) => {
+      const id = checkbox.id;
+      const index = parseInt(id.replace('image-', ''));
+      
+      // Get the image element next to the checkbox
+      const imageElement = checkbox.closest('.relative')?.querySelector('img');
+      if (imageElement) {
+        selectedImages.push(imageElement.src);
+      }
+    });
+    
+    // Remove any existing image items
+    const nonImageItems = timelineItems.filter(item => item.type !== 'image');
+    
+    // Create a sequence of images throughout the duration
+    const imageDuration = 3; // Each image shows for 3 seconds
+    const totalImages = selectedImages.length;
+    const newImageItems: TimelineItem[] = [];
+    
+    // Calculate spacing - distribute images across the duration
+    const totalDuration = duration - imageDuration; // Account for last image's duration
+    const step = Math.max(imageDuration, totalDuration / totalImages);
+    
+    for (let i = 0; i < totalImages; i++) {
+      const imageIndex = i % selectedImages.length;
+      const startTime = i * step;
+      
+      // Don't add images beyond the audio duration
+      if (startTime + imageDuration > duration) break;
+      
+      newImageItems.push({
+        id: `img-${Date.now()}-${i}`,
+        type: 'image',
+        startTime: startTime,
+        duration: imageDuration,
+        imageUrl: selectedImages[imageIndex]
+      });
+    }
+    
+    setTimelineItems([...nonImageItems, ...newImageItems]);
+    
+    toast({
+      title: "Sequência de imagens criada!",
+      description: `${newImageItems.length} imagens foram adicionadas à timeline.`,
+    });
+  };
   
   const addImageToTimeline = (imageUrl: string, duration: number = 3) => {
     if (!audioFile) {
@@ -141,6 +218,32 @@ const LightShowPage = () => {
       duration: duration,
       imageUrl
     };
+    
+    // Check for overlap with existing images
+    const images = timelineItems.filter(item => item.type === 'image');
+    let hasOverlap = false;
+    
+    for (const image of images) {
+      const imageEnd = image.startTime + image.duration;
+      const newItemEnd = newImage.startTime + newImage.duration;
+      
+      // Check if there's any overlap
+      if ((newImage.startTime >= image.startTime && newImage.startTime < imageEnd) || 
+          (newItemEnd > image.startTime && newItemEnd <= imageEnd) ||
+          (newImage.startTime <= image.startTime && newItemEnd >= imageEnd)) {
+        hasOverlap = true;
+        break;
+      }
+    }
+    
+    if (hasOverlap) {
+      toast({
+        title: "Sobreposição detectada",
+        description: "Não é possível adicionar imagem pois há sobreposição com outra imagem existente.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     setTimelineItems([...timelineItems, newImage]);
   };
@@ -289,6 +392,7 @@ const LightShowPage = () => {
                 addFlashlightPattern={addFlashlightPattern}
                 addImageToTimeline={addImageToTimeline}
                 generateAutoSyncPatterns={generateAutoSyncPatterns}
+                generateAutoImageSequence={generateAutoImageSequence}
                 handleReset={handleReset}
               />
               
@@ -332,7 +436,9 @@ const LightShowPage = () => {
               </TabsContent>
               
               <TabsContent value="images" className="flex-1 p-4 overflow-y-auto">
-                <ImageSelector onImageSelect={addImageToTimeline} />
+                <div ref={imageSelector}>
+                  <ImageSelector onImageSelect={addImageToTimeline} />
+                </div>
               </TabsContent>
               
               <TabsContent value="preview" className="flex-1 p-4 overflow-y-auto flex items-center justify-center">
