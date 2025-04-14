@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -37,7 +36,6 @@ const Timeline = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
-  const [regions, setRegions] = useState<Record<string, WaveformRegion>>({});
   const [zoomLevel, setZoomLevel] = useState<number>(250); // Increased default zoom level
   
   const imageTrackRef = useRef<HTMLDivElement>(null);
@@ -88,11 +86,10 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 1,
       secondaryLabelInterval: 0.2,
-      primaryColor: 'rgba(255, 255, 255, 1)', // This will be fixed by using correct types
-      secondaryColor: 'rgba(255, 255, 255, 0.7)', // This will be fixed by using correct types
       style: {
-        primaryColor: 'rgba(255, 255, 255, 1)',
-        secondaryColor: 'rgba(255, 255, 255, 0.7)',
+        fontSize: '10px',
+        color: 'rgba(255, 255, 255, 1)',
+        backgroundColor: 'transparent'
       }
     }));
     
@@ -157,6 +154,23 @@ const Timeline = ({
     
     return false;
   };
+  
+  // Synchronize the timeline marker between all tracks
+  useEffect(() => {
+    const updateMarker = () => {
+      if (!wavesurferRef.current) return;
+      
+      const trackDuration = wavesurferRef.current.getDuration() || 1;
+      const markerPosition = (currentTime / trackDuration) * 100;
+      
+      const markers = document.querySelectorAll('.timeline-marker');
+      markers.forEach(marker => {
+        (marker as HTMLElement).style.left = `${markerPosition}%`;
+      });
+    };
+    
+    updateMarker();
+  }, [currentTime]);
   
   useEffect(() => {
     if (!wavesurferRef.current || !imageTrackRef.current || !flashlightTrackRef.current) return;
@@ -279,18 +293,16 @@ const Timeline = ({
               const newStartTime = (newLeft / 100) * trackDuration;
               const newDuration = (percentWidth / 100) * trackDuration;
               
-              // Check for overlap with other images
-              if (!checkImageOverlap(item.id, newStartTime, newDuration)) {
-                regionElement.style.left = `${newLeft}%`;
-                regionElement.style.width = `${percentWidth}%`;
-                
-                label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + newDuration).toFixed(1)}s`;
-                
-                onUpdateItem(item.id, { 
-                  startTime: newStartTime,
-                  duration: newDuration 
-                });
-              }
+              regionElement.style.left = `${newLeft}%`;
+              regionElement.style.width = `${percentWidth}%`;
+              
+              label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + newDuration).toFixed(1)}s`;
+              
+              // Update the item data - without checking for overlap when actively resizing
+              onUpdateItem(item.id, { 
+                startTime: newStartTime,
+                duration: newDuration 
+              });
             }
           };
           
@@ -330,14 +342,12 @@ const Timeline = ({
             if (percentWidth <= maxWidth) {
               const newDuration = (percentWidth / 100) * trackDuration;
               
-              // Check for overlap with other images
-              if (!checkImageOverlap(item.id, item.startTime, newDuration)) {
-                regionElement.style.width = `${percentWidth}%`;
-                
-                label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
-                
-                onUpdateItem(item.id, { duration: newDuration });
-              }
+              regionElement.style.width = `${percentWidth}%`;
+              
+              label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
+              
+              // Update the item data - without checking for overlap when actively resizing
+              onUpdateItem(item.id, { duration: newDuration });
             }
           };
           
@@ -437,15 +447,18 @@ const Timeline = ({
       }
     });
     
-    const updateMarker = () => {
-      const currentPos = calculatePosition(currentTime);
+    // Update the marker on all tracks
+    const updateAllMarkers = () => {
+      if (!wavesurferRef.current) return;
+      
+      const markerPosition = calculatePosition(currentTime);
       const markers = document.querySelectorAll('.timeline-marker');
       markers.forEach(marker => {
-        (marker as HTMLElement).style.left = `${currentPos}%`;
+        (marker as HTMLElement).style.left = `${markerPosition}%`;
       });
     };
     
-    updateMarker();
+    updateAllMarkers();
     
     return () => {
       if (imageTrackRef.current) {

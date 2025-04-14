@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { TimelineItem } from '@/types/lightshow';
 
@@ -192,7 +193,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       <div className="mt-4 text-white/70 text-sm text-center">
         <p>Prévia do Aplicativo</p>
         <p className="text-xs mt-1">
-          {isPlaying ? "Reproduzindo..." : "Pressione Play para visualizar"}
+          {isPlaying ? "Reproduzindo..." : "Visualizando preview"}
         </p>
       </div>
     </div>
