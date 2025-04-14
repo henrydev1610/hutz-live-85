@@ -71,8 +71,8 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       
       if (blinkRate > 0) {
         // Set up flashing with the specified rate
-        // For faster blinking effects, increase the frequency
-        const intervalMs = Math.max(50, 1000 / blinkRate); // Minimum 50ms interval (20Hz max)
+        // For faster blinking effects, use a more aggressive approach
+        const intervalMs = Math.max(10, 1000 / blinkRate); // Minimum 10ms interval (100Hz max)
         let isOn = true;
         
         setActiveFlashlight(true);
