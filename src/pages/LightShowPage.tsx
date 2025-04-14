@@ -116,85 +116,6 @@ const LightShowPage = () => {
     });
   };
 
-  const generateAutoImageSequence = () => {
-    if (!duration || !audioFile) {
-      toast({
-        title: "Erro",
-        description: "Por favor, carregue um áudio primeiro.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
-    
-    if (checkboxes.length === 0) {
-      toast({
-        title: "Nenhuma imagem selecionada",
-        description: "Por favor, selecione pelo menos uma imagem na biblioteca de imagens.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    toast({
-      title: "Gerando sequência de imagens",
-      description: "Criando uma sequência automática de imagens...",
-    });
-    
-    const selectedImages: string[] = [];
-    checkboxes.forEach((checkbox) => {
-      const parentDiv = checkbox.closest('.relative');
-      if (parentDiv) {
-        const imageElement = parentDiv.querySelector('img');
-        if (imageElement && imageElement.src) {
-          selectedImages.push(imageElement.src);
-        }
-      }
-    });
-    
-    if (selectedImages.length === 0) {
-      toast({
-        title: "Erro ao obter imagens",
-        description: "Não foi possível encontrar as imagens selecionadas.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    const nonImageItems = timelineItems.filter(item => item.type !== 'image');
-    
-    const imageDuration = 5;
-    const totalImages = selectedImages.length;
-    const newImageItems: TimelineItem[] = [];
-    
-    const totalDuration = Math.min(duration - imageDuration, duration);
-    const step = Math.max(imageDuration, totalDuration / totalImages);
-    
-    for (let i = 0; i < totalImages; i++) {
-      const imageIndex = i % selectedImages.length;
-      
-      let startTime = i === 0 ? 0 : newImageItems[i-1].startTime + newImageItems[i-1].duration;
-      
-      if (startTime + imageDuration > duration) break;
-      
-      newImageItems.push({
-        id: `img-${Date.now()}-${i}`,
-        type: 'image',
-        startTime: startTime,
-        duration: imageDuration,
-        imageUrl: selectedImages[imageIndex]
-      });
-    }
-    
-    setTimelineItems([...nonImageItems, ...newImageItems]);
-    
-    toast({
-      title: "Sequência de imagens criada!",
-      description: `${newImageItems.length} imagens foram adicionadas à timeline.`,
-    });
-  };
-  
   const addImageToTimeline = (imageUrl: string, duration: number = 5, startTime?: number) => {
     if (!audioFile) {
       toast({
@@ -388,7 +309,6 @@ const LightShowPage = () => {
                 addFlashlightPattern={addFlashlightPattern}
                 addImageToTimeline={addImageToTimeline}
                 generateAutoSyncPatterns={generateAutoSyncPatterns}
-                generateAutoImageSequence={generateAutoImageSequence}
                 handleReset={handleReset}
               />
               

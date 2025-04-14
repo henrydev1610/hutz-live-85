@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Image, ImagePlus, Trash2, ListPlus } from 'lucide-react';
+import { Plus, Image, ImagePlus, Trash2, ListPlus, CheckSquare } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
 
 interface ImageSelectorProps {
   onImageSelect: (imageUrl: string, duration?: number, startTime?: number) => void;
@@ -179,6 +180,14 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
     setSelectedImages([]);
   };
 
+  const handleSelectAll = () => {
+    if (selectedImages.length === footballImages.length) {
+      setSelectedImages([]);
+    } else {
+      setSelectedImages([...footballImages]);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -188,30 +197,45 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
             {selectedImages.length} imagens selecionadas
           </div>
           {selectedImages.length > 0 && (
-            <>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={handleDeleteSelected}
-                className="text-red-500 hover:text-red-400 hover:bg-red-950/20"
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Excluir
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={handleAddSelectedToTimeline}
-                className="text-accent hover:text-accent-foreground"
-              >
-                <ListPlus className="h-4 w-4 mr-1" />
-                Adicionar à trilha
-              </Button>
-            </>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={handleDeleteSelected}
+              className="text-red-500 hover:text-red-400 hover:bg-red-950/20"
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Excluir
+            </Button>
           )}
         </div>
       </div>
+      
+      {selectedImages.length > 0 && (
+        <>
+          <div className="flex items-center gap-2 mt-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleSelectAll}
+              className="flex-1"
+            >
+              <CheckSquare className="h-4 w-4 mr-1" />
+              {selectedImages.length === footballImages.length ? "Desmarcar Todas" : "Selecionar Todas"}
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleAddSelectedToTimeline}
+              className="text-accent hover:text-accent-foreground flex-1"
+            >
+              <ListPlus className="h-4 w-4 mr-1" />
+              Adicionar à trilha
+            </Button>
+          </div>
+          <Separator className="bg-white/10 my-2" />
+        </>
+      )}
       
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {footballImages.map((image, index) => (
