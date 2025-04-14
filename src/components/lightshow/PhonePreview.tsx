@@ -15,19 +15,19 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const [backgroundColor, setBackgroundColor] = useState('#000000');
   const flashIntervalRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
+  const frameIdRef = useRef<number | null>(null);
   
   // Clear any existing intervals when component unmounts
   useEffect(() => {
     return () => {
       if (flashIntervalRef.current) {
-        if (typeof flashIntervalRef.current === 'number') {
-          if (flashIntervalRef.current > 10) { // Arbitrary threshold to distinguish between setInterval and rAF
-            window.cancelAnimationFrame(flashIntervalRef.current);
-          } else {
-            window.clearInterval(flashIntervalRef.current);
-          }
-        }
+        window.clearInterval(flashIntervalRef.current);
         flashIntervalRef.current = null;
+      }
+      
+      if (frameIdRef.current) {
+        window.cancelAnimationFrame(frameIdRef.current);
+        frameIdRef.current = null;
       }
     };
   }, []);
@@ -50,14 +50,13 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const updateActiveElements = (time: number) => {
     // Clear any existing flash intervals
     if (flashIntervalRef.current) {
-      if (typeof flashIntervalRef.current === 'number') {
-        if (flashIntervalRef.current > 10) { // Arbitrary threshold to distinguish between setInterval and rAF
-          window.cancelAnimationFrame(flashIntervalRef.current);
-        } else {
-          window.clearInterval(flashIntervalRef.current);
-        }
-      }
+      window.clearInterval(flashIntervalRef.current);
       flashIntervalRef.current = null;
+    }
+    
+    if (frameIdRef.current) {
+      window.cancelAnimationFrame(frameIdRef.current);
+      frameIdRef.current = null;
     }
     
     // Reset states
@@ -101,42 +100,26 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       setActiveFlashlight(true);
       
       if (blinkRate > 0) {
-        // For faster blinking effects (over 10Hz), use RAF for smoother animation
-        if (blinkRate > 10) {
-          let isOn = true;
-          let lastToggleTime = performance.now();
-          const toggleIntervalMs = 1000 / blinkRate;
-          
-          // Start with light on
-          setFlashlightIntensity(intensity);
-          
-          // Use more efficient animation frame for very fast blinking
-          const animateFlash = (timestamp: number) => {
-            if (timestamp - lastToggleTime >= toggleIntervalMs) {
-              isOn = !isOn;
-              setFlashlightIntensity(isOn ? intensity : 0);
-              lastToggleTime = timestamp;
-            }
-            
-            flashIntervalRef.current = window.requestAnimationFrame(animateFlash) as unknown as number;
-          };
-          
-          // Start the animation
-          flashIntervalRef.current = window.requestAnimationFrame(animateFlash) as unknown as number;
-        } else {
-          // For slower blinking, setInterval is fine
-          // Set up flashing with the specified rate
-          const intervalMs = Math.max(10, 1000 / blinkRate); // Minimum 10ms interval (100Hz max)
-          let isOn = true;
-          
-          // Start with light on
-          setFlashlightIntensity(intensity);
-          
-          flashIntervalRef.current = window.setInterval(() => {
+        // Always use requestAnimationFrame for better performance and synchronization
+        let isOn = true;
+        let lastToggleTime = performance.now();
+        const toggleIntervalMs = 1000 / blinkRate;
+        
+        // Start with light on
+        setFlashlightIntensity(intensity);
+        
+        const animateFlash = (timestamp: number) => {
+          if (timestamp - lastToggleTime >= toggleIntervalMs) {
             isOn = !isOn;
             setFlashlightIntensity(isOn ? intensity : 0);
-          }, intervalMs);
-        }
+            lastToggleTime = timestamp;
+          }
+          
+          frameIdRef.current = window.requestAnimationFrame(animateFlash);
+        };
+        
+        // Start the animation
+        frameIdRef.current = window.requestAnimationFrame(animateFlash);
       } else {
         // Steady light, no flashing
         setActiveFlashlight(true);
@@ -206,15 +189,17 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           className="relative w-full h-full overflow-hidden"
           style={{ backgroundColor }}
         >
-          {/* Flashlight spot effect at top center - always white */}
+          {/* Flashlight spot effect - much more prominent and visible */}
           {activeFlashlight && (
-            <div className="absolute top-10 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none">
+            <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center z-20 pointer-events-none">
               <div 
-                className="w-6 h-6 rounded-full"
+                className="w-40 h-40 rounded-full"
                 style={{ 
-                  boxShadow: `0 0 20px 10px #FFFFFF`,
-                  opacity: flashlightIntensity / 100,
-                  transition: 'opacity 20ms linear' // Even faster transitions for better sync with ultra-fast flashing
+                  boxShadow: `0 0 60px 40px rgba(255, 255, 255, ${flashlightIntensity / 100})`,
+                  transition: 'opacity 10ms linear',
+                  position: 'absolute',
+                  top: '20%',
+                  opacity: flashlightIntensity / 100
                 }}
               ></div>
             </div>

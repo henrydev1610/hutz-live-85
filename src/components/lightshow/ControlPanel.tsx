@@ -1,8 +1,7 @@
 
 import { Button } from "@/components/ui/button";
-import { Play, Pause, Wand2, RotateCcw, Flashlight, ImageIcon } from "lucide-react";
+import { Play, Pause, Wand2, RotateCcw, Flashlight } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { TimelineItem } from "@/types/lightshow";
 
 interface ControlPanelProps {
   isPlaying: boolean;
@@ -13,10 +12,7 @@ interface ControlPanelProps {
   addFlashlightPattern: () => void;
   addImageToTimeline: (imageUrl: string, duration?: number, startTime?: number) => void;
   generateAutoSyncPatterns: () => void;
-  generateAutoImageSequence?: () => void; // Optional
   handleReset: () => void;
-  selectedImages?: string[]; // Array of selected images
-  onAddSelectedImages?: () => void; // Callback to add selected images to timeline
 }
 
 const ControlPanel = ({
@@ -28,10 +24,7 @@ const ControlPanel = ({
   addFlashlightPattern,
   addImageToTimeline,
   generateAutoSyncPatterns,
-  generateAutoImageSequence,
-  handleReset,
-  selectedImages = [],
-  onAddSelectedImages
+  handleReset
 }: ControlPanelProps) => {
   const { toast } = useToast();
 
@@ -56,19 +49,6 @@ const ControlPanel = ({
       </span>
       
       <div className="ml-auto flex flex-wrap space-x-2">
-        {selectedImages && selectedImages.length > 0 && onAddSelectedImages && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onAddSelectedImages}
-            disabled={!audioFile}
-            className="bg-sky-950/40"
-          >
-            <ImageIcon className="h-4 w-4 mr-2" />
-            Adicionar Imagens ({selectedImages.length})
-          </Button>
-        )}
-        
         <Button
           size="sm"
           variant="outline"

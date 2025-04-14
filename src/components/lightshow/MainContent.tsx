@@ -110,8 +110,6 @@ const MainContent = ({
             addImageToTimeline={addImageToTimeline}
             generateAutoSyncPatterns={generateAutoSyncPatterns}
             handleReset={handleReset}
-            selectedImages={selectedImages}
-            onAddSelectedImages={onAddSelectedImages}
           />
           
           {!audioFile ? (

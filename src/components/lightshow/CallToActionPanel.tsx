@@ -1,12 +1,13 @@
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CallToActionType } from "@/types/lightshow";
-import { ImageIcon, Link, Ticket } from "lucide-react";
+import { ImageIcon, Link, Ticket, Upload } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 
 interface CallToActionPanelProps {
   callToAction: {
@@ -31,6 +32,34 @@ const CallToActionPanel = ({
   onContentChange,
   onAddToTimeline
 }: CallToActionPanelProps) => {
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const imageUrl = URL.createObjectURL(file);
+      
+      onContentChange({ imageUrl });
+      
+      toast({
+        title: "Imagem adicionada",
+        description: "A imagem foi carregada com sucesso.",
+      });
+      
+      // Reset the input value so the same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+  
+  const handleUploadClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="border-white/10 bg-black/30">
@@ -57,16 +86,28 @@ const CallToActionPanel = ({
               </TabsTrigger>
             </TabsList>
             
+            {/* Hidden file input used by all tabs */}
+            <input 
+              type="file" 
+              ref={fileInputRef}
+              accept="image/*" 
+              className="hidden" 
+              onChange={handleImageUpload} 
+            />
+            
             <TabsContent value="image" className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="image-url">URL da Imagem</Label>
-                <Input 
-                  id="image-url" 
-                  placeholder="https://exemplo.com/imagem.jpg" 
-                  value={callToAction.imageUrl || ''}
-                  onChange={(e) => onContentChange({ imageUrl: e.target.value })}
-                  className="bg-black/20 border-white/10"
-                />
+                <Label>Imagem</Label>
+                <div className="flex space-x-2">
+                  <Button 
+                    onClick={handleUploadClick} 
+                    variant="outline" 
+                    className="flex-1 border-dashed border-2"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Carregar Imagem
+                  </Button>
+                </div>
               </div>
               
               {callToAction.imageUrl && (
@@ -83,14 +124,17 @@ const CallToActionPanel = ({
             
             <TabsContent value="imageWithButton" className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="image-url-button">URL da Imagem</Label>
-                <Input 
-                  id="image-url-button" 
-                  placeholder="https://exemplo.com/imagem.jpg" 
-                  value={callToAction.imageUrl || ''}
-                  onChange={(e) => onContentChange({ imageUrl: e.target.value })}
-                  className="bg-black/20 border-white/10"
-                />
+                <Label>Imagem</Label>
+                <div className="flex space-x-2">
+                  <Button 
+                    onClick={handleUploadClick} 
+                    variant="outline" 
+                    className="flex-1 border-dashed border-2"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Carregar Imagem
+                  </Button>
+                </div>
               </div>
               
               <div className="space-y-2">
@@ -132,6 +176,20 @@ const CallToActionPanel = ({
             
             <TabsContent value="coupon" className="space-y-4">
               <div className="space-y-2">
+                <Label>Imagem (opcional)</Label>
+                <div className="flex space-x-2">
+                  <Button 
+                    onClick={handleUploadClick} 
+                    variant="outline" 
+                    className="flex-1 border-dashed border-2"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Carregar Imagem
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
                 <Label htmlFor="coupon-code">Código do Cupom</Label>
                 <Input 
                   id="coupon-code" 
@@ -153,17 +211,22 @@ const CallToActionPanel = ({
                 />
               </div>
               
-              {callToAction.couponCode && (
-                <div className="mt-4 border border-white/10 rounded-md p-4 flex flex-col items-center justify-center">
-                  <div className="text-lg font-bold mb-2">Cupom de Desconto</div>
-                  <div className="bg-white/10 px-6 py-3 rounded-md font-mono text-xl font-bold mb-3">
-                    {callToAction.couponCode}
-                  </div>
-                  <Button size="sm" variant="secondary">
-                    Resgatar
-                  </Button>
+              <div className="mt-4 border border-white/10 rounded-md p-4 flex flex-col items-center justify-center">
+                {callToAction.imageUrl && (
+                  <img 
+                    src={callToAction.imageUrl} 
+                    alt="Prévia" 
+                    className="max-h-20 object-contain mb-2"
+                  />
+                )}
+                <div className="text-lg font-bold mb-2">Cupom de Desconto</div>
+                <div className="bg-white/10 px-6 py-3 rounded-md font-mono text-xl font-bold mb-3">
+                  {callToAction.couponCode || "CUPOM20"}
                 </div>
-              )}
+                <Button size="sm" variant="secondary">
+                  Resgatar
+                </Button>
+              </div>
             </TabsContent>
           </Tabs>
           

@@ -38,30 +38,41 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
   
   const handleAddToTimeline = () => {
     if (selectedImage) {
-      onImageSelect(selectedImage, imageDuration);
-      
-      toast({
-        title: "Imagem adicionada",
-        description: `A imagem foi adicionada à timeline com duração de ${imageDuration} segundos.`,
-      });
+      // If multiple images are selected, add all of them to the timeline
+      if (selectedImages.length > 0) {
+        let lastImageEndTime = 0;
+        const imageItems = timelineItems.filter(item => item.type === 'image');
+        
+        if (imageItems.length > 0) {
+          imageItems.forEach(item => {
+            const endTime = item.startTime + item.duration;
+            if (endTime > lastImageEndTime) {
+              lastImageEndTime = endTime;
+            }
+          });
+        }
+        
+        selectedImages.forEach((imageUrl, index) => {
+          const startTime = lastImageEndTime + (index * imageDuration);
+          onImageSelect(imageUrl, imageDuration, startTime);
+        });
+        
+        toast({
+          title: "Imagens adicionadas",
+          description: `${selectedImages.length} imagens foram adicionadas à timeline em sequência.`,
+        });
+        
+        setSelectedImages([]);
+      } else {
+        // Just add the single selected image
+        onImageSelect(selectedImage, imageDuration);
+        
+        toast({
+          title: "Imagem adicionada",
+          description: `A imagem foi adicionada à timeline com duração de ${imageDuration} segundos.`,
+        });
+      }
     }
-  };
-
-  // Now this is just a notification that images are selected
-  const handleAddSelectedToTimeline = () => {
-    if (selectedImages.length === 0) {
-      toast({
-        title: "Nenhuma imagem selecionada",
-        description: "Selecione pelo menos uma imagem para adicionar à timeline.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    toast({
-      title: "Imagens prontas para adicionar",
-      description: `${selectedImages.length} imagens selecionadas. Clique em "Adicionar Imagens" no painel de controle para adicioná-las à timeline.`,
-    });
   };
 
   return (
@@ -76,7 +87,6 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
         totalImagesCount={footballImages.length}
         onSelectAll={handleSelectAll}
         onDeleteSelected={handleDeleteSelected}
-        onAddSelectedToTimeline={handleAddSelectedToTimeline}
       />
       
       <ImageGrid 
