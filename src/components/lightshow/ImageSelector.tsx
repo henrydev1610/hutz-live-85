@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 
 interface ImageSelectorProps {
-  onImageSelect: (imageUrl: string, duration?: number) => void;
+  onImageSelect: (imageUrl: string, duration?: number, startTime?: number) => void;
   timelineItems: any[]; // Timeline items to check for last image position
 }
 
@@ -19,16 +18,13 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
   const [imageDuration, setImageDuration] = useState<number>(5);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   
-  // Use localStorage to persist images
   const [footballImages, setFootballImages] = useState<string[]>([]);
   
-  // Load images from localStorage on component mount
   useEffect(() => {
     const savedImages = localStorage.getItem('footballImages');
     if (savedImages) {
       setFootballImages(JSON.parse(savedImages));
     } else {
-      // Initial images if nothing saved yet
       const defaultImages = [
         'https://images.unsplash.com/photo-1508098682722-e99c643e7f0b?w=600&q=80',
         'https://images.unsplash.com/photo-1577223625816-7546b71daf98?w=600&q=80',
@@ -40,7 +36,7 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
         'https://images.unsplash.com/photo-1553778263-73a83bab9b0c?w=600&q=80',
         'https://images.unsplash.com/photo-1616514197671-15d99ce7253f?w=600&q=80',
         'https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=600&q=80',
-        'https://images.unsplash.com/photo-1601512986351-9b6f6e782129?w=600&q=80',
+        'https://images.unsplash.com/photo-1601457625912-2d3cb243c8c8?w=600&q=80',
         'https://images.unsplash.com/photo-1570498839593-e565b39455fc?w=600&q=80',
         'https://images.unsplash.com/photo-1628891890467-b79f2c8ba7d9?w=600&q=80',
         'https://images.unsplash.com/photo-1574680178050-55c6a6a96e0a?w=600&q=80',
@@ -68,7 +64,6 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
     }
   }, []);
   
-  // Save images to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem('footballImages', JSON.stringify(footballImages));
   }, [footballImages]);
@@ -78,7 +73,6 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
       const file = e.target.files[0];
       const fileUrl = URL.createObjectURL(file);
       
-      // Add to library and save to localStorage
       const newImages = [...footballImages, fileUrl];
       setFootballImages(newImages);
       localStorage.setItem('footballImages', JSON.stringify(newImages));
@@ -88,7 +82,6 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
         description: "A imagem foi adicionada à biblioteca com sucesso.",
       });
       
-      // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -132,19 +125,15 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
       return;
     }
     
-    // Filter out selected images and update state
     const updatedImages = footballImages.filter(image => !selectedImages.includes(image));
     setFootballImages(updatedImages);
     
-    // Save to localStorage immediately after deletion
     localStorage.setItem('footballImages', JSON.stringify(updatedImages));
     
-    // If the currently selected image is in the deleted set, clear it
     if (selectedImage && selectedImages.includes(selectedImage)) {
       setSelectedImage(null);
     }
     
-    // Clear selection array
     setSelectedImages([]);
     
     toast({
@@ -153,7 +142,6 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
     });
   };
 
-  // NEW FUNCTION: Add all selected images to timeline in sequence
   const handleAddSelectedToTimeline = () => {
     if (selectedImages.length === 0) {
       toast({
@@ -164,12 +152,10 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
       return;
     }
 
-    // Find last image position in timeline
     let lastImageEndTime = 0;
     const imageItems = timelineItems.filter(item => item.type === 'image');
     
     if (imageItems.length > 0) {
-      // Find the image with the latest end time
       imageItems.forEach(item => {
         const endTime = item.startTime + item.duration;
         if (endTime > lastImageEndTime) {
@@ -178,13 +164,11 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
       });
     }
     
-    // Default duration for each image (10 seconds)
     const imageDuration = 10;
     
-    // Add each selected image to the timeline in sequence
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * imageDuration);
-      onImageSelect(imageUrl, imageDuration, startTime); // Modified onImageSelect to accept startTime parameter
+      onImageSelect(imageUrl, imageDuration, startTime);
     });
     
     toast({
@@ -192,7 +176,6 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
       description: `${selectedImages.length} imagens foram adicionadas à timeline em sequência.`,
     });
     
-    // Clear selection after adding to timeline
     setSelectedImages([]);
   };
 
@@ -216,7 +199,6 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
                 Excluir
               </Button>
               
-              {/* New button to add selected images to timeline */}
               <Button 
                 variant="outline" 
                 size="sm" 
