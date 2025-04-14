@@ -66,131 +66,112 @@ export function useLightShowLogic() {
     try {
       const { beats, bassBeats, trebleBeats } = await detectBeats(audioFile);
       
+      let allPotentialTimes: number[] = [];
+      
+      allPotentialTimes.push(...beats);
+      allPotentialTimes.push(...bassBeats);
+      allPotentialTimes.push(...trebleBeats);
+      
+      for (let time = 0; time < duration; time += 0.3) {
+        allPotentialTimes.push(time);
+      }
+      
+      allPotentialTimes.sort((a, b) => a - b);
+      const filteredTimes: number[] = [];
+      
+      for (let i = 0; i < allPotentialTimes.length; i++) {
+        if (i === 0 || allPotentialTimes[i] - allPotentialTimes[i-1] > 0.08) {
+          filteredTimes.push(allPotentialTimes[i]);
+        }
+      }
+      
       const newPatterns: TimelineItem[] = [];
       
-      // Create sequential flashes for beats with increased spacing between effects
-      beats.forEach((time, index) => {
+      filteredTimes.forEach((time, index) => {
         if (time < duration) {
-          // Increase minimum spacing to 0.12s to prevent overlaps
-          const tooClose = newPatterns.some(item => 
-            Math.abs(item.startTime - time) < 0.12
-          );
+          const lastTime = index > 0 ? filteredTimes[index - 1] : 0;
+          const nextTime = index < filteredTimes.length - 1 ? filteredTimes[index + 1] : duration;
+          const currentGap = time - lastTime;
+          const nextGap = nextTime - time;
           
-          if (!tooClose) {
-            const flashDuration = 0.015; // Even shorter 15ms flash for faster effects
-            
-            newPatterns.push({
-              id: `flash-beat-${Date.now()}-${index}`,
-              type: 'flashlight',
-              startTime: time,
-              duration: flashDuration,
-              pattern: {
-                intensity: 100, // Full intensity
-                blinkRate: 200, // 200 Hz (even faster)
-                color: '#FFFFFF'
-              }
-            });
+          if ((index % 3 === 0 || index % 5 === 0) && currentGap < 0.2 && nextGap < 0.3) {
+            return;
           }
-        }
-      });
-      
-      // Add bass beats with better spacing
-      bassBeats.forEach((time, index) => {
-        if (time < duration) {
-          // Check if this beat is too close to others - increase spacing
-          const tooClose = newPatterns.some(item => 
-            Math.abs(item.startTime - time) < 0.15 // 150ms spacing to prevent overlap
-          );
           
-          if (!tooClose) {
-            const flashDuration = 0.025; // 25ms (shorter)
-            
-            newPatterns.push({
-              id: `flash-bass-${Date.now()}-${index}`,
-              type: 'flashlight',
-              startTime: time,
-              duration: flashDuration,
-              pattern: {
-                intensity: 100, // Full intensity
-                blinkRate: 180, // 180 Hz (faster)
-                color: '#FFFFFF'
-              }
-            });
-          }
-        }
-      });
-      
-      // Add treble beats with better spacing
-      trebleBeats.forEach((time, index) => {
-        if (time < duration && index % 2 === 0) { // Take every 2nd treble beat to reduce density
-          // Check if this beat is too close to others
-          const tooClose = newPatterns.some(item => 
-            Math.abs(item.startTime - time) < 0.18 // 180ms spacing
-          );
+          let intensity = 100;
+          let blinkRate = 0;
+          let flashDuration = 0.015;
           
-          if (!tooClose) {
-            const flashDuration = 0.01; // 10ms (very short)
-            
-            newPatterns.push({
-              id: `flash-treble-${Date.now()}-${index}`,
-              type: 'flashlight',
-              startTime: time,
-              duration: flashDuration,
-              pattern: {
-                intensity: 100,
-                blinkRate: 220, // 220 Hz (extremely fast)
-                color: '#FFFFFF'
-              }
-            });
+          if (index % 4 === 0) {
+            blinkRate = 200 + (index % 5) * 20;
+            flashDuration = 0.025;
+          } 
+          else if (index % 3 === 0) {
+            blinkRate = 160 + (index % 6) * 10;
+            flashDuration = 0.02;
+          } 
+          else {
+            blinkRate = 120 + (index % 8) * 5;
+            flashDuration = 0.01;
           }
-        }
-      });
-      
-      // Add strobe effects with better spacing
-      for (let time = 2; time < duration; time += 4) { // Every 4 seconds
-        // Check for existing flashes within a wider window
-        const hasNearbyFlashes = newPatterns.some(item => 
-          Math.abs(item.startTime - time) < 0.8 // Check for flashes within 0.8s
-        );
-        
-        if (!hasNearbyFlashes) {
-          const clusterSize = 3; // Reduce to 3 flashes to avoid overwhelming
-          for (let i = 0; i < clusterSize; i++) {
-            const strokeTime = time + (i * 0.12); // Increase to 120ms spacing between flashes
-            
-            if (strokeTime < duration) {
+          
+          if (index % 11 === 0 && time + 0.3 < duration) {
+            for (let j = 0; j < 3; j++) {
               newPatterns.push({
-                id: `flash-strobe-${Date.now()}-${time}-${i}`,
+                id: `flash-sequence-${Date.now()}-${index}-${j}`,
                 type: 'flashlight',
-                startTime: strokeTime,
-                duration: 0.01, // 10ms (very short)
+                startTime: time + (j * 0.06),
+                duration: 0.01,
                 pattern: {
                   intensity: 100,
-                  blinkRate: 200, // 200 Hz (very fast)
+                  blinkRate: 220,
                   color: '#FFFFFF'
                 }
               });
             }
+          } else {
+            newPatterns.push({
+              id: `flash-auto-${Date.now()}-${index}`,
+              type: 'flashlight',
+              startTime: time,
+              duration: flashDuration,
+              pattern: {
+                intensity: intensity,
+                blinkRate: blinkRate,
+                color: '#FFFFFF'
+              }
+            });
           }
         }
-      }
+      });
       
-      // Sort patterns by start time 
-      newPatterns.sort((a, b) => a.startTime - b.startTime);
+      const sortedPatterns = [...newPatterns].sort((a, b) => a.startTime - b.startTime);
+      const gapFillers: TimelineItem[] = [];
       
-      // Final pass to prevent overlapping - stricter check
-      const finalPatterns: TimelineItem[] = [];
-      let lastEndTime = 0;
-      
-      for (const pattern of newPatterns) {
-        // No overlap allowed to ensure clean effects
-        if (pattern.startTime >= lastEndTime) {
-          finalPatterns.push(pattern);
-          lastEndTime = pattern.startTime + pattern.duration + 0.05; // Add 50ms buffer between effects
+      for (let i = 0; i < sortedPatterns.length - 1; i++) {
+        const currentEnd = sortedPatterns[i].startTime + sortedPatterns[i].duration;
+        const nextStart = sortedPatterns[i + 1].startTime;
+        const gap = nextStart - currentEnd;
+        
+        if (gap > 0.5) {
+          const fillerTime = currentEnd + 0.3;
+          gapFillers.push({
+            id: `flash-filler-${Date.now()}-${i}`,
+            type: 'flashlight',
+            startTime: fillerTime,
+            duration: 0.015,
+            pattern: {
+              intensity: 90,
+              blinkRate: 150,
+              color: '#FFFFFF'
+            }
+          });
         }
       }
       
-      setTimelineItems([...nonFlashlightItems, ...finalPatterns]);
+      newPatterns.push(...gapFillers);
+      
+      setTimelineItems([...nonFlashlightItems, ...newPatterns]);
       
       toast({
         title: "Show de luzes criado!",
@@ -315,10 +296,10 @@ export function useLightShowLogic() {
       id: `flash-${Date.now()}`,
       type: 'flashlight',
       startTime: currentTime,
-      duration: 0.03, // Shorter 30ms duration for quick flash
+      duration: 0.03,
       pattern: {
         intensity: 100,
-        blinkRate: 120, // Much faster blinking at 120Hz
+        blinkRate: 120,
         color: '#FFFFFF'
       }
     };
@@ -411,19 +392,17 @@ export function useLightShowLogic() {
       return;
     }
     
-    // Add the call to action at the end of the song
     const ctaStartTime = duration > 0 ? duration : 0;
     
     const newCta: TimelineItem = {
       id: `cta-${Date.now()}`,
       type: 'callToAction',
       startTime: ctaStartTime,
-      duration: 10, // Default 10 seconds display time
+      duration: 10,
       content: callToAction
     };
     
     setTimelineItems(prev => {
-      // Remove any existing call to action items
       const filteredItems = prev.filter(item => item.type !== 'callToAction');
       return [...filteredItems, newCta];
     });
@@ -465,7 +444,6 @@ export function useLightShowLogic() {
         audioEditInfo.endTrim || duration
       );
       
-      // Create a new file from the trimmed audio
       const newFile = new File([trimmedAudio], `${audioFile.name.split('.')[0]}_trimmed.wav`, {
         type: 'audio/wav'
       });

@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { TimelineItem } from '@/types/lightshow';
 
@@ -86,6 +87,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       if (blinkRate > 0) {
         let isOn = true;
         let lastToggleTime = performance.now();
+        // Ensure the toggle interval is small enough for fast blinking
         const toggleIntervalMs = 1000 / blinkRate;
         
         setFlashlightIntensity(intensity);
@@ -162,12 +164,12 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           {activeFlashlight && (
             <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center z-20 pointer-events-none">
               <div 
-                className="w-8 h-8 rounded-full"
+                className="w-6 h-6 rounded-full"
                 style={{ 
-                  boxShadow: `0 0 20px 10px rgba(255, 255, 255, ${flashlightIntensity / 100})`,
-                  transition: 'opacity 2ms linear',
+                  boxShadow: `0 0 15px 7px rgba(255, 255, 255, ${flashlightIntensity / 100})`,
+                  transition: 'opacity 1ms linear', // Make transition super fast
                   position: 'absolute',
-                  top: '3%',
+                  top: '3%', // Keep at the top
                   opacity: flashlightIntensity / 100
                 }}
               ></div>
