@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 
 export const useImageLibrary = () => {
   const { toast } = useToast();
@@ -72,9 +72,13 @@ export const useImageLibrary = () => {
   ];
 
   const addImageToLibrary = (imageUrl: string) => {
-    const newImages = [...footballImages, imageUrl];
-    setFootballImages(newImages);
-    localStorage.setItem('footballImages', JSON.stringify(newImages));
+    setFootballImages(prevImages => {
+      const newImages = [...prevImages, imageUrl];
+      // Save to localStorage immediately
+      localStorage.setItem('footballImages', JSON.stringify(newImages));
+      console.log(`Added image to library: ${imageUrl}, total images: ${newImages.length}`);
+      return newImages;
+    });
   };
 
   const toggleImageSelection = (imageUrl: string) => {
