@@ -72,15 +72,17 @@ export function useLightShowLogic() {
       allPotentialTimes.push(...bassBeats);
       allPotentialTimes.push(...trebleBeats);
       
-      for (let time = 0; time < duration; time += 0.3) {
+      const intervalStep = 0.1;
+      for (let time = 0; time < duration; time += intervalStep) {
         allPotentialTimes.push(time);
       }
       
       allPotentialTimes.sort((a, b) => a - b);
       const filteredTimes: number[] = [];
+      const minInterval = 0.03;
       
       for (let i = 0; i < allPotentialTimes.length; i++) {
-        if (i === 0 || allPotentialTimes[i] - allPotentialTimes[i-1] > 0.08) {
+        if (i === 0 || allPotentialTimes[i] - allPotentialTimes[i-1] > minInterval) {
           filteredTimes.push(allPotentialTimes[i]);
         }
       }
@@ -89,42 +91,31 @@ export function useLightShowLogic() {
       
       filteredTimes.forEach((time, index) => {
         if (time < duration) {
-          const lastTime = index > 0 ? filteredTimes[index - 1] : 0;
-          const nextTime = index < filteredTimes.length - 1 ? filteredTimes[index + 1] : duration;
-          const currentGap = time - lastTime;
-          const nextGap = nextTime - time;
+          const flashDuration = 0.01;
           
-          if ((index % 3 === 0 || index % 5 === 0) && currentGap < 0.2 && nextGap < 0.3) {
-            return;
-          }
-          
-          let intensity = 100;
+          let intensity = 90 + (index % 3) * 3;
           let blinkRate = 0;
-          let flashDuration = 0.015;
           
-          if (index % 4 === 0) {
-            blinkRate = 200 + (index % 5) * 20;
-            flashDuration = 0.025;
+          if (index % 8 === 0) {
+            blinkRate = 220 + (index % 5) * 20;
           } 
-          else if (index % 3 === 0) {
-            blinkRate = 160 + (index % 6) * 10;
-            flashDuration = 0.02;
+          else if (index % 5 === 0) {
+            blinkRate = 180 + (index % 6) * 15;
           } 
           else {
-            blinkRate = 120 + (index % 8) * 5;
-            flashDuration = 0.01;
+            blinkRate = 150 + (index % 10) * 10;
           }
           
-          if (index % 11 === 0 && time + 0.3 < duration) {
+          if (index % 12 === 0 && time + 0.25 < duration) {
             for (let j = 0; j < 3; j++) {
               newPatterns.push({
-                id: `flash-sequence-${Date.now()}-${index}-${j}`,
+                id: `flash-burst-${Date.now()}-${index}-${j}`,
                 type: 'flashlight',
-                startTime: time + (j * 0.06),
-                duration: 0.01,
+                startTime: time + (j * 0.02),
+                duration: 0.008,
                 pattern: {
                   intensity: 100,
-                  blinkRate: 220,
+                  blinkRate: 250 + (j * 20),
                   color: '#FFFFFF'
                 }
               });
@@ -153,16 +144,16 @@ export function useLightShowLogic() {
         const nextStart = sortedPatterns[i + 1].startTime;
         const gap = nextStart - currentEnd;
         
-        if (gap > 0.5) {
-          const fillerTime = currentEnd + 0.3;
+        if (gap > 0.3) {
+          const fillerTime = currentEnd + (gap / 2);
           gapFillers.push({
             id: `flash-filler-${Date.now()}-${i}`,
             type: 'flashlight',
             startTime: fillerTime,
-            duration: 0.015,
+            duration: 0.01,
             pattern: {
-              intensity: 90,
-              blinkRate: 150,
+              intensity: 95,
+              blinkRate: 200,
               color: '#FFFFFF'
             }
           });
@@ -171,7 +162,25 @@ export function useLightShowLogic() {
       
       newPatterns.push(...gapFillers);
       
-      setTimelineItems([...nonFlashlightItems, ...newPatterns]);
+      const finalPatterns: TimelineItem[] = [];
+      const sortedFinalPatterns = [...newPatterns].sort((a, b) => a.startTime - b.startTime);
+      
+      for (let i = 0; i < sortedFinalPatterns.length; i++) {
+        const current = sortedFinalPatterns[i];
+        const currentEnd = current.startTime + current.duration;
+        
+        if (i < sortedFinalPatterns.length - 1) {
+          const next = sortedFinalPatterns[i + 1];
+          
+          if (currentEnd > next.startTime) {
+            current.duration = Math.max(0.005, next.startTime - current.startTime - 0.001);
+          }
+        }
+        
+        finalPatterns.push(current);
+      }
+      
+      setTimelineItems([...nonFlashlightItems, ...finalPatterns]);
       
       toast({
         title: "Show de luzes criado!",
