@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { TimelineItem, CallToActionType } from "@/types/lightshow";
 import { generateUltrasonicAudio, detectBeats, trimAudioFile } from "@/utils/audioProcessing";
 
@@ -484,7 +484,9 @@ export function useLightShowLogic() {
       return;
     }
     
-    const ctaStartTime = duration > 0 ? duration : 0;
+    const ctaStartTime = Math.max(0, duration - 10); // 10 seconds before the end, or at the beginning if too short
+    
+    console.log(`Adding call to action at time: ${ctaStartTime}s, audio duration: ${duration}s`);
     
     const newCta: TimelineItem = {
       id: `cta-${Date.now()}`,
@@ -501,7 +503,7 @@ export function useLightShowLogic() {
     
     toast({
       title: "Chamada adicionada",
-      description: "A chamada foi adicionada ao final da música.",
+      description: `A chamada foi adicionada ${ctaStartTime > 0 ? '10 segundos antes do fim' : 'ao início'} da música.`,
     });
   };
   

@@ -1,6 +1,6 @@
 
 import { useEffect } from 'react';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { useImageLibrary } from './image-selector/useImageLibrary';
 import ImageLibraryHeader from './image-selector/ImageLibraryHeader';
 import ImageSelectionControls from './image-selector/ImageSelectionControls';
@@ -71,7 +71,7 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
       });
     }
     
-    const fixedDuration = 10; // 10 seconds duration as requested
+    const fixedDuration = 5; // Changed from 10 to 5 seconds duration as requested
     
     // We'll directly call the parent's handler for each image
     selectedImages.forEach((imageUrl, index) => {
