@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,6 @@ import { Download, Save } from "lucide-react";
 import { TimelineItem } from "@/types/lightshow";
 import { generateUltrasonicAudio } from "@/utils/audioProcessing";
 
-// Import refactored components
 import Timeline from "@/components/lightshow/Timeline";
 import PhonePreview from "@/components/lightshow/PhonePreview";
 import AudioUploader from "@/components/lightshow/AudioUploader";
@@ -56,34 +55,28 @@ const LightShowPage = () => {
       description: "Processando o áudio e criando um show de luzes intenso...",
     });
     
-    // Clear any existing flashlight items
     const nonFlashlightItems = timelineItems.filter(item => item.type !== 'flashlight');
     
     const newPatterns: TimelineItem[] = [];
     
-    // Create more intense, varied patterns with more spacing between flashes
-    // Using a longer interval (0.4s instead of 0.1s) for more distinct flashes
     for (let time = 0; time < duration; time += 0.4) {
-      // Generate random properties for more dramatic effect
-      const randomIntensity = 80 + Math.random() * 20; // Higher base intensity (80-100%)
-      const randomDuration = 0.1 + Math.random() * 0.15; // Slightly longer flashes for more distinct on/off states
-      const randomBlinkRate = 3 + Math.random() * 5; // More varied blink rates (3-8Hz)
+      const randomIntensity = 80 + Math.random() * 20;
+      const randomDuration = 0.1 + Math.random() * 0.15;
+      const randomBlinkRate = 3 + Math.random() * 5;
       
-      // Add variation - occasionally add brighter bursts
-      if (Math.random() > 0.6) { // Less frequent bursts (40% chance)
+      if (Math.random() > 0.6) {
         newPatterns.push({
           id: `flash-${Date.now()}-${time}-burst`,
           type: 'flashlight',
           startTime: time,
           duration: randomDuration,
           pattern: {
-            intensity: 100, // Max intensity for bursts
-            blinkRate: 8, // Fast but not too fast
-            color: '#FFFFFF' // White light
+            intensity: 100,
+            blinkRate: 8,
+            color: '#FFFFFF'
           }
         });
       } else {
-        // Add more spaced out strobe effects
         newPatterns.push({
           id: `flash-${Date.now()}-${time}`,
           type: 'flashlight',
@@ -92,25 +85,24 @@ const LightShowPage = () => {
           pattern: {
             intensity: randomIntensity,
             blinkRate: randomBlinkRate,
-            color: '#FFFFFF' // White light
+            color: '#FFFFFF'
           }
         });
       }
     }
     
-    // Special effect: Add intense strobe effects at intervals with more spacing
-    for (let time = 1; time < duration; time += 8) { // Increased interval from 5 to 8
-      for (let i = 0; i < 10; i++) { // Fewer strobes but more distinct
-        const strokeTime = time + (i * 0.2); // More spacing between flashes
+    for (let time = 1; time < duration; time += 8) {
+      for (let i = 0; i < 10; i++) {
+        const strokeTime = time + (i * 0.2);
         newPatterns.push({
           id: `flash-${Date.now()}-strobe-${strokeTime}`,
           type: 'flashlight',
           startTime: strokeTime,
-          duration: 0.08, // Slightly longer duration for more visible flashes
+          duration: 0.08,
           pattern: {
             intensity: 100,
-            blinkRate: 4, // Lower rate makes each flash more distinct
-            color: '#FFFFFF' // White light only
+            blinkRate: 4,
+            color: '#FFFFFF'
           }
         });
       }
@@ -134,7 +126,6 @@ const LightShowPage = () => {
       return;
     }
     
-    // Get all images with checked checkboxes from the ImageSelector component
     const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
     
     if (checkboxes.length === 0) {
@@ -151,7 +142,6 @@ const LightShowPage = () => {
       description: "Criando uma sequência automática de imagens...",
     });
     
-    // Get all image URLs from selected checkboxes
     const selectedImages: string[] = [];
     checkboxes.forEach((checkbox) => {
       const parentDiv = checkbox.closest('.relative');
@@ -172,26 +162,20 @@ const LightShowPage = () => {
       return;
     }
     
-    // Remove any existing image items
     const nonImageItems = timelineItems.filter(item => item.type !== 'image');
     
-    // Create a sequence of images throughout the duration
-    const imageDuration = 5; // Each image shows for 5 seconds
+    const imageDuration = 5;
     const totalImages = selectedImages.length;
     const newImageItems: TimelineItem[] = [];
     
-    // Calculate spacing - distribute images across the duration
-    const totalDuration = Math.min(duration - imageDuration, duration); // Account for last image's duration
+    const totalDuration = Math.min(duration - imageDuration, duration);
     const step = Math.max(imageDuration, totalDuration / totalImages);
     
-    // Place images one after another without overlapping
     for (let i = 0; i < totalImages; i++) {
       const imageIndex = i % selectedImages.length;
       
-      // Determine the start time for this image
       let startTime = i === 0 ? 0 : newImageItems[i-1].startTime + newImageItems[i-1].duration;
       
-      // Don't add images beyond the audio duration
       if (startTime + imageDuration > duration) break;
       
       newImageItems.push({
@@ -229,7 +213,6 @@ const LightShowPage = () => {
       imageUrl
     };
     
-    // Check for overlap with existing images
     const images = timelineItems.filter(item => item.type === 'image');
     let hasOverlap = false;
     
@@ -237,7 +220,6 @@ const LightShowPage = () => {
       const imageEnd = image.startTime + image.duration;
       const newItemEnd = newImage.startTime + newImage.duration;
       
-      // Check if there's any overlap
       if ((newImage.startTime >= image.startTime && newImage.startTime < imageEnd) || 
           (newItemEnd > image.startTime && newItemEnd <= imageEnd) ||
           (newImage.startTime <= image.startTime && newItemEnd >= imageEnd)) {
@@ -276,7 +258,7 @@ const LightShowPage = () => {
       pattern: {
         intensity: 100,
         blinkRate: 5,
-        color: '#FFFFFF' // Always white for flashlight (phone flashlight)
+        color: '#FFFFFF'
       }
     };
     
@@ -431,7 +413,7 @@ const LightShowPage = () => {
           <ResizablePanel defaultSize={35} minSize={30}>
             <Tabs defaultValue="properties" className="h-full flex flex-col">
               <TabsList className="mx-4 mt-4 grid grid-cols-3">
-                <TabsTrigger value="properties">Propriedades</TabsTrigger>
+                <TabsTrigger value="properties">Música</TabsTrigger>
                 <TabsTrigger value="images">Imagens</TabsTrigger>
                 <TabsTrigger value="preview">Preview</TabsTrigger>
               </TabsList>
