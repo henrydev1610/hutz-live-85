@@ -431,7 +431,7 @@ const Timeline = ({
         
         const label = document.createElement('div');
         label.className = 'absolute bottom-1 left-2 text-xs text-white bg-black/50 px-1 rounded';
-        label.textContent = `${item.startTime.toFixed(1)}s`;
+        label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + item.duration).toFixed(1)}s`;
         regionElement.appendChild(label);
         
         if (item.pattern) {
@@ -441,11 +441,184 @@ const Timeline = ({
           regionElement.appendChild(intensityIndicator);
         }
         
+        // Add left resize handle with cursor indicator
+        const leftResizeHandle = document.createElement('div');
+        leftResizeHandle.className = 'absolute left-0 top-0 h-full w-4 cursor-ew-resize z-10';
+        
+        // Little visual handle to make it more obvious
+        const leftHandleVisual = document.createElement('div');
+        leftHandleVisual.className = 'absolute left-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
+        leftHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
+        leftResizeHandle.appendChild(leftHandleVisual);
+        
+        // Right resize handle with cursor indicator
+        const rightResizeHandle = document.createElement('div');
+        rightResizeHandle.className = 'absolute right-0 top-0 h-full w-4 cursor-ew-resize z-10';
+        
+        // Little visual handle to make it more obvious
+        const rightHandleVisual = document.createElement('div');
+        rightHandleVisual.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
+        rightHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
+        rightResizeHandle.appendChild(rightHandleVisual);
+        
+        // Drag handle with hand cursor
+        const dragHandle = document.createElement('div');
+        dragHandle.className = 'absolute inset-0 cursor-grab';
+        dragHandle.innerHTML = '<div class="absolute top-2 right-1/2 transform translate-x-1/2 opacity-50"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v2m0 0v2m0-2h6m0 0V3m0 2v2"></path><path d="M9 17v2m0 0v2m0-2h6m0 0v-2m0 2v2"></path><path d="M5 7v10M19 7v10"></path></svg></div>';
+        
+        let isDragging = false;
+        let isResizingLeft = false;
+        let isResizingRight = false;
+        let startX = 0;
+        let startLeft = 0;
+        let startWidth = 0;
+        
         regionElement.addEventListener('click', (e) => {
           e.stopPropagation();
           const index = timelineItems.findIndex(i => i.id === item.id);
           onItemSelect(index);
         });
+        
+        // Left resize handle functionality
+        leftResizeHandle.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          isResizingLeft = true;
+          startX = e.clientX;
+          startLeft = parseFloat(regionElement.style.left);
+          startWidth = regionElement.offsetWidth;
+          
+          document.body.style.cursor = 'ew-resize';
+          
+          const handleMouseMove = (moveEvent: MouseEvent) => {
+            if (!isResizingLeft) return;
+            
+            moveEvent.preventDefault();
+            
+            const dx = moveEvent.clientX - startX;
+            const newLeft = Math.max(0, startLeft + (dx / trackWidth * 100));
+            const newWidth = Math.max(5, startWidth - dx);
+            
+            const percentWidth = (newWidth / trackWidth) * 100;
+            const maxLeft = 100 - percentWidth;
+            
+            if (newLeft <= maxLeft) {
+              const newStartTime = (newLeft / 100) * trackDuration;
+              const newDuration = (percentWidth / 100) * trackDuration;
+              
+              regionElement.style.left = `${newLeft}%`;
+              regionElement.style.width = `${percentWidth}%`;
+              
+              label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + newDuration).toFixed(1)}s`;
+              
+              // Update the item data
+              onUpdateItem(item.id, { 
+                startTime: newStartTime,
+                duration: newDuration 
+              });
+            }
+          };
+          
+          const handleMouseUp = () => {
+            isResizingLeft = false;
+            document.body.style.cursor = '';
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+          };
+          
+          document.addEventListener('mousemove', handleMouseMove);
+          document.addEventListener('mouseup', handleMouseUp);
+        });
+        
+        // Right resize handle functionality
+        rightResizeHandle.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          isResizingRight = true;
+          startX = e.clientX;
+          startWidth = regionElement.offsetWidth;
+          
+          document.body.style.cursor = 'ew-resize';
+          
+          const handleMouseMove = (moveEvent: MouseEvent) => {
+            if (!isResizingRight) return;
+            
+            moveEvent.preventDefault();
+            
+            const dx = moveEvent.clientX - startX;
+            const newWidth = Math.max(5, startWidth + dx);
+            const percentWidth = (newWidth / trackWidth) * 100;
+            
+            // Check if the new width would go beyond the track
+            const currentLeft = parseFloat(regionElement.style.left);
+            const maxWidth = (100 - currentLeft);
+            
+            if (percentWidth <= maxWidth) {
+              const newDuration = (percentWidth / 100) * trackDuration;
+              
+              regionElement.style.width = `${percentWidth}%`;
+              
+              label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
+              
+              // Update the item data
+              onUpdateItem(item.id, { duration: newDuration });
+            }
+          };
+          
+          const handleMouseUp = () => {
+            isResizingRight = false;
+            document.body.style.cursor = '';
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+          };
+          
+          document.addEventListener('mousemove', handleMouseMove);
+          document.addEventListener('mouseup', handleMouseUp);
+        });
+        
+        // Drag handle functionality
+        dragHandle.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          if (isResizingLeft || isResizingRight) return;
+          
+          isDragging = true;
+          startX = e.clientX;
+          startLeft = parseFloat(regionElement.style.left);
+          
+          dragHandle.style.cursor = 'grabbing';
+          document.body.style.cursor = 'grabbing';
+          
+          const handleMouseMove = (moveEvent: MouseEvent) => {
+            if (!isDragging) return;
+            
+            moveEvent.preventDefault();
+            
+            const dx = moveEvent.clientX - startX;
+            const percentDx = (dx / trackWidth) * 100;
+            const newLeft = Math.max(0, Math.min(100 - parseFloat(regionElement.style.width), startLeft + percentDx));
+            
+            const newStartTime = (newLeft / 100) * trackDuration;
+            
+            regionElement.style.left = `${newLeft}%`;
+            label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + item.duration).toFixed(1)}s`;
+            
+            onUpdateItem(item.id, { startTime: newStartTime });
+          };
+          
+          const handleMouseUp = () => {
+            isDragging = false;
+            dragHandle.style.cursor = 'grab';
+            document.body.style.cursor = '';
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+          };
+          
+          document.addEventListener('mousemove', handleMouseMove);
+          document.addEventListener('mouseup', handleMouseUp);
+        });
+        
+        // Append elements in the correct order for proper z-index handling
+        regionElement.appendChild(dragHandle);
+        regionElement.appendChild(leftResizeHandle);
+        regionElement.appendChild(rightResizeHandle);
         
         flashlightTrackRef.current.appendChild(regionElement);
       }

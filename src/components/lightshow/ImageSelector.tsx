@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -165,7 +166,7 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
       });
     }
     
-    const imageDuration = 10;
+    const imageDuration = 5;
     
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * imageDuration);
@@ -233,7 +234,7 @@ const ImageSelector = ({ onImageSelect, timelineItems }: ImageSelectorProps) => 
               Adicionar à trilha
             </Button>
           </div>
-          <Separator className="bg-white/10 my-2" />
+          <Separator className="bg-white/10 my-4" />
         </>
       )}
       

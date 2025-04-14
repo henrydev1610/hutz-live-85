@@ -347,7 +347,7 @@ const LightShowPage = () => {
           <ResizablePanel defaultSize={35} minSize={30}>
             <Tabs defaultValue="properties" className="h-full flex flex-col">
               <TabsList className="mx-4 mt-4 grid grid-cols-3">
-                <TabsTrigger value="properties">Música</TabsTrigger>
+                <TabsTrigger value="properties">Lights</TabsTrigger>
                 <TabsTrigger value="images">Imagens</TabsTrigger>
                 <TabsTrigger value="preview">Preview</TabsTrigger>
               </TabsList>
