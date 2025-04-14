@@ -69,19 +69,51 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     if (isPlaying && activeFlashlightItem && activeFlashlightItem.pattern) {
       const { intensity, blinkRate } = activeFlashlightItem.pattern;
       
+      // Set base flashlight state
+      setActiveFlashlight(true);
+      
       if (blinkRate > 0) {
-        // Set up flashing with the specified rate
-        // For faster blinking effects, use a more aggressive approach
-        const intervalMs = Math.max(10, 1000 / blinkRate); // Minimum 10ms interval (100Hz max)
-        let isOn = true;
-        
-        setActiveFlashlight(true);
-        setFlashlightIntensity(intensity);
-        
-        flashIntervalRef.current = window.setInterval(() => {
-          isOn = !isOn;
-          setFlashlightIntensity(isOn ? intensity : 0);
-        }, intervalMs);
+        // For faster blinking effects (over 10Hz), use RAF for smoother animation
+        if (blinkRate > 10) {
+          let isOn = true;
+          let lastToggleTime = performance.now();
+          const toggleIntervalMs = 1000 / blinkRate;
+          
+          // Use more efficient animation frame for very fast blinking
+          const animateFlash = (timestamp: number) => {
+            if (timestamp - lastToggleTime >= toggleIntervalMs) {
+              isOn = !isOn;
+              setFlashlightIntensity(isOn ? intensity : 0);
+              lastToggleTime = timestamp;
+            }
+            
+            flashIntervalRef.current = window.requestAnimationFrame(animateFlash) as unknown as number;
+          };
+          
+          // Start the animation
+          setFlashlightIntensity(intensity);
+          flashIntervalRef.current = window.requestAnimationFrame(animateFlash) as unknown as number;
+          
+          // Clean up uses cancelAnimationFrame instead of clearInterval
+          return () => {
+            if (flashIntervalRef.current) {
+              window.cancelAnimationFrame(flashIntervalRef.current as number);
+              flashIntervalRef.current = null;
+            }
+          };
+        } else {
+          // For slower blinking, setInterval is fine
+          // Set up flashing with the specified rate
+          const intervalMs = Math.max(10, 1000 / blinkRate); // Minimum 10ms interval (100Hz max)
+          let isOn = true;
+          
+          setFlashlightIntensity(intensity);
+          
+          flashIntervalRef.current = window.setInterval(() => {
+            isOn = !isOn;
+            setFlashlightIntensity(isOn ? intensity : 0);
+          }, intervalMs);
+        }
       } else {
         // Steady light, no flashing
         setActiveFlashlight(true);
@@ -138,7 +170,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
         setDisplayImage(sortedImages[0].imageUrl);
       }
     }
-  }, [timelineItems, currentTime]);
+  }, [timelineItems, currentTime, displayImage]);
 
   return (
     <div className="flex flex-col items-center">
@@ -155,10 +187,11 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           {activeFlashlight && (
             <div className="absolute top-10 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none">
               <div 
-                className="w-6 h-6 rounded-full transition-opacity duration-100"
+                className="w-6 h-6 rounded-full"
                 style={{ 
                   boxShadow: `0 0 20px 10px #FFFFFF`,
-                  opacity: flashlightIntensity / 100
+                  opacity: flashlightIntensity / 100,
+                  transition: 'opacity 50ms linear' // Smoother transitions for fast blinking
                 }}
               ></div>
             </div>

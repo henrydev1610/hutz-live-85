@@ -46,9 +46,18 @@ interface MainContentProps {
   removeTimelineItem: (id: string) => void;
   setSelectedItemIndex: (index: number | null) => void;
   setSelectedImages: (images: string[]) => void;
-  setCallToActionContent: (content: Partial<typeof callToAction>) => void;
+  setCallToActionContent: (content: Partial<{
+    type: CallToActionType;
+    imageUrl?: string;
+    buttonText?: string;
+    externalUrl?: string;
+    couponCode?: string;
+  }>) => void;
   addCallToActionToTimeline: () => void;
-  setAudioEditInfo: (info: typeof audioEditInfo) => void;
+  setAudioEditInfo: (info: {
+    startTrim: number;
+    endTrim: number;
+  }) => void;
   trimAudio: () => void;
 }
 
