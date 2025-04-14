@@ -88,12 +88,12 @@ export function useLightShowLogic() {
             for (let j = 0; j < flashesCount; j++) {
               const startTime = (second + i) + (j * (1 / flashesThisSecond));
               const blinkRate = 120 + Math.random() * 30; // Slight variation in blink rate
-              
+            
               newPatterns.push({
                 id: `flash-auto-${Date.now()}-${second + i}-${j}`,
                 type: 'flashlight',
                 startTime: startTime,
-                duration: 0.2, // Minimum 0.2 seconds duration
+                duration: Math.max(0.1, 0.2), // Ensure duration is at least 0.1s
                 pattern: {
                   intensity: 100, // Always 100% intensity
                   blinkRate: blinkRate,
@@ -110,7 +110,7 @@ export function useLightShowLogic() {
                 id: `flash-auto-partial-${Date.now()}-${second + i}`,
                 type: 'flashlight',
                 startTime: startTime,
-                duration: 0.2 * partialFlash, // Minimum 0.2 seconds duration
+                duration: Math.max(0.1, 0.2 * partialFlash), // Ensure duration is at least 0.1s
                 pattern: {
                   intensity: 100, // Always 100% intensity
                   blinkRate: 100,
@@ -140,7 +140,7 @@ export function useLightShowLogic() {
                 id: `flash-bass-${Date.now()}-${i}`,
                 type: 'flashlight',
                 startTime: bassBeats[i],
-                duration: 0.2,
+                duration: Math.max(0.1, 0.2), // Ensure duration is at least 0.1s
                 pattern: {
                   intensity: 100,
                   blinkRate: 200,
@@ -162,7 +162,7 @@ export function useLightShowLogic() {
                   id: `flash-treble-${Date.now()}-${i}-${j}`,
                   type: 'flashlight',
                   startTime: trebleBeats[i] + (j * 0.2),
-                  duration: 0.2,
+                  duration: Math.max(0.1, 0.2), // Ensure duration is at least 0.1s
                   pattern: {
                     intensity: 100,
                     blinkRate: 220,
