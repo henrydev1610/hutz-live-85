@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -32,6 +33,7 @@ export const useImageLibrary = () => {
   useEffect(() => {
     if (footballImages.length > 0) {
       localStorage.setItem('footballImages', JSON.stringify(footballImages));
+      console.log('Saved images to localStorage, count:', footballImages.length);
     }
   }, [footballImages]);
 
@@ -72,9 +74,16 @@ export const useImageLibrary = () => {
 
   const addImageToLibrary = (imageUrl: string) => {
     setFootballImages(prevImages => {
+      // Make sure we're not adding a duplicate
+      if (prevImages.includes(imageUrl)) {
+        console.log(`Image already exists in library: ${imageUrl.substring(0, 50)}...`);
+        return prevImages;
+      }
+      
       const newImages = [...prevImages, imageUrl];
+      // Immediately store in localStorage to ensure persistence
       localStorage.setItem('footballImages', JSON.stringify(newImages));
-      console.log(`Added image to library: ${imageUrl}, total images: ${newImages.length}`);
+      console.log(`Added image to library. Total images: ${newImages.length}`);
       return newImages;
     });
   };
@@ -110,6 +119,7 @@ export const useImageLibrary = () => {
     const updatedImages = footballImages.filter(image => !selectedImages.includes(image));
     setFootballImages(updatedImages);
     
+    // Update localStorage immediately
     localStorage.setItem('footballImages', JSON.stringify(updatedImages));
     
     if (selectedImage && selectedImages.includes(selectedImage)) {

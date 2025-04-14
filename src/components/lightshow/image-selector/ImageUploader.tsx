@@ -2,7 +2,7 @@
 import { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ImagePlus } from 'lucide-react';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 
 interface ImageUploaderProps {
   onImageUpload: (imageUrl: string) => void;
@@ -19,12 +19,19 @@ const ImageUploader = ({ onImageUpload }: ImageUploaderProps) => {
       
       // Process each file in the selection
       files.forEach(file => {
-        // Create a unique object URL for each file
-        const fileUrl = URL.createObjectURL(file);
-        // Pass each image URL to the callback
-        onImageUpload(fileUrl);
-        
-        console.log(`Processing image: ${file.name}, URL: ${fileUrl}`);
+        // Read file as data URL to ensure persistence
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target && event.target.result) {
+            // Use the data URL which can be stored in localStorage
+            const imageDataUrl = event.target.result as string;
+            onImageUpload(imageDataUrl);
+            
+            console.log(`Processing image: ${file.name}, saved as data URL`);
+          }
+        };
+        // Read the file as a data URL
+        reader.readAsDataURL(file);
       });
       
       // Show a single toast for all images

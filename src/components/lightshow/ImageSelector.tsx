@@ -38,12 +38,12 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
   
   const handleAddToTimeline = () => {
     if (selectedImage) {
-      // Just add the single selected image
-      onImageSelect(selectedImage, imageDuration);
+      // Just add the single selected image with 5 seconds duration
+      onImageSelect(selectedImage, 5);
       
       toast({
         title: "Imagem adicionada",
-        description: `A imagem foi adicionada à timeline com duração de ${imageDuration} segundos.`,
+        description: `A imagem foi adicionada à timeline com duração de 5 segundos.`,
       });
     }
   };
@@ -115,7 +115,7 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
       {selectedImage && (
         <SelectedImagePreview 
           selectedImage={selectedImage}
-          imageDuration={imageDuration}
+          imageDuration={5} // Fixed to 5 seconds as requested
           onDurationChange={setImageDuration}
           onAddToTimeline={handleAddToTimeline}
         />
