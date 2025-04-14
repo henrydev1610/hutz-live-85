@@ -1,7 +1,8 @@
+
 import { useState, useRef } from 'react';
 import { useToast } from "@/components/ui/use-toast";
-import { TimelineItem } from "@/types/lightshow";
-import { generateUltrasonicAudio, detectBeats } from "@/utils/audioProcessing";
+import { TimelineItem, CallToActionType } from "@/types/lightshow";
+import { generateUltrasonicAudio, detectBeats, trimAudioFile } from "@/utils/audioProcessing";
 
 export function useLightShowLogic() {
   const { toast } = useToast();
@@ -15,6 +16,19 @@ export function useLightShowLogic() {
   const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
   const [autoSync, setAutoSync] = useState(true);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [callToAction, setCallToAction] = useState<{
+    type: CallToActionType;
+    imageUrl?: string;
+    buttonText?: string;
+    externalUrl?: string;
+    couponCode?: string;
+  }>({
+    type: 'image'
+  });
+  const [audioEditInfo, setAudioEditInfo] = useState({
+    startTrim: 0,
+    endTrim: 0,
+  });
   
   const imageSelector = useRef<HTMLDivElement>(null);
 
@@ -55,9 +69,10 @@ export function useLightShowLogic() {
       
       const newPatterns: TimelineItem[] = [];
       
+      // Create faster flashes for beats (20-30ms)
       beats.forEach((time, index) => {
         if (time < duration) {
-          const flashDuration = 0.02 + Math.random() * 0.015; 
+          const flashDuration = 0.02 + Math.random() * 0.01; // 20-30ms
           
           newPatterns.push({
             id: `flash-beat-${Date.now()}-${index}`,
@@ -65,17 +80,18 @@ export function useLightShowLogic() {
             startTime: time,
             duration: flashDuration,
             pattern: {
-              intensity: 90 + Math.random() * 10,
-              blinkRate: 10 + Math.random() * 6,
+              intensity: 95 + Math.random() * 5, // 95-100%
+              blinkRate: 15 + Math.random() * 10, // 15-25 Hz
               color: '#FFFFFF'
             }
           });
         }
       });
       
+      // Create slightly longer flashes for bass (30-40ms)
       bassBeats.forEach((time, index) => {
         if (time < duration) {
-          const flashDuration = 0.04 + Math.random() * 0.02;
+          const flashDuration = 0.03 + Math.random() * 0.01; // 30-40ms
           
           newPatterns.push({
             id: `flash-bass-${Date.now()}-${index}`,
@@ -83,17 +99,18 @@ export function useLightShowLogic() {
             startTime: time,
             duration: flashDuration,
             pattern: {
-              intensity: 100,
-              blinkRate: 6 + Math.random() * 4,
+              intensity: 100, // Full intensity for bass
+              blinkRate: 8 + Math.random() * 7, // 8-15 Hz
               color: '#FFFFFF'
             }
           });
         }
       });
       
+      // Create very short flashes for treble (20-25ms)
       trebleBeats.forEach((time, index) => {
         if (time < duration) {
-          const flashDuration = 0.02 + Math.random() * 0.01;
+          const flashDuration = 0.02 + Math.random() * 0.005; // 20-25ms
           
           newPatterns.push({
             id: `flash-treble-${Date.now()}-${index}`,
@@ -101,27 +118,28 @@ export function useLightShowLogic() {
             startTime: time,
             duration: flashDuration,
             pattern: {
-              intensity: 85 + Math.random() * 15,
-              blinkRate: 14 + Math.random() * 6,
+              intensity: 90 + Math.random() * 10, // 90-100%
+              blinkRate: 20 + Math.random() * 10, // 20-30 Hz
               color: '#FFFFFF'
             }
           });
         }
       });
       
-      for (let time = 0; time < duration; time += 4) {
-        for (let i = 0; i < 15; i++) {
-          const strokeTime = time + (i * 0.04);
+      // Add intense strobe effects every second
+      for (let time = 0; time < duration; time += 1) {
+        for (let i = 0; i < 20; i++) { // Increased from 15 to 20 strobe flashes per second
+          const strokeTime = time + (i * 0.025); // Faster strobe timing (25ms)
           
           if (strokeTime < duration) {
             newPatterns.push({
               id: `flash-strobe-${Date.now()}-${time}-${i}`,
               type: 'flashlight',
               startTime: strokeTime,
-              duration: 0.025,
+              duration: 0.02, // 20ms
               pattern: {
                 intensity: 100,
-                blinkRate: 20,
+                blinkRate: 30, // Increased blink rate
                 color: '#FFFFFF'
               }
             });
@@ -129,17 +147,18 @@ export function useLightShowLogic() {
         }
       }
       
-      for (let i = 0; i < duration / 2; i++) {
+      // Add more random flashes throughout the track
+      for (let i = 0; i < duration; i++) { // Doubled the number of random flashes
         const randomTime = Math.random() * duration;
         
         newPatterns.push({
           id: `flash-random-${Date.now()}-${i}`,
           type: 'flashlight',
           startTime: randomTime,
-          duration: 0.03 + Math.random() * 0.02,
+          duration: 0.02 + Math.random() * 0.04, // 20-60ms
           pattern: {
-            intensity: 95 + Math.random() * 5,
-            blinkRate: 8 + Math.random() * 12,
+            intensity: 95 + Math.random() * 5, // 95-100%
+            blinkRate: 15 + Math.random() * 20, // 15-35 Hz
             color: '#FFFFFF'
           }
         });
@@ -233,11 +252,20 @@ export function useLightShowLogic() {
     }
     
     const imageDuration = 10;
+    const newItems: TimelineItem[] = [];
     
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * imageDuration);
-      addImageToTimeline(imageUrl, imageDuration, startTime);
+      newItems.push({
+        id: `img-${Date.now()}-${index}`,
+        type: 'image',
+        startTime: startTime,
+        duration: imageDuration,
+        imageUrl
+      });
     });
+    
+    setTimelineItems([...timelineItems, ...newItems]);
     
     toast({
       title: "Imagens adicionadas",
@@ -343,6 +371,95 @@ export function useLightShowLogic() {
     }
   };
   
+  const setCallToActionContent = (content: Partial<typeof callToAction>) => {
+    setCallToAction({...callToAction, ...content});
+  };
+  
+  const addCallToActionToTimeline = () => {
+    if (!audioFile) {
+      toast({
+        title: "Erro",
+        description: "É necessário carregar um áudio primeiro.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Add the call to action at the end of the song
+    const ctaStartTime = duration > 0 ? duration : 0;
+    
+    const newCta: TimelineItem = {
+      id: `cta-${Date.now()}`,
+      type: 'callToAction',
+      startTime: ctaStartTime,
+      duration: 10, // Default 10 seconds display time
+      content: callToAction
+    };
+    
+    setTimelineItems(prev => {
+      // Remove any existing call to action items
+      const filteredItems = prev.filter(item => item.type !== 'callToAction');
+      return [...filteredItems, newCta];
+    });
+    
+    toast({
+      title: "Chamada adicionada",
+      description: "A chamada foi adicionada ao final da música.",
+    });
+  };
+  
+  const trimAudio = async () => {
+    if (!audioFile) {
+      toast({
+        title: "Erro",
+        description: "É necessário carregar um áudio primeiro.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (audioEditInfo.endTrim <= audioEditInfo.startTrim) {
+      toast({
+        title: "Erro",
+        description: "O tempo final deve ser maior que o tempo inicial.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    toast({
+      title: "Editando áudio...",
+      description: "Processando o corte do áudio.",
+    });
+    
+    try {
+      const trimmedAudio = await trimAudioFile(
+        audioFile, 
+        audioEditInfo.startTrim, 
+        audioEditInfo.endTrim || duration
+      );
+      
+      // Create a new file from the trimmed audio
+      const newFile = new File([trimmedAudio], `${audioFile.name.split('.')[0]}_trimmed.wav`, {
+        type: 'audio/wav'
+      });
+      
+      handleAudioUpload(newFile);
+      
+      toast({
+        title: "Áudio editado",
+        description: "O áudio foi cortado com sucesso.",
+      });
+    } catch (error) {
+      console.error("Error trimming audio:", error);
+      toast({
+        title: "Erro ao editar áudio",
+        description: "Ocorreu um erro durante o processamento do áudio.",
+        variant: "destructive"
+      });
+    }
+  };
+  
   return {
     audioFile,
     audioUrl,
@@ -354,6 +471,8 @@ export function useLightShowLogic() {
     timelineItems,
     selectedItemIndex,
     selectedImages,
+    callToAction,
+    audioEditInfo,
     imageSelector,
     handleAudioUpload,
     generateAutoSyncPatterns,
@@ -368,6 +487,10 @@ export function useLightShowLogic() {
     setCurrentTime,
     setDuration,
     setSelectedItemIndex,
-    setSelectedImages
+    setSelectedImages,
+    setCallToActionContent,
+    addCallToActionToTimeline,
+    setAudioEditInfo,
+    trimAudio
   };
 }

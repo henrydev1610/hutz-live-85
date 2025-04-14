@@ -56,16 +56,18 @@ const ControlPanel = ({
       </span>
       
       <div className="ml-auto flex flex-wrap space-x-2">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={onAddSelectedImages}
-          disabled={!audioFile || selectedImages.length === 0}
-          className="bg-sky-950/40"
-        >
-          <ImageIcon className="h-4 w-4 mr-2" />
-          Adicionar Imagem{selectedImages.length > 1 ? "s" : ""}
-        </Button>
+        {selectedImages && selectedImages.length > 0 && onAddSelectedImages && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onAddSelectedImages}
+            disabled={!audioFile}
+            className="bg-sky-950/40"
+          >
+            <ImageIcon className="h-4 w-4 mr-2" />
+            Adicionar Imagens ({selectedImages.length})
+          </Button>
+        )}
         
         <Button
           size="sm"

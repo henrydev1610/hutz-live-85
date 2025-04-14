@@ -1,7 +1,7 @@
 
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TimelineItem } from "@/types/lightshow";
+import { TimelineItem, CallToActionType } from "@/types/lightshow";
 
 import Timeline from "@/components/lightshow/Timeline";
 import PhonePreview from "@/components/lightshow/PhonePreview";
@@ -9,6 +9,8 @@ import AudioUploader from "@/components/lightshow/AudioUploader";
 import ImageSelector from "@/components/lightshow/ImageSelector";
 import ControlPanel from "@/components/lightshow/ControlPanel";
 import PropertiesPanel from "@/components/lightshow/PropertiesPanel";
+import CallToActionPanel from "@/components/lightshow/CallToActionPanel";
+import AudioEditor from "@/components/lightshow/AudioEditor";
 
 interface MainContentProps {
   audioFile: File | null;
@@ -19,6 +21,17 @@ interface MainContentProps {
   timelineItems: TimelineItem[];
   selectedItemIndex: number | null;
   selectedImages: string[];
+  callToAction: {
+    type: CallToActionType;
+    imageUrl?: string;
+    buttonText?: string;
+    externalUrl?: string;
+    couponCode?: string;
+  };
+  audioEditInfo: {
+    startTrim: number;
+    endTrim: number;
+  };
   imageSelector: React.RefObject<HTMLDivElement>;
   onAudioUpload: (file: File) => void;
   onPlayPause: () => void;
@@ -33,6 +46,10 @@ interface MainContentProps {
   removeTimelineItem: (id: string) => void;
   setSelectedItemIndex: (index: number | null) => void;
   setSelectedImages: (images: string[]) => void;
+  setCallToActionContent: (content: Partial<typeof callToAction>) => void;
+  addCallToActionToTimeline: () => void;
+  setAudioEditInfo: (info: typeof audioEditInfo) => void;
+  trimAudio: () => void;
 }
 
 const MainContent = ({
@@ -44,6 +61,8 @@ const MainContent = ({
   timelineItems,
   selectedItemIndex,
   selectedImages,
+  callToAction,
+  audioEditInfo,
   imageSelector,
   onAudioUpload,
   onPlayPause,
@@ -57,7 +76,11 @@ const MainContent = ({
   updateTimelineItem,
   removeTimelineItem,
   setSelectedItemIndex,
-  setSelectedImages
+  setSelectedImages,
+  setCallToActionContent,
+  addCallToActionToTimeline,
+  setAudioEditInfo,
+  trimAudio
 }: MainContentProps) => {
   const selectedItem = selectedItemIndex !== null ? timelineItems[selectedItemIndex] : null;
 
@@ -106,9 +129,11 @@ const MainContent = ({
       
       <ResizablePanel defaultSize={35} minSize={30}>
         <Tabs defaultValue="properties" className="h-full flex flex-col">
-          <TabsList className="mx-4 mt-4 grid grid-cols-3">
+          <TabsList className="mx-4 mt-4 grid grid-cols-5">
             <TabsTrigger value="properties">Lights</TabsTrigger>
             <TabsTrigger value="images">Imagens</TabsTrigger>
+            <TabsTrigger value="cta">Chamada</TabsTrigger>
+            <TabsTrigger value="audio">Áudio</TabsTrigger>
             <TabsTrigger value="preview">Preview</TabsTrigger>
           </TabsList>
           
@@ -129,6 +154,25 @@ const MainContent = ({
                 onSelectedImagesChange={setSelectedImages}
               />
             </div>
+          </TabsContent>
+          
+          <TabsContent value="cta" className="flex-1 p-4 overflow-y-auto">
+            <CallToActionPanel 
+              callToAction={callToAction}
+              onContentChange={setCallToActionContent}
+              onAddToTimeline={addCallToActionToTimeline}
+            />
+          </TabsContent>
+          
+          <TabsContent value="audio" className="flex-1 p-4 overflow-y-auto">
+            <AudioEditor 
+              audioFile={audioFile}
+              duration={duration}
+              audioEditInfo={audioEditInfo}
+              onAudioUpload={onAudioUpload}
+              setAudioEditInfo={setAudioEditInfo}
+              trimAudio={trimAudio}
+            />
           </TabsContent>
           
           <TabsContent value="preview" className="flex-1 p-4 overflow-y-auto flex items-center justify-center">

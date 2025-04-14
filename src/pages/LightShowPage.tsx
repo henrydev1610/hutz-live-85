@@ -16,6 +16,8 @@ const LightShowPage = () => {
     timelineItems,
     selectedItemIndex,
     selectedImages,
+    callToAction,
+    audioEditInfo,
     imageSelector,
     handleAudioUpload,
     generateAutoSyncPatterns,
@@ -30,7 +32,11 @@ const LightShowPage = () => {
     setCurrentTime,
     setDuration,
     setSelectedItemIndex,
-    setSelectedImages
+    setSelectedImages,
+    setCallToActionContent,
+    addCallToActionToTimeline,
+    setAudioEditInfo,
+    trimAudio
   } = useLightShowLogic();
 
   return (
@@ -55,6 +61,8 @@ const LightShowPage = () => {
           timelineItems={timelineItems}
           selectedItemIndex={selectedItemIndex}
           selectedImages={selectedImages}
+          callToAction={callToAction}
+          audioEditInfo={audioEditInfo}
           imageSelector={imageSelector}
           onAudioUpload={handleAudioUpload}
           onPlayPause={handlePlayPause}
@@ -69,6 +77,10 @@ const LightShowPage = () => {
           removeTimelineItem={removeTimelineItem}
           setSelectedItemIndex={setSelectedItemIndex}
           setSelectedImages={setSelectedImages}
+          setCallToActionContent={setCallToActionContent}
+          addCallToActionToTimeline={addCallToActionToTimeline}
+          setAudioEditInfo={setAudioEditInfo}
+          trimAudio={trimAudio}
         />
       </div>
     </div>

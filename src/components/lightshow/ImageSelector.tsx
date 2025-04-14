@@ -47,7 +47,7 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
     }
   };
 
-  // This is now handled by useLightshowLogic.handleAddSelectedImages
+  // Now this is just a notification that images are selected
   const handleAddSelectedToTimeline = () => {
     if (selectedImages.length === 0) {
       toast({

@@ -5,14 +5,23 @@ export interface FlashlightPattern {
   color: string;      // Color value
 }
 
+export type CallToActionType = 'image' | 'imageWithButton' | 'coupon';
+
 export interface TimelineItem {
   id: string;
-  type: 'image' | 'flashlight';
+  type: 'image' | 'flashlight' | 'callToAction';
   startTime: number;  // Seconds from start
   duration: number;   // Seconds
   imageUrl?: string;  // For image items
   backgroundColor?: string; // For color background items
   pattern?: FlashlightPattern;  // For flashlight items
+  content?: {         // For callToAction items
+    type: CallToActionType;
+    imageUrl?: string;
+    buttonText?: string;
+    externalUrl?: string;
+    couponCode?: string;
+  };
 }
 
 export interface WaveformRegion {
