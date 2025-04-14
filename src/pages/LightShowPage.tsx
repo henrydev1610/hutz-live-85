@@ -1,24 +1,23 @@
-import { useState, useRef, useEffect } from 'react';
-import { Card, CardContent } from "@/components/ui/card";
+
+import { useState, useRef } from 'react';
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/components/ui/use-toast";
+import { Download, Save } from "lucide-react";
+import { TimelineItem } from "@/types/lightshow";
+import { generateUltrasonicAudio } from "@/utils/audioProcessing";
+
+// Import refactored components
 import Timeline from "@/components/lightshow/Timeline";
 import PhonePreview from "@/components/lightshow/PhonePreview";
 import AudioUploader from "@/components/lightshow/AudioUploader";
 import ImageSelector from "@/components/lightshow/ImageSelector";
-import { 
-  Play, Pause, Save, Music, Image as ImageIcon, 
-  Flashlight, Zap, Download, Upload, Plus, Trash2, Wand2, RotateCcw
-} from "lucide-react";
-import { FlashlightPattern, TimelineItem } from "@/types/lightshow";
-import { generateUltrasonicAudio } from "@/utils/audioProcessing";
+import ControlPanel from "@/components/lightshow/ControlPanel";
+import PropertiesPanel from "@/components/lightshow/PropertiesPanel";
 
 const LightShowPage = () => {
   const { toast } = useToast();
@@ -281,71 +280,17 @@ const LightShowPage = () => {
         >
           <ResizablePanel defaultSize={65} minSize={30}>
             <div className="h-full flex flex-col p-4">
-              <div className="mb-4 flex items-center space-x-2">
-                <Button 
-                  size="sm" 
-                  variant={isPlaying ? "default" : "outline"} 
-                  onClick={handlePlayPause}
-                  className="w-20"
-                >
-                  {isPlaying ? (
-                    <><Pause className="h-4 w-4 mr-2" /> Pause</>
-                  ) : (
-                    <><Play className="h-4 w-4 mr-2" /> Play</>
-                  )}
-                </Button>
-                
-                <span className="text-sm text-white/70">
-                  {new Date(currentTime * 1000).toISOString().substr(14, 5)} / 
-                  {new Date(duration * 1000).toISOString().substr(14, 5)}
-                </span>
-                
-                <div className="ml-auto flex flex-wrap space-x-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => addImageToTimeline("https://via.placeholder.com/300/000000/FFFFFF/?text=Selecione+Imagem")}
-                    disabled={!audioFile}
-                    className="bg-sky-950/40"
-                  >
-                    <ImageIcon className="h-4 w-4 mr-2" />
-                    Adicionar Imagem
-                  </Button>
-                  
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={addFlashlightPattern}
-                    disabled={!audioFile}
-                    className="bg-purple-950/40"
-                  >
-                    <Flashlight className="h-4 w-4 mr-2" />
-                    Adicionar Lanterna
-                  </Button>
-                  
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={generateAutoSyncPatterns}
-                    disabled={!audioFile}
-                    className="bg-green-950/40"
-                  >
-                    <Wand2 className="h-4 w-4 mr-2" />
-                    Auto
-                  </Button>
-                  
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleReset}
-                    disabled={!audioFile}
-                    className="bg-red-950/40"
-                  >
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    Reset
-                  </Button>
-                </div>
-              </div>
+              <ControlPanel 
+                isPlaying={isPlaying}
+                currentTime={currentTime}
+                duration={duration}
+                audioFile={audioFile}
+                onPlayPause={handlePlayPause}
+                addFlashlightPattern={addFlashlightPattern}
+                addImageToTimeline={addImageToTimeline}
+                generateAutoSyncPatterns={generateAutoSyncPatterns}
+                handleReset={handleReset}
+              />
               
               {!audioFile ? (
                 <AudioUploader onAudioUploaded={handleAudioUpload} />
@@ -378,102 +323,12 @@ const LightShowPage = () => {
               </TabsList>
               
               <TabsContent value="properties" className="flex-1 p-4 overflow-y-auto">
-                {selectedItem ? (
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-medium">
-                      {selectedItem.type === 'image' ? 'Propriedades da Imagem' : 'Propriedades da Lanterna'}
-                    </h3>
-                    
-                    <div className="space-y-2">
-                      <Label>Tempo Inicial (segundos)</Label>
-                      <Input 
-                        type="number" 
-                        min={0} 
-                        max={duration} 
-                        step={0.1}
-                        value={selectedItem.startTime} 
-                        onChange={(e) => updateTimelineItem(
-                          selectedItem.id,
-                          { startTime: parseFloat(e.target.value) }
-                        )}
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label>Duração (segundos)</Label>
-                      <Input 
-                        type="number" 
-                        min={0.1} 
-                        max={duration - selectedItem.startTime} 
-                        step={0.1}
-                        value={selectedItem.duration} 
-                        onChange={(e) => updateTimelineItem(
-                          selectedItem.id,
-                          { duration: parseFloat(e.target.value) }
-                        )}
-                      />
-                    </div>
-                    
-                    {selectedItem.type === 'flashlight' && selectedItem.pattern && (
-                      <>
-                        <div className="space-y-2">
-                          <Label>Intensidade ({selectedItem.pattern.intensity}%)</Label>
-                          <Slider
-                            value={[selectedItem.pattern.intensity]}
-                            min={0}
-                            max={100}
-                            step={1}
-                            onValueChange={(value) => updateTimelineItem(
-                              selectedItem.id,
-                              { 
-                                pattern: { 
-                                  ...selectedItem.pattern as FlashlightPattern, 
-                                  intensity: value[0],
-                                  color: '#FFFFFF' // Keep white color
-                                } 
-                              }
-                            )}
-                          />
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <Label>Taxa de Piscadas ({selectedItem.pattern.blinkRate} Hz)</Label>
-                          <Slider
-                            value={[selectedItem.pattern.blinkRate]}
-                            min={0.5}
-                            max={10}
-                            step={0.5}
-                            onValueChange={(value) => updateTimelineItem(
-                              selectedItem.id,
-                              { 
-                                pattern: { 
-                                  ...selectedItem.pattern as FlashlightPattern, 
-                                  blinkRate: value[0],
-                                  color: '#FFFFFF' // Keep white color
-                                } 
-                              }
-                            )}
-                          />
-                        </div>
-                      </>
-                    )}
-                    
-                    <Button 
-                      variant="destructive" 
-                      onClick={() => removeTimelineItem(selectedItem.id)}
-                      className="w-full mt-4"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Remover Item
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-white/50">
-                    <div className="text-center">
-                      <p>Selecione um item na timeline para editar suas propriedades</p>
-                    </div>
-                  </div>
-                )}
+                <PropertiesPanel 
+                  selectedItem={selectedItem}
+                  updateTimelineItem={updateTimelineItem}
+                  removeTimelineItem={removeTimelineItem}
+                  duration={duration}
+                />
               </TabsContent>
               
               <TabsContent value="images" className="flex-1 p-4 overflow-y-auto">
