@@ -1,4 +1,3 @@
-
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TimelineItem, CallToActionType } from "@/types/lightshow";
@@ -157,7 +156,7 @@ const MainContent = ({
             />
           </TabsContent>
           
-          <TabsContent value="images" className="flex-1 p-4 overflow-y-auto">
+          <TabsContent value="images" className="flex-1 p-4 overflow-y-auto h-120">
             <div ref={imageSelector}>
               <ImageSelector 
                 onImageSelect={addImageToTimeline} 
@@ -167,7 +166,7 @@ const MainContent = ({
             </div>
           </TabsContent>
           
-          <TabsContent value="cta" className="flex-1 p-4 overflow-y-auto">
+          <TabsContent value="cta" className="flex-1 p-4 overflow-y-auto h-120">
             <CallToActionPanel 
               callToAction={callToAction}
               onContentChange={setCallToActionContent}
