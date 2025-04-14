@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline';
-import { TimelineItem, WaveformRegion } from '@/types/lightshow';
+import { TimelineItem } from '@/types/lightshow';
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { ZoomIn, ZoomOut } from "lucide-react";
@@ -37,13 +37,14 @@ const Timeline = ({
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(250); // Increased default zoom level
+  const [isAudioLoaded, setIsAudioLoaded] = useState(false);
   
   const imageTrackRef = useRef<HTMLDivElement>(null);
   const flashlightTrackRef = useRef<HTMLDivElement>(null);
   
   const handleZoomChange = (value: number[]) => {
     setZoomLevel(value[0]);
-    if (wavesurferRef.current) {
+    if (wavesurferRef.current && isAudioLoaded) {
       const zoomFactor = value[0] / 50;
       wavesurferRef.current.zoom(Math.max(1, zoomFactor * 20));
     }
@@ -72,6 +73,7 @@ const Timeline = ({
     // Clean up any existing wavesurfer instance first
     if (wavesurferRef.current) {
       wavesurferRef.current.destroy();
+      setIsAudioLoaded(false);
     }
     
     const wavesurfer = WaveSurfer.create({
@@ -106,6 +108,7 @@ const Timeline = ({
     wavesurfer.load(audioUrl);
     
     wavesurfer.on('ready', () => {
+      setIsAudioLoaded(true);
       setDuration(wavesurfer.getDuration());
       const zoomFactor = zoomLevel / 50;
       wavesurfer.zoom(Math.max(1, zoomFactor * 20));
@@ -119,10 +122,17 @@ const Timeline = ({
       onItemSelect(null);
     });
     
+    // Add error handling for audio loading
+    wavesurfer.on('error', (error) => {
+      console.error("Error loading audio:", error);
+      setIsAudioLoaded(false);
+    });
+    
     return () => {
       if (wavesurfer) {
         try {
           wavesurfer.destroy();
+          setIsAudioLoaded(false);
         } catch (error) {
           console.error("Error destroying wavesurfer:", error);
         }
@@ -130,15 +140,20 @@ const Timeline = ({
     };
   }, [audioUrl]);
   
+  // Fix audio playback control
   useEffect(() => {
-    if (!wavesurferRef.current) return;
+    if (!wavesurferRef.current || !isAudioLoaded) return;
     
-    if (isPlaying) {
-      wavesurferRef.current.play();
-    } else {
-      wavesurferRef.current.pause();
+    try {
+      if (isPlaying) {
+        wavesurferRef.current.play();
+      } else {
+        wavesurferRef.current.pause();
+      }
+    } catch (error) {
+      console.error("Error controlling audio playback:", error);
     }
-  }, [isPlaying]);
+  }, [isPlaying, isAudioLoaded]);
   
   // Helper function to detect overlapping items
   const checkImageOverlap = (itemId: string, startTime: number, duration: number) => {
@@ -173,7 +188,7 @@ const Timeline = ({
       (marker as HTMLElement).style.left = `${markerPosition}%`;
     });
   }, [currentTime]);
-  
+
   useEffect(() => {
     if (!wavesurferRef.current || !imageTrackRef.current || !flashlightTrackRef.current) return;
     

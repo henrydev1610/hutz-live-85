@@ -47,6 +47,7 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
     }
   };
 
+  // This is now handled by useLightshowLogic.handleAddSelectedImages
   const handleAddSelectedToTimeline = () => {
     if (selectedImages.length === 0) {
       toast({
@@ -56,32 +57,11 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
       });
       return;
     }
-
-    let lastImageEndTime = 0;
-    const imageItems = timelineItems.filter(item => item.type === 'image');
-    
-    if (imageItems.length > 0) {
-      imageItems.forEach(item => {
-        const endTime = item.startTime + item.duration;
-        if (endTime > lastImageEndTime) {
-          lastImageEndTime = endTime;
-        }
-      });
-    }
-    
-    const imageDuration = 10; // 10 seconds per image
-    
-    selectedImages.forEach((imageUrl, index) => {
-      const startTime = lastImageEndTime + (index * imageDuration);
-      onImageSelect(imageUrl, imageDuration, startTime);
-    });
     
     toast({
-      title: "Imagens adicionadas",
-      description: `${selectedImages.length} imagens foram adicionadas à timeline em sequência.`,
+      title: "Imagens prontas para adicionar",
+      description: `${selectedImages.length} imagens selecionadas. Clique em "Adicionar Imagens" no painel de controle para adicioná-las à timeline.`,
     });
-    
-    setSelectedImages([]);
   };
 
   return (
