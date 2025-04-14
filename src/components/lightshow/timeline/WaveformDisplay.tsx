@@ -29,6 +29,7 @@ const WaveformDisplay = ({
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const audioLoadedRef = useRef<boolean>(false);
+  const playingRef = useRef<boolean>(false);
   
   useEffect(() => {
     if (!containerRef.current || !audioUrl) return;
@@ -75,6 +76,12 @@ const WaveformDisplay = ({
       const zoomFactor = zoomLevel / 50;
       wavesurfer.zoom(Math.max(1, zoomFactor * 20));
       onWavesurferReady(wavesurfer, regions);
+      
+      // If isPlaying was set to true before wavesurfer was ready
+      if (isPlaying && !playingRef.current) {
+        wavesurfer.play();
+        playingRef.current = true;
+      }
     });
     
     wavesurfer.on('timeupdate', (currentTime) => {
@@ -94,15 +101,21 @@ const WaveformDisplay = ({
         }
       }
     };
-  }, [audioUrl, onWavesurferReady, onItemSelect, setCurrentTime, setDuration, zoomLevel]);
+  }, [audioUrl, onWavesurferReady, onItemSelect, setCurrentTime, setDuration, zoomLevel, isPlaying]);
   
   useEffect(() => {
-    if (!wavesurferRef.current) return;
+    if (!wavesurferRef.current || !audioLoadedRef.current) return;
     
-    if (isPlaying) {
-      wavesurferRef.current.play();
-    } else {
-      wavesurferRef.current.pause();
+    try {
+      if (isPlaying && !playingRef.current) {
+        wavesurferRef.current.play();
+        playingRef.current = true;
+      } else if (!isPlaying && playingRef.current) {
+        wavesurferRef.current.pause();
+        playingRef.current = false;
+      }
+    } catch (error) {
+      console.error("Error controlling audio playback:", error);
     }
   }, [isPlaying]);
   

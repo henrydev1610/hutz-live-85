@@ -69,8 +69,7 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
       });
     }
     
-    const imageDuration = 10; // 10 seconds per image
-    
+    // Use a separate function for adding the selected images to avoid problems with state updates
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * imageDuration);
       onImageSelect(imageUrl, imageDuration, startTime);
@@ -81,6 +80,7 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
       description: `${selectedImages.length} imagens foram adicionadas à timeline em sequência.`,
     });
     
+    // Clear selected images after adding to timeline
     setSelectedImages([]);
   };
 
