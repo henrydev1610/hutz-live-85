@@ -10,6 +10,7 @@ import ImageSelector from "@/components/lightshow/ImageSelector";
 import ControlPanel from "@/components/lightshow/ControlPanel";
 import PropertiesPanel from "@/components/lightshow/PropertiesPanel";
 import CallToActionPanel from "@/components/lightshow/CallToActionPanel";
+import AudioEditor from "@/components/lightshow/AudioEditor";
 
 interface MainContentProps {
   audioFile: File | null;
