@@ -28,12 +28,14 @@ const WaveformDisplay = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
+  const audioLoadedRef = useRef<boolean>(false);
   
   useEffect(() => {
     if (!containerRef.current || !audioUrl) return;
     
     if (wavesurferRef.current) {
       wavesurferRef.current.destroy();
+      audioLoadedRef.current = false;
     }
     
     const wavesurfer = WaveSurfer.create({
@@ -68,6 +70,7 @@ const WaveformDisplay = ({
     wavesurfer.load(audioUrl);
     
     wavesurfer.on('ready', () => {
+      audioLoadedRef.current = true;
       setDuration(wavesurfer.getDuration());
       const zoomFactor = zoomLevel / 50;
       wavesurfer.zoom(Math.max(1, zoomFactor * 20));
@@ -104,10 +107,15 @@ const WaveformDisplay = ({
   }, [isPlaying]);
   
   useEffect(() => {
-    if (!wavesurferRef.current) return;
+    // Only apply zoom if wavesurfer is initialized and audio is loaded
+    if (!wavesurferRef.current || !audioLoadedRef.current) return;
     
-    const zoomFactor = zoomLevel / 50;
-    wavesurferRef.current.zoom(Math.max(1, zoomFactor * 20));
+    try {
+      const zoomFactor = zoomLevel / 50;
+      wavesurferRef.current.zoom(Math.max(1, zoomFactor * 20));
+    } catch (error) {
+      console.error("Error applying zoom:", error);
+    }
   }, [zoomLevel]);
 
   return (
