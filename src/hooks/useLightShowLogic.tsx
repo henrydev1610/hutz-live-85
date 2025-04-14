@@ -1,8 +1,7 @@
-
 import { useState, useRef } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { TimelineItem } from "@/types/lightshow";
-import { generateUltrasonicAudio } from "@/utils/audioProcessing";
+import { generateUltrasonicAudio, detectBeats } from "@/utils/audioProcessing";
 
 export function useLightShowLogic() {
   const { toast } = useToast();
@@ -34,8 +33,15 @@ export function useLightShowLogic() {
     setCurrentTime(0);
   };
   
-  const generateAutoSyncPatterns = () => {
-    if (!duration) return;
+  const generateAutoSyncPatterns = async () => {
+    if (!duration || !audioFile) {
+      toast({
+        title: "Erro",
+        description: "É necessário carregar um áudio primeiro.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     toast({
       title: "Gerando sincronização automática",
@@ -44,63 +50,99 @@ export function useLightShowLogic() {
     
     const nonFlashlightItems = timelineItems.filter(item => item.type !== 'flashlight');
     
-    const newPatterns: TimelineItem[] = [];
-    
-    for (let time = 0; time < duration; time += 0.4) {
-      const randomIntensity = 80 + Math.random() * 20;
-      const randomDuration = 0.1 + Math.random() * 0.15;
-      const randomBlinkRate = 3 + Math.random() * 5;
+    try {
+      const { beats, bassBeats, trebleBeats } = await detectBeats(audioFile);
       
-      if (Math.random() > 0.6) {
-        newPatterns.push({
-          id: `flash-${Date.now()}-${time}-burst`,
-          type: 'flashlight',
-          startTime: time,
-          duration: randomDuration,
-          pattern: {
-            intensity: 100,
-            blinkRate: 8,
-            color: '#FFFFFF'
+      const newPatterns: TimelineItem[] = [];
+      
+      beats.forEach((time, index) => {
+        if (time < duration) {
+          const flashDuration = 0.08;
+          
+          newPatterns.push({
+            id: `flash-beat-${Date.now()}-${index}`,
+            type: 'flashlight',
+            startTime: time,
+            duration: flashDuration,
+            pattern: {
+              intensity: 90 + Math.random() * 10,
+              blinkRate: 8 + Math.random() * 4,
+              color: '#FFFFFF'
+            }
+          });
+        }
+      });
+      
+      bassBeats.forEach((time, index) => {
+        if (time < duration) {
+          const flashDuration = 0.15;
+          
+          newPatterns.push({
+            id: `flash-bass-${Date.now()}-${index}`,
+            type: 'flashlight',
+            startTime: time,
+            duration: flashDuration,
+            pattern: {
+              intensity: 100,
+              blinkRate: 4 + Math.random() * 2,
+              color: '#FFFFFF'
+            }
+          });
+        }
+      });
+      
+      trebleBeats.forEach((time, index) => {
+        if (time < duration) {
+          const flashDuration = 0.05;
+          
+          newPatterns.push({
+            id: `flash-treble-${Date.now()}-${index}`,
+            type: 'flashlight',
+            startTime: time,
+            duration: flashDuration,
+            pattern: {
+              intensity: 85 + Math.random() * 15,
+              blinkRate: 12 + Math.random() * 4,
+              color: '#FFFFFF'
+            }
+          });
+        }
+      });
+      
+      for (let time = 0; time < duration; time += 8) {
+        for (let i = 0; i < 10; i++) {
+          const strokeTime = time + (i * 0.07);
+          
+          if (strokeTime < duration) {
+            newPatterns.push({
+              id: `flash-strobe-${Date.now()}-${time}-${i}`,
+              type: 'flashlight',
+              startTime: strokeTime,
+              duration: 0.03,
+              pattern: {
+                intensity: 100,
+                blinkRate: 16,
+                color: '#FFFFFF'
+              }
+            });
           }
-        });
-      } else {
-        newPatterns.push({
-          id: `flash-${Date.now()}-${time}`,
-          type: 'flashlight',
-          startTime: time,
-          duration: randomDuration,
-          pattern: {
-            intensity: randomIntensity,
-            blinkRate: randomBlinkRate,
-            color: '#FFFFFF'
-          }
-        });
+        }
       }
+      
+      setTimelineItems([...nonFlashlightItems, ...newPatterns]);
+      
+      toast({
+        title: "Show de luzes criado!",
+        description: "Um espetáculo intenso de luzes piscantes foi criado baseado nas batidas da música.",
+      });
+    } catch (error) {
+      console.error("Error generating auto-sync patterns:", error);
+      toast({
+        title: "Erro na geração automática",
+        description: "Ocorreu um erro ao processar o áudio.",
+        variant: "destructive"
+      });
     }
-    
-    for (let time = 1; time < duration; time += 8) {
-      for (let i = 0; i < 10; i++) {
-        const strokeTime = time + (i * 0.2);
-        newPatterns.push({
-          id: `flash-${Date.now()}-strobe-${strokeTime}`,
-          type: 'flashlight',
-          startTime: strokeTime,
-          duration: 0.08,
-          pattern: {
-            intensity: 100,
-            blinkRate: 4,
-            color: '#FFFFFF'
-          }
-        });
-      }
-    }
-    
-    setTimelineItems([...nonFlashlightItems, ...newPatterns]);
-    
-    toast({
-      title: "Show de luzes criado!",
-      description: "Um espetáculo intenso de luzes piscantes foi criado baseado no seu áudio.",
-    });
   };
 
   const addImageToTimeline = (imageUrl: string, duration: number = 5, startTime?: number) => {
@@ -174,9 +216,8 @@ export function useLightShowLogic() {
       });
     }
     
-    const imageDuration = 10; // Set each image to 10 seconds as requested
+    const imageDuration = 10;
     
-    // Process all selected images
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * imageDuration);
       addImageToTimeline(imageUrl, imageDuration, startTime);
@@ -187,7 +228,6 @@ export function useLightShowLogic() {
       description: `${selectedImages.length} imagens foram adicionadas à timeline em sequência.`,
     });
     
-    // Clear selection after adding all images to timeline
     setSelectedImages([]);
   };
   

@@ -44,16 +44,49 @@ export async function generateUltrasonicAudio(
  * Detects beats in an audio file for auto-synchronization
  * This would use a real beat detection algorithm in production
  */
-export async function detectBeats(audioFile: File): Promise<number[]> {
+export async function detectBeats(audioFile: File): Promise<{beats: number[], bassBeats: number[], trebleBeats: number[]}> {
   // This is a simplified placeholder for actual beat detection
   // In a real implementation, this would analyze the audio waveform
   // and return timestamps of detected beats
   
   return new Promise((resolve) => {
     setTimeout(() => {
-      // Return simulated beats at regular intervals
-      const beats = Array.from({ length: 20 }, (_, i) => i * 2);
-      resolve(beats);
+      // Simulate detected beats at different points with slight variations for realism
+      const beats = [];
+      const bassBeats = [];
+      const trebleBeats = [];
+      
+      // Generate main beats (approximately every 0.5 seconds)
+      for (let i = 0; i < 120; i++) {
+        // Add some randomness to make it more realistic
+        const jitter = Math.random() * 0.15;
+        const beatTime = i * 0.5 + jitter;
+        beats.push(beatTime);
+        
+        // Every third beat is a bass beat
+        if (i % 3 === 0) {
+          bassBeats.push(beatTime);
+        }
+        
+        // Different treble pattern - more frequent 
+        if (i % 2 === 0 || i % 5 === 0) {
+          // Add slight offset to treble beats
+          trebleBeats.push(beatTime + 0.1);
+        }
+      }
+      
+      // Add some extra random bass drops
+      for (let i = 0; i < 10; i++) {
+        const randomTime = Math.random() * 60;
+        bassBeats.push(randomTime);
+      }
+      
+      // Sort all beat arrays
+      beats.sort((a, b) => a - b);
+      bassBeats.sort((a, b) => a - b);
+      trebleBeats.sort((a, b) => a - b);
+      
+      resolve({ beats, bassBeats, trebleBeats });
     }, 1000);
   });
 }
