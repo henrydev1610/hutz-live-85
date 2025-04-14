@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { TimelineItem } from '@/types/lightshow';
-import { X } from 'lucide-react';
+import { X, Camera, Video } from 'lucide-react';
 
 interface PhonePreviewProps {
   isPlaying: boolean;
@@ -16,6 +16,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const [backgroundColor, setBackgroundColor] = useState('#000000');
   const [userClosedImage, setUserClosedImage] = useState(false);
   const [isCallToAction, setIsCallToAction] = useState(false);
+  const [showControls, setShowControls] = useState(false);
   const flashIntervalRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const frameIdRef = useRef<number | null>(null);
@@ -50,6 +51,17 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     // Reset user choice when items change
     setUserClosedImage(false);
   }, [currentTime, isPlaying, timelineItems]);
+  
+  // Control display of camera controls based on isPlaying status
+  useEffect(() => {
+    if (isPlaying) {
+      // Show controls when music starts playing
+      setShowControls(true);
+    } else {
+      // Hide controls when music stops
+      setShowControls(false);
+    }
+  }, [isPlaying]);
   
   const updateActiveElements = (time: number) => {
     if (flashIntervalRef.current) {
@@ -147,6 +159,16 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const handleCloseImage = () => {
     setDisplayImage(null);
     setUserClosedImage(true);
+  };
+
+  const handleTakePhoto = () => {
+    console.log('Take photo button clicked');
+    // In a real app, this would trigger the phone camera
+  };
+
+  const handleStartRecording = () => {
+    console.log('Start recording button clicked');
+    // In a real app, this would start video recording
   };
 
   useEffect(() => {
@@ -271,6 +293,23 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
                 <p className="mb-2">Aponte a câmera</p>
                 <p className="text-xs">Seu show de luzes interativo será exibido aqui</p>
               </div>
+            </div>
+          )}
+          
+          {showControls && (
+            <div className="absolute bottom-4 left-0 right-0 flex justify-center items-center space-x-6 z-30">
+              <button 
+                onClick={handleTakePhoto}
+                className="bg-white/20 p-3 rounded-full backdrop-blur-sm hover:bg-white/30 transition-colors"
+              >
+                <Camera className="h-6 w-6 text-white" />
+              </button>
+              <button 
+                onClick={handleStartRecording}
+                className="bg-red-600/80 p-3 rounded-full backdrop-blur-sm hover:bg-red-600/90 transition-colors"
+              >
+                <Video className="h-6 w-6 text-white" />
+              </button>
             </div>
           )}
         </div>
