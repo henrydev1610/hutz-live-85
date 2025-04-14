@@ -14,21 +14,49 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const [displayImage, setDisplayImage] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState('#000000');
   const flashIntervalRef = useRef<number | null>(null);
+  const lastTimeRef = useRef<number>(0);
   
   // Clear any existing intervals when component unmounts
   useEffect(() => {
     return () => {
       if (flashIntervalRef.current) {
-        window.clearInterval(flashIntervalRef.current);
+        if (typeof flashIntervalRef.current === 'number') {
+          if (flashIntervalRef.current > 10) { // Arbitrary threshold to distinguish between setInterval and rAF
+            window.cancelAnimationFrame(flashIntervalRef.current);
+          } else {
+            window.clearInterval(flashIntervalRef.current);
+          }
+        }
+        flashIntervalRef.current = null;
       }
     };
   }, []);
   
+  // Monitor time changes to detect discontinuity
+  useEffect(() => {
+    // If there's a time jump (seek operation), reset active elements
+    if (Math.abs(currentTime - lastTimeRef.current) > 0.1) { // More than 100ms jump
+      // Reset states immediately to reflect new position
+      updateActiveElements(currentTime);
+    }
+    lastTimeRef.current = currentTime;
+  }, [currentTime]);
+  
   // Update active items based on current time
   useEffect(() => {
+    updateActiveElements(currentTime);
+  }, [currentTime, isPlaying, timelineItems]);
+  
+  const updateActiveElements = (time: number) => {
     // Clear any existing flash intervals
     if (flashIntervalRef.current) {
-      window.clearInterval(flashIntervalRef.current);
+      if (typeof flashIntervalRef.current === 'number') {
+        if (flashIntervalRef.current > 10) { // Arbitrary threshold to distinguish between setInterval and rAF
+          window.cancelAnimationFrame(flashIntervalRef.current);
+        } else {
+          window.clearInterval(flashIntervalRef.current);
+        }
+      }
       flashIntervalRef.current = null;
     }
     
@@ -38,7 +66,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     
     // Find active items at current time
     const activeItems = timelineItems.filter(item => 
-      currentTime >= item.startTime && currentTime < (item.startTime + item.duration)
+      time >= item.startTime && time < (item.startTime + item.duration)
     );
     
     // Process active items
@@ -79,6 +107,9 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           let lastToggleTime = performance.now();
           const toggleIntervalMs = 1000 / blinkRate;
           
+          // Start with light on
+          setFlashlightIntensity(intensity);
+          
           // Use more efficient animation frame for very fast blinking
           const animateFlash = (timestamp: number) => {
             if (timestamp - lastToggleTime >= toggleIntervalMs) {
@@ -91,22 +122,14 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           };
           
           // Start the animation
-          setFlashlightIntensity(intensity);
           flashIntervalRef.current = window.requestAnimationFrame(animateFlash) as unknown as number;
-          
-          // Clean up uses cancelAnimationFrame instead of clearInterval
-          return () => {
-            if (flashIntervalRef.current) {
-              window.cancelAnimationFrame(flashIntervalRef.current as number);
-              flashIntervalRef.current = null;
-            }
-          };
         } else {
           // For slower blinking, setInterval is fine
           // Set up flashing with the specified rate
           const intervalMs = Math.max(10, 1000 / blinkRate); // Minimum 10ms interval (100Hz max)
           let isOn = true;
           
+          // Start with light on
           setFlashlightIntensity(intensity);
           
           flashIntervalRef.current = window.setInterval(() => {
@@ -120,7 +143,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
         setFlashlightIntensity(intensity);
       }
     }
-  }, [currentTime, isPlaying, timelineItems]);
+  };
 
   // Find an image to display even when not playing
   useEffect(() => {
@@ -191,7 +214,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
                 style={{ 
                   boxShadow: `0 0 20px 10px #FFFFFF`,
                   opacity: flashlightIntensity / 100,
-                  transition: 'opacity 50ms linear' // Smoother transitions for fast blinking
+                  transition: 'opacity 30ms linear' // Even faster transitions for better sync
                 }}
               ></div>
             </div>
@@ -226,7 +249,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       <div className="mt-4 text-white/70 text-sm text-center">
         <p>Prévia do Aplicativo</p>
         <p className="text-xs mt-1">
-          {isPlaying ? "Reproduzindo..." : "Visualizando preview"}
+          {isPlaying ? `Reproduzindo em ${currentTime.toFixed(2)}s` : "Visualizando preview"}
         </p>
       </div>
     </div>
