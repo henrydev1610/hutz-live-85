@@ -56,11 +56,11 @@ export async function detectBeats(audioFile: File): Promise<{beats: number[], ba
       const bassBeats = [];
       const trebleBeats = [];
       
-      // Generate main beats (approximately every 0.5 seconds)
-      for (let i = 0; i < 120; i++) {
+      // Generate main beats (approximately every 0.4 seconds instead of 0.5 for more frequent beats)
+      for (let i = 0; i < 150; i++) {
         // Add some randomness to make it more realistic
-        const jitter = Math.random() * 0.15;
-        const beatTime = i * 0.5 + jitter;
+        const jitter = Math.random() * 0.12;
+        const beatTime = i * 0.4 + jitter;
         beats.push(beatTime);
         
         // Every third beat is a bass beat
@@ -69,16 +69,22 @@ export async function detectBeats(audioFile: File): Promise<{beats: number[], ba
         }
         
         // Different treble pattern - more frequent 
-        if (i % 2 === 0 || i % 5 === 0) {
+        if (i % 2 === 0 || i % 4 === 0) {
           // Add slight offset to treble beats
-          trebleBeats.push(beatTime + 0.1);
+          trebleBeats.push(beatTime + 0.08);
         }
       }
       
       // Add some extra random bass drops
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 15; i++) {
         const randomTime = Math.random() * 60;
         bassBeats.push(randomTime);
+      }
+      
+      // Add more random treble hits
+      for (let i = 0; i < 20; i++) {
+        const randomTime = Math.random() * 60;
+        trebleBeats.push(randomTime);
       }
       
       // Sort all beat arrays

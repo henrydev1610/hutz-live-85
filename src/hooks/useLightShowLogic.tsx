@@ -57,7 +57,7 @@ export function useLightShowLogic() {
       
       beats.forEach((time, index) => {
         if (time < duration) {
-          const flashDuration = 0.08;
+          const flashDuration = 0.02 + Math.random() * 0.015; 
           
           newPatterns.push({
             id: `flash-beat-${Date.now()}-${index}`,
@@ -66,7 +66,7 @@ export function useLightShowLogic() {
             duration: flashDuration,
             pattern: {
               intensity: 90 + Math.random() * 10,
-              blinkRate: 8 + Math.random() * 4,
+              blinkRate: 10 + Math.random() * 6,
               color: '#FFFFFF'
             }
           });
@@ -75,7 +75,7 @@ export function useLightShowLogic() {
       
       bassBeats.forEach((time, index) => {
         if (time < duration) {
-          const flashDuration = 0.15;
+          const flashDuration = 0.04 + Math.random() * 0.02;
           
           newPatterns.push({
             id: `flash-bass-${Date.now()}-${index}`,
@@ -84,7 +84,7 @@ export function useLightShowLogic() {
             duration: flashDuration,
             pattern: {
               intensity: 100,
-              blinkRate: 4 + Math.random() * 2,
+              blinkRate: 6 + Math.random() * 4,
               color: '#FFFFFF'
             }
           });
@@ -93,7 +93,7 @@ export function useLightShowLogic() {
       
       trebleBeats.forEach((time, index) => {
         if (time < duration) {
-          const flashDuration = 0.05;
+          const flashDuration = 0.02 + Math.random() * 0.01;
           
           newPatterns.push({
             id: `flash-treble-${Date.now()}-${index}`,
@@ -102,26 +102,26 @@ export function useLightShowLogic() {
             duration: flashDuration,
             pattern: {
               intensity: 85 + Math.random() * 15,
-              blinkRate: 12 + Math.random() * 4,
+              blinkRate: 14 + Math.random() * 6,
               color: '#FFFFFF'
             }
           });
         }
       });
       
-      for (let time = 0; time < duration; time += 8) {
-        for (let i = 0; i < 10; i++) {
-          const strokeTime = time + (i * 0.07);
+      for (let time = 0; time < duration; time += 4) {
+        for (let i = 0; i < 15; i++) {
+          const strokeTime = time + (i * 0.04);
           
           if (strokeTime < duration) {
             newPatterns.push({
               id: `flash-strobe-${Date.now()}-${time}-${i}`,
               type: 'flashlight',
               startTime: strokeTime,
-              duration: 0.03,
+              duration: 0.025,
               pattern: {
                 intensity: 100,
-                blinkRate: 16,
+                blinkRate: 20,
                 color: '#FFFFFF'
               }
             });
@@ -129,11 +129,27 @@ export function useLightShowLogic() {
         }
       }
       
+      for (let i = 0; i < duration / 2; i++) {
+        const randomTime = Math.random() * duration;
+        
+        newPatterns.push({
+          id: `flash-random-${Date.now()}-${i}`,
+          type: 'flashlight',
+          startTime: randomTime,
+          duration: 0.03 + Math.random() * 0.02,
+          pattern: {
+            intensity: 95 + Math.random() * 5,
+            blinkRate: 8 + Math.random() * 12,
+            color: '#FFFFFF'
+          }
+        });
+      }
+      
       setTimelineItems([...nonFlashlightItems, ...newPatterns]);
       
       toast({
         title: "Show de luzes criado!",
-        description: "Um espetáculo intenso de luzes piscantes foi criado baseado nas batidas da música.",
+        description: "Um espetáculo intenso de luzes rápidas foi criado baseado nas batidas da música.",
       });
     } catch (error) {
       console.error("Error generating auto-sync patterns:", error);
