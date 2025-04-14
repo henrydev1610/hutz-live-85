@@ -352,6 +352,7 @@ export function useLightShowLogic() {
     
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * imageDuration);
+      
       newItems.push({
         id: `img-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
         type: 'image',

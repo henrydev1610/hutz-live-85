@@ -34,13 +34,13 @@ const ImageSelectionControls = ({
         </Button>
         
         <Button 
-          variant="outline" 
+          variant="default" 
           size="sm" 
           onClick={onAddSelected}
-          className="flex-1 text-green-500 hover:text-green-400"
+          className="flex-1 bg-green-600 hover:bg-green-700"
         >
           <Plus className="h-4 w-4 mr-1" />
-          Adicionar Selecionadas
+          Adicionar Selecionadas ({selectedImagesCount})
         </Button>
       </div>
       <Separator className="bg-white/10 my-4" />

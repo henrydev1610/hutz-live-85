@@ -58,6 +58,14 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
       return;
     }
 
+    // Simply delegate to the parent component handler
+    // This ensures we use the same logic in both places
+    if (onSelectedImagesChange) {
+      // Update the selected images first to make sure parent has access to them
+      onSelectedImagesChange(selectedImages);
+    }
+    
+    // Get the lastEndTime first
     let lastImageEndTime = 0;
     const imageItems = timelineItems.filter(item => item.type === 'image');
     
