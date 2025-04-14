@@ -116,6 +116,15 @@ const LightShowPage = () => {
     });
   };
 
+  const generateAutoImageSequence = () => {
+    if (!duration) return;
+    
+    toast({
+      title: "Generating automatic image sequence",
+      description: "Processing images and creating an automatic sequence...",
+    });
+  };
+
   const addImageToTimeline = (imageUrl: string, duration: number = 5, startTime?: number) => {
     if (!audioFile) {
       toast({
@@ -309,6 +318,7 @@ const LightShowPage = () => {
                 addFlashlightPattern={addFlashlightPattern}
                 addImageToTimeline={addImageToTimeline}
                 generateAutoSyncPatterns={generateAutoSyncPatterns}
+                generateAutoImageSequence={generateAutoImageSequence}
                 handleReset={handleReset}
               />
               

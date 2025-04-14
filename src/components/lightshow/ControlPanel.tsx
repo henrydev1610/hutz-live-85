@@ -11,9 +11,9 @@ interface ControlPanelProps {
   audioFile: File | null;
   onPlayPause: () => void;
   addFlashlightPattern: () => void;
-  addImageToTimeline: (imageUrl: string, duration?: number) => void;
+  addImageToTimeline: (imageUrl: string, duration?: number, startTime?: number) => void;
   generateAutoSyncPatterns: () => void;
-  generateAutoImageSequence: () => void;
+  generateAutoImageSequence?: () => void; // Make this optional
   handleReset: () => void;
 }
 
@@ -72,17 +72,6 @@ const ControlPanel = ({
         >
           <Flashlight className="h-4 w-4 mr-2" />
           Adicionar Lanterna
-        </Button>
-        
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={generateAutoImageSequence}
-          disabled={!audioFile}
-          className="bg-sky-950/40"
-        >
-          <ImageIcon className="h-4 w-4 mr-2" />
-          Auto Imagem
         </Button>
         
         <Button
