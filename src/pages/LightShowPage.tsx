@@ -1,4 +1,3 @@
-
 import { useState, useRef } from 'react';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -155,9 +154,6 @@ const LightShowPage = () => {
     // Get all image URLs from selected checkboxes
     const selectedImages: string[] = [];
     checkboxes.forEach((checkbox) => {
-      const id = checkbox.id;
-      
-      // Get the image element next to the checkbox
       const parentDiv = checkbox.closest('.relative');
       if (parentDiv) {
         const imageElement = parentDiv.querySelector('img');
@@ -185,40 +181,26 @@ const LightShowPage = () => {
     const newImageItems: TimelineItem[] = [];
     
     // Calculate spacing - distribute images across the duration
-    const totalDuration = duration - imageDuration; // Account for last image's duration
+    const totalDuration = Math.min(duration - imageDuration, duration); // Account for last image's duration
     const step = Math.max(imageDuration, totalDuration / totalImages);
     
+    // Place images one after another without overlapping
     for (let i = 0; i < totalImages; i++) {
       const imageIndex = i % selectedImages.length;
-      const startTime = i * step;
+      
+      // Determine the start time for this image
+      let startTime = i === 0 ? 0 : newImageItems[i-1].startTime + newImageItems[i-1].duration;
       
       // Don't add images beyond the audio duration
       if (startTime + imageDuration > duration) break;
       
-      // Check for overlap with existing images or other new images
-      let hasOverlap = false;
-      const newItemEnd = startTime + imageDuration;
-      
-      // Check against existing image items in the new set
-      for (const existingItem of newImageItems) {
-        const existingItemEnd = existingItem.startTime + existingItem.duration;
-        if ((startTime >= existingItem.startTime && startTime < existingItemEnd) || 
-            (newItemEnd > existingItem.startTime && newItemEnd <= existingItemEnd) ||
-            (startTime <= existingItem.startTime && newItemEnd >= existingItemEnd)) {
-          hasOverlap = true;
-          break;
-        }
-      }
-      
-      if (!hasOverlap) {
-        newImageItems.push({
-          id: `img-${Date.now()}-${i}`,
-          type: 'image',
-          startTime: startTime,
-          duration: imageDuration,
-          imageUrl: selectedImages[imageIndex]
-        });
-      }
+      newImageItems.push({
+        id: `img-${Date.now()}-${i}`,
+        type: 'image',
+        startTime: startTime,
+        duration: imageDuration,
+        imageUrl: selectedImages[imageIndex]
+      });
     }
     
     setTimelineItems([...nonImageItems, ...newImageItems]);

@@ -91,9 +91,23 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
 
   // Find an image to display even when not playing
   useEffect(() => {
-    // If we're not playing and don't have an active image, find the first image
-    // at or after the current position to preview
-    if (!isPlaying && !displayImage) {
+    // If we don't have an active image, find the first image 
+    // at or after the current position to preview, regardless of playback state
+    if (!displayImage) {
+      // Find images that contain the current time
+      const activeImages = timelineItems.filter(item => 
+        item.type === 'image' && 
+        item.imageUrl &&
+        currentTime >= item.startTime && 
+        currentTime < (item.startTime + item.duration)
+      );
+      
+      if (activeImages.length > 0) {
+        // Use the last image (top layer)
+        setDisplayImage(activeImages[activeImages.length - 1].imageUrl || null);
+        return;
+      }
+      
       // Sort timeline items to find the closest image to current time
       const imageItems = timelineItems
         .filter(item => item.type === 'image' && item.imageUrl)
@@ -105,7 +119,17 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           if (aContains && !bContains) return -1;
           if (!aContains && bContains) return 1;
           
-          // Otherwise, prefer items closest to or just after current time
+          // If both are in the future, prefer the closest one
+          if (a.startTime > currentTime && b.startTime > currentTime) {
+            return a.startTime - b.startTime;
+          }
+          
+          // If both are in the past, prefer the most recent one
+          if (a.startTime + a.duration <= currentTime && b.startTime + b.duration <= currentTime) {
+            return (b.startTime + b.duration) - (a.startTime + a.duration);
+          }
+          
+          // Otherwise, prefer the closest one
           return Math.abs(a.startTime - currentTime) - Math.abs(b.startTime - currentTime);
         });
       
@@ -113,7 +137,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
         setDisplayImage(imageItems[0].imageUrl || null);
       }
     }
-  }, [isPlaying, displayImage, timelineItems, currentTime]);
+  }, [displayImage, timelineItems, currentTime]);
 
   return (
     <div className="flex flex-col items-center">

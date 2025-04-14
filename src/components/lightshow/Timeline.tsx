@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -87,8 +88,12 @@ const Timeline = ({
       container: '#timeline',
       primaryLabelInterval: 1,
       secondaryLabelInterval: 0.2,
-      primaryColor: 'rgba(255, 255, 255, 1)',
-      secondaryColor: 'rgba(255, 255, 255, 0.7)',
+      primaryColor: 'rgba(255, 255, 255, 1)', // This will be fixed by using correct types
+      secondaryColor: 'rgba(255, 255, 255, 0.7)', // This will be fixed by using correct types
+      style: {
+        primaryColor: 'rgba(255, 255, 255, 1)',
+        secondaryColor: 'rgba(255, 255, 255, 0.7)',
+      }
     }));
     
     const regions = wavesurfer.registerPlugin(RegionsPlugin.create());
@@ -113,7 +118,13 @@ const Timeline = ({
     });
     
     return () => {
-      wavesurfer.destroy();
+      if (wavesurfer) {
+        try {
+          wavesurfer.destroy();
+        } catch (error) {
+          console.error("Error destroying wavesurfer:", error);
+        }
+      }
     };
   }, [audioUrl]);
   
@@ -206,13 +217,23 @@ const Timeline = ({
         
         // Left resize handle with cursor indicator
         const leftResizeHandle = document.createElement('div');
-        leftResizeHandle.className = 'absolute left-0 top-0 h-full w-2 bg-white/30 cursor-ew-resize flex items-center justify-center';
-        leftResizeHandle.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 9 -5 5 -5 -5"></path><path d="m19 15 -5 5 -5 -5"></path></svg>';
+        leftResizeHandle.className = 'absolute left-0 top-0 h-full w-4 cursor-ew-resize';
+        
+        // Little visual handle to make it more obvious
+        const leftHandleVisual = document.createElement('div');
+        leftHandleVisual.className = 'absolute left-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
+        leftHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
+        leftResizeHandle.appendChild(leftHandleVisual);
         
         // Right resize handle with cursor indicator
         const rightResizeHandle = document.createElement('div');
-        rightResizeHandle.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 cursor-ew-resize flex items-center justify-center';
-        rightResizeHandle.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 9 -5 5 -5 -5"></path><path d="m19 15 -5 5 -5 -5"></path></svg>';
+        rightResizeHandle.className = 'absolute right-0 top-0 h-full w-4 cursor-ew-resize';
+        
+        // Little visual handle to make it more obvious
+        const rightHandleVisual = document.createElement('div');
+        rightHandleVisual.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
+        rightHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
+        rightResizeHandle.appendChild(rightHandleVisual);
         
         // Drag handle with hand cursor
         const dragHandle = document.createElement('div');
