@@ -315,17 +315,17 @@ export function useLightShowLogic() {
     const actualStartTime = startTime !== undefined ? startTime : currentTime;
     
     const newImage: TimelineItem = {
-      id: `img-${Date.now()}`,
+      id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type: 'image',
       startTime: actualStartTime,
       duration: duration,
       imageUrl
     };
     
-    const images = timelineItems.filter(item => item.type === 'image');
-    let hasOverlap = false;
-    
     if (startTime === undefined) {
+      const images = timelineItems.filter(item => item.type === 'image');
+      let hasOverlap = false;
+      
       for (const image of images) {
         const imageEnd = image.startTime + image.duration;
         const newItemEnd = newImage.startTime + newImage.duration;
@@ -337,15 +337,15 @@ export function useLightShowLogic() {
           break;
         }
       }
-    }
-    
-    if (hasOverlap) {
-      toast({
-        title: "Sobreposição detectada",
-        description: "Não é possível adicionar imagem pois há sobreposição com outra imagem existente.",
-        variant: "destructive"
-      });
-      return;
+      
+      if (hasOverlap) {
+        toast({
+          title: "Sobreposição detectada",
+          description: "Não é possível adicionar imagem pois há sobreposição com outra imagem existente.",
+          variant: "destructive"
+        });
+        return;
+      }
     }
     
     setTimelineItems([...timelineItems, newImage]);
@@ -379,7 +379,7 @@ export function useLightShowLogic() {
     selectedImages.forEach((imageUrl, index) => {
       const startTime = lastImageEndTime + (index * imageDuration);
       newItems.push({
-        id: `img-${Date.now()}-${index}`,
+        id: `img-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
         type: 'image',
         startTime: startTime,
         duration: imageDuration,
