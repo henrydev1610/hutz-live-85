@@ -1,3 +1,4 @@
+
 import { useState, useRef } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { TimelineItem, CallToActionType } from "@/types/lightshow";
@@ -70,92 +71,132 @@ export function useLightShowLogic() {
       
       const totalSeconds = Math.ceil(duration);
       
+      // Create base rhythm of 2-3 flashes per second throughout the entire audio
       for (let second = 0; second < totalSeconds; second++) {
-        newPatterns.push({
-          id: `flash-auto-${Date.now()}-${second}-1`,
-          type: 'flashlight',
-          startTime: second,
-          duration: 0.05,
-          pattern: {
-            intensity: 95,
-            blinkRate: 180,
-            color: '#FFFFFF'
-          }
-        });
+        // Randomly decide if this second will have 2 or 3 flashes
+        const flashesPerSecond = Math.random() > 0.5 ? 3 : 2;
         
-        newPatterns.push({
-          id: `flash-auto-${Date.now()}-${second}-2`,
-          type: 'flashlight',
-          startTime: second + 0.5,
-          duration: 0.05,
-          pattern: {
-            intensity: 90,
-            blinkRate: 160,
-            color: '#FFFFFF'
-          }
-        });
+        for (let i = 0; i < flashesPerSecond; i++) {
+          const startTime = second + (i * (1 / flashesPerSecond));
+          const blinkRate = 100 + Math.random() * 100; // Vary between 100-200 Hz
+          const intensity = 85 + Math.random() * 15; // Vary between 85-100%
+          
+          newPatterns.push({
+            id: `flash-auto-${Date.now()}-${second}-${i}`,
+            type: 'flashlight',
+            startTime: startTime,
+            duration: 0.02 + (Math.random() * 0.02), // 0.02-0.04s duration
+            pattern: {
+              intensity: intensity,
+              blinkRate: blinkRate,
+              color: '#FFFFFF'
+            }
+          });
+        }
       }
       
+      // Add special emphasis on bass and treble beats with 0.2s intervals after them
       if (bassBeats.length > 0 && trebleBeats.length > 0) {
-        for (let i = 0; i < bassBeats.length; i += 3) {
+        // Process bass beats
+        for (let i = 0; i < bassBeats.length; i++) {
           if (bassBeats[i] < duration) {
-            const pauseEnd = Math.min(bassBeats[i] + 0.2, duration - 0.05);
-            
-            newPatterns.push({
-              id: `flash-bass-${Date.now()}-${i}`,
-              type: 'flashlight',
-              startTime: pauseEnd,
-              duration: 0.04,
-              pattern: {
-                intensity: 100,
-                blinkRate: 210,
-                color: '#FFFFFF'
-              }
-            });
-          }
-        }
-        
-        for (let i = 0; i < trebleBeats.length; i += 4) {
-          if (trebleBeats[i] < duration) {
-            const pauseEnd = Math.min(trebleBeats[i] + 0.2, duration - 0.1);
-            
-            for (let j = 0; j < 2; j++) {
+            // Add a 0.2s pause after important bass beats
+            if (i % 4 === 0) {
+              // Create a subtle flash after the pause
+              const pauseEnd = Math.min(bassBeats[i] + 0.2, duration - 0.05);
+              
               newPatterns.push({
-                id: `flash-treble-${Date.now()}-${i}-${j}`,
+                id: `flash-bass-${Date.now()}-${i}`,
                 type: 'flashlight',
-                startTime: pauseEnd + (j * 0.04),
+                startTime: pauseEnd,
                 duration: 0.03,
                 pattern: {
                   intensity: 100,
-                  blinkRate: 230 + (j * 20),
+                  blinkRate: 220,
                   color: '#FFFFFF'
                 }
               });
             }
           }
         }
+        
+        // Process treble beats
+        for (let i = 0; i < trebleBeats.length; i++) {
+          if (trebleBeats[i] < duration) {
+            // Add a 0.2s pause after important treble beats
+            if (i % 5 === 0) {
+              // Create a quick flash sequence after the pause
+              const pauseEnd = Math.min(trebleBeats[i] + 0.2, duration - 0.1);
+              
+              for (let j = 0; j < 2; j++) {
+                newPatterns.push({
+                  id: `flash-treble-${Date.now()}-${i}-${j}`,
+                  type: 'flashlight',
+                  startTime: pauseEnd + (j * 0.03),
+                  duration: 0.02,
+                  pattern: {
+                    intensity: 100,
+                    blinkRate: 250,
+                    color: '#FFFFFF'
+                  }
+                });
+              }
+            }
+          }
+        }
       }
       
+      // Sort all patterns by start time
       const sortedPatterns = [...newPatterns].sort((a, b) => a.startTime - b.startTime);
       
+      // Check for gaps greater than 1 second and fill them
       const finalPatterns: TimelineItem[] = [];
-      
       for (let i = 0; i < sortedPatterns.length; i++) {
-        const current = sortedPatterns[i];
+        finalPatterns.push(sortedPatterns[i]);
         
+        // Check for gaps (if not the last item)
         if (i < sortedPatterns.length - 1) {
-          const next = sortedPatterns[i + 1];
+          const currentEnd = sortedPatterns[i].startTime + sortedPatterns[i].duration;
+          const nextStart = sortedPatterns[i + 1].startTime;
+          
+          // If gap is more than 1 second, add a filler flash
+          if (nextStart - currentEnd > 1) {
+            const fillerTime = currentEnd + 0.5; // Add a flash in the middle of the gap
+            finalPatterns.push({
+              id: `flash-filler-${Date.now()}-${i}`,
+              type: 'flashlight',
+              startTime: fillerTime,
+              duration: 0.03,
+              pattern: {
+                intensity: 90,
+                blinkRate: 150,
+                color: '#FFFFFF'
+              }
+            });
+          }
+        }
+      }
+      
+      // Final check to prevent overlaps
+      const noOverlapPatterns: TimelineItem[] = [];
+      for (let i = 0; i < finalPatterns.length; i++) {
+        const current = finalPatterns[i];
+        
+        // Adjust duration if it would overlap with the next pattern
+        if (i < finalPatterns.length - 1) {
+          const next = finalPatterns[i + 1];
           const currentEnd = current.startTime + current.duration;
           
           if (currentEnd > next.startTime) {
-            current.duration = Math.max(0.02, next.startTime - current.startTime - 0.005);
+            // Adjust current duration to prevent overlap
+            current.duration = Math.max(0.01, next.startTime - current.startTime - 0.005);
           }
         }
         
-        finalPatterns.push(current);
+        noOverlapPatterns.push(current);
       }
       
-      setTimelineItems([...nonFlashlightItems, ...finalPatterns]);
+      setTimelineItems([...nonFlashlightItems, ...noOverlapPatterns]);
       
       toast({
         title: "Show de luzes criado!",

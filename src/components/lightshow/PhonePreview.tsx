@@ -164,12 +164,12 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           {activeFlashlight && (
             <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center z-20 pointer-events-none">
               <div 
-                className="w-3 h-3 rounded-full"
+                className="w-4.5 h-4.5 rounded-full"
                 style={{ 
-                  boxShadow: `0 0 8px 3px rgba(255, 255, 255, ${flashlightIntensity / 100})`,
+                  boxShadow: `0 0 12px 4.5px rgba(255, 255, 255, ${flashlightIntensity / 100})`,
                   transition: 'opacity 0.1ms linear', // Ultra fast transition
                   position: 'absolute',
-                  top: '2%', // Position at the very top
+                  top: '15%', // Moved down from 2% to 15%
                   opacity: flashlightIntensity / 100
                 }}
               ></div>
