@@ -1,5 +1,7 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { TimelineItem } from '@/types/lightshow';
+import { X } from 'lucide-react';
 
 interface PhonePreviewProps {
   isPlaying: boolean;
@@ -12,6 +14,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const [flashlightIntensity, setFlashlightIntensity] = useState(0);
   const [displayImage, setDisplayImage] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState('#000000');
+  const [userClosedImage, setUserClosedImage] = useState(false);
   const flashIntervalRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const frameIdRef = useRef<number | null>(null);
@@ -33,12 +36,18 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   useEffect(() => {
     if (Math.abs(currentTime - lastTimeRef.current) > 0.02) { // More frequent updates (0.02 instead of 0.05)
       updateActiveElements(currentTime);
+      // Reset user closed image when time changes significantly
+      if (Math.abs(currentTime - lastTimeRef.current) > 1.0) {
+        setUserClosedImage(false);
+      }
     }
     lastTimeRef.current = currentTime;
   }, [currentTime]);
   
   useEffect(() => {
     updateActiveElements(currentTime);
+    // Reset user choice when items change
+    setUserClosedImage(false);
   }, [currentTime, isPlaying, timelineItems]);
   
   const updateActiveElements = (time: number) => {
@@ -75,7 +84,9 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       }
     });
     
-    setDisplayImage(activeImage);
+    if (!userClosedImage) {
+      setDisplayImage(activeImage);
+    }
     setBackgroundColor(activeBackgroundColor);
     
     if (isPlaying && activeFlashlightItem && activeFlashlightItem.pattern) {
@@ -108,9 +119,14 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       }
     }
   };
+  
+  const handleCloseImage = () => {
+    setDisplayImage(null);
+    setUserClosedImage(true);
+  };
 
   useEffect(() => {
-    if (!displayImage) {
+    if (!displayImage && !userClosedImage) {
       const activeImages = timelineItems.filter(item => 
         item.type === 'image' && 
         item.imageUrl &&
@@ -149,7 +165,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
         setDisplayImage(sortedImages[0].imageUrl);
       }
     }
-  }, [timelineItems, currentTime, displayImage]);
+  }, [timelineItems, currentTime, displayImage, userClosedImage]);
 
   return (
     <div className="flex flex-col items-center">
@@ -163,12 +179,12 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           {activeFlashlight && (
             <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center z-20 pointer-events-none">
               <div 
-                className="w-16 h-16 rounded-full" // Changed from w-24 h-24 to w-16 h-16
+                className="w-16 h-16 rounded-full"
                 style={{ 
-                  boxShadow: `0 0 100px 50px rgba(255, 255, 255, ${flashlightIntensity / 100})`, // Adjusted shadow for smaller size
+                  boxShadow: `0 0 100px 50px rgba(255, 255, 255, ${flashlightIntensity / 100})`,
                   transition: 'opacity 0.1ms linear', 
                   position: 'absolute',
-                  top: '8%', // Keep at 8% from the top
+                  top: '8%',
                   opacity: flashlightIntensity / 100,
                   background: 'radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.2) 70%)',
                 }}
@@ -177,7 +193,13 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           )}
           
           {displayImage && (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex items-center justify-center h-full relative">
+              <button 
+                className="absolute top-2 right-2 z-30 bg-black/50 rounded-full p-1 hover:bg-black/70 transition-colors"
+                onClick={handleCloseImage}
+              >
+                <X className="h-5 w-5 text-white" />
+              </button>
               <img 
                 src={displayImage} 
                 alt="Display content" 

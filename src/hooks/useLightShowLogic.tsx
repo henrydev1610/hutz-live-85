@@ -484,7 +484,8 @@ export function useLightShowLogic() {
       return;
     }
     
-    const ctaStartTime = Math.max(0, duration - 10); // 10 seconds before the end, or at the beginning if too short
+    const ctaDuration = 10; // 10 seconds for call to action
+    const ctaStartTime = Math.max(0, duration - ctaDuration);
     
     console.log(`Adding call to action at time: ${ctaStartTime}s, audio duration: ${duration}s`);
     
@@ -492,7 +493,7 @@ export function useLightShowLogic() {
       id: `cta-${Date.now()}`,
       type: 'callToAction',
       startTime: ctaStartTime,
-      duration: 10,
+      duration: ctaDuration,
       content: callToAction
     };
     
@@ -503,7 +504,7 @@ export function useLightShowLogic() {
     
     toast({
       title: "Chamada adicionada",
-      description: `A chamada foi adicionada ${ctaStartTime > 0 ? '10 segundos antes do fim' : 'ao início'} da música.`,
+      description: `A chamada foi adicionada ao final da música.`,
     });
   };
   

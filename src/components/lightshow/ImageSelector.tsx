@@ -71,7 +71,7 @@ const ImageSelector = ({ onImageSelect, timelineItems, onSelectedImagesChange }:
       });
     }
     
-    const fixedDuration = 5; // Changed from 10 to 5 seconds duration as requested
+    const fixedDuration = 5; // Using 5 seconds duration
     
     // We'll directly call the parent's handler for each image
     selectedImages.forEach((imageUrl, index) => {
