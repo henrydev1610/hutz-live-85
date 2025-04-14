@@ -138,18 +138,7 @@ const CallToActionPanel = ({
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="button-text">Texto do Botão</Label>
-                <Input 
-                  id="button-text" 
-                  placeholder="Clique Aqui" 
-                  value={callToAction.buttonText || ''}
-                  onChange={(e) => onContentChange({ buttonText: e.target.value })}
-                  className="bg-black/20 border-white/10"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="external-url">URL Externa</Label>
+                <Label htmlFor="external-url">URL do Link</Label>
                 <Input 
                   id="external-url" 
                   placeholder="https://exemplo.com" 
@@ -164,19 +153,16 @@ const CallToActionPanel = ({
                   <img 
                     src={callToAction.imageUrl} 
                     alt="Prévia" 
-                    className="max-h-32 object-contain mb-2"
+                    className="max-h-40 object-contain mb-2"
                     onError={(e) => (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x300?text=Imagem+Inválida'}
                   />
-                  <Button size="sm" variant="secondary">
-                    {callToAction.buttonText || "Clique Aqui"}
-                  </Button>
                 </div>
               )}
             </TabsContent>
             
             <TabsContent value="coupon" className="space-y-4">
               <div className="space-y-2">
-                <Label>Imagem (opcional)</Label>
+                <Label>Imagem</Label>
                 <div className="flex space-x-2">
                   <Button 
                     onClick={handleUploadClick} 
@@ -187,17 +173,6 @@ const CallToActionPanel = ({
                     Carregar Imagem
                   </Button>
                 </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="coupon-code">Código do Cupom</Label>
-                <Input 
-                  id="coupon-code" 
-                  placeholder="CUPOM20" 
-                  value={callToAction.couponCode || ''}
-                  onChange={(e) => onContentChange({ couponCode: e.target.value })}
-                  className="bg-black/20 border-white/10"
-                />
               </div>
               
               <div className="space-y-2">
@@ -216,13 +191,11 @@ const CallToActionPanel = ({
                   <img 
                     src={callToAction.imageUrl} 
                     alt="Prévia" 
-                    className="max-h-20 object-contain mb-2"
+                    className="max-h-32 object-contain mb-2"
                   />
                 )}
                 <div className="text-lg font-bold mb-2">Cupom de Desconto</div>
-                <div className="bg-white/10 px-6 py-3 rounded-md font-mono text-xl font-bold mb-3">
-                  {callToAction.couponCode || "CUPOM20"}
-                </div>
+                
                 <Button size="sm" variant="secondary">
                   Resgatar
                 </Button>

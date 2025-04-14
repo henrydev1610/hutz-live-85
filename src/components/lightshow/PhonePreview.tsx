@@ -189,16 +189,16 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
           className="relative w-full h-full overflow-hidden"
           style={{ backgroundColor }}
         >
-          {/* Flashlight spot effect - much more prominent and visible */}
+          {/* Flashlight spot effect - smaller and positioned at top center */}
           {activeFlashlight && (
             <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center z-20 pointer-events-none">
               <div 
-                className="w-40 h-40 rounded-full"
+                className="w-32 h-32 rounded-full"
                 style={{ 
-                  boxShadow: `0 0 60px 40px rgba(255, 255, 255, ${flashlightIntensity / 100})`,
-                  transition: 'opacity 10ms linear',
+                  boxShadow: `0 0 40px 30px rgba(255, 255, 255, ${flashlightIntensity / 100})`,
+                  transition: 'opacity 5ms linear',
                   position: 'absolute',
-                  top: '20%',
+                  top: '10%', // Positioned higher on the screen
                   opacity: flashlightIntensity / 100
                 }}
               ></div>

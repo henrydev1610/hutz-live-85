@@ -71,13 +71,13 @@ export function useLightShowLogic() {
       // Create sequential flashes for beats with better spacing
       beats.forEach((time, index) => {
         if (time < duration) {
-          // Check if this beat is too close to others
+          // More spacing between beats to prevent overlapping
           const tooClose = newPatterns.some(item => 
-            Math.abs(item.startTime - time) < 0.12 // Minimum 120ms spacing between flashes
+            Math.abs(item.startTime - time) < 0.15 // 150ms minimum spacing
           );
           
           if (!tooClose) {
-            const flashDuration = 0.05; // 50ms flash
+            const flashDuration = 0.03; // 30ms ultra-short flash
             
             newPatterns.push({
               id: `flash-beat-${Date.now()}-${index}`,
@@ -85,8 +85,8 @@ export function useLightShowLogic() {
               startTime: time,
               duration: flashDuration,
               pattern: {
-                intensity: 95, // 95%
-                blinkRate: 10, // 10 Hz (more visible)
+                intensity: 100, // Full intensity
+                blinkRate: 120, // 120 Hz (very fast)
                 color: '#FFFFFF'
               }
             });
@@ -94,16 +94,16 @@ export function useLightShowLogic() {
         }
       });
       
-      // Add bass beats with more spacing (less dense)
+      // Add bass beats with proper spacing
       bassBeats.forEach((time, index) => {
         if (time < duration) {
           // Check if this beat is too close to others
           const tooClose = newPatterns.some(item => 
-            Math.abs(item.startTime - time) < 0.15 // Minimum 150ms spacing
+            Math.abs(item.startTime - time) < 0.2 // 200ms spacing for bass
           );
           
           if (!tooClose) {
-            const flashDuration = 0.08; // 80ms (longer for bass beats)
+            const flashDuration = 0.05; // 50ms (slightly longer for bass beats)
             
             newPatterns.push({
               id: `flash-bass-${Date.now()}-${index}`,
@@ -111,8 +111,8 @@ export function useLightShowLogic() {
               startTime: time,
               duration: flashDuration,
               pattern: {
-                intensity: 100, // Full intensity for bass
-                blinkRate: 8, // 8 Hz (more visible)
+                intensity: 100, // Full intensity
+                blinkRate: 90, // 90 Hz
                 color: '#FFFFFF'
               }
             });
@@ -122,14 +122,14 @@ export function useLightShowLogic() {
       
       // Add treble beats with careful spacing
       trebleBeats.forEach((time, index) => {
-        if (time < duration && index % 3 === 0) { // Only use every 3rd treble beat
+        if (time < duration && index % 2 === 0) { // Use every 2nd treble beat
           // Check if this beat is too close to others
           const tooClose = newPatterns.some(item => 
-            Math.abs(item.startTime - time) < 0.18 // Minimum 180ms spacing
+            Math.abs(item.startTime - time) < 0.18 // 180ms spacing
           );
           
           if (!tooClose) {
-            const flashDuration = 0.04; // 40ms (short for treble)
+            const flashDuration = 0.02; // 20ms (very short for treble)
             
             newPatterns.push({
               id: `flash-treble-${Date.now()}-${index}`,
@@ -137,8 +137,8 @@ export function useLightShowLogic() {
               startTime: time,
               duration: flashDuration,
               pattern: {
-                intensity: 90, // 90%
-                blinkRate: 12, // 12 Hz
+                intensity: 95, // 95%
+                blinkRate: 150, // 150 Hz (extremely fast)
                 color: '#FFFFFF'
               }
             });
@@ -146,27 +146,27 @@ export function useLightShowLogic() {
         }
       });
       
-      // Add moderate strobe effects with much better spacing
-      for (let time = 0; time < duration; time += 8) { // Much increased spacing between strobe clusters (8s)
+      // Add some strobe effects with better spacing
+      for (let time = 2; time < duration; time += 5) { // Every 5 seconds
         // Skip if there are already flashes close to this time
         const hasNearbyFlashes = newPatterns.some(item => 
           Math.abs(item.startTime - time) < 0.5 // Check for flashes within 0.5s
         );
         
         if (!hasNearbyFlashes) {
-          const clusterSize = 3; // Reduced to just 3 flashes per cluster
+          const clusterSize = 4; // 4 flashes in rapid succession
           for (let i = 0; i < clusterSize; i++) {
-            const strokeTime = time + (i * 0.12); // Much slower strobe timing (120ms spacing)
+            const strokeTime = time + (i * 0.08); // 80ms spacing between flashes
             
             if (strokeTime < duration) {
               newPatterns.push({
                 id: `flash-strobe-${Date.now()}-${time}-${i}`,
                 type: 'flashlight',
                 startTime: strokeTime,
-                duration: 0.06, // 60ms (more visible)
+                duration: 0.03, // 30ms
                 pattern: {
                   intensity: 100,
-                  blinkRate: 8, // 8 Hz (more visible)
+                  blinkRate: 100, // 100 Hz
                   color: '#FFFFFF'
                 }
               });
@@ -316,10 +316,10 @@ export function useLightShowLogic() {
       id: `flash-${Date.now()}`,
       type: 'flashlight',
       startTime: currentTime,
-      duration: 0.05, // Shorter 50ms duration for quick flash
+      duration: 0.03, // Shorter 30ms duration for quick flash
       pattern: {
         intensity: 100,
-        blinkRate: 50, // Much faster blinking at 50Hz
+        blinkRate: 120, // Much faster blinking at 120Hz
         color: '#FFFFFF'
       }
     };
