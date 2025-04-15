@@ -406,6 +406,37 @@ export function useLightShowLogic() {
   };
   
   const removeTimelineItem = (id: string) => {
+    const itemToRemove = timelineItems.find(item => item.id === id);
+    
+    if (itemToRemove?.type === 'image') {
+      const imageItems = timelineItems.filter(item => item.type === 'image');
+      const removedIndex = imageItems.findIndex(item => item.id === id);
+      
+      if (removedIndex !== -1) {
+        const followingImages = imageItems.slice(removedIndex + 1);
+        
+        if (followingImages.length > 0) {
+          const gap = itemToRemove.duration;
+          
+          setTimelineItems(prev => {
+            const withoutRemoved = prev.filter(item => item.id !== id);
+            
+            return withoutRemoved.map(item => {
+              if (item.type === 'image' && followingImages.some(img => img.id === item.id)) {
+                return {
+                  ...item,
+                  startTime: item.startTime - gap
+                };
+              }
+              return item;
+            });
+          });
+          
+          return;
+        }
+      }
+    }
+    
     setTimelineItems(timelineItems.filter(item => item.id !== id));
     setSelectedItemIndex(null);
   };
@@ -484,8 +515,8 @@ export function useLightShowLogic() {
       return;
     }
     
-    const ctaDuration = 20; // Changed from 10 to 20 seconds for call to action
-    const ctaStartTime = duration; // Start exactly when the song ends
+    const ctaDuration = 20;
+    const ctaStartTime = duration;
     
     console.log(`Adding call to action at time: ${ctaStartTime}s, audio duration: ${duration}s`);
     

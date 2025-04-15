@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -59,6 +58,8 @@ const Timeline = ({
   const [splitPoint, setSplitPoint] = useState<number | null>(null);
   const [showAudioControls, setShowAudioControls] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [draggedItem, setDraggedItem] = useState<string | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<number | null>(null);
   
   const imageTrackRef = useRef<HTMLDivElement>(null);
   const flashlightTrackRef = useRef<HTMLDivElement>(null);
@@ -73,16 +74,13 @@ const Timeline = ({
 
   const handleSplitAudio = () => {
     if (splitPoint !== null) {
-      // Set the trim points for split operation
       setAudioEditInfo({
         startTrim: 0,
         endTrim: splitPoint
       });
       
-      // Trigger the trim operation
       trimAudio();
       
-      // Reset the split point
       setSplitPoint(null);
     }
   };
@@ -100,16 +98,41 @@ const Timeline = ({
     }
   };
   
-  // Handle delete key press for timeline items and audio regions
+  const handleRemoveItem = (id: string) => {
+    const itemToRemove = timelineItems.find(item => item.id === id);
+    if (!itemToRemove) return;
+
+    if (itemToRemove.type === 'image') {
+      const imageItems = timelineItems.filter(item => item.type === 'image');
+      const removedIndex = imageItems.findIndex(item => item.id === id);
+      
+      if (removedIndex !== -1) {
+        const followingImages = imageItems.slice(removedIndex + 1);
+        
+        if (followingImages.length > 0) {
+          const gap = itemToRemove.duration;
+          
+          followingImages.forEach(img => {
+            onUpdateItem(img.id, {
+              startTime: img.startTime - gap
+            });
+          });
+        }
+      }
+    }
+    
+    onRemoveItem(id);
+    setSelectedItemIndex(null);
+  };
+  
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Delete' && selectedItemIndex !== null) {
         const selectedItem = timelineItems[selectedItemIndex];
         if (selectedItem) {
-          onRemoveItem(selectedItem.id);
+          handleRemoveItem(selectedItem.id);
         }
       } else if (e.key === 'Delete' && splitPoint !== null) {
-        // Handle deleting part of the audio when split point is set
         handleSplitAudio();
       }
     };
@@ -123,7 +146,6 @@ const Timeline = ({
   useEffect(() => {
     if (!containerRef.current || !audioUrl) return;
     
-    // Clean up any existing wavesurfer instance first
     if (wavesurferRef.current) {
       wavesurferRef.current.destroy();
       setIsAudioLoaded(false);
@@ -172,7 +194,6 @@ const Timeline = ({
     });
     
     wavesurfer.on('click', (time) => {
-      // If scissors mode is active, set split point at click position
       if (showAudioControls) {
         setSplitPoint(time);
       } else {
@@ -180,7 +201,6 @@ const Timeline = ({
       }
     });
     
-    // Add error handling for audio loading
     wavesurfer.on('error', (error) => {
       console.error("Error loading audio:", error);
       setIsAudioLoaded(false);
@@ -198,7 +218,6 @@ const Timeline = ({
     };
   }, [audioUrl]);
   
-  // Fix audio playback control
   useEffect(() => {
     if (!wavesurferRef.current || !isAudioLoaded) return;
     
@@ -213,16 +232,13 @@ const Timeline = ({
     }
   }, [isPlaying, isAudioLoaded]);
   
-  // Helper function to detect overlapping items
   const checkImageOverlap = (itemId: string, startTime: number, duration: number) => {
-    // Only check for images
     const images = timelineItems.filter(item => item.type === 'image' && item.id !== itemId);
     
     for (const image of images) {
       const imageEnd = image.startTime + image.duration;
       const newItemEnd = startTime + duration;
       
-      // Check if there's any overlap
       if ((startTime >= image.startTime && startTime < imageEnd) || 
           (newItemEnd > image.startTime && newItemEnd <= imageEnd) ||
           (startTime <= image.startTime && newItemEnd >= imageEnd)) {
@@ -233,39 +249,32 @@ const Timeline = ({
     return false;
   };
   
-  // Update timeline marker with currentTime
   useEffect(() => {
     if (!wavesurferRef.current) return;
     
     const trackDuration = wavesurferRef.current.getDuration() || 1;
     const markerPosition = (currentTime / trackDuration) * 100;
     
-    // Select all timeline markers and update their position
     const markers = document.querySelectorAll('.timeline-marker');
     markers.forEach(marker => {
       (marker as HTMLElement).style.left = `${markerPosition}%`;
     });
     
-    // If we have a split point, draw a line at that position
     if (splitPoint !== null && containerRef.current) {
       const splitPosition = (splitPoint / trackDuration) * 100;
       
-      // Remove any existing split markers
       const existingSplitMarkers = document.querySelectorAll('.split-marker');
       existingSplitMarkers.forEach(marker => marker.remove());
       
-      // Create a new split marker
       const splitMarker = document.createElement('div');
       splitMarker.className = 'split-marker absolute top-0 h-full w-1 bg-red-500 z-10';
       splitMarker.style.left = `${splitPosition}%`;
       
-      // Add a scissors icon
       const scissorsIcon = document.createElement('div');
       scissorsIcon.className = 'absolute top-2 -translate-x-1/2 bg-red-500 rounded-full p-1';
       scissorsIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"></path></svg>';
       splitMarker.appendChild(scissorsIcon);
       
-      // Add the split marker to the container
       containerRef.current.appendChild(splitMarker);
     }
   }, [currentTime, splitPoint]);
@@ -288,7 +297,6 @@ const Timeline = ({
       return (duration / trackDuration) * 100;
     };
     
-    // Clear existing elements
     if (imageTrackRef.current) {
       while (imageTrackRef.current.firstChild) {
         imageTrackRef.current.removeChild(imageTrackRef.current.firstChild);
@@ -301,13 +309,20 @@ const Timeline = ({
       }
     }
     
+    const createDragPreview = (originalElement: HTMLElement, offsetX: number) => {
+      const ghost = originalElement.cloneNode(true) as HTMLElement;
+      ghost.classList.add('opacity-50', 'absolute', 'pointer-events-none', 'z-30');
+      ghost.style.left = `${offsetX}px`;
+      return ghost;
+    };
+    
     timelineItems.forEach(item => {
       const leftPosition = calculatePosition(item.startTime);
       const widthPercentage = calculateWidth(item.duration);
       
       if (item.type === 'image' && imageTrackRef.current) {
         const regionElement = document.createElement('div');
-        regionElement.className = 'absolute h-full rounded-md flex items-center justify-center overflow-hidden';
+        regionElement.className = 'absolute h-full rounded-md flex items-center justify-center overflow-hidden cursor-grab';
         regionElement.style.left = `${leftPosition}%`;
         regionElement.style.width = `${widthPercentage}%`;
         regionElement.style.backgroundColor = 'rgba(14, 165, 233, 0.3)';
@@ -315,6 +330,9 @@ const Timeline = ({
           timelineItems[selectedItemIndex]?.id === item.id ? '2px solid white' : '';
         regionElement.style.zIndex = selectedItemIndex !== null && 
           timelineItems[selectedItemIndex]?.id === item.id ? '2' : '1';
+        
+        regionElement.setAttribute('data-item-id', item.id);
+        regionElement.setAttribute('data-item-type', 'image');
         
         if (item.imageUrl) {
           const thumbnail = document.createElement('img');
@@ -328,30 +346,21 @@ const Timeline = ({
         label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + item.duration).toFixed(1)}s`;
         regionElement.appendChild(label);
         
-        // Left resize handle with cursor indicator
         const leftResizeHandle = document.createElement('div');
         leftResizeHandle.className = 'absolute left-0 top-0 h-full w-4 cursor-ew-resize z-10';
         
-        // Little visual handle to make it more obvious
         const leftHandleVisual = document.createElement('div');
         leftHandleVisual.className = 'absolute left-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
         leftHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
         leftResizeHandle.appendChild(leftHandleVisual);
         
-        // Right resize handle with cursor indicator
         const rightResizeHandle = document.createElement('div');
         rightResizeHandle.className = 'absolute right-0 top-0 h-full w-4 cursor-ew-resize z-10';
         
-        // Little visual handle to make it more obvious
         const rightHandleVisual = document.createElement('div');
         rightHandleVisual.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
         rightHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
         rightResizeHandle.appendChild(rightHandleVisual);
-        
-        // Drag handle with hand cursor
-        const dragHandle = document.createElement('div');
-        dragHandle.className = 'absolute inset-0 cursor-grab';
-        dragHandle.innerHTML = '<div class="absolute top-2 right-1/2 transform translate-x-1/2 opacity-50"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v2m0 0v2m0-2h6m0 0V3m0 2v2"></path><path d="M9 17v2m0 0v2m0-2h6m0 0v-2m0 2v2"></path><path d="M5 7v10M19 7v10"></path></svg></div>';
         
         let isDragging = false;
         let isResizingLeft = false;
@@ -359,6 +368,7 @@ const Timeline = ({
         let startX = 0;
         let startLeft = 0;
         let startWidth = 0;
+        let ghostElement: HTMLElement | null = null;
         
         regionElement.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -366,7 +376,70 @@ const Timeline = ({
           onItemSelect(index);
         });
         
-        // Left resize handle functionality
+        regionElement.addEventListener('mousedown', (e) => {
+          if ((e.target as HTMLElement).closest('.cursor-ew-resize')) return;
+          
+          e.stopPropagation();
+          startX = e.clientX;
+          startLeft = parseFloat(regionElement.style.left);
+          
+          if (imageTrackRef.current) {
+            ghostElement = createDragPreview(regionElement, e.clientX - imageTrackRef.current.getBoundingClientRect().left);
+            ghostElement.style.position = 'absolute';
+            ghostElement.style.opacity = '0.7';
+            ghostElement.style.pointerEvents = 'none';
+            document.body.appendChild(ghostElement);
+          }
+          
+          setDraggedItem(item.id);
+          regionElement.style.cursor = 'grabbing';
+          document.body.style.cursor = 'grabbing';
+                
+          const handleMouseMove = (moveEvent: MouseEvent) => {
+            moveEvent.preventDefault();
+            
+            if (ghostElement) {
+              const trackRect = imageTrackRef.current?.getBoundingClientRect();
+              if (trackRect) {
+                const offsetX = moveEvent.clientX - trackRect.left;
+                ghostElement.style.left = `${offsetX}px`;
+                
+                const newTimePosition = (offsetX / trackRect.width) * trackDuration;
+                
+                const imageItems = timelineItems.filter(i => i.type === 'image' && i.id !== item.id);
+                
+                setDragOverPosition(newTimePosition);
+              }
+            }
+          };
+          
+          const handleMouseUp = (upEvent: MouseEvent) => {
+            if (ghostElement) {
+              document.body.removeChild(ghostElement);
+              ghostElement = null;
+            }
+            
+            const trackRect = imageTrackRef.current?.getBoundingClientRect();
+            if (trackRect) {
+              const offsetX = upEvent.clientX - trackRect.left;
+              const targetTimePosition = (offsetX / trackRect.width) * trackDuration;
+              
+              moveImageToPosition(item.id, targetTimePosition);
+            }
+            
+            regionElement.style.cursor = 'grab';
+            document.body.style.cursor = '';
+            setDraggedItem(null);
+            setDragOverPosition(null);
+            
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+          };
+          
+          document.addEventListener('mousemove', handleMouseMove);
+          document.addEventListener('mouseup', handleMouseUp);
+        });
+        
         leftResizeHandle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
           isResizingLeft = true;
@@ -397,7 +470,6 @@ const Timeline = ({
               
               label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + newDuration).toFixed(1)}s`;
               
-              // Update the item data - without checking for overlap when actively resizing
               onUpdateItem(item.id, { 
                 startTime: newStartTime,
                 duration: newDuration 
@@ -416,7 +488,6 @@ const Timeline = ({
           document.addEventListener('mouseup', handleMouseUp);
         });
         
-        // Right resize handle functionality
         rightResizeHandle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
           isResizingRight = true;
@@ -434,7 +505,6 @@ const Timeline = ({
             const newWidth = Math.max(5, startWidth + dx);
             const percentWidth = (newWidth / trackWidth) * 100;
             
-            // Check if the new width would go beyond the track
             const currentLeft = parseFloat(regionElement.style.left);
             const maxWidth = (100 - currentLeft);
             
@@ -445,7 +515,6 @@ const Timeline = ({
               
               label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
               
-              // Update the item data - without checking for overlap when actively resizing
               onUpdateItem(item.id, { duration: newDuration });
             }
           };
@@ -461,7 +530,10 @@ const Timeline = ({
           document.addEventListener('mouseup', handleMouseUp);
         });
         
-        // Drag handle functionality
+        const dragHandle = document.createElement('div');
+        dragHandle.className = 'absolute inset-0 cursor-grab';
+        dragHandle.innerHTML = '<div class="absolute top-2 right-1/2 transform translate-x-1/2 opacity-50"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v2m0 0v2m0-2h6m0 0V3m0 2v2"></path><path d="M9 17v2m0 0v2m0-2h6m0 0v-2m0 2v2"></path><path d="M5 7v10M19 7v10"></path></svg></div>';
+        
         dragHandle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
           if (isResizingLeft || isResizingRight) return;
@@ -484,7 +556,6 @@ const Timeline = ({
             
             const newStartTime = (newLeft / 100) * trackDuration;
             
-            // Check for overlap with other images
             if (!checkImageOverlap(item.id, newStartTime, item.duration)) {
               regionElement.style.left = `${newLeft}%`;
               
@@ -506,7 +577,6 @@ const Timeline = ({
           document.addEventListener('mouseup', handleMouseUp);
         });
         
-        // Append elements in the correct order for proper z-index handling
         regionElement.appendChild(dragHandle);
         regionElement.appendChild(leftResizeHandle);
         regionElement.appendChild(rightResizeHandle);
@@ -537,27 +607,22 @@ const Timeline = ({
           regionElement.appendChild(intensityIndicator);
         }
         
-        // Add left resize handle with cursor indicator
         const leftResizeHandle = document.createElement('div');
         leftResizeHandle.className = 'absolute left-0 top-0 h-full w-4 cursor-ew-resize z-10';
         
-        // Little visual handle to make it more obvious
         const leftHandleVisual = document.createElement('div');
         leftHandleVisual.className = 'absolute left-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
         leftHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
         leftResizeHandle.appendChild(leftHandleVisual);
         
-        // Right resize handle with cursor indicator
         const rightResizeHandle = document.createElement('div');
         rightResizeHandle.className = 'absolute right-0 top-0 h-full w-4 cursor-ew-resize z-10';
         
-        // Little visual handle to make it more obvious
         const rightHandleVisual = document.createElement('div');
         rightHandleVisual.className = 'absolute right-0 top-0 h-full w-2 bg-white/30 flex items-center justify-center';
         rightHandleVisual.innerHTML = '<div class="w-1 h-full bg-white/50"></div>';
         rightResizeHandle.appendChild(rightHandleVisual);
         
-        // Drag handle with hand cursor
         const dragHandle = document.createElement('div');
         dragHandle.className = 'absolute inset-0 cursor-grab';
         dragHandle.innerHTML = '<div class="absolute top-2 right-1/2 transform translate-x-1/2 opacity-50"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v2m0 0v2m0-2h6m0 0V3m0 2v2"></path><path d="M9 17v2m0 0v2m0-2h6m0 0v-2m0 2v2"></path><path d="M5 7v10M19 7v10"></path></svg></div>';
@@ -575,7 +640,6 @@ const Timeline = ({
           onItemSelect(index);
         });
         
-        // Left resize handle functionality
         leftResizeHandle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
           isResizingLeft = true;
@@ -606,7 +670,6 @@ const Timeline = ({
               
               label.textContent = `${newStartTime.toFixed(1)}s - ${(newStartTime + newDuration).toFixed(1)}s`;
               
-              // Update the item data
               onUpdateItem(item.id, { 
                 startTime: newStartTime,
                 duration: newDuration 
@@ -625,7 +688,6 @@ const Timeline = ({
           document.addEventListener('mouseup', handleMouseUp);
         });
         
-        // Right resize handle functionality
         rightResizeHandle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
           isResizingRight = true;
@@ -643,7 +705,6 @@ const Timeline = ({
             const newWidth = Math.max(5, startWidth + dx);
             const percentWidth = (newWidth / trackWidth) * 100;
             
-            // Check if the new width would go beyond the track
             const currentLeft = parseFloat(regionElement.style.left);
             const maxWidth = (100 - currentLeft);
             
@@ -654,7 +715,6 @@ const Timeline = ({
               
               label.textContent = `${item.startTime.toFixed(1)}s - ${(item.startTime + newDuration).toFixed(1)}s`;
               
-              // Update the item data
               onUpdateItem(item.id, { duration: newDuration });
             }
           };
@@ -670,7 +730,6 @@ const Timeline = ({
           document.addEventListener('mouseup', handleMouseUp);
         });
         
-        // Drag handle functionality
         dragHandle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
           if (isResizingLeft || isResizingRight) return;
@@ -711,7 +770,6 @@ const Timeline = ({
           document.addEventListener('mouseup', handleMouseUp);
         });
         
-        // Append elements in the correct order for proper z-index handling
         regionElement.appendChild(dragHandle);
         regionElement.appendChild(leftResizeHandle);
         regionElement.appendChild(rightResizeHandle);
@@ -720,7 +778,6 @@ const Timeline = ({
       }
     });
     
-    // Add a single unified marker for all tracks
     const marker = document.createElement('div');
     marker.className = 'timeline-marker absolute top-0 h-full w-0.5 bg-white z-20 pointer-events-none';
     const markerPosition = calculatePosition(currentTime);
@@ -739,7 +796,59 @@ const Timeline = ({
         }
       }
     };
-  }, [timelineItems, selectedItemIndex, currentTime, isPlaying]);
+  }, [timelineItems, selectedItemIndex, currentTime, isPlaying, draggedItem, dragOverPosition]);
+
+  const moveImageToPosition = (itemId: string, targetTime: number) => {
+    const item = timelineItems.find(i => i.id === itemId);
+    if (!item || item.type !== 'image') return;
+    
+    const imageItems = timelineItems.filter(i => i.type === 'image');
+    
+    let validPosition = targetTime;
+    const itemDuration = item.duration;
+    
+    validPosition = Math.max(0, validPosition);
+    if (validPosition + itemDuration > duration) {
+      validPosition = duration - itemDuration;
+    }
+    
+    let insertBefore: TimelineItem | null = null;
+    
+    for (const img of imageItems) {
+      if (img.id !== itemId && img.startTime > validPosition) {
+        insertBefore = img;
+        break;
+      }
+    }
+    
+    if (insertBefore) {
+      validPosition = Math.min(validPosition, insertBefore.startTime - itemDuration);
+    }
+    
+    const originalPosition = item.startTime;
+    
+    if (Math.abs(originalPosition - validPosition) < 0.01) return;
+    
+    onUpdateItem(itemId, { startTime: validPosition });
+    
+    const updatedItems = [...timelineItems];
+    const updatedItem = updatedItems.find(i => i.id === itemId);
+    if (!updatedItem) return;
+    
+    const allImages = updatedItems.filter(i => i.type === 'image');
+    const sortedByPosition = [...allImages].sort((a, b) => a.startTime - b.startTime);
+    
+    for (let i = 0; i < sortedByPosition.length - 1; i++) {
+      const current = sortedByPosition[i];
+      const next = sortedByPosition[i + 1];
+      
+      const currentEnd = current.startTime + current.duration;
+      
+      if (currentEnd > next.startTime) {
+        onUpdateItem(next.id, { startTime: currentEnd });
+      }
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-black/50 rounded-lg p-4 space-y-3">
@@ -834,7 +943,6 @@ const Timeline = ({
       
       <div className="relative h-32 bg-black/30 rounded-md">
         <div ref={containerRef} className="h-full" />
-        {/* Single unified marker for all tracks */}
         <div className="timeline-marker absolute top-0 h-full w-0.5 bg-white z-20 pointer-events-none"></div>
       </div>
       
@@ -847,7 +955,6 @@ const Timeline = ({
           className="relative h-full cursor-pointer"
           onClick={() => onItemSelect(null)}
         ></div>
-        {/* Remove separate marker here */}
       </div>
       
       <div className="text-xs text-white/70 font-medium mb-1">Trilha de Efeitos de Lanterna</div>
@@ -857,7 +964,6 @@ const Timeline = ({
           className="relative h-full cursor-pointer"
           onClick={() => onItemSelect(null)}
         ></div>
-        {/* Remove separate marker here */}
       </div>
       
       <div className="mt-2 text-xs text-white/50 text-center">
