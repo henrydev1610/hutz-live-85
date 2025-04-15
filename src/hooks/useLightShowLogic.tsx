@@ -445,7 +445,7 @@ export function useLightShowLogic() {
     setIsPlaying(!isPlaying);
   };
   
-  const handleGenerateFile = () => {
+  const handleGenerateFile = async () => {
     if (!audioFile || !timelineItems.length) {
       toast({
         title: "Não foi possível gerar o arquivo",
@@ -460,38 +460,43 @@ export function useLightShowLogic() {
       description: "Processando áudio e padrões ultrassônicos.",
     });
     
-    generateUltrasonicAudio(audioFile, timelineItems)
-      .then(blob => {
-        const url = URL.createObjectURL(blob);
-        const filename = `${showName.replace(/\s+/g, '_')}_ultrasonic.wav`;
-        
-        console.log("File generated, initiating download with filename:", filename);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 100);
-        
-        toast({
-          title: "Arquivo gerado com sucesso",
-          description: "O arquivo .WAV com sinais ultrassônicos está pronto para download.",
-        });
-      })
-      .catch(error => {
-        console.error("Error generating ultrasonic audio:", error);
-        toast({
-          title: "Erro ao gerar arquivo",
-          description: `Ocorreu um erro durante o processamento do áudio: ${error.message}`,
-          variant: "destructive"
-        });
+    try {
+      console.log("Starting WAV file generation process...");
+      const blob = await generateUltrasonicAudio(audioFile, timelineItems);
+      console.log("WAV blob generated successfully, size:", blob.size);
+      
+      const url = URL.createObjectURL(blob);
+      const filename = `${showName.replace(/\s+/g, '_')}_ultrasonic.wav`;
+      
+      console.log("Creating download link with filename:", filename);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      
+      console.log("Triggering download click...");
+      a.click();
+      
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log("Download cleanup complete");
+      }, 5000);
+      
+      toast({
+        title: "Arquivo gerado com sucesso",
+        description: "O arquivo .WAV com sinais ultrassônicos está pronto para download.",
       });
+    } catch (error) {
+      console.error("Error generating ultrasonic audio:", error);
+      toast({
+        title: "Erro ao gerar arquivo",
+        description: `Ocorreu um erro durante o processamento do áudio: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: "destructive"
+      });
+    }
   };
 
   const handleReset = () => {

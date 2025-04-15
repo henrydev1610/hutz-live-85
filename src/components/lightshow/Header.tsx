@@ -27,8 +27,8 @@ const Header = ({
     setIsGenerating(true);
     // Call the generate function
     handleGenerateFile();
-    // Reset after a timeout (this is just UI feedback)
-    setTimeout(() => setIsGenerating(false), 3000);
+    // Reset after a longer timeout to ensure file generation completes
+    setTimeout(() => setIsGenerating(false), 10000);
   };
   
   const isDisabled = !audioFile || !timelineItems.length;

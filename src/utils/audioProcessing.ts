@@ -14,8 +14,8 @@ export async function generateUltrasonicAudio(
     // First convert the File to ArrayBuffer so we can process it
     const arrayBuffer = await audioFile.arrayBuffer();
     
-    // Use a type-safe way to create AudioContext
-    const audioContext = new AudioContext();
+    // Create AudioContext
+    const audioContext = new window.AudioContext();
     
     // Decode the audio file
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
@@ -77,7 +77,6 @@ export async function generateUltrasonicAudio(
     
     // Schedule the data transmission
     let currentTime = 0;
-    const samplesPerBit = offlineContext.sampleRate / bitsPerSecond;
     
     // Ensure we have enough time to transmit all data
     const requiredTime = (binaryArray.length * 8) / bitsPerSecond;
