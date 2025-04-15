@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Download, Save } from "lucide-react";
 import { useState } from "react";
 import { TimelineItem } from "@/types/lightshow";
+import { useToast } from "@/components/ui/use-toast";
 
 interface HeaderProps {
   showName: string;
@@ -21,16 +22,23 @@ const Header = ({
   audioFile,
   timelineItems,
 }: HeaderProps) => {
+  const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
   
   const handleGenerateClick = () => {
     console.log("Generate button clicked, timeline items:", timelineItems.length);
     setIsGenerating(true);
     
+    // Show toast to indicate generation has started
+    toast({
+      title: "Gerando arquivo...",
+      description: "O processo pode levar alguns segundos, aguarde o download iniciar automaticamente.",
+    });
+    
     // Call the generate function
     handleGenerateFile();
     
-    // Reset after a longer timeout to ensure file generation completes
+    // Reset after a timeout
     setTimeout(() => {
       console.log("Generation timeout completed");
       setIsGenerating(false);
@@ -57,8 +65,17 @@ const Header = ({
           className={`hutz-button-accent ${isDisabled ? 'opacity-50' : 'animate-pulse'}`}
           disabled={isDisabled || isGenerating}
         >
-          <Download className={`h-4 w-4 mr-2 ${isGenerating ? 'animate-spin' : ''}`} />
-          {isGenerating ? 'Gerando...' : 'Gerar Arquivo .WAV'}
+          {isGenerating ? (
+            <>
+              <Download className="h-4 w-4 mr-2 animate-spin" />
+              Gerando...
+            </>
+          ) : (
+            <>
+              <Download className="h-4 w-4 mr-2" />
+              Gerar Arquivo .WAV
+            </>
+          )}
         </Button>
         
         <Button variant="outline" className="border-white/20 hover:bg-secondary">

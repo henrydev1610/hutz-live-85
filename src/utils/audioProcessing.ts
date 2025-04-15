@@ -1,3 +1,4 @@
+
 import { TimelineItem } from '@/types/lightshow';
 
 /**
@@ -52,7 +53,7 @@ export async function generateUltrasonicAudio(
     carrier.connect(ultrasonicGain);
     ultrasonicGain.connect(offlineContext.destination);
     
-    // Prepare the data to be encoded (handle image paths with care)
+    // Safely prepare the data to be encoded (handle image paths with care)
     const encodedData = timelineItems.map(item => {
       // Create a clean copy without circular references
       const cleanItem: any = {
@@ -62,34 +63,83 @@ export async function generateUltrasonicAudio(
         duration: item.duration
       };
       
-      // Add type-specific properties
+      // Handle type-specific properties safely
       if (item.type === 'image' && item.imageUrl) {
-        // For image items, use just the image URL string
-        // Use a predictable path format to avoid circular references or encoding issues
-        cleanItem.imageUrl = typeof item.imageUrl === 'string' ? 
-          item.imageUrl.split('?')[0] : // Remove any query params
-          null;
+        // For image items, ensure we store just a simple string path
+        try {
+          // Process the URL to remove potential query parameters and make it safe
+          const urlObj = new URL(item.imageUrl, window.location.origin);
+          const pathOnly = urlObj.pathname;
+          cleanItem.imageUrl = pathOnly;
+          console.log(`Processed image URL: ${cleanItem.imageUrl}`);
+        } catch (e) {
+          // If URL parsing fails, use the raw string but limit its length
+          console.log(`Using raw imageUrl string (limited): ${item.imageUrl.substring(0, 100)}`);
+          cleanItem.imageUrl = typeof item.imageUrl === 'string' ? 
+            item.imageUrl.substring(0, 100) : 'invalid-image-url';
+        }
       } else if (item.type === 'flashlight' && item.pattern) {
         // For flashlight items, include the pattern
-        cleanItem.pattern = { ...item.pattern };
+        cleanItem.pattern = { 
+          intensity: item.pattern.intensity || 100,
+          blinkRate: item.pattern.blinkRate || 120,
+          color: item.pattern.color || '#FFFFFF'
+        };
       } else if (item.type === 'callToAction' && item.content) {
         // For callToAction items, include a safe version of the content
         cleanItem.content = {
-          type: item.content.type,
-          ...(item.content.imageUrl && { imageUrl: item.content.imageUrl.split('?')[0] }),
-          ...(item.content.buttonText && { buttonText: item.content.buttonText }),
-          ...(item.content.externalUrl && { externalUrl: item.content.externalUrl }),
-          ...(item.content.couponCode && { couponCode: item.content.couponCode }),
+          type: item.content.type || 'image',
         };
+        
+        // Safely add properties only if they exist
+        if (item.content.imageUrl) {
+          try {
+            const urlObj = new URL(item.content.imageUrl, window.location.origin);
+            cleanItem.content.imageUrl = urlObj.pathname;
+          } catch {
+            cleanItem.content.imageUrl = 'invalid-image-url';
+          }
+        }
+        
+        if (item.content.buttonText) {
+          cleanItem.content.buttonText = String(item.content.buttonText).substring(0, 50);
+        }
+        
+        if (item.content.externalUrl) {
+          cleanItem.content.externalUrl = String(item.content.externalUrl).substring(0, 200);
+        }
+        
+        if (item.content.couponCode) {
+          cleanItem.content.couponCode = String(item.content.couponCode).substring(0, 50);
+        }
       }
       
       return cleanItem;
     });
     
-    // Convert data to binary string
-    const binaryData = JSON.stringify(encodedData);
-    console.log("Encoded data length:", binaryData.length, "characters");
-    console.log("Sample encoded data:", binaryData.substring(0, 100) + "...");
+    // Convert data to binary string with error handling
+    let binaryData: string;
+    try {
+      binaryData = JSON.stringify(encodedData);
+      console.log("Successfully stringified encoded data, length:", binaryData.length);
+      if (binaryData.length > 5000) {
+        console.log("Large encoded data detected, truncating sample for logs");
+        console.log("Sample encoded data:", binaryData.substring(0, 200) + "...");
+      } else {
+        console.log("Sample encoded data:", binaryData.substring(0, 200) + "...");
+      }
+    } catch (error) {
+      console.error("JSON stringify error:", error);
+      // Fallback to a simplified version if full serialization fails
+      const simplifiedData = timelineItems.map(item => ({
+        id: item.id,
+        type: item.type,
+        startTime: item.startTime,
+        duration: item.duration
+      }));
+      binaryData = JSON.stringify(simplifiedData);
+      console.log("Using simplified data as fallback");
+    }
     
     const encoder = new TextEncoder();
     const binaryArray = encoder.encode(binaryData);

@@ -462,13 +462,23 @@ export function useLightShowLogic() {
     
     try {
       console.log("Starting WAV file generation process...");
-      console.log("Timeline items:", JSON.stringify(timelineItems.map(item => ({
-        id: item.id,
-        type: item.type,
-        hasImage: item.type === 'image' && !!item.imageUrl
-      }))));
       
-      const blob = await generateUltrasonicAudio(audioFile, timelineItems);
+      // Log what types of items we have to help with debugging
+      const itemTypes = timelineItems.map(item => item.type);
+      console.log("Timeline item types:", JSON.stringify(itemTypes));
+      
+      // Create a safe copy of timeline items for images - this helps avoid circular references
+      const safeTimelineItems = timelineItems.map(item => {
+        if (item.type === 'image' && item.imageUrl) {
+          return {
+            ...item,
+            imageUrl: typeof item.imageUrl === 'string' ? item.imageUrl : 'invalid-image'
+          };
+        }
+        return item;
+      });
+      
+      const blob = await generateUltrasonicAudio(audioFile, safeTimelineItems);
       console.log("WAV blob generated successfully, size:", blob.size);
       
       const safeShowName = showName.replace(/[^\w\s]/gi, '').replace(/\s+/g, '_');
@@ -479,31 +489,30 @@ export function useLightShowLogic() {
       
       const downloadUrl = URL.createObjectURL(blob);
       
+      // Create and trigger download with a more reliable approach
       const downloadLink = document.createElement('a');
       downloadLink.href = downloadUrl;
       downloadLink.download = filename;
-      downloadLink.target = '_blank';
-      downloadLink.rel = 'noopener noreferrer';
       downloadLink.style.display = 'none';
       
       document.body.appendChild(downloadLink);
       console.log("Download link created and appended to body");
       
-      setTimeout(() => {
-        console.log("Triggering download click");
-        downloadLink.click();
-        
-        setTimeout(() => {
-          document.body.removeChild(downloadLink);
-          URL.revokeObjectURL(downloadUrl);
-          console.log("Download cleanup complete");
-        }, 1000);
-      }, 100);
+      // Force the download to start immediately
+      downloadLink.click();
+      console.log("Download link clicked");
       
-      toast({
-        title: "Arquivo gerado com sucesso",
-        description: "O arquivo .WAV com sinais ultrassônicos está pronto para download.",
-      });
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(downloadUrl);
+        console.log("Download cleanup complete");
+        
+        toast({
+          title: "Arquivo gerado com sucesso",
+          description: "O arquivo .WAV com sinais ultrassônicos foi baixado.",
+        });
+      }, 1000);
     } catch (error) {
       console.error("Error generating ultrasonic audio:", error);
       toast({
