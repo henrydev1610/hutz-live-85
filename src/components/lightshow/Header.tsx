@@ -3,13 +3,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Download, Save } from "lucide-react";
+import { useState } from "react";
+import { TimelineItem } from "@/types/lightshow";
 
 interface HeaderProps {
   showName: string;
   onShowNameChange: (name: string) => void;
   handleGenerateFile: () => void;
   audioFile: File | null;
-  timelineItems: any[];
+  timelineItems: TimelineItem[];
 }
 
 const Header = ({
@@ -19,6 +21,18 @@ const Header = ({
   audioFile,
   timelineItems,
 }: HeaderProps) => {
+  const [isGenerating, setIsGenerating] = useState(false);
+  
+  const handleGenerateClick = () => {
+    setIsGenerating(true);
+    // Call the generate function
+    handleGenerateFile();
+    // Reset after a timeout (this is just UI feedback)
+    setTimeout(() => setIsGenerating(false), 3000);
+  };
+  
+  const isDisabled = !audioFile || !timelineItems.length;
+
   return (
     <div className="mb-4 flex flex-wrap gap-4 items-center">
       <div className="flex-1">
@@ -33,12 +47,12 @@ const Header = ({
       
       <div className="flex-1 md:flex-initial flex gap-2">
         <Button 
-          onClick={handleGenerateFile} 
-          className="hutz-button-accent"
-          disabled={!audioFile || !timelineItems.length}
+          onClick={handleGenerateClick} 
+          className={`hutz-button-accent ${isDisabled ? 'opacity-50' : 'animate-pulse'}`}
+          disabled={isDisabled || isGenerating}
         >
-          <Download className="h-4 w-4 mr-2" />
-          Gerar Arquivo .WAV
+          <Download className={`h-4 w-4 mr-2 ${isGenerating ? 'animate-spin' : ''}`} />
+          {isGenerating ? 'Gerando...' : 'Gerar Arquivo .WAV'}
         </Button>
         
         <Button variant="outline" className="border-white/20 hover:bg-secondary">
