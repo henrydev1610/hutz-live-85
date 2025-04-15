@@ -1,45 +1,166 @@
-
 import { TimelineItem } from '@/types/lightshow';
 
 /**
  * Generates an ultrasonic audio file with embedded data
- * This is a simplified version that would need to be replaced with actual DSP
- * in a production environment
+ * Uses frequencies between 17.5kHz-19kHz to encode timeline data
  */
 export async function generateUltrasonicAudio(
   audioFile: File,
   timelineItems: TimelineItem[]
 ): Promise<Blob> {
-  // For a real implementation, this function would:
-  // 1. Decode the audio file
-  // 2. Generate ultrasonic signals (17.5kHz-19kHz) at the specified timestamps
-  // 3. Mix the ultrasonic signals with the original audio
-  // 4. Encode and return as WAV
+  // First convert the File to ArrayBuffer so we can process it
+  const arrayBuffer = await audioFile.arrayBuffer();
+  const audioContext = new AudioContext();
   
-  // This is a simplified version that just returns the original audio
-  // with a simulated delay to represent processing time
+  // Decode the audio file
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
   
-  console.log("Generating ultrasonic audio with following timeline items:", timelineItems);
-  console.log("Using frequency range: 17.5kHz - 19kHz");
+  // Create an offline context for processing
+  const offlineContext = new OfflineAudioContext(
+    2, // stereo
+    audioBuffer.length,
+    audioBuffer.sampleRate
+  );
   
-  // Log the data that would be encoded in ultrasonic frequencies
-  timelineItems.forEach(item => {
-    if (item.type === 'flashlight') {
-      console.log(`Flashlight at ${item.startTime}s, duration: ${item.duration}s, pattern:`, item.pattern);
-    } else if (item.type === 'image') {
-      console.log(`Image at ${item.startTime}s, duration: ${item.duration}s, URL: ${item.imageUrl}`);
-    } else if (item.type === 'callToAction') {
-      console.log(`Call to Action at ${item.startTime}s, duration: ${item.duration}s, Content:`, item.content);
+  // Create sources for original audio and ultrasonic signals
+  const musicSource = offlineContext.createBufferSource();
+  musicSource.buffer = audioBuffer;
+  
+  // Create gain node for the original audio
+  const musicGain = offlineContext.createGain();
+  musicGain.gain.value = 0.95; // Slightly reduce original audio volume
+  
+  // Connect music through gain to output
+  musicSource.connect(musicGain);
+  musicGain.connect(offlineContext.destination);
+  
+  // Create oscillator for ultrasonic carrier wave (18kHz)
+  const carrier = offlineContext.createOscillator();
+  carrier.frequency.value = 18000; // 18kHz carrier frequency
+  
+  // Create gain node for the ultrasonic signal
+  const ultrasonicGain = offlineContext.createGain();
+  ultrasonicGain.gain.value = 0.05; // Keep ultrasonic signal subtle
+  
+  // Connect carrier to gain
+  carrier.connect(ultrasonicGain);
+  ultrasonicGain.connect(offlineContext.destination);
+  
+  // Prepare the data to be encoded
+  const encodedData = timelineItems.map(item => ({
+    type: item.type,
+    startTime: item.startTime,
+    duration: item.duration,
+    ...(item.type === 'image' && { imageUrl: item.imageUrl }),
+    ...(item.type === 'flashlight' && { pattern: item.pattern }),
+    ...(item.type === 'callToAction' && { content: item.content })
+  }));
+  
+  // Convert data to binary string
+  const binaryData = JSON.stringify(encodedData);
+  const encoder = new TextEncoder();
+  const binaryArray = encoder.encode(binaryData);
+  
+  // FSK modulation parameters
+  const mark = 18500;  // 18.5kHz for binary 1
+  const space = 17500; // 17.5kHz for binary 0
+  const bitsPerSecond = 100; // Data rate
+  
+  // Schedule the data transmission
+  let currentTime = 0;
+  const samplesPerBit = offlineContext.sampleRate / bitsPerSecond;
+  
+  binaryArray.forEach((byte, index) => {
+    for (let bit = 0; bit < 8; bit++) {
+      const value = (byte >> bit) & 1;
+      carrier.frequency.setValueAtTime(
+        value ? mark : space,
+        currentTime + (bit * samplesPerBit / offlineContext.sampleRate)
+      );
     }
+    currentTime += (8 * samplesPerBit) / offlineContext.sampleRate;
   });
   
-  return new Promise((resolve) => {
-    // Simulate processing time
-    setTimeout(() => {
-      // In a real implementation, this would be the ultrasonic-enhanced audio
-      resolve(audioFile);
-    }, 1500);
-  });
+  // Start the sources
+  musicSource.start();
+  carrier.start();
+  
+  // Render the audio
+  const renderedBuffer = await offlineContext.startRendering();
+  
+  // Convert back to WAV format
+  const wavData = audioBufferToWav(renderedBuffer);
+  
+  console.log("Encoded data length:", binaryArray.length, "bytes");
+  console.log("Modulation frequencies:", { mark, space }, "Hz");
+  console.log("Data rate:", bitsPerSecond, "bps");
+  
+  return new Blob([wavData], { type: 'audio/wav' });
+}
+
+/**
+ * Convert AudioBuffer to WAV format
+ */
+function audioBufferToWav(buffer: AudioBuffer): Uint8Array {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const format = 1; // PCM
+  const bitDepth = 16;
+  
+  const bytesPerSample = bitDepth / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  
+  const samples = new Float32Array(buffer.length * numChannels);
+  const dataLength = samples.length * bytesPerSample;
+  
+  // Interleave channels
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < buffer.length; i++) {
+      samples[i * numChannels + channel] = channelData[i];
+    }
+  }
+  
+  const headerLength = 44;
+  const wavData = new Uint8Array(headerLength + dataLength);
+  
+  // Write WAV header
+  const writeString = (str: string, offset: number) => {
+    for (let i = 0; i < str.length; i++) {
+      wavData[offset + i] = str.charCodeAt(i);
+    }
+  };
+  
+  const view = new DataView(wavData.buffer);
+  
+  // RIFF chunk descriptor
+  writeString('RIFF', 0);
+  view.setUint32(4, 36 + dataLength, true);
+  writeString('WAVE', 8);
+  
+  // Format chunk
+  writeString('fmt ', 12);
+  view.setUint32(16, 16, true); // Subchunk1Size
+  view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true);
+  
+  // Data chunk
+  writeString('data', 36);
+  view.setUint32(40, dataLength, true);
+  
+  // Write audio data
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const sample = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+    offset += 2;
+  }
+  
+  return wavData;
 }
 
 /**
