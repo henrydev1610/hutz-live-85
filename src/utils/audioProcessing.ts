@@ -1,4 +1,3 @@
-
 import { TimelineItem } from '@/types/lightshow';
 
 /**
@@ -14,7 +13,9 @@ export async function generateUltrasonicAudio(
   try {
     // First convert the File to ArrayBuffer so we can process it
     const arrayBuffer = await audioFile.arrayBuffer();
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Use a type-safe way to create AudioContext
+    const audioContext = new AudioContext();
     
     // Decode the audio file
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
@@ -128,7 +129,7 @@ export async function generateUltrasonicAudio(
     return new Blob([wavData], { type: 'audio/wav' });
   } catch (error) {
     console.error("Error generating ultrasonic audio:", error);
-    throw new Error(`Failed to generate ultrasonic audio: ${error.message}`);
+    throw new Error(`Failed to generate ultrasonic audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
