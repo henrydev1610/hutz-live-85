@@ -25,11 +25,20 @@ const Header = ({
   const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
   const [hasImages, setHasImages] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
   
   useEffect(() => {
     // Check if there are image items in the timeline
     const imageItems = timelineItems.filter(item => item.type === 'image');
     setHasImages(imageItems.length > 0);
+    
+    if (imageItems.length > 0) {
+      console.log("Image items detected:", imageItems.length);
+      // Log first few images to help with debugging
+      imageItems.slice(0, 3).forEach((img, i) => {
+        console.log(`Image ${i+1} URL preview:`, img.imageUrl?.substring(0, 50));
+      });
+    }
   }, [timelineItems]);
   
   const handleGenerateClick = () => {
@@ -46,6 +55,18 @@ const Header = ({
     console.log("Timeline item details:", itemTypes);
     
     setIsGenerating(true);
+    setDownloadProgress(0);
+    
+    // Start progress animation
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+      progress += 5;
+      if (progress > 95) {
+        clearInterval(progressInterval);
+      } else {
+        setDownloadProgress(progress);
+      }
+    }, 300);
     
     // Show toast to indicate generation has started
     toast({
@@ -54,12 +75,23 @@ const Header = ({
     });
     
     // Call the generate function
-    handleGenerateFile();
+    try {
+      handleGenerateFile();
+    } catch (error) {
+      console.error("Error during generate file:", error);
+      toast({
+        title: "Erro na geração",
+        description: `Ocorreu um erro ao gerar o arquivo: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+        variant: "destructive"
+      });
+    }
     
     // Reset after a timeout
     setTimeout(() => {
       console.log("Generation timeout completed");
       setIsGenerating(false);
+      setDownloadProgress(0);
+      clearInterval(progressInterval);
     }, 15000);
   };
   
@@ -78,23 +110,30 @@ const Header = ({
       </div>
       
       <div className="flex-1 md:flex-initial flex gap-2">
-        <Button 
-          onClick={handleGenerateClick} 
-          className={`hutz-button-accent ${isDisabled ? 'opacity-50' : 'animate-pulse'}`}
-          disabled={isDisabled || isGenerating}
-        >
-          {isGenerating ? (
-            <>
-              <Download className="h-4 w-4 mr-2 animate-spin" />
-              Gerando...
-            </>
-          ) : (
-            <>
-              <Download className="h-4 w-4 mr-2" />
-              Gerar Arquivo .WAV
-            </>
+        <div className="relative w-full">
+          <Button 
+            onClick={handleGenerateClick} 
+            className={`hutz-button-accent w-full ${isDisabled ? 'opacity-50' : 'animate-pulse'}`}
+            disabled={isDisabled || isGenerating}
+          >
+            {isGenerating ? (
+              <>
+                <Download className="h-4 w-4 mr-2 animate-spin" />
+                Gerando... {downloadProgress}%
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-2" />
+                Gerar Arquivo .WAV
+              </>
+            )}
+          </Button>
+          
+          {isGenerating && (
+            <div className="absolute left-0 bottom-0 h-1 bg-green-500 transition-all duration-300" 
+                style={{ width: `${downloadProgress}%` }} />
           )}
-        </Button>
+        </div>
         
         <Button variant="outline" className="border-white/20 hover:bg-secondary">
           <Save className="h-4 w-4 mr-2" />

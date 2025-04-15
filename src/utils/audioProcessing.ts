@@ -11,26 +11,62 @@ export async function generateUltrasonicAudio(
   console.log("Starting ultrasonic audio generation with", timelineItems.length, "items");
   
   try {
-    // Safely prepare the data to be encoded (handle image paths with care)
-    const safeTimelineItems = cleanTimelineItems(timelineItems);
+    // Use a stripped down version of timelineItems to ensure we don't have circular references
+    // or problematic large image URLs
+    const safeTimelineItems = timelineItems.map(item => ({
+      id: item.id,
+      type: item.type,
+      startTime: item.startTime,
+      duration: item.duration,
+      // Include specific type properties with safe values
+      ...(item.type === 'image' && { imageUrl: `image-ref-${item.id}` }),
+      ...(item.type === 'flashlight' && { 
+        pattern: {
+          intensity: item.pattern?.intensity || 100,
+          blinkRate: item.pattern?.blinkRate || 120,
+          color: item.pattern?.color || '#FFFFFF'
+        }
+      }),
+      ...(item.type === 'callToAction' && { 
+        content: {
+          type: item.content?.type || 'image',
+          ...(item.content?.buttonText && { buttonText: item.content.buttonText.substring(0, 50) }),
+          ...(item.content?.externalUrl && { externalUrl: item.content.externalUrl.substring(0, 100) }),
+          ...(item.content?.couponCode && { couponCode: item.content.couponCode.substring(0, 50) })
+        }
+      })
+    }));
+    
     console.log("Timeline items sanitized successfully");
+    console.log("First sanitized item example:", JSON.stringify(safeTimelineItems[0]));
     
     // First convert the File to ArrayBuffer so we can process it
     const arrayBuffer = await audioFile.arrayBuffer();
+    
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+      throw new Error("Audio file appears to be empty");
+    }
+    
+    console.log("Audio file converted to ArrayBuffer successfully");
     
     // Create AudioContext
     const audioContext = new window.AudioContext();
     
     // Decode the audio file
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    
+    if (!audioBuffer || audioBuffer.length === 0) {
+      throw new Error("Could not decode audio data");
+    }
+    
     console.log("Audio successfully decoded, duration:", audioBuffer.duration, "channels:", audioBuffer.numberOfChannels);
     
     // Create an offline context for processing
-    const offlineContext = new OfflineAudioContext(
-      audioBuffer.numberOfChannels, // Use same channel count as original
-      audioBuffer.length,
-      audioBuffer.sampleRate
-    );
+    const offlineContext = new OfflineAudioContext({
+      numberOfChannels: audioBuffer.numberOfChannels,
+      length: audioBuffer.length,
+      sampleRate: audioBuffer.sampleRate
+    });
     
     // Create sources for original audio and ultrasonic signals
     const musicSource = offlineContext.createBufferSource();
@@ -56,25 +92,25 @@ export async function generateUltrasonicAudio(
     carrier.connect(ultrasonicGain);
     ultrasonicGain.connect(offlineContext.destination);
     
-    // Convert data to binary string with error handling
+    // Convert data to binary string safely
     let binaryData: string;
     try {
       binaryData = JSON.stringify(safeTimelineItems);
-      console.log("Successfully stringified encoded data, length:", binaryData.length);
+      console.log("Successfully stringified timeline data, length:", binaryData.length);
       console.log("Sample encoded data:", binaryData.substring(0, 200) + "...");
     } catch (error) {
       console.error("JSON stringify error:", error);
-      // Fallback to a simplified version if full serialization fails
-      const simplifiedData = timelineItems.map(item => ({
+      // Fall back to a simplified version
+      binaryData = JSON.stringify(safeTimelineItems.map(item => ({
         id: item.id,
         type: item.type,
         startTime: item.startTime,
         duration: item.duration
-      }));
-      binaryData = JSON.stringify(simplifiedData);
+      })));
       console.log("Using simplified data as fallback");
     }
     
+    // Encode the data
     const encoder = new TextEncoder();
     const binaryArray = encoder.encode(binaryData);
     
@@ -83,7 +119,7 @@ export async function generateUltrasonicAudio(
     // FSK modulation parameters
     const mark = 18500;  // 18.5kHz for binary 1
     const space = 17500; // 17.5kHz for binary 0
-    const bitsPerSecond = 100; // Data rate
+    const bitsPerSecond = 50; // Slower data rate for better reliability
     
     // Schedule the data transmission
     let currentTime = 0;
@@ -93,7 +129,7 @@ export async function generateUltrasonicAudio(
     console.log("Required time for data transmission:", requiredTime, "seconds");
     
     // Add preamble for signal detection (alternating pattern)
-    const preambleLength = 1; // 1 second preamble
+    const preambleLength = 2; // 2 second preamble
     for (let i = 0; i < preambleLength * bitsPerSecond; i++) {
       const value = i % 2; // Alternating 0, 1 pattern
       carrier.frequency.setValueAtTime(
@@ -128,183 +164,109 @@ export async function generateUltrasonicAudio(
     
     // Render the audio
     const renderedBuffer = await offlineContext.startRendering();
+    
     console.log("Audio rendering complete, converting to WAV...");
     
     // Convert back to WAV format
     const wavData = audioBufferToWav(renderedBuffer);
     
-    console.log("WAV conversion complete, data size:", wavData.byteLength, "bytes");
-    
-    return new Blob([wavData], { type: 'audio/wav' });
-  } catch (error) {
-    console.error("Error generating ultrasonic audio:", error);
-    throw new Error(`Failed to generate ultrasonic audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-}
-
-/**
- * Cleans and sanitizes timeline items for safe serialization
- */
-function cleanTimelineItems(items: TimelineItem[]): any[] {
-  console.log("Cleaning timeline items for serialization");
-  
-  return items.map(item => {
-    // Create a clean copy without circular references
-    const cleanItem: any = {
-      id: item.id,
-      type: item.type,
-      startTime: item.startTime,
-      duration: item.duration
-    };
-    
-    // Handle type-specific properties safely
-    if (item.type === 'image') {
-      console.log(`Processing image item: ${item.id}`);
-      
-      // For image items, store a sanitized version of the URL
-      if (item.imageUrl) {
-        try {
-          // Handle blob URLs by storing just their identifier
-          if (item.imageUrl.startsWith('blob:')) {
-            const blobId = item.imageUrl.split('/').pop() || '';
-            cleanItem.imageUrl = `blob-ref:${blobId}`;
-            console.log(`Converted blob URL to reference: ${cleanItem.imageUrl}`);
-          } 
-          // Handle regular URLs by removing query parameters
-          else {
-            // Use just the pathname to avoid URL parsing errors
-            const pathOnly = item.imageUrl.split('?')[0];
-            cleanItem.imageUrl = pathOnly;
-            console.log(`Processed image URL: ${cleanItem.imageUrl.substring(0, 30)}...`);
-          }
-        } catch (e) {
-          // If URL parsing fails, use a limited version of the raw string
-          console.warn(`Image URL processing failed, using limited string: ${e}`);
-          cleanItem.imageUrl = typeof item.imageUrl === 'string' ? 
-            item.imageUrl.substring(0, 100) : 'invalid-image-url';
-        }
-      } else {
-        console.warn(`Image item ${item.id} has no imageUrl property`);
-        cleanItem.imageUrl = 'missing-image-url';
-      }
-    } else if (item.type === 'flashlight' && item.pattern) {
-      // For flashlight items, include the pattern
-      cleanItem.pattern = { 
-        intensity: item.pattern.intensity || 100,
-        blinkRate: item.pattern.blinkRate || 120,
-        color: item.pattern.color || '#FFFFFF'
-      };
-    } else if (item.type === 'callToAction' && item.content) {
-      // For callToAction items, include a safe version of the content
-      cleanItem.content = {
-        type: item.content.type || 'image',
-      };
-      
-      // Safely add properties only if they exist
-      if (item.content.imageUrl) {
-        try {
-          if (item.content.imageUrl.startsWith('blob:')) {
-            const blobId = item.content.imageUrl.split('/').pop() || '';
-            cleanItem.content.imageUrl = `blob-ref:${blobId}`;
-          } else {
-            const pathOnly = item.content.imageUrl.split('?')[0];
-            cleanItem.content.imageUrl = pathOnly;
-          }
-        } catch {
-          cleanItem.content.imageUrl = 'invalid-image-url';
-        }
-      }
-      
-      if (item.content.buttonText) {
-        cleanItem.content.buttonText = String(item.content.buttonText).substring(0, 50);
-      }
-      
-      if (item.content.externalUrl) {
-        cleanItem.content.externalUrl = String(item.content.externalUrl).substring(0, 200);
-      }
-      
-      if (item.content.couponCode) {
-        cleanItem.content.couponCode = String(item.content.couponCode).substring(0, 50);
-      }
+    if (!wavData || wavData.byteLength === 0) {
+      throw new Error("Generated WAV file is empty");
     }
     
-    return cleanItem;
-  });
+    console.log("WAV conversion complete, data size:", wavData.byteLength, "bytes");
+    
+    // Create the final blob
+    const wavBlob = new Blob([wavData], { type: 'audio/wav' });
+    
+    console.log("WAV blob created successfully, size:", wavBlob.size, "bytes");
+    
+    return wavBlob;
+  } catch (error) {
+    console.error("Error in generateUltrasonicAudio:", error);
+    throw new Error(`Failed to generate ultrasonic audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 /**
  * Convert AudioBuffer to WAV format
  */
 function audioBufferToWav(buffer: AudioBuffer): Uint8Array {
-  const numChannels = buffer.numberOfChannels;
-  const sampleRate = buffer.sampleRate;
-  const format = 1; // PCM
-  const bitDepth = 16;
-  
-  const bytesPerSample = bitDepth / 8;
-  const blockAlign = numChannels * bytesPerSample;
-  
-  // Calculate total number of samples
-  const numSamples = buffer.length * numChannels;
-  const dataLength = numSamples * bytesPerSample;
-  
-  // Create sample data array
-  const samples = new Float32Array(numSamples);
-  
-  // Interleave channels
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < buffer.length; i++) {
-      samples[i * numChannels + channel] = channelData[i];
-    }
-  }
-  
-  const headerLength = 44;
-  const wavData = new Uint8Array(headerLength + dataLength);
-  
-  // Write WAV header
-  const writeString = (str: string, offset: number) => {
-    for (let i = 0; i < str.length; i++) {
-      wavData[offset + i] = str.charCodeAt(i);
-    }
-  };
-  
-  const view = new DataView(wavData.buffer);
-  
-  // RIFF chunk descriptor
-  writeString('RIFF', 0);
-  view.setUint32(4, 36 + dataLength, true);
-  writeString('WAVE', 8);
-  
-  // Format chunk
-  writeString('fmt ', 12);
-  view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
-  view.setUint16(20, format, true);
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * blockAlign, true); // ByteRate = SampleRate * NumChannels * BitsPerSample/8
-  view.setUint16(32, blockAlign, true); // BlockAlign = NumChannels * BitsPerSample/8
-  view.setUint16(34, bitDepth, true);
-  
-  // Data chunk
-  writeString('data', 36);
-  view.setUint32(40, dataLength, true);
-  
-  // Write audio data
-  let offset = 44;
-  for (let i = 0; i < samples.length; i++) {
-    // Normalize sample value between -1 and 1
-    const sample = Math.max(-1, Math.min(1, samples[i]));
+  try {
+    const numChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
     
-    // Convert to 16-bit signed integer
-    const sampleValue = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numChannels * bytesPerSample;
     
-    // Write sample value to buffer
-    view.setInt16(offset, sampleValue, true);
-    offset += 2;
+    // Calculate total number of samples
+    const numSamples = buffer.length * numChannels;
+    const dataLength = numSamples * bytesPerSample;
+    
+    // Create sample data array
+    const samples = new Float32Array(numSamples);
+    
+    // Interleave channels
+    for (let channel = 0; channel < numChannels; channel++) {
+      const channelData = buffer.getChannelData(channel);
+      for (let i = 0; i < buffer.length; i++) {
+        samples[i * numChannels + channel] = channelData[i];
+      }
+    }
+    
+    const headerLength = 44;
+    const wavData = new Uint8Array(headerLength + dataLength);
+    
+    // Write WAV header
+    const writeString = (str: string, offset: number) => {
+      for (let i = 0; i < str.length; i++) {
+        wavData[offset + i] = str.charCodeAt(i);
+      }
+    };
+    
+    const view = new DataView(wavData.buffer);
+    
+    // RIFF chunk descriptor
+    writeString('RIFF', 0);
+    view.setUint32(4, 36 + dataLength, true);
+    writeString('WAVE', 8);
+    
+    // Format chunk
+    writeString('fmt ', 12);
+    view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+    view.setUint16(20, format, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true); // ByteRate = SampleRate * NumChannels * BitsPerSample/8
+    view.setUint16(32, blockAlign, true); // BlockAlign = NumChannels * BitsPerSample/8
+    view.setUint16(34, bitDepth, true);
+    
+    // Data chunk
+    writeString('data', 36);
+    view.setUint32(40, dataLength, true);
+    
+    // Write audio data
+    let offset = 44;
+    for (let i = 0; i < samples.length; i++) {
+      // Normalize sample value between -1 and 1
+      const sample = Math.max(-1, Math.min(1, samples[i]));
+      
+      // Convert to 16-bit signed integer
+      const sampleValue = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      
+      // Write sample value to buffer
+      view.setInt16(offset, sampleValue, true);
+      offset += 2;
+    }
+    
+    return wavData;
+    
+  } catch (error) {
+    console.error("Error in audioBufferToWav:", error);
+    throw new Error("Failed to convert audio buffer to WAV");
   }
-  
-  return wavData;
 }
 
 /**

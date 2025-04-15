@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { TimelineItem, CallToActionType } from "@/types/lightshow";
@@ -476,7 +477,21 @@ export function useLightShowLogic() {
         });
       }
       
-      const blob = await generateUltrasonicAudio(audioFile, timelineItems);
+      // Create a copy of the timelineItems with sanitized image URLs
+      const sanitizedTimelineItems = timelineItems.map(item => {
+        if (item.type === 'image' && item.imageUrl) {
+          // Create a copy with a simplified version of the image URL
+          return {
+            ...item,
+            imageUrl: 'image-reference-' + item.id
+          };
+        }
+        return item;
+      });
+      
+      console.log("Sanitized timeline items for processing");
+      
+      const blob = await generateUltrasonicAudio(audioFile, sanitizedTimelineItems);
       console.log("WAV blob generated successfully, size:", blob.size);
       
       if (!blob || blob.size === 0) {
@@ -489,26 +504,30 @@ export function useLightShowLogic() {
       
       console.log("Creating download link with filename:", filename);
       
-      // Create and trigger download with a more reliable approach
-      const downloadUrl = URL.createObjectURL(blob);
+      // Create download link with a more reliable approach
+      const downloadUrl = window.URL.createObjectURL(blob);
       
-      // Create and trigger download with a more reliable approach
+      // Create and trigger download directly
       const downloadLink = document.createElement('a');
       downloadLink.href = downloadUrl;
       downloadLink.download = filename;
       downloadLink.style.display = 'none';
       
+      // Force system to download
       document.body.appendChild(downloadLink);
       console.log("Download link created and appended to body");
       
       // Force the download to start immediately
-      downloadLink.click();
-      console.log("Download link clicked");
+      setTimeout(() => {
+        console.log("Triggering download click");
+        downloadLink.click();
+        console.log("Download link clicked");
+      }, 100);
       
       // Clean up
       setTimeout(() => {
         document.body.removeChild(downloadLink);
-        URL.revokeObjectURL(downloadUrl);
+        window.URL.revokeObjectURL(downloadUrl);
         console.log("Download cleanup complete");
         
         toast({
