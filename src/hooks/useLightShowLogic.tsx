@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { TimelineItem, CallToActionType } from "@/types/lightshow";
 import { generateUltrasonicAudio, detectBeats, trimAudioFile } from "@/utils/audioProcessing";
@@ -467,19 +467,21 @@ export function useLightShowLogic() {
       const itemTypes = timelineItems.map(item => item.type);
       console.log("Timeline item types:", JSON.stringify(itemTypes));
       
-      // Create a safe copy of timeline items for images - this helps avoid circular references
-      const safeTimelineItems = timelineItems.map(item => {
-        if (item.type === 'image' && item.imageUrl) {
-          return {
-            ...item,
-            imageUrl: typeof item.imageUrl === 'string' ? item.imageUrl : 'invalid-image'
-          };
-        }
-        return item;
-      });
+      // Check if we have image items and log them
+      const imageItems = timelineItems.filter(item => item.type === 'image');
+      if (imageItems.length > 0) {
+        console.log(`Found ${imageItems.length} image items in the timeline`);
+        imageItems.forEach((img, idx) => {
+          console.log(`Image ${idx + 1}: ${img.imageUrl?.substring(0, 30)}...`);
+        });
+      }
       
-      const blob = await generateUltrasonicAudio(audioFile, safeTimelineItems);
+      const blob = await generateUltrasonicAudio(audioFile, timelineItems);
       console.log("WAV blob generated successfully, size:", blob.size);
+      
+      if (!blob || blob.size === 0) {
+        throw new Error("Generated WAV file is empty");
+      }
       
       const safeShowName = showName.replace(/[^\w\s]/gi, '').replace(/\s+/g, '_');
       const timestamp = new Date().getTime();
@@ -487,6 +489,7 @@ export function useLightShowLogic() {
       
       console.log("Creating download link with filename:", filename);
       
+      // Create and trigger download with a more reliable approach
       const downloadUrl = URL.createObjectURL(blob);
       
       // Create and trigger download with a more reliable approach

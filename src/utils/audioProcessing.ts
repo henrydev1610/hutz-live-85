@@ -1,4 +1,3 @@
-
 import { TimelineItem } from '@/types/lightshow';
 
 /**
@@ -12,6 +11,10 @@ export async function generateUltrasonicAudio(
   console.log("Starting ultrasonic audio generation with", timelineItems.length, "items");
   
   try {
+    // Safely prepare the data to be encoded (handle image paths with care)
+    const safeTimelineItems = cleanTimelineItems(timelineItems);
+    console.log("Timeline items sanitized successfully");
+    
     // First convert the File to ArrayBuffer so we can process it
     const arrayBuffer = await audioFile.arrayBuffer();
     
@@ -53,81 +56,12 @@ export async function generateUltrasonicAudio(
     carrier.connect(ultrasonicGain);
     ultrasonicGain.connect(offlineContext.destination);
     
-    // Safely prepare the data to be encoded (handle image paths with care)
-    const encodedData = timelineItems.map(item => {
-      // Create a clean copy without circular references
-      const cleanItem: any = {
-        id: item.id,
-        type: item.type,
-        startTime: item.startTime,
-        duration: item.duration
-      };
-      
-      // Handle type-specific properties safely
-      if (item.type === 'image' && item.imageUrl) {
-        // For image items, ensure we store just a simple string path
-        try {
-          // Process the URL to remove potential query parameters and make it safe
-          const urlObj = new URL(item.imageUrl, window.location.origin);
-          const pathOnly = urlObj.pathname;
-          cleanItem.imageUrl = pathOnly;
-          console.log(`Processed image URL: ${cleanItem.imageUrl}`);
-        } catch (e) {
-          // If URL parsing fails, use the raw string but limit its length
-          console.log(`Using raw imageUrl string (limited): ${item.imageUrl.substring(0, 100)}`);
-          cleanItem.imageUrl = typeof item.imageUrl === 'string' ? 
-            item.imageUrl.substring(0, 100) : 'invalid-image-url';
-        }
-      } else if (item.type === 'flashlight' && item.pattern) {
-        // For flashlight items, include the pattern
-        cleanItem.pattern = { 
-          intensity: item.pattern.intensity || 100,
-          blinkRate: item.pattern.blinkRate || 120,
-          color: item.pattern.color || '#FFFFFF'
-        };
-      } else if (item.type === 'callToAction' && item.content) {
-        // For callToAction items, include a safe version of the content
-        cleanItem.content = {
-          type: item.content.type || 'image',
-        };
-        
-        // Safely add properties only if they exist
-        if (item.content.imageUrl) {
-          try {
-            const urlObj = new URL(item.content.imageUrl, window.location.origin);
-            cleanItem.content.imageUrl = urlObj.pathname;
-          } catch {
-            cleanItem.content.imageUrl = 'invalid-image-url';
-          }
-        }
-        
-        if (item.content.buttonText) {
-          cleanItem.content.buttonText = String(item.content.buttonText).substring(0, 50);
-        }
-        
-        if (item.content.externalUrl) {
-          cleanItem.content.externalUrl = String(item.content.externalUrl).substring(0, 200);
-        }
-        
-        if (item.content.couponCode) {
-          cleanItem.content.couponCode = String(item.content.couponCode).substring(0, 50);
-        }
-      }
-      
-      return cleanItem;
-    });
-    
     // Convert data to binary string with error handling
     let binaryData: string;
     try {
-      binaryData = JSON.stringify(encodedData);
+      binaryData = JSON.stringify(safeTimelineItems);
       console.log("Successfully stringified encoded data, length:", binaryData.length);
-      if (binaryData.length > 5000) {
-        console.log("Large encoded data detected, truncating sample for logs");
-        console.log("Sample encoded data:", binaryData.substring(0, 200) + "...");
-      } else {
-        console.log("Sample encoded data:", binaryData.substring(0, 200) + "...");
-      }
+      console.log("Sample encoded data:", binaryData.substring(0, 200) + "...");
     } catch (error) {
       console.error("JSON stringify error:", error);
       // Fallback to a simplified version if full serialization fails
@@ -206,6 +140,96 @@ export async function generateUltrasonicAudio(
     console.error("Error generating ultrasonic audio:", error);
     throw new Error(`Failed to generate ultrasonic audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+}
+
+/**
+ * Cleans and sanitizes timeline items for safe serialization
+ */
+function cleanTimelineItems(items: TimelineItem[]): any[] {
+  console.log("Cleaning timeline items for serialization");
+  
+  return items.map(item => {
+    // Create a clean copy without circular references
+    const cleanItem: any = {
+      id: item.id,
+      type: item.type,
+      startTime: item.startTime,
+      duration: item.duration
+    };
+    
+    // Handle type-specific properties safely
+    if (item.type === 'image') {
+      console.log(`Processing image item: ${item.id}`);
+      
+      // For image items, store a sanitized version of the URL
+      if (item.imageUrl) {
+        try {
+          // Handle blob URLs by storing just their identifier
+          if (item.imageUrl.startsWith('blob:')) {
+            const blobId = item.imageUrl.split('/').pop() || '';
+            cleanItem.imageUrl = `blob-ref:${blobId}`;
+            console.log(`Converted blob URL to reference: ${cleanItem.imageUrl}`);
+          } 
+          // Handle regular URLs by removing query parameters
+          else {
+            // Use just the pathname to avoid URL parsing errors
+            const pathOnly = item.imageUrl.split('?')[0];
+            cleanItem.imageUrl = pathOnly;
+            console.log(`Processed image URL: ${cleanItem.imageUrl.substring(0, 30)}...`);
+          }
+        } catch (e) {
+          // If URL parsing fails, use a limited version of the raw string
+          console.warn(`Image URL processing failed, using limited string: ${e}`);
+          cleanItem.imageUrl = typeof item.imageUrl === 'string' ? 
+            item.imageUrl.substring(0, 100) : 'invalid-image-url';
+        }
+      } else {
+        console.warn(`Image item ${item.id} has no imageUrl property`);
+        cleanItem.imageUrl = 'missing-image-url';
+      }
+    } else if (item.type === 'flashlight' && item.pattern) {
+      // For flashlight items, include the pattern
+      cleanItem.pattern = { 
+        intensity: item.pattern.intensity || 100,
+        blinkRate: item.pattern.blinkRate || 120,
+        color: item.pattern.color || '#FFFFFF'
+      };
+    } else if (item.type === 'callToAction' && item.content) {
+      // For callToAction items, include a safe version of the content
+      cleanItem.content = {
+        type: item.content.type || 'image',
+      };
+      
+      // Safely add properties only if they exist
+      if (item.content.imageUrl) {
+        try {
+          if (item.content.imageUrl.startsWith('blob:')) {
+            const blobId = item.content.imageUrl.split('/').pop() || '';
+            cleanItem.content.imageUrl = `blob-ref:${blobId}`;
+          } else {
+            const pathOnly = item.content.imageUrl.split('?')[0];
+            cleanItem.content.imageUrl = pathOnly;
+          }
+        } catch {
+          cleanItem.content.imageUrl = 'invalid-image-url';
+        }
+      }
+      
+      if (item.content.buttonText) {
+        cleanItem.content.buttonText = String(item.content.buttonText).substring(0, 50);
+      }
+      
+      if (item.content.externalUrl) {
+        cleanItem.content.externalUrl = String(item.content.externalUrl).substring(0, 200);
+      }
+      
+      if (item.content.couponCode) {
+        cleanItem.content.couponCode = String(item.content.couponCode).substring(0, 50);
+      }
+    }
+    
+    return cleanItem;
+  });
 }
 
 /**

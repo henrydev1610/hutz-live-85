@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Download, Save } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TimelineItem } from "@/types/lightshow";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -24,9 +24,27 @@ const Header = ({
 }: HeaderProps) => {
   const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [hasImages, setHasImages] = useState(false);
+  
+  useEffect(() => {
+    // Check if there are image items in the timeline
+    const imageItems = timelineItems.filter(item => item.type === 'image');
+    setHasImages(imageItems.length > 0);
+  }, [timelineItems]);
   
   const handleGenerateClick = () => {
     console.log("Generate button clicked, timeline items:", timelineItems.length);
+    console.log("Timeline contains images:", hasImages);
+    
+    // Detailed logging of each item type
+    const itemTypes = timelineItems.map(item => {
+      if (item.type === 'image') {
+        return `image (url: ${item.imageUrl?.substring(0, 30)}...)`;
+      }
+      return item.type;
+    });
+    console.log("Timeline item details:", itemTypes);
+    
     setIsGenerating(true);
     
     // Show toast to indicate generation has started
