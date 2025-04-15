@@ -52,22 +52,48 @@ export async function generateUltrasonicAudio(
     carrier.connect(ultrasonicGain);
     ultrasonicGain.connect(offlineContext.destination);
     
-    // Prepare the data to be encoded
-    const encodedData = timelineItems.map(item => ({
-      type: item.type,
-      startTime: item.startTime,
-      duration: item.duration,
-      ...(item.type === 'image' && { imageUrl: item.imageUrl }),
-      ...(item.type === 'flashlight' && { pattern: item.pattern }),
-      ...(item.type === 'callToAction' && { content: item.content })
-    }));
+    // Prepare the data to be encoded (handle image paths with care)
+    const encodedData = timelineItems.map(item => {
+      // Create a clean copy without circular references
+      const cleanItem: any = {
+        id: item.id,
+        type: item.type,
+        startTime: item.startTime,
+        duration: item.duration
+      };
+      
+      // Add type-specific properties
+      if (item.type === 'image' && item.imageUrl) {
+        // For image items, use just the image URL string
+        // Use a predictable path format to avoid circular references or encoding issues
+        cleanItem.imageUrl = typeof item.imageUrl === 'string' ? 
+          item.imageUrl.split('?')[0] : // Remove any query params
+          null;
+      } else if (item.type === 'flashlight' && item.pattern) {
+        // For flashlight items, include the pattern
+        cleanItem.pattern = { ...item.pattern };
+      } else if (item.type === 'callToAction' && item.content) {
+        // For callToAction items, include a safe version of the content
+        cleanItem.content = {
+          type: item.content.type,
+          ...(item.content.imageUrl && { imageUrl: item.content.imageUrl.split('?')[0] }),
+          ...(item.content.buttonText && { buttonText: item.content.buttonText }),
+          ...(item.content.externalUrl && { externalUrl: item.content.externalUrl }),
+          ...(item.content.couponCode && { couponCode: item.content.couponCode }),
+        };
+      }
+      
+      return cleanItem;
+    });
     
     // Convert data to binary string
     const binaryData = JSON.stringify(encodedData);
+    console.log("Encoded data length:", binaryData.length, "characters");
+    console.log("Sample encoded data:", binaryData.substring(0, 100) + "...");
+    
     const encoder = new TextEncoder();
     const binaryArray = encoder.encode(binaryData);
     
-    console.log("Encoded data:", binaryData.substring(0, 100) + "...");
     console.log("Encoded data length:", binaryArray.length, "bytes");
     
     // FSK modulation parameters

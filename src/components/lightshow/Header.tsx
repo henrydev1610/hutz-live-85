@@ -24,11 +24,17 @@ const Header = ({
   const [isGenerating, setIsGenerating] = useState(false);
   
   const handleGenerateClick = () => {
+    console.log("Generate button clicked, timeline items:", timelineItems.length);
     setIsGenerating(true);
+    
     // Call the generate function
     handleGenerateFile();
+    
     // Reset after a longer timeout to ensure file generation completes
-    setTimeout(() => setIsGenerating(false), 10000);
+    setTimeout(() => {
+      console.log("Generation timeout completed");
+      setIsGenerating(false);
+    }, 15000);
   };
   
   const isDisabled = !audioFile || !timelineItems.length;

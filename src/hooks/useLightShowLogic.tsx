@@ -462,28 +462,43 @@ export function useLightShowLogic() {
     
     try {
       console.log("Starting WAV file generation process...");
+      console.log("Timeline items:", JSON.stringify(timelineItems.map(item => ({
+        id: item.id,
+        type: item.type,
+        hasImage: item.type === 'image' && !!item.imageUrl
+      }))));
+      
       const blob = await generateUltrasonicAudio(audioFile, timelineItems);
       console.log("WAV blob generated successfully, size:", blob.size);
       
-      const url = URL.createObjectURL(blob);
-      const filename = `${showName.replace(/\s+/g, '_')}_ultrasonic.wav`;
+      const safeShowName = showName.replace(/[^\w\s]/gi, '').replace(/\s+/g, '_');
+      const timestamp = new Date().getTime();
+      const filename = `${safeShowName}_${timestamp}.wav`;
       
       console.log("Creating download link with filename:", filename);
       
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.style.display = 'none';
-      document.body.appendChild(a);
+      const downloadUrl = URL.createObjectURL(blob);
       
-      console.log("Triggering download click...");
-      a.click();
+      const downloadLink = document.createElement('a');
+      downloadLink.href = downloadUrl;
+      downloadLink.download = filename;
+      downloadLink.target = '_blank';
+      downloadLink.rel = 'noopener noreferrer';
+      downloadLink.style.display = 'none';
+      
+      document.body.appendChild(downloadLink);
+      console.log("Download link created and appended to body");
       
       setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        console.log("Download cleanup complete");
-      }, 5000);
+        console.log("Triggering download click");
+        downloadLink.click();
+        
+        setTimeout(() => {
+          document.body.removeChild(downloadLink);
+          URL.revokeObjectURL(downloadUrl);
+          console.log("Download cleanup complete");
+        }, 1000);
+      }, 100);
       
       toast({
         title: "Arquivo gerado com sucesso",
