@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
@@ -38,6 +39,7 @@ const Timeline = ({
   isPlaying,
   currentTime,
   setCurrentTime,
+  duration,
   setDuration,
   timelineItems,
   onUpdateItem,
@@ -122,7 +124,7 @@ const Timeline = ({
     }
     
     onRemoveItem(id);
-    setSelectedItemIndex(null);
+    onItemSelect(null);
   };
   
   useEffect(() => {
