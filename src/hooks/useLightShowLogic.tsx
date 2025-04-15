@@ -462,81 +462,141 @@ export function useLightShowLogic() {
     });
     
     try {
-      console.log("Starting WAV file generation process...");
+      console.log("\n=== STARTING WAV GENERATION PROCESS ===");
+      console.log(`Total timeline items: ${timelineItems.length}`);
       
-      // Log what types of items we have to help with debugging
-      const itemTypes = timelineItems.map(item => item.type);
-      console.log("Timeline item types:", JSON.stringify(itemTypes));
+      // Log breakdown of item types
+      const itemTypes = {
+        image: timelineItems.filter(item => item.type === 'image').length,
+        flashlight: timelineItems.filter(item => item.type === 'flashlight').length,
+        callToAction: timelineItems.filter(item => item.type === 'callToAction').length
+      };
+      console.log("Item types breakdown:", itemTypes);
       
-      // Check if we have image items and log them
-      const imageItems = timelineItems.filter(item => item.type === 'image');
-      if (imageItems.length > 0) {
-        console.log(`Found ${imageItems.length} image items in the timeline`);
-        imageItems.forEach((img, idx) => {
-          console.log(`Image ${idx + 1}: ${img.imageUrl?.substring(0, 30)}...`);
-        });
-      }
-      
-      // Create a copy of the timelineItems with sanitized image URLs
+      // Create a safe copy of the timelineItems with sanitized image URLs
+      // This is critical for preventing circular references and data URI issues
       const sanitizedTimelineItems = timelineItems.map(item => {
         if (item.type === 'image' && item.imageUrl) {
-          // Create a copy with a simplified version of the image URL
+          console.log(`Sanitizing image URL for item ${item.id.substring(0, 8)}...`);
+          
+          // Create a simplified reference to the image instead of the full data URI
           return {
             ...item,
-            imageUrl: 'image-reference-' + item.id
+            imageUrl: `img-ref:${item.id}`
+          };
+        } else if (item.type === 'callToAction' && item.content?.imageUrl) {
+          console.log(`Sanitizing CTA image URL for item ${item.id.substring(0, 8)}...`);
+          
+          // Create a simplified version with safe image references
+          return {
+            ...item,
+            content: {
+              ...item.content,
+              imageUrl: `cta-img-ref:${item.id}`
+            }
           };
         }
         return item;
       });
       
-      console.log("Sanitized timeline items for processing");
+      console.log("Timeline items sanitized successfully for processing");
       
+      // Generate the ultrasonic audio with the sanitized timeline items
+      console.log("Calling generateUltrasonicAudio...");
       const blob = await generateUltrasonicAudio(audioFile, sanitizedTimelineItems);
-      console.log("WAV blob generated successfully, size:", blob.size);
       
       if (!blob || blob.size === 0) {
         throw new Error("Generated WAV file is empty");
       }
       
+      console.log(`WAV blob generated successfully, size: ${blob.size} bytes`);
+      
+      // Create a safe filename
       const safeShowName = showName.replace(/[^\w\s]/gi, '').replace(/\s+/g, '_');
       const timestamp = new Date().getTime();
       const filename = `${safeShowName}_${timestamp}.wav`;
       
-      console.log("Creating download link with filename:", filename);
+      console.log(`Creating download link with filename: ${filename}`);
       
-      // Create download link with a more reliable approach
-      const downloadUrl = window.URL.createObjectURL(blob);
+      // Use a more reliable browser download method
+      try {
+        // Modern approach using the File System Access API if available
+        if ('showSaveFilePicker' in window) {
+          console.log("Using File System Access API for download");
+          try {
+            const fileHandle = await (window as any).showSaveFilePicker({
+              suggestedName: filename,
+              types: [{
+                description: 'WAV Audio Files',
+                accept: {'audio/wav': ['.wav']},
+              }],
+            });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            console.log("File saved successfully with File System Access API");
+          } catch (fsError) {
+            console.log("File System Access API failed, falling back to traditional method", fsError);
+            // If user cancels or API fails, fall back to traditional method
+            useTraditionalDownload();
+          }
+        } else {
+          // Fall back to traditional method for browsers without File System Access API
+          console.log("File System Access API not available, using traditional download method");
+          useTraditionalDownload();
+        }
+      } catch (downloadError) {
+        console.error("Error in download process:", downloadError);
+        throw new Error(`Failed to trigger download: ${downloadError instanceof Error ? downloadError.message : 'Unknown error'}`);
+      }
       
-      // Create and trigger download directly
-      const downloadLink = document.createElement('a');
-      downloadLink.href = downloadUrl;
-      downloadLink.download = filename;
-      downloadLink.style.display = 'none';
-      
-      // Force system to download
-      document.body.appendChild(downloadLink);
-      console.log("Download link created and appended to body");
-      
-      // Force the download to start immediately
-      setTimeout(() => {
-        console.log("Triggering download click");
-        downloadLink.click();
-        console.log("Download link clicked");
-      }, 100);
-      
-      // Clean up
-      setTimeout(() => {
-        document.body.removeChild(downloadLink);
-        window.URL.revokeObjectURL(downloadUrl);
-        console.log("Download cleanup complete");
+      function useTraditionalDownload() {
+        console.log("Creating traditional download link");
+        // Create download URL
+        const downloadUrl = URL.createObjectURL(blob);
         
-        toast({
-          title: "Arquivo gerado com sucesso",
-          description: "O arquivo .WAV com sinais ultrassônicos foi baixado.",
-        });
-      }, 1000);
+        // Create and configure download element
+        const downloadLink = document.createElement('a');
+        downloadLink.href = downloadUrl;
+        downloadLink.download = filename;
+        downloadLink.style.display = 'none';
+        
+        // Add to DOM and trigger download
+        document.body.appendChild(downloadLink);
+        console.log("Download link created and appended to body");
+        
+        // Force the download to start with a small delay
+        setTimeout(() => {
+          console.log("Triggering download click");
+          downloadLink.click();
+          console.log("Download link clicked");
+          
+          // Clean up
+          setTimeout(() => {
+            document.body.removeChild(downloadLink);
+            URL.revokeObjectURL(downloadUrl);
+            console.log("Download cleanup complete");
+            
+            // Reset generating state in the Header component
+            if (window.resetGeneratingState) {
+              window.resetGeneratingState();
+            }
+            
+            toast({
+              title: "Arquivo gerado com sucesso",
+              description: "O arquivo .WAV com sinais ultrassônicos foi baixado.",
+            });
+          }, 1000);
+        }, 100);
+      }
     } catch (error) {
       console.error("Error generating ultrasonic audio:", error);
+      
+      // If Header's generating state wasn't reset, reset it now
+      if (window.resetGeneratingState) {
+        window.resetGeneratingState();
+      }
+      
       toast({
         title: "Erro ao gerar arquivo",
         description: `Ocorreu um erro durante o processamento do áudio: ${error instanceof Error ? error.message : 'Unknown error'}`,

@@ -34,25 +34,27 @@ const Header = ({
     
     if (imageItems.length > 0) {
       console.log("Image items detected:", imageItems.length);
-      // Log first few images to help with debugging
-      imageItems.slice(0, 3).forEach((img, i) => {
-        console.log(`Image ${i+1} URL preview:`, img.imageUrl?.substring(0, 50));
-      });
     }
   }, [timelineItems]);
   
   const handleGenerateClick = () => {
-    console.log("Generate button clicked, timeline items:", timelineItems.length);
-    console.log("Timeline contains images:", hasImages);
+    if (isGenerating) {
+      toast({
+        title: "Processamento em andamento",
+        description: "Um arquivo já está sendo gerado, aguarde até que seja concluído.",
+      });
+      return;
+    }
     
-    // Detailed logging of each item type
-    const itemTypes = timelineItems.map(item => {
-      if (item.type === 'image') {
-        return `image (url: ${item.imageUrl?.substring(0, 30)}...)`;
-      }
-      return item.type;
-    });
-    console.log("Timeline item details:", itemTypes);
+    console.log("Generate button clicked, timeline items:", timelineItems.length);
+    
+    // Log item counts by type
+    const itemCounts = {
+      image: timelineItems.filter(item => item.type === 'image').length,
+      flashlight: timelineItems.filter(item => item.type === 'flashlight').length,
+      callToAction: timelineItems.filter(item => item.type === 'callToAction').length
+    };
+    console.log("Timeline items by type:", itemCounts);
     
     setIsGenerating(true);
     setDownloadProgress(0);
@@ -77,22 +79,46 @@ const Header = ({
     // Call the generate function
     try {
       handleGenerateFile();
+      
+      // Set a timeout to monitor if download has started
+      setTimeout(() => {
+        if (isGenerating) {
+          console.log("Setting fallback timer to reset generating state if download doesn't start");
+          setIsGenerating(false);
+          clearInterval(progressInterval);
+          setDownloadProgress(0);
+          toast({
+            title: "Problema na geração",
+            description: "Houve um problema ao gerar o arquivo. Verifique o console para mais detalhes e tente novamente.",
+            variant: "destructive"
+          });
+        }
+      }, 20000);
+      
     } catch (error) {
       console.error("Error during generate file:", error);
+      setIsGenerating(false);
+      clearInterval(progressInterval);
+      setDownloadProgress(0);
+      
       toast({
         title: "Erro na geração",
         description: `Ocorreu um erro ao gerar o arquivo: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
         variant: "destructive"
       });
     }
+  };
+  
+  // Function to reset generating state - will be called from useLightShowLogic
+  window.resetGeneratingState = () => {
+    console.log("Resetting generating state from external call");
+    setIsGenerating(false);
+    setDownloadProgress(100);
     
-    // Reset after a timeout
+    // Reset progress after showing 100%
     setTimeout(() => {
-      console.log("Generation timeout completed");
-      setIsGenerating(false);
       setDownloadProgress(0);
-      clearInterval(progressInterval);
-    }, 15000);
+    }, 1000);
   };
   
   const isDisabled = !audioFile || !timelineItems.length;
@@ -113,7 +139,7 @@ const Header = ({
         <div className="relative w-full">
           <Button 
             onClick={handleGenerateClick} 
-            className={`hutz-button-accent w-full ${isDisabled ? 'opacity-50' : 'animate-pulse'}`}
+            className={`hutz-button-accent w-full ${isDisabled ? 'opacity-50' : (!isGenerating && 'animate-pulse')}`}
             disabled={isDisabled || isGenerating}
           >
             {isGenerating ? (

@@ -1,3 +1,4 @@
+
 import { TimelineItem } from '@/types/lightshow';
 
 /**
@@ -8,60 +9,35 @@ export async function generateUltrasonicAudio(
   audioFile: File,
   timelineItems: TimelineItem[]
 ): Promise<Blob> {
-  console.log("Starting ultrasonic audio generation with", timelineItems.length, "items");
+  console.log("\n=== GENERATING ULTRASONIC AUDIO ===");
+  console.log(`Input: Audio file (${audioFile.size} bytes) and ${timelineItems.length} timeline items`);
   
   try {
-    // Use a stripped down version of timelineItems to ensure we don't have circular references
-    // or problematic large image URLs
-    const safeTimelineItems = timelineItems.map(item => ({
-      id: item.id,
-      type: item.type,
-      startTime: item.startTime,
-      duration: item.duration,
-      // Include specific type properties with safe values
-      ...(item.type === 'image' && { imageUrl: `image-ref-${item.id}` }),
-      ...(item.type === 'flashlight' && { 
-        pattern: {
-          intensity: item.pattern?.intensity || 100,
-          blinkRate: item.pattern?.blinkRate || 120,
-          color: item.pattern?.color || '#FFFFFF'
-        }
-      }),
-      ...(item.type === 'callToAction' && { 
-        content: {
-          type: item.content?.type || 'image',
-          ...(item.content?.buttonText && { buttonText: item.content.buttonText.substring(0, 50) }),
-          ...(item.content?.externalUrl && { externalUrl: item.content.externalUrl.substring(0, 100) }),
-          ...(item.content?.couponCode && { couponCode: item.content.couponCode.substring(0, 50) })
-        }
-      })
-    }));
-    
-    console.log("Timeline items sanitized successfully");
-    console.log("First sanitized item example:", JSON.stringify(safeTimelineItems[0]));
-    
     // First convert the File to ArrayBuffer so we can process it
+    console.log("Converting audio file to ArrayBuffer...");
     const arrayBuffer = await audioFile.arrayBuffer();
     
     if (!arrayBuffer || arrayBuffer.byteLength === 0) {
       throw new Error("Audio file appears to be empty");
     }
     
-    console.log("Audio file converted to ArrayBuffer successfully");
+    console.log(`Audio file converted to ArrayBuffer (${arrayBuffer.byteLength} bytes)`);
     
     // Create AudioContext
     const audioContext = new window.AudioContext();
     
     // Decode the audio file
+    console.log("Decoding audio data...");
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
     
     if (!audioBuffer || audioBuffer.length === 0) {
       throw new Error("Could not decode audio data");
     }
     
-    console.log("Audio successfully decoded, duration:", audioBuffer.duration, "channels:", audioBuffer.numberOfChannels);
+    console.log(`Audio successfully decoded: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.numberOfChannels} channels, ${audioBuffer.sampleRate}Hz`);
     
     // Create an offline context for processing
+    console.log("Creating offline audio context...");
     const offlineContext = new OfflineAudioContext({
       numberOfChannels: audioBuffer.numberOfChannels,
       length: audioBuffer.length,
@@ -92,44 +68,91 @@ export async function generateUltrasonicAudio(
     carrier.connect(ultrasonicGain);
     ultrasonicGain.connect(offlineContext.destination);
     
+    // Prepare the data for encoding
+    console.log("Preparing timeline data for encoding...");
+    
+    // Convert timeline items to a minimal representation to avoid circular references
+    const minimalTimelineItems = timelineItems.map(item => {
+      const base = {
+        id: item.id,
+        type: item.type,
+        startTime: item.startTime,
+        duration: item.duration,
+      };
+      
+      // Add type-specific properties with minimal data
+      if (item.type === 'image') {
+        return { 
+          ...base, 
+          imageRef: item.imageUrl ? item.imageUrl.substring(0, 30) + '...' : null
+        };
+      } else if (item.type === 'flashlight') {
+        return { 
+          ...base, 
+          pattern: item.pattern ? {
+            intensity: item.pattern.intensity,
+            blinkRate: item.pattern.blinkRate,
+            color: item.pattern.color
+          } : null
+        };
+      } else if (item.type === 'callToAction') {
+        return {
+          ...base,
+          content: item.content ? {
+            type: item.content.type,
+            hasImage: !!item.content.imageUrl,
+            buttonText: item.content.buttonText,
+            hasExternalUrl: !!item.content.externalUrl,
+            couponCode: item.content.couponCode
+          } : null
+        };
+      }
+      
+      return base;
+    });
+    
     // Convert data to binary string safely
     let binaryData: string;
     try {
-      binaryData = JSON.stringify(safeTimelineItems);
-      console.log("Successfully stringified timeline data, length:", binaryData.length);
-      console.log("Sample encoded data:", binaryData.substring(0, 200) + "...");
-    } catch (error) {
-      console.error("JSON stringify error:", error);
-      // Fall back to a simplified version
-      binaryData = JSON.stringify(safeTimelineItems.map(item => ({
+      console.log("Stringifying timeline data...");
+      binaryData = JSON.stringify(minimalTimelineItems);
+      console.log(`Successfully stringified timeline data: ${binaryData.length} chars`);
+    } catch (jsonError) {
+      console.error("JSON stringify error:", jsonError);
+      
+      // Fallback to even more simplified version
+      console.log("Falling back to simplified data structure...");
+      binaryData = JSON.stringify(minimalTimelineItems.map(item => ({
         id: item.id,
         type: item.type,
         startTime: item.startTime,
         duration: item.duration
       })));
-      console.log("Using simplified data as fallback");
+      console.log(`Using simplified fallback data: ${binaryData.length} chars`);
     }
     
     // Encode the data
+    console.log("Encoding data to binary...");
     const encoder = new TextEncoder();
     const binaryArray = encoder.encode(binaryData);
     
-    console.log("Encoded data length:", binaryArray.length, "bytes");
+    console.log(`Encoded data length: ${binaryArray.length} bytes`);
     
     // FSK modulation parameters
     const mark = 18500;  // 18.5kHz for binary 1
     const space = 17500; // 17.5kHz for binary 0
-    const bitsPerSecond = 50; // Slower data rate for better reliability
+    const bitsPerSecond = 25; // Slower data rate for better reliability
     
     // Schedule the data transmission
     let currentTime = 0;
     
     // Ensure we have enough time to transmit all data
     const requiredTime = (binaryArray.length * 8) / bitsPerSecond;
-    console.log("Required time for data transmission:", requiredTime, "seconds");
+    console.log(`Required time for data transmission: ${requiredTime.toFixed(2)} seconds`);
     
     // Add preamble for signal detection (alternating pattern)
-    const preambleLength = 2; // 2 second preamble
+    console.log("Adding preamble signal...");
+    const preambleLength = 1; // 1 second preamble
     for (let i = 0; i < preambleLength * bitsPerSecond; i++) {
       const value = i % 2; // Alternating 0, 1 pattern
       carrier.frequency.setValueAtTime(
@@ -140,6 +163,7 @@ export async function generateUltrasonicAudio(
     }
     
     // Transmit the actual data
+    console.log("Encoding timeline data into audio frequencies...");
     binaryArray.forEach((byte, index) => {
       for (let bit = 0; bit < 8; bit++) {
         const value = (byte >> bit) & 1;
@@ -151,35 +175,46 @@ export async function generateUltrasonicAudio(
       }
       
       // Add progress logging
-      if (index % 100 === 0) {
+      if (index % 200 === 0) {
         console.log(`Encoding data: ${Math.round((index / binaryArray.length) * 100)}%`);
       }
     });
+    
+    // Add postamble for reliable detection
+    console.log("Adding postamble signal...");
+    for (let i = 0; i < 0.5 * bitsPerSecond; i++) {
+      carrier.frequency.setValueAtTime(mark, currentTime);
+      currentTime += 1 / bitsPerSecond;
+    }
+    
+    console.log("Starting audio sources...");
     
     // Start the sources
     musicSource.start();
     carrier.start();
     
-    console.log("Starting audio rendering...");
+    console.log("Starting audio rendering process...");
     
     // Render the audio
     const renderedBuffer = await offlineContext.startRendering();
     
-    console.log("Audio rendering complete, converting to WAV...");
+    console.log(`Audio rendering complete: ${renderedBuffer.duration.toFixed(2)}s, ${renderedBuffer.numberOfChannels} channels`);
     
     // Convert back to WAV format
+    console.log("Converting to WAV format...");
     const wavData = audioBufferToWav(renderedBuffer);
     
     if (!wavData || wavData.byteLength === 0) {
       throw new Error("Generated WAV file is empty");
     }
     
-    console.log("WAV conversion complete, data size:", wavData.byteLength, "bytes");
+    console.log(`WAV conversion complete: ${wavData.byteLength} bytes`);
     
     // Create the final blob
     const wavBlob = new Blob([wavData], { type: 'audio/wav' });
     
-    console.log("WAV blob created successfully, size:", wavBlob.size, "bytes");
+    console.log(`WAV blob created successfully: ${wavBlob.size} bytes`);
+    console.log("=== ULTRASONIC AUDIO GENERATION COMPLETE ===\n");
     
     return wavBlob;
   } catch (error) {
@@ -193,6 +228,7 @@ export async function generateUltrasonicAudio(
  */
 function audioBufferToWav(buffer: AudioBuffer): Uint8Array {
   try {
+    console.log("Converting AudioBuffer to WAV...");
     const numChannels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
     const format = 1; // PCM
@@ -205,7 +241,10 @@ function audioBufferToWav(buffer: AudioBuffer): Uint8Array {
     const numSamples = buffer.length * numChannels;
     const dataLength = numSamples * bytesPerSample;
     
+    console.log(`WAV parameters: ${numChannels} channels, ${sampleRate}Hz, ${bitDepth}-bit, ${dataLength} bytes of audio data`);
+    
     // Create sample data array
+    console.log("Creating interleaved audio samples...");
     const samples = new Float32Array(numSamples);
     
     // Interleave channels
@@ -218,6 +257,8 @@ function audioBufferToWav(buffer: AudioBuffer): Uint8Array {
     
     const headerLength = 44;
     const wavData = new Uint8Array(headerLength + dataLength);
+    
+    console.log("Writing WAV header...");
     
     // Write WAV header
     const writeString = (str: string, offset: number) => {
@@ -247,6 +288,8 @@ function audioBufferToWav(buffer: AudioBuffer): Uint8Array {
     writeString('data', 36);
     view.setUint32(40, dataLength, true);
     
+    console.log("Writing WAV audio data...");
+    
     // Write audio data
     let offset = 44;
     for (let i = 0; i < samples.length; i++) {
@@ -259,8 +302,14 @@ function audioBufferToWav(buffer: AudioBuffer): Uint8Array {
       // Write sample value to buffer
       view.setInt16(offset, sampleValue, true);
       offset += 2;
+      
+      // Log progress for large files
+      if (samples.length > 1000000 && i % 1000000 === 0) {
+        console.log(`Writing audio data: ${Math.round((i / samples.length) * 100)}%`);
+      }
     }
     
+    console.log("WAV conversion complete");
     return wavData;
     
   } catch (error) {
