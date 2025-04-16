@@ -152,41 +152,19 @@ const TelaoPage = () => {
               selected: prev.filter(p => p.selected).length < participantCount
             };
             
-            // Acknowledge the connection to this participant
-            channel.postMessage({
-              type: 'host-acknowledge',
-              participantId: data.id,
-              timestamp: Date.now()
-            });
-            
             return [...prev, newParticipant];
-          });
-          
-          // Trigger a toast notification
-          toast({
-            title: "Novo participante conectado",
-            description: `Um novo participante se conectou à sessão.`,
           });
         } 
         else if (data.type === 'participant-leave') {
           // Handle participant leaving
-          console.log('Participant left:', data.id);
-          setParticipantList(prev => 
-            prev.map(p => p.id === data.id ? { ...p, active: false } : p)
-          );
-        }
-        else if (data.type === 'participant-heartbeat') {
-          // Update participant's active status
-          setParticipantList(prev => 
-            prev.map(p => p.id === data.id ? { ...p, active: true } : p)
-          );
+          console.log('Participant left');
         }
         else if (data.type === 'video-frame') {
           // Update participant's video frame
           setParticipantList(prev => {
             return prev.map(p => {
               if (p.id === data.id) {
-                return { ...p, frameData: data.frame, active: true };
+                return { ...p, frameData: data.frame };
               }
               return p;
             });
@@ -196,7 +174,7 @@ const TelaoPage = () => {
       
       setBroadcastChannel(channel);
     }
-  }, [sessionId, participantCount, toast]);
+  }, [sessionId, participantCount]);
 
   useEffect(() => {
     if (qrCodeGenerated && qrCodeURL) {
@@ -486,29 +464,21 @@ const TelaoPage = () => {
                 background-color: #000;
                 color: white;
                 font-family: ${selectedFont};
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                height: 100vh;
-                width: 100vw;
               }
               .container {
                 position: relative;
+                width: 100vw;
+                height: 100vh;
                 overflow: hidden;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 background-color: ${backgroundImage ? 'transparent' : selectedBackgroundColor};
-                width: 100%;
-                height: 100%;
-                aspect-ratio: 16 / 9;
-                max-width: 100%;
-                max-height: 100%;
               }
               .content-wrapper {
                 position: relative;
-                width: 100%;
-                height: 100%;
+                width: ${previewWidth * scale}px;
+                height: ${previewHeight * scale}px;
               }
               .bg-image {
                 position: absolute;
@@ -718,7 +688,7 @@ const TelaoPage = () => {
         onMouseUp={stopDragging}
         onMouseLeave={stopDragging}
         ref={previewContainerRef}
-        style={{ height: '600px' }}  // Aumentado de 450px para 600px
+        style={{ height: '450px' }}
       >
         <div 
           className="absolute inset-0" 
@@ -791,4 +761,463 @@ const TelaoPage = () => {
                 <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
                 <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
                 <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
-                <div className="absolute left-
+                <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
+              </div>
+            </div>
+            
+            <div 
+              className="absolute cursor-move"
+              style={{
+                left: `${qrDescriptionPosition.x}px`,
+                top: `${qrDescriptionPosition.y}px`,
+                width: `${qrDescriptionPosition.width}px`,
+                height: `${qrDescriptionPosition.height}px`,
+                color: selectedTextColor,
+                fontFamily: selectedFont,
+                fontSize: `${qrDescriptionFontSize}px`,
+                fontWeight: 'bold',
+                textAlign: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px dashed rgba(255,255,255,0.3)',
+                borderRadius: '4px',
+                padding: '4px',
+                boxSizing: 'border-box',
+                overflow: 'hidden'
+              }}
+              onMouseDown={startDraggingText}
+              ref={textRef}
+            >
+              {qrCodeDescription}
+              
+              <div className="absolute right-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
+              <div className="absolute right-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
+              <div className="absolute left-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
+              <div className="absolute left-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const selectedParticipantsCount = participantList.filter(p => p.selected).length;
+
+  return (
+    <div className="container mx-auto py-8 px-4 max-w-6xl">
+      <h1 className="text-3xl font-bold mb-8 hutz-gradient-text text-center">Momento Telão</h1>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2">
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 h-full">
+            <CardHeader className="flex flex-row justify-between items-center">
+              <div className="flex items-center gap-4 w-full">
+                <CardTitle className="flex items-center gap-2">
+                  Controle de Transmissão
+                </CardTitle>
+                <div className="flex gap-2">
+                  <Button 
+                    className="hutz-button-accent"
+                    onClick={openTransmissionWindow}
+                    disabled={transmissionOpen}
+                  >
+                    <Film className="h-4 w-4 mr-2" />
+                    Iniciar Transmissão
+                  </Button>
+                  
+                  <Button 
+                    variant="destructive"
+                    onClick={finishTransmission}
+                    disabled={!transmissionOpen}
+                  >
+                    <StopCircle className="h-4 w-4 mr-2" />
+                    Finalizar Transmissão
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CardDescription className="mb-4">
+                Gerencie participantes, layout e aparência da sua transmissão ao vivo
+              </CardDescription>
+              
+              <Tabs defaultValue="participants" className="w-full">
+                <TabsList className="grid grid-cols-4 mb-6">
+                  <TabsTrigger value="participants">
+                    <Users className="h-4 w-4 mr-2" />
+                    Participantes
+                  </TabsTrigger>
+                  <TabsTrigger value="layout">
+                    <MonitorPlay className="h-4 w-4 mr-2" />
+                    Layout
+                  </TabsTrigger>
+                  <TabsTrigger value="appearance">
+                    <Palette className="h-4 w-4 mr-2" />
+                    Aparência
+                  </TabsTrigger>
+                  <TabsTrigger value="qrcode">
+                    <QrCode className="h-4 w-4 mr-2" />
+                    QR Code
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="participants" className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {participantList.map((participant, i) => (
+                      <Card key={participant.id} className={`bg-secondary/60 border ${participant.selected ? 'border-accent' : 'border-white/10'}`}>
+                        <CardContent className="p-4 text-center">
+                          <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2">
+                            {participant.frameData ? (
+                              <img 
+                                src={participant.frameData} 
+                                alt={participant.name}
+                                className="w-full h-full object-cover" 
+                              />
+                            ) : (
+                              <User className="h-8 w-8 text-white/30" />
+                            )}
+                          </div>
+                          <p className="text-sm font-medium truncate">
+                            {participant.name}
+                          </p>
+                          <div className="flex justify-center gap-2 mt-2">
+                            <Button 
+                              variant={participant.selected ? "default" : "outline"} 
+                              size="sm" 
+                              className={`h-8 ${participant.selected ? 'bg-accent text-white' : 'border-white/20'}`}
+                              onClick={() => handleParticipantSelect(participant.id)}
+                            >
+                              {participant.selected ? (
+                                <>
+                                  <Check className="h-3 w-3 mr-1" />
+                                  Selecionado
+                                </>
+                              ) : 'Selecionar'}
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-8 text-white/60 hover:text-white"
+                              onClick={() => handleParticipantRemove(participant.id)}
+                            >
+                              Remover
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                    
+                    {Array(Math.max(0, 12 - participantList.length)).fill(0).map((_, i) => (
+                      <Card key={`empty-${i}`} className="bg-secondary/60 border border-white/10">
+                        <CardContent className="p-4 text-center">
+                          <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2">
+                            <User className="h-8 w-8 text-white/30" />
+                          </div>
+                          <p className="text-sm font-medium truncate">
+                            Aguardando...
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  
+                  <p className="text-sm text-white/60 mt-4">
+                    Limite de participantes: 100 (Ao remover um participante, outro será adicionado automaticamente)
+                  </p>
+                </TabsContent>
+                
+                <TabsContent value="layout" className="space-y-4">
+                  <div className="space-y-6">
+                    <div>
+                      <Label className="mb-2 block">
+                        Número de participantes na tela
+                      </Label>
+                      <div className="flex flex-wrap gap-2">
+                        {[1, 2, 4, 6, 9, 12, 16, 24].map((num) => (
+                          <Button
+                            key={num}
+                            variant={participantCount === num ? "default" : "outline"}
+                            onClick={() => setParticipantCount(num)}
+                            className={participantCount === num ? "bg-accent text-white" : "border-white/20"}
+                          >
+                            {num}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="description-text" className="mb-2 block">
+                        Texto de Descrição
+                      </Label>
+                      <Input
+                        id="description-text"
+                        placeholder="Escaneie o QR Code para participar"
+                        value={qrCodeDescription}
+                        onChange={(e) => setQrCodeDescription(e.target.value)}
+                        className="hutz-input"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label className="mb-2 block">Fonte do Texto</Label>
+                      <Select value={selectedFont} onValueChange={setSelectedFont}>
+                        <SelectTrigger className="hutz-input">
+                          <SelectValue placeholder="Selecione a fonte" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {fontOptions.map((font) => (
+                            <SelectItem key={font.value} value={font.value}>
+                              <span style={{ fontFamily: font.value }}>{font.name}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Label className="mb-2 block">Cor do Texto</Label>
+                      <div className="grid grid-cols-9 gap-1">
+                        {textColors.map((color) => (
+                          <button
+                            key={color}
+                            className={`w-6 h-6 rounded-full border ${selectedTextColor === color ? 'border-white ring-2 ring-accent' : 'border-white/20'}`}
+                            style={{ backgroundColor: color }}
+                            onClick={() => setSelectedTextColor(color)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block">Tamanho do Texto</Label>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={decreaseFontSize}
+                          disabled={qrDescriptionFontSize <= 10}
+                          className="border-white/20"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <span className="text-sm px-2">{qrDescriptionFontSize}px</span>
+                        <Button
+                          variant="outline"
+                          onClick={increaseFontSize}
+                          disabled={qrDescriptionFontSize >= 32}
+                          className="border-white/20"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="appearance" className="space-y-4">
+                  <div className="space-y-6">
+                    <div>
+                      <Label className="mb-2 block">Cor de Fundo</Label>
+                      <div className="grid grid-cols-9 gap-1">
+                        {backgroundColors.map((color) => (
+                          <button
+                            key={color}
+                            className={`w-6 h-6 rounded-full border ${selectedBackgroundColor === color ? 'border-white ring-2 ring-accent' : 'border-white/20'}`}
+                            style={{ backgroundColor: color }}
+                            onClick={() => setSelectedBackgroundColor(color)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label className="mb-2 block">Imagem de Fundo</Label>
+                      <div className="flex gap-2">
+                        <Button variant="outline" onClick={triggerFileInput} className="border-white/20">
+                          <Image className="h-4 w-4 mr-2" />
+                          Carregar Imagem
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          onClick={removeBackgroundImage} 
+                          className="border-white/20"
+                          disabled={!backgroundImage}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Remover Imagem
+                        </Button>
+                      </div>
+                      <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        onChange={handleFileSelect}
+                        accept="image/*"
+                        className="hidden" 
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="qrcode" className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
+                    <div>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant={qrCodeGenerated ? "outline" : "default"}
+                          onClick={handleGenerateQRCode}
+                          className={qrCodeGenerated ? "border-white/20" : ""}
+                        >
+                          <QrCode className="h-4 w-4 mr-2" />
+                          {qrCodeGenerated ? "Regenerar QR Code" : "Gerar QR Code"}
+                        </Button>
+                        
+                        <Button
+                          variant="outline"
+                          onClick={handleQRCodeToTransmission}
+                          disabled={!qrCodeGenerated}
+                          className="border-white/20"
+                        >
+                          {qrCodeVisible ? (
+                            <>
+                              <Check className="h-4 w-4 mr-2" />
+                              QR Code Inserido
+                            </>
+                          ) : (
+                            <>
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Inserir QR Code
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      
+                      {qrCodeGenerated && (
+                        <div className="mt-2">
+                          <Label className="block mb-1 text-xs">
+                            Link do QR Code:
+                          </Label>
+                          <div className="text-xs break-all bg-secondary/40 p-2 rounded">
+                            {qrCodeURL}
+                          </div>
+                          
+                          <div className="mt-4">
+                            <Label className="block mb-2">
+                              Ação ao Finalizar Transmissão
+                            </Label>
+                            <Select value={finalAction} onValueChange={(value: 'none' | 'image' | 'coupon') => setFinalAction(value)}>
+                              <SelectTrigger className="hutz-input">
+                                <SelectValue placeholder="Escolher ação" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Nenhuma ação</SelectItem>
+                                <SelectItem value="image">Mostrar Imagem Clicável</SelectItem>
+                                <SelectItem value="coupon">Mostrar Cupom</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            
+                            {finalAction === 'image' && (
+                              <div className="mt-2">
+                                <Input
+                                  placeholder="Link da imagem (URL)"
+                                  value={finalActionImage || ''}
+                                  onChange={(e) => setFinalActionImage(e.target.value)}
+                                  className="mb-2 hutz-input"
+                                />
+                                <Input
+                                  placeholder="Link para redirecionamento"
+                                  value={finalActionLink}
+                                  onChange={(e) => setFinalActionLink(e.target.value)}
+                                  className="hutz-input"
+                                />
+                              </div>
+                            )}
+                            
+                            {finalAction === 'coupon' && (
+                              <div className="mt-2">
+                                <Input
+                                  placeholder="Código do cupom"
+                                  value={finalActionCoupon}
+                                  onChange={(e) => setFinalActionCouponCode(e.target.value)}
+                                  className="mb-2 hutz-input"
+                                />
+                                <Input
+                                  placeholder="Link para redirecionamento (opcional)"
+                                  value={finalActionLink}
+                                  onChange={(e) => setFinalActionLink(e.target.value)}
+                                  className="hutz-input"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </div>
+        
+        <div>
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10">
+            <CardHeader>
+              <CardTitle>
+                Pré-visualização
+              </CardTitle>
+              <CardDescription>
+                Veja como sua transmissão será exibida
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {renderPreviewContent()}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+      
+      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
+        <DialogContent className="text-center max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl mb-2">
+              {finalAction === 'coupon' ? 'Seu cupom está disponível!' : 'Obrigado por participar!'}
+            </DialogTitle>
+            <DialogDescription>
+              Esta janela será fechada em {finalActionTimeLeft} segundos
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {finalAction === 'image' && (
+              <AspectRatio ratio={16/9} className="bg-muted rounded-md overflow-hidden hover:opacity-90 transition-opacity cursor-pointer" onClick={handleFinalActionClick}>
+                <img
+                  src={finalActionImage || 'https://placehold.co/600x400/png?text=Imagem+Exemplo'}
+                  alt="Final action"
+                  className="object-cover w-full h-full"
+                />
+              </AspectRatio>
+            )}
+            
+            {finalAction === 'coupon' && (
+              <div className="border border-dashed border-white/30 rounded-md p-6 bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer" onClick={handleFinalActionClick}>
+                <p className="text-sm mb-2">Seu cupom de desconto:</p>
+                <p className="text-2xl font-bold mb-4">{finalActionCoupon || 'DESC20'}</p>
+                <Button variant="outline" className="w-full">
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Usar cupom agora
+                </Button>
+              </div>
+            )}
+          </div>
+          
+          <Button variant="ghost" className="absolute top-2 right-2" onClick={closeFinalAction}>
+            <X className="h-4 w-4" />
+          </Button>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default TelaoPage;
