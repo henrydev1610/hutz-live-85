@@ -11,6 +11,8 @@ const ParticipantPage = () => {
   const [cameraActive, setCameraActive] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
+  const [connected, setConnected] = useState(false);
+  const [transmitting, setTransmitting] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -52,7 +54,57 @@ const ParticipantPage = () => {
     };
 
     getVideoDevices();
+    
+    // Connect to the transmission service
+    connectToSession();
+    
+    return () => {
+      if (cameraActive) {
+        stopCamera();
+      }
+      disconnectFromSession();
+    };
   }, [toast]);
+
+  const connectToSession = () => {
+    // In a real implementation, we would connect to a WebRTC service
+    // For now, we'll simulate the connection
+    console.log(`Connecting to session: ${sessionId}`);
+    
+    // Simulating connection established
+    setTimeout(() => {
+      setConnected(true);
+      toast({
+        title: "Conectado à sessão",
+        description: `Você está conectado à sessão ${sessionId}.`,
+      });
+    }, 1500);
+  };
+
+  const disconnectFromSession = () => {
+    // In a real implementation, we would disconnect from the WebRTC service
+    if (connected) {
+      console.log(`Disconnecting from session: ${sessionId}`);
+      setConnected(false);
+      setTransmitting(false);
+    }
+  };
+
+  const startTransmitting = () => {
+    if (!connected || !cameraActive) return;
+    
+    // In a real implementation, we would start sending video data
+    setTransmitting(true);
+    console.log(`Started transmitting video to session: ${sessionId}`);
+  };
+
+  const stopTransmitting = () => {
+    if (!transmitting) return;
+    
+    // In a real implementation, we would stop sending video data
+    setTransmitting(false);
+    console.log(`Stopped transmitting video to session: ${sessionId}`);
+  };
 
   const startCamera = async () => {
     try {
@@ -71,8 +123,8 @@ const ParticipantPage = () => {
         description: "Sua imagem está sendo transmitida para a sessão.",
       });
       
-      // Here you would connect to the session using WebRTC
-      console.log(`Connected to session: ${sessionId}`);
+      // Automatically start transmitting when camera is activated
+      startTransmitting();
       
     } catch (error) {
       console.error('Error accessing camera:', error);
@@ -86,6 +138,9 @@ const ParticipantPage = () => {
 
   const stopCamera = () => {
     if (!videoRef.current) return;
+    
+    // Stop transmitting first
+    stopTransmitting();
     
     const stream = videoRef.current.srcObject as MediaStream;
     if (stream) {
@@ -141,6 +196,15 @@ const ParticipantPage = () => {
               <Camera className="h-12 w-12 text-white/30" />
             </div>
           )}
+          
+          {cameraActive && transmitting && (
+            <div className="absolute top-2 right-2">
+              <div className="flex items-center bg-black/50 rounded-full px-2 py-1">
+                <div className="h-2 w-2 rounded-full bg-red-500 mr-1"></div>
+                <span className="text-xs text-white">AO VIVO</span>
+              </div>
+            </div>
+          )}
         </div>
         
         <div className="flex gap-2 mt-6">
@@ -179,6 +243,13 @@ const ParticipantPage = () => {
           Mantenha esta janela aberta para continuar transmitindo sua imagem.<br />
           Sua câmera será exibida apenas quando o host incluir você na transmissão.
         </p>
+        
+        <div className="mt-6 flex items-center gap-2">
+          <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+          <span className="text-xs">
+            {connected ? 'Conectado à sessão' : 'Desconectado'}
+          </span>
+        </div>
       </div>
     </div>
   );

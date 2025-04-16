@@ -11,6 +11,7 @@ import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import QRCode from 'qrcode';
 
 const TelaoPage = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -24,6 +25,7 @@ const TelaoPage = () => {
   const [finalActionLink, setFinalActionLink] = useState("");
   const [finalActionImage, setFinalActionImage] = useState<string | null>(null);
   const [finalActionCoupon, setFinalActionCouponCode] = useState("");
+  const [qrCodeSvg, setQrCodeSvg] = useState<string | null>(null);
   const { toast } = useToast();
   
   const [selectedFont, setSelectedFont] = useState("sans-serif");
@@ -156,6 +158,28 @@ const TelaoPage = () => {
       }
     };
   }, []);
+
+  const generateQRCode = async (url: string) => {
+    try {
+      const dataUrl = await QRCode.toDataURL(url, {
+        width: 256,
+        margin: 1,
+        color: {
+          dark: '#000000',
+          light: '#ffffff'
+        }
+      });
+      
+      setQrCodeSvg(dataUrl);
+    } catch (error) {
+      console.error('Error generating QR code:', error);
+      toast({
+        title: "Erro ao gerar QR Code",
+        description: "Não foi possível gerar o QR Code.",
+        variant: "destructive"
+      });
+    }
+  };
 
   const handleGenerateQRCode = () => {
     const sessionId = Math.random().toString(36).substring(2, 15);
@@ -595,7 +619,7 @@ const TelaoPage = () => {
                 </div>
               ))}
             
-            {Array(Math.max(0, participantCount - selectedParticipantsCount)).fill(0).map((_, i) => (
+            {Array(Math.max(0, participantCount - participantList.filter(p => p.selected).length)).fill(0).map((_, i) => (
               <div key={`empty-preview-${i}`} className="bg-black/20 rounded overflow-hidden flex items-center justify-center">
                 <User className="h-8 w-8 text-white/30" />
               </div>
