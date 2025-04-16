@@ -20,7 +20,7 @@ const ParticipantPage = () => {
   const connectionRetryCountRef = useRef<number>(0);
   const maxConnectionRetries = 10; // Increased from 5 to 10
   const heartbeatIntervalRef = useRef<number | null>(null);
-  const joinTimeoutRef = useRef<number | null>(null);
+  const joinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     console.log(`Session ID: ${sessionId}, Participant ID: ${participantIdRef.current}`);
