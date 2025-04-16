@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -48,13 +47,17 @@ const TelaoPage = () => {
   const [qrDescriptionPosition, setQrDescriptionPosition] = useState({
     x: 20,
     y: 150,
-    width: 120
+    width: 200,
+    height: 60
   });
   const [isDraggingQR, setIsDraggingQR] = useState(false);
   const [isDraggingText, setIsDraggingText] = useState(false);
-  const [resizeHandle, setResizeHandle] = useState<string | null>(null);
+  const [resizeHandleQR, setResizeHandleQR] = useState<string | null>(null);
+  const [resizeHandleText, setResizeHandleText] = useState<string | null>(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
+  const [calculatedFontSize, setCalculatedFontSize] = useState(16);
+  
   const transmissionWindowRef = useRef<Window | null>(null);
   const [qrCodeDescription, setQrCodeDescription] = useState("Escaneie o QR Code para participar");
 
@@ -134,6 +137,15 @@ const TelaoPage = () => {
     };
   }, []);
 
+  // Update font size based on text box width
+  useEffect(() => {
+    // Scale font size based on width, but keep it within reasonable bounds
+    const baseFontSize = 16;
+    const scaleFactor = qrDescriptionPosition.width / 200; // baseline width of 200px
+    const newFontSize = Math.max(10, Math.min(32, baseFontSize * scaleFactor));
+    setCalculatedFontSize(newFontSize);
+  }, [qrDescriptionPosition.width]);
+
   const handleGenerateQRCode = () => {
     const sessionId = Math.random().toString(36).substring(2, 15);
     const baseURL = window.location.origin;
@@ -206,12 +218,14 @@ const TelaoPage = () => {
     const target = e.target as HTMLElement;
     if (target.className && typeof target.className === 'string' && target.className.includes('resize-handle')) {
       const handle = target.getAttribute('data-handle');
-      setResizeHandle(handle);
-      setStartPos({ x: e.clientX, y: e.clientY });
-      setStartSize({ 
-        width: qrCodePosition.width, 
-        height: qrCodePosition.height 
-      });
+      if (handle && handle.startsWith('qr-')) {
+        setResizeHandleQR(handle);
+        setStartPos({ x: e.clientX, y: e.clientY });
+        setStartSize({ 
+          width: qrCodePosition.width, 
+          height: qrCodePosition.height 
+        });
+      }
     } else {
       setIsDraggingQR(true);
       setStartPos({ 
@@ -224,17 +238,31 @@ const TelaoPage = () => {
   const startDraggingText = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!qrCodeVisible) return;
     
-    setIsDraggingText(true);
-    setStartPos({ 
-      x: e.clientX - qrDescriptionPosition.x, 
-      y: e.clientY - qrDescriptionPosition.y 
-    });
+    const target = e.target as HTMLElement;
+    if (target.className && typeof target.className === 'string' && target.className.includes('resize-handle')) {
+      const handle = target.getAttribute('data-handle');
+      if (handle && handle.startsWith('text-')) {
+        setResizeHandleText(handle);
+        setStartPos({ x: e.clientX, y: e.clientY });
+        setStartSize({ 
+          width: qrDescriptionPosition.width, 
+          height: qrDescriptionPosition.height 
+        });
+      }
+    } else {
+      setIsDraggingText(true);
+      setStartPos({ 
+        x: e.clientX - qrDescriptionPosition.x, 
+        y: e.clientY - qrDescriptionPosition.y 
+      });
+    }
   };
 
   const stopDragging = () => {
     setIsDraggingQR(false);
     setIsDraggingText(false);
-    setResizeHandle(null);
+    setResizeHandleQR(null);
+    setResizeHandleText(null);
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -258,24 +286,25 @@ const TelaoPage = () => {
       
       if (container) {
         const x = Math.max(0, Math.min(newX, container.width - qrDescriptionPosition.width));
-        const y = Math.max(0, Math.min(newY, container.height - 40)); // 40 is an approximate height for text
+        const y = Math.max(0, Math.min(newY, container.height - qrDescriptionPosition.height));
         
         setQrDescriptionPosition(prev => ({ ...prev, x, y }));
       }
-    } else if (resizeHandle) {
+    } else if (resizeHandleQR) {
       const dx = e.clientX - startPos.x;
       const dy = e.clientY - startPos.y;
       
       let newWidth = startSize.width;
       let newHeight = startSize.height;
       
-      if (resizeHandle.includes('r')) { // Right handles
+      if (resizeHandleQR.includes('r')) { // Right handles
         newWidth = Math.max(80, startSize.width + dx);
       }
-      if (resizeHandle.includes('b')) { // Bottom handles
+      if (resizeHandleQR.includes('b')) { // Bottom handles
         newHeight = Math.max(80, startSize.height + dy);
       }
       
+      // Keep QR code square by using the larger dimension
       const size = Math.max(newWidth, newHeight);
       
       setQrCodePosition(prev => ({ 
@@ -283,15 +312,28 @@ const TelaoPage = () => {
         width: size,
         height: size
       }));
+    } else if (resizeHandleText) {
+      const dx = e.clientX - startPos.x;
+      const dy = e.clientY - startPos.y;
       
-      // Update the description width to match QR code
-      setQrDescriptionPosition(prev => ({
-        ...prev,
-        width: size
+      let newWidth = startSize.width;
+      let newHeight = startSize.height;
+      
+      if (resizeHandleText.includes('r')) { // Right handles
+        newWidth = Math.max(80, startSize.width + dx);
+      }
+      if (resizeHandleText.includes('b')) { // Bottom handles
+        newHeight = Math.max(30, startSize.height + dy);
+      }
+      
+      setQrDescriptionPosition(prev => ({ 
+        ...prev, 
+        width: newWidth,
+        height: newHeight
       }));
     }
   };
-  
+
   const handleTextSizeChange = (direction: 'increase' | 'decrease') => {
     setQrCodeTextSize(prev => {
       if (direction === 'increase') {
@@ -576,27 +618,42 @@ const TelaoPage = () => {
                   <QrCode className="w-full h-full text-black" />
                 </div>
                 
-                <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
-                <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
-                <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
-                <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
+                {/* QR Code resize handles */}
+                <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="qr-tr"></div>
+                <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="qr-br"></div>
+                <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="qr-bl"></div>
+                <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="qr-tl"></div>
               </div>
             </div>
             
             <div 
-              className="absolute cursor-move text-center"
+              className="absolute cursor-move"
               style={{
                 left: `${qrDescriptionPosition.x}px`,
                 top: `${qrDescriptionPosition.y}px`,
                 width: `${qrDescriptionPosition.width}px`,
+                height: `${qrDescriptionPosition.height}px`,
                 color: selectedTextColor,
                 fontFamily: `'${selectedFont}', sans-serif`,
-                fontSize: `${qrCodeTextSize}px`,
-                fontWeight: 'bold'
+                fontSize: `${calculatedFontSize}px`,
+                fontWeight: 'bold',
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textAlign: 'center',
+                border: '1px dashed rgba(255,255,255,0.2)',
+                borderRadius: '4px',
               }}
               onMouseDown={startDraggingText}
             >
               {qrCodeDescription}
+              
+              {/* Text resize handles */}
+              <div className="absolute right-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-ne-resize resize-handle" data-handle="text-tr"></div>
+              <div className="absolute right-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-se-resize resize-handle" data-handle="text-br"></div>
+              <div className="absolute left-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-sw-resize resize-handle" data-handle="text-bl"></div>
+              <div className="absolute left-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-nw-resize resize-handle" data-handle="text-tl"></div>
             </div>
           </>
         )}
@@ -681,479 +738,3 @@ const TelaoPage = () => {
                               size="sm" 
                               className={`h-8 ${participant.selected ? 'bg-accent text-white' : 'border-white/20'}`}
                               onClick={() => handleParticipantSelect(participant.id)}
-                            >
-                              {participant.selected ? (
-                                <>
-                                  <Check className="h-3 w-3 mr-1" />
-                                  Selecionado
-                                </>
-                              ) : 'Selecionar'}
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="h-8 text-white/60 hover:text-white"
-                              onClick={() => handleParticipantRemove(participant.id)}
-                            >
-                              Remover
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                    
-                    {Array(Math.max(0, 12 - participantList.length)).fill(0).map((_, i) => (
-                      <Card key={`empty-${i}`} className="bg-secondary/60 border border-white/10">
-                        <CardContent className="p-4 text-center">
-                          <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2">
-                            <User className="h-8 w-8 text-white/30" />
-                          </div>
-                          <p className="text-sm font-medium truncate">
-                            Aguardando...
-                          </p>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                  
-                  <p className="text-sm text-white/60 mt-4">
-                    Limite de participantes: 100 (Ao remover um participante, outro será adicionado automaticamente)
-                  </p>
-                </TabsContent>
-                
-                <TabsContent value="layout" className="space-y-4">
-                  <div className="space-y-6">
-                    <div>
-                      <Label className="mb-2 block">
-                        Número de participantes na tela
-                      </Label>
-                      <div className="flex flex-wrap gap-2">
-                        {[1, 2, 4, 6, 9, 12, 16, 24].map((num) => (
-                          <Button
-                            key={num}
-                            variant={participantCount === num ? "default" : "outline"}
-                            onClick={() => setParticipantCount(num)}
-                            className={participantCount === num ? "bg-accent text-white" : "border-white/20"}
-                          >
-                            {num}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="description-text" className="mb-2 block">
-                        Texto de Descrição
-                      </Label>
-                      <Input
-                        id="description-text"
-                        placeholder="Escaneie o QR Code para participar"
-                        value={qrCodeDescription}
-                        onChange={(e) => setQrCodeDescription(e.target.value)}
-                        className="hutz-input"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label className="mb-2 block">
-                        Fonte do Texto
-                      </Label>
-                      <Select 
-                        value={selectedFont} 
-                        onValueChange={setSelectedFont}
-                      >
-                        <SelectTrigger className="hutz-input">
-                          <SelectValue placeholder="Selecione uma fonte" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {fontOptions.map(font => (
-                            <SelectItem key={font} value={font} style={{fontFamily: font}}>
-                              {font}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div>
-                      <Label className="mb-2 block">
-                        Cor do Texto
-                      </Label>
-                      <div className="grid grid-cols-10 gap-1">
-                        {textColors.map(color => (
-                          <div
-                            key={color}
-                            className={`w-full aspect-square rounded-md cursor-pointer hover:scale-110 transition-transform border ${selectedTextColor === color ? 'border-accent' : 'border-white/20'}`}
-                            style={{ backgroundColor: color }}
-                            onClick={() => setSelectedTextColor(color)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="appearance" className="space-y-4">
-                  <div className="space-y-6">
-                    <div>
-                      <Label className="mb-2 block">Cor de Fundo</Label>
-                      <div className="grid grid-cols-12 gap-1">
-                        {backgroundColors.map(color => (
-                          <div
-                            key={color}
-                            className={`w-full aspect-square rounded-md cursor-pointer hover:scale-110 transition-transform border ${selectedBackgroundColor === color ? 'border-accent' : 'border-white/20'}`}
-                            style={{ backgroundColor: color }}
-                            onClick={() => setSelectedBackgroundColor(color)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="bg-image-upload" className="mb-2 block">
-                        Imagem de Fundo
-                      </Label>
-                      <div className="flex gap-2">
-                        <input 
-                          ref={fileInputRef}
-                          type="file" 
-                          id="bg-image-upload" 
-                          accept="image/*" 
-                          className="hidden" 
-                          onChange={handleFileSelect}
-                        />
-                        <Button 
-                          onClick={triggerFileInput} 
-                          className="hutz-button-secondary flex-1"
-                        >
-                          <Image className="h-4 w-4 mr-2" />
-                          Carregar Imagem
-                        </Button>
-                        
-                        {backgroundImage && (
-                          <Button 
-                            variant="destructive" 
-                            onClick={removeBackgroundImage}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Remover Imagem
-                          </Button>
-                        )}
-                      </div>
-                      
-                      {backgroundImage && (
-                        <div className="mt-2 relative">
-                          <img 
-                            src={backgroundImage} 
-                            alt="Background preview" 
-                            className="w-full h-auto rounded-md border border-white/20" 
-                          />
-                          <p className="text-xs text-white/60 mt-1">
-                            A imagem será redimensionada na transmissão
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="final-action" className="mb-2 block">
-                        Ação ao Finalizar
-                      </Label>
-                      <div className="space-y-2">
-                        <div className="flex items-center space-x-2">
-                          <input 
-                            type="radio" 
-                            id="no-action" 
-                            name="finalAction" 
-                            className="h-4 w-4" 
-                            checked={finalAction === 'none'}
-                            onChange={() => setFinalAction('none')}
-                          />
-                          <Label htmlFor="no-action">Nenhuma ação</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <input 
-                            type="radio" 
-                            id="show-image" 
-                            name="finalAction" 
-                            className="h-4 w-4" 
-                            checked={finalAction === 'image'}
-                            onChange={() => setFinalAction('image')}
-                          />
-                          <Label htmlFor="show-image">Mostrar imagem</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <input 
-                            type="radio" 
-                            id="show-coupon" 
-                            name="finalAction" 
-                            className="h-4 w-4"
-                            checked={finalAction === 'coupon'}
-                            onChange={() => setFinalAction('coupon')}
-                          />
-                          <Label htmlFor="show-coupon">Mostrar cupom</Label>
-                        </div>
-                        
-                        {finalAction !== 'none' && (
-                          <div className="mt-3 ml-6 space-y-3">
-                            <div>
-                              <Label htmlFor="action-link" className="mb-1 block text-sm">
-                                Link Externo (URL)
-                              </Label>
-                              <Input
-                                id="action-link"
-                                placeholder="https://exemplo.com"
-                                value={finalActionLink}
-                                onChange={(e) => setFinalActionLink(e.target.value)}
-                                className="hutz-input"
-                              />
-                            </div>
-                            
-                            {finalAction === 'image' && (
-                              <div>
-                                <Label htmlFor="action-image" className="mb-1 block text-sm">
-                                  Imagem
-                                </Label>
-                                <Button 
-                                  variant="outline" 
-                                  className="w-full border-white/20"
-                                  onClick={() => {
-                                    setFinalActionImage('https://via.placeholder.com/300x150')
-                                  }}
-                                >
-                                  <Image className="h-4 w-4 mr-2" />
-                                  Selecionar imagem
-                                </Button>
-                                
-                                {finalActionImage && (
-                                  <div className="mt-2">
-                                    <img 
-                                      src={finalActionImage} 
-                                      alt="Final action" 
-                                      className="w-full h-auto rounded-md border border-white/20" 
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            
-                            {finalAction === 'coupon' && (
-                              <div>
-                                <Label htmlFor="coupon-code" className="mb-1 block text-sm">
-                                  Código do Cupom
-                                </Label>
-                                <Input
-                                  id="coupon-code"
-                                  placeholder="DESCONTO20"
-                                  value={finalActionCoupon}
-                                  onChange={(e) => setFinalActionCouponCode(e.target.value)}
-                                  className="hutz-input"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="preview" className="space-y-4">
-                  {renderPreviewContent()}
-                  
-                  <div className="bg-secondary/40 p-4 rounded-lg">
-                    <h3 className="text-sm font-medium mb-2">Ajustes do Texto</h3>
-                    <div className="flex items-center gap-3">
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onClick={() => handleTextSizeChange('decrease')}
-                        disabled={qrCodeTextSize <= 10}
-                        className="h-8 w-8 p-0 flex items-center justify-center"
-                      >
-                        -
-                      </Button>
-                      <div className="text-sm">
-                        Tamanho do Texto: {qrCodeTextSize}px
-                      </div>
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onClick={() => handleTextSizeChange('increase')}
-                        disabled={qrCodeTextSize >= 36}
-                        className="h-8 w-8 p-0 flex items-center justify-center"
-                      >
-                        +
-                      </Button>
-                    </div>
-                  </div>
-                  
-                  <div className="text-center text-sm text-white/60">
-                    <p>Esta é a pré-visualização de como ficará sua transmissão</p>
-                    <p className="mt-1">Selecionado: {selectedParticipantsCount} de {participantCount} participantes</p>
-                  </div>
-                  
-                  {selectedParticipantsCount > participantCount && (
-                    <div className="p-3 bg-yellow-500/20 border border-yellow-500/40 rounded-md">
-                      <p className="text-sm text-white">
-                        Atenção: Você selecionou {selectedParticipantsCount} participantes, mas o layout atual comporta apenas {participantCount}.
-                        Somente os primeiros {participantCount} selecionados serão exibidos.
-                      </p>
-                    </div>
-                  )}
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-        
-        <div>
-          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10">
-            <CardHeader>
-              <CardTitle>QR Code da Sessão</CardTitle>
-              <CardDescription>
-                Gere um QR Code para os participantes se conectarem
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center">
-              <div className="w-full aspect-square bg-secondary/60 rounded-lg flex items-center justify-center mb-4">
-                {qrCodeGenerated ? (
-                  <div className="w-3/4 h-3/4 bg-white p-4 rounded-lg flex items-center justify-center">
-                    <QrCode className="h-full w-full text-black" />
-                  </div>
-                ) : (
-                  <QrCode className="h-16 w-16 text-white/30" />
-                )}
-              </div>
-              
-              {!qrCodeGenerated ? (
-                <Button 
-                  onClick={handleGenerateQRCode} 
-                  className="w-full hutz-button-primary"
-                >
-                  <QrCode className="h-4 w-4 mr-2" />
-                  Gerar QR Code
-                </Button>
-              ) : (
-                <div className="space-y-2 w-full">
-                  <Button className="w-full hutz-button-secondary">
-                    Compartilhar QR Code
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="w-full border-white/20"
-                    onClick={() => setQrCodeGenerated(false)}
-                  >
-                    Gerar Novo QR Code
-                  </Button>
-                  
-                  <Button 
-                    variant="default" 
-                    className="w-full hutz-button-primary mt-2"
-                    onClick={handleQRCodeToTransmission}
-                  >
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Incluir na tela de transmissão
-                  </Button>
-                  
-                  <div className="p-4 bg-secondary/60 rounded-lg mt-4">
-                    <p className="text-xs text-white/60 mb-2">Link do QR Code:</p>
-                    <div className="flex items-center gap-2">
-                      <Input 
-                        readOnly 
-                        value={qrCodeURL} 
-                        className="text-xs" 
-                      />
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="shrink-0"
-                        onClick={() => {
-                          navigator.clipboard.writeText(qrCodeURL);
-                          toast({
-                            title: "Link copiado",
-                            description: "O link foi copiado para a área de transferência."
-                          });
-                        }}
-                      >
-                        Copiar
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Transmission Dialog */}
-      <Dialog open={transmissionOpen} onOpenChange={setTransmissionOpen}>
-        <DialogContent className="max-w-4xl p-0 border-white/10 bg-black">
-          <DialogHeader className="p-6 pb-0">
-            <DialogTitle>Transmissão ao Vivo</DialogTitle>
-            <DialogDescription>
-              Transmissão iniciada. Compartilhe o QR Code para que os participantes se conectem.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="p-6">
-            {renderPreviewContent()}
-          </div>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Final Action Dialog */}
-      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
-        <DialogContent className="max-w-3xl p-0 border-white/10 bg-black">
-          <button 
-            onClick={closeFinalAction} 
-            className="absolute top-2 right-2 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors text-white z-10"
-          >
-            <X className="h-5 w-5" />
-          </button>
-          
-          <div className="relative">
-            {finalAction === 'image' && finalActionImage && (
-              <div 
-                className="p-8 flex flex-col items-center justify-center min-h-[300px] cursor-pointer"
-                onClick={handleFinalActionClick}
-              >
-                <img 
-                  src={finalActionImage} 
-                  alt="Final action" 
-                  className="max-w-full h-auto rounded-md"
-                />
-                {finalActionLink && (
-                  <p className="mt-4 text-accent underline">Clique para acessar o link</p>
-                )}
-              </div>
-            )}
-            
-            {finalAction === 'coupon' && (
-              <div 
-                className="p-8 flex flex-col items-center justify-center min-h-[300px] cursor-pointer"
-                onClick={handleFinalActionClick}
-              >
-                <div className="bg-white/5 border border-accent p-8 rounded-lg text-center">
-                  <h3 className="text-2xl font-bold mb-4">Cupom de Desconto</h3>
-                  <div className="text-4xl font-bold py-4 px-8 bg-accent/20 border border-dashed border-accent rounded-md">
-                    {finalActionCoupon || "DESCONTO20"}
-                  </div>
-                  {finalActionLink && (
-                    <p className="mt-6 text-accent underline">Clique para resgatar</p>
-                  )}
-                </div>
-              </div>
-            )}
-            
-            <div className="absolute bottom-4 right-4 bg-black/60 px-3 py-1 rounded-full text-sm">
-              Fechando em: {finalActionTimeLeft}s
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-};
-
-export default TelaoPage;
