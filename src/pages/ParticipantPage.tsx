@@ -14,6 +14,15 @@ const ParticipantPage = () => {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Auto-start camera on mobile devices
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      const timer = setTimeout(() => {
+        startCamera();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+    
     // Get list of video devices
     const getVideoDevices = async () => {
       try {
@@ -62,8 +71,7 @@ const ParticipantPage = () => {
         description: "Sua imagem está sendo transmitida para a sessão.",
       });
       
-      // Here you would normally set up a connection to send the video stream
-      // to the main session using WebRTC or a similar technology
+      // Here you would connect to the session using WebRTC
       console.log(`Connected to session: ${sessionId}`);
       
     } catch (error) {

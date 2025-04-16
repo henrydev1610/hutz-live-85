@@ -9,19 +9,12 @@ import { useToast } from "@/components/ui/use-toast";
 import { QrCode, MonitorPlay, Users, Film, User, Image, Palette, Check, ExternalLink } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 
 const TelaoPage = () => {
   const [participantCount, setParticipantCount] = useState(4);
   const [qrCodeGenerated, setQrCodeGenerated] = useState(false);
   const [qrCodeURL, setQrCodeURL] = useState("");
+  const [qrCodeVisible, setQrCodeVisible] = useState(false);
   const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean}[]>([]);
   const [selectedBackgroundColor, setSelectedBackgroundColor] = useState("#000000");
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
@@ -31,20 +24,35 @@ const TelaoPage = () => {
   const [finalActionCoupon, setFinalActionCouponCode] = useState("");
   const { toast } = useToast();
   
-  // Reference for file input
+  // Reference for file input and QR code
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const qrCodeRef = useRef<HTMLDivElement>(null);
+  
+  // QR Code position
+  const [qrCodePosition, setQrCodePosition] = useState({ 
+    x: 20, 
+    y: 20, 
+    width: 120, 
+    height: 120 
+  });
+  const [isDraggingQR, setIsDraggingQR] = useState(false);
+  const [resizeHandle, setResizeHandle] = useState<string | null>(null);
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+  const [startSize, setStartSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     // Simulate some mock participants when QR code is generated
     if (qrCodeGenerated) {
-      const mockParticipants = [
-        { id: "1", name: "Participante 1", active: true, selected: true },
-        { id: "2", name: "Participante 2", active: true, selected: true },
-        { id: "3", name: "Participante 3", active: true, selected: true },
-      ];
+      const mockParticipants = Array.from({ length: 15 }, (_, i) => ({
+        id: `${i + 1}`,
+        name: `Participante ${i + 1}`,
+        active: true,
+        selected: i < 4
+      }));
+      
       setParticipantList(prev => {
         // Only add if not already there
-        if (prev.length < 3) {
+        if (prev.length < 15) {
           return mockParticipants;
         }
         return prev;
@@ -66,6 +74,14 @@ const TelaoPage = () => {
     });
   };
 
+  const handleQRCodeToTransmission = () => {
+    setQrCodeVisible(true);
+    toast({
+      title: "QR Code incluído",
+      description: "O QR Code foi incluído na tela de transmissão e pode ser redimensionado."
+    });
+  };
+
   const handleParticipantSelect = (id: string) => {
     setParticipantList(prev => 
       prev.map(p => p.id === id ? { ...p, selected: !p.selected } : p)
@@ -73,7 +89,21 @@ const TelaoPage = () => {
   };
 
   const handleParticipantRemove = (id: string) => {
-    setParticipantList(prev => prev.filter(p => p.id !== id));
+    setParticipantList(prev => {
+      // Remove the participant
+      const newList = prev.filter(p => p.id !== id);
+      
+      // Generate a new participant to replace it
+      const nextId = String(prev.length + 1);
+      const newParticipant = {
+        id: nextId,
+        name: `Participante ${nextId}`,
+        active: true,
+        selected: false
+      };
+      
+      return [...newList, newParticipant];
+    });
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,6 +121,67 @@ const TelaoPage = () => {
     fileInputRef.current?.click();
   };
 
+  // QR Code drag and resize handlers
+  const startDragging = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!qrCodeVisible) return;
+    
+    const target = e.target as HTMLElement;
+    if (target.className.includes('resize-handle')) {
+      const handle = target.getAttribute('data-handle');
+      setResizeHandle(handle);
+      setStartPos({ x: e.clientX, y: e.clientY });
+      setStartSize({ 
+        width: qrCodePosition.width, 
+        height: qrCodePosition.height 
+      });
+    } else {
+      setIsDraggingQR(true);
+      setStartPos({ x: e.clientX - qrCodePosition.x, y: e.clientY - qrCodePosition.y });
+    }
+  };
+
+  const stopDragging = () => {
+    setIsDraggingQR(false);
+    setResizeHandle(null);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (isDraggingQR) {
+      const newX = e.clientX - startPos.x;
+      const newY = e.clientY - startPos.y;
+      
+      // Ensure QR code stays within preview bounds
+      const container = e.currentTarget.getBoundingClientRect();
+      const x = Math.max(0, Math.min(newX, container.width - qrCodePosition.width));
+      const y = Math.max(0, Math.min(newY, container.height - qrCodePosition.height));
+      
+      setQrCodePosition(prev => ({ ...prev, x, y }));
+    } else if (resizeHandle) {
+      const dx = e.clientX - startPos.x;
+      const dy = e.clientY - startPos.y;
+      
+      // Calculate new size while maintaining aspect ratio
+      let newWidth = startSize.width;
+      let newHeight = startSize.height;
+      
+      if (resizeHandle.includes('r')) { // Right handles
+        newWidth = Math.max(80, startSize.width + dx);
+      }
+      if (resizeHandle.includes('b')) { // Bottom handles
+        newHeight = Math.max(80, startSize.height + dy);
+      }
+      
+      // Maintain aspect ratio (1:1 for QR code)
+      const size = Math.max(newWidth, newHeight);
+      
+      setQrCodePosition(prev => ({ 
+        ...prev, 
+        width: size,
+        height: size
+      }));
+    }
+  };
+
   const selectedParticipantsCount = participantList.filter(p => p.selected).length;
 
   return (
@@ -102,19 +193,21 @@ const TelaoPage = () => {
           <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 h-full">
             <CardHeader className="flex flex-row justify-between items-center">
               <div>
-                <CardTitle>Controle de Transmissão</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  Controle de Transmissão
+                  <Button className="hutz-button-accent ml-4">
+                    <Film className="h-4 w-4 mr-2" />
+                    Iniciar Transmissão
+                  </Button>
+                </CardTitle>
                 <CardDescription>
                   Gerencie participantes, layout e aparência da sua transmissão ao vivo
                 </CardDescription>
               </div>
-              <Button className="hutz-button-accent">
-                <Film className="h-4 w-4 mr-2" />
-                Iniciar Transmissão
-              </Button>
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="participants" className="w-full">
-                <TabsList className="grid grid-cols-4 mb-6">
+                <TabsList className="grid grid-cols-5 mb-6">
                   <TabsTrigger value="participants">
                     <Users className="h-4 w-4 mr-2" />
                     Participantes
@@ -172,7 +265,7 @@ const TelaoPage = () => {
                     ))}
                     
                     {/* Empty participant slots */}
-                    {Array(12 - participantList.length).fill(0).map((_, i) => (
+                    {Array(Math.max(0, 12 - participantList.length)).fill(0).map((_, i) => (
                       <Card key={`empty-${i}`} className="bg-secondary/60 border border-white/10">
                         <CardContent className="p-4 text-center">
                           <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2">
@@ -185,6 +278,10 @@ const TelaoPage = () => {
                       </Card>
                     ))}
                   </div>
+                  
+                  <p className="text-sm text-white/60 mt-4">
+                    Limite de participantes: 100 (Ao remover um participante, outro será adicionado automaticamente)
+                  </p>
                 </TabsContent>
                 
                 <TabsContent value="layout" className="space-y-4">
@@ -264,7 +361,7 @@ const TelaoPage = () => {
                             className="w-full h-auto rounded-md border border-white/20" 
                           />
                           <p className="text-xs text-white/60 mt-1">
-                            A imagem será redimensionável na transmissão
+                            A imagem será redimensionada na transmissão
                           </p>
                         </div>
                       )}
@@ -376,7 +473,10 @@ const TelaoPage = () => {
                 </TabsContent>
                 
                 <TabsContent value="preview" className="space-y-4">
-                  <div className="aspect-video relative bg-black rounded-lg overflow-hidden">
+                  <div className="aspect-video relative bg-black rounded-lg overflow-hidden" 
+                       onMouseMove={handleMouseMove} 
+                       onMouseUp={stopDragging}
+                       onMouseLeave={stopDragging}>
                     {/* Background color or image */}
                     <div 
                       className="absolute inset-0" 
@@ -393,8 +493,8 @@ const TelaoPage = () => {
                       )}
                     </div>
                     
-                    {/* Participants grid */}
-                    <div className="absolute inset-0 p-4">
+                    {/* Participants grid - positioned in right 2/3 with 15% margin */}
+                    <div className="absolute top-[15%] right-[15%] bottom-[15%] left-[33%]">
                       <div className={`grid grid-cols-${Math.ceil(Math.sqrt(participantCount))} gap-2 h-full`}>
                         {participantList
                           .filter(p => p.selected)
@@ -414,12 +514,28 @@ const TelaoPage = () => {
                       </div>
                     </div>
                     
-                    {/* QR Code overlay */}
-                    {qrCodeGenerated && (
-                      <div className="absolute left-4 bottom-4 bg-white p-2 rounded-lg resize-both overflow-auto min-w-[100px] min-h-[100px] cursor-se-resize">
+                    {/* QR Code overlay - draggable and resizable */}
+                    {qrCodeVisible && (
+                      <div 
+                        ref={qrCodeRef}
+                        className="absolute bg-white p-1 rounded-lg cursor-move"
+                        style={{
+                          left: `${qrCodePosition.x}px`,
+                          top: `${qrCodePosition.y}px`,
+                          width: `${qrCodePosition.width}px`,
+                          height: `${qrCodePosition.height}px`,
+                        }}
+                        onMouseDown={startDragging}
+                      >
                         <div className="w-full h-full bg-white flex items-center justify-center">
                           <QrCode className="w-full h-full text-black" />
                         </div>
+                        
+                        {/* Resize handles */}
+                        <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
+                        <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
+                        <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
+                        <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
                       </div>
                     )}
                   </div>
@@ -483,47 +599,39 @@ const TelaoPage = () => {
                     Gerar Novo QR Code
                   </Button>
                   
-                  <Sheet>
-                    <SheetTrigger asChild>
-                      <Button variant="default" className="w-full hutz-button-primary mt-2">
-                        <ExternalLink className="h-4 w-4 mr-2" />
-                        Incluir na tela de transmissão
+                  <Button 
+                    variant="default" 
+                    className="w-full hutz-button-primary mt-2"
+                    onClick={handleQRCodeToTransmission}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Incluir na tela de transmissão
+                  </Button>
+                  
+                  <div className="p-4 bg-secondary/60 rounded-lg mt-4">
+                    <p className="text-xs text-white/60 mb-2">Link do QR Code:</p>
+                    <div className="flex items-center gap-2">
+                      <Input 
+                        readOnly 
+                        value={qrCodeURL} 
+                        className="text-xs" 
+                      />
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="shrink-0"
+                        onClick={() => {
+                          navigator.clipboard.writeText(qrCodeURL);
+                          toast({
+                            title: "Link copiado",
+                            description: "O link foi copiado para a área de transferência."
+                          });
+                        }}
+                      >
+                        Copiar
                       </Button>
-                    </SheetTrigger>
-                    <SheetContent>
-                      <SheetHeader>
-                        <SheetTitle>Incluir QR Code na transmissão</SheetTitle>
-                        <SheetDescription>
-                          O QR Code será adicionado na tela de transmissão com a possibilidade de redimensionamento.
-                        </SheetDescription>
-                      </SheetHeader>
-                      <div className="mt-6">
-                        <p className="text-sm text-white/70 mb-4">
-                          Participantes que escanearem este QR Code terão acesso à câmera ativada e transmitida para sua tela.
-                        </p>
-                        
-                        <div className="p-4 bg-secondary/60 rounded-lg">
-                          <p className="text-xs text-white/60 mb-2">Link do QR Code:</p>
-                          <div className="flex items-center gap-2">
-                            <Input 
-                              readOnly 
-                              value={qrCodeURL} 
-                              className="text-xs" 
-                            />
-                            <Button variant="outline" size="sm" className="shrink-0">
-                              Copiar
-                            </Button>
-                          </div>
-                        </div>
-                        
-                        <div className="mt-6 flex justify-end">
-                          <Button>
-                            Confirmar
-                          </Button>
-                        </div>
-                      </div>
-                    </SheetContent>
-                  </Sheet>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
