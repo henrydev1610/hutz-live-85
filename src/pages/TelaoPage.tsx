@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { QrCode, MonitorPlay, Users, Film, User, Image, Palette, Check, ExternalLink } from "lucide-react";
+import { QrCode, MonitorPlay, Users, Film, User, Image, Palette, Check, ExternalLink, X, StopCircle } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -29,6 +29,9 @@ const TelaoPage = () => {
   const qrCodeRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const [transmissionOpen, setTransmissionOpen] = useState(false);
+  const [finalActionOpen, setFinalActionOpen] = useState(false);
+  const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
+  const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
@@ -40,6 +43,7 @@ const TelaoPage = () => {
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
+  const transmissionWindowRef = useRef<Window | null>(null);
 
   useEffect(() => {
     if (qrCodeGenerated) {
@@ -58,6 +62,32 @@ const TelaoPage = () => {
       });
     }
   }, [qrCodeGenerated]);
+
+  // Timer effect for final action countdown
+  useEffect(() => {
+    if (finalActionOpen && finalActionTimeLeft > 0) {
+      const timerId = window.setInterval(() => {
+        setFinalActionTimeLeft((prev) => prev - 1);
+      }, 1000);
+      
+      setFinalActionTimerId(timerId as unknown as number);
+      
+      return () => {
+        if (timerId) clearInterval(timerId);
+      };
+    } else if (finalActionTimeLeft <= 0) {
+      closeFinalAction();
+    }
+  }, [finalActionOpen, finalActionTimeLeft]);
+
+  // Cleanup effect for the transmission window
+  useEffect(() => {
+    return () => {
+      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+        transmissionWindowRef.current.close();
+      }
+    };
+  }, []);
 
   const handleGenerateQRCode = () => {
     const sessionId = Math.random().toString(36).substring(2, 15);
@@ -148,12 +178,14 @@ const TelaoPage = () => {
       const newX = e.clientX - startPos.x;
       const newY = e.clientY - startPos.y;
       
-      const container = e.currentTarget.getBoundingClientRect();
+      const container = previewContainerRef.current?.getBoundingClientRect();
       
-      const x = Math.max(0, Math.min(newX, container.width - qrCodePosition.width));
-      const y = Math.max(0, Math.min(newY, container.height - qrCodePosition.height));
-      
-      setQrCodePosition(prev => ({ ...prev, x, y }));
+      if (container) {
+        const x = Math.max(0, Math.min(newX, container.width - qrCodePosition.width));
+        const y = Math.max(0, Math.min(newY, container.height - qrCodePosition.height));
+        
+        setQrCodePosition(prev => ({ ...prev, x, y }));
+      }
     } else if (resizeHandle) {
       const dx = e.clientX - startPos.x;
       const dy = e.clientY - startPos.y;
@@ -179,7 +211,190 @@ const TelaoPage = () => {
   };
 
   const openTransmissionWindow = () => {
-    setTransmissionOpen(true);
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      transmissionWindowRef.current.focus();
+      return;
+    }
+    
+    const width = 800;
+    const height = 600;
+    const left = (window.screen.width - width) / 2;
+    const top = (window.screen.height - height) / 2;
+    
+    const newWindow = window.open(
+      '',
+      'TransmissionWindow',
+      `width=${width},height=${height},left=${left},top=${top}`
+    );
+    
+    if (newWindow) {
+      transmissionWindowRef.current = newWindow;
+      
+      // Add content to the new window
+      newWindow.document.write(`
+        <html>
+          <head>
+            <title>Transmissão ao Vivo</title>
+            <style>
+              body {
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
+                background-color: #000;
+                color: white;
+                font-family: sans-serif;
+              }
+              .container {
+                position: relative;
+                width: 100vw;
+                height: 100vh;
+                overflow: hidden;
+                background-color: ${backgroundImage ? 'transparent' : selectedBackgroundColor};
+              }
+              .bg-image {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+              }
+              .participants-grid {
+                position: absolute;
+                top: 15%;
+                right: 15%;
+                bottom: 15%;
+                left: 33%;
+                display: grid;
+                grid-template-columns: repeat(${Math.ceil(Math.sqrt(participantCount))}, 1fr);
+                gap: 8px;
+              }
+              .participant {
+                background-color: rgba(0, 0, 0, 0.4);
+                border-radius: 4px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+              }
+              .participant-icon {
+                width: 32px;
+                height: 32px;
+                opacity: 0.7;
+              }
+              .qr-code {
+                position: absolute;
+                background-color: white;
+                padding: 4px;
+                border-radius: 8px;
+                left: ${qrCodePosition.x}px;
+                top: ${qrCodePosition.y}px;
+                width: ${qrCodePosition.width}px;
+                height: ${qrCodePosition.height}px;
+                display: ${qrCodeVisible ? 'flex' : 'none'};
+                align-items: center;
+                justify-content: center;
+              }
+              .qr-code svg {
+                width: 100%;
+                height: 100%;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              ${backgroundImage ? `<img src="${backgroundImage}" class="bg-image" alt="Background" />` : ''}
+              
+              <div class="participants-grid">
+                ${Array.from({ length: Math.min(participantCount, participantList.filter(p => p.selected).length) }, (_, i) => `
+                  <div class="participant">
+                    <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                      <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                  </div>
+                `).join('')}
+                
+                ${Array.from({ length: Math.max(0, participantCount - participantList.filter(p => p.selected).length) }, (_, i) => `
+                  <div class="participant" style="background-color: rgba(0, 0, 0, 0.2);">
+                    <svg class="participant-icon" style="opacity: 0.3;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                      <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                  </div>
+                `).join('')}
+              </div>
+              
+              ${qrCodeVisible ? `
+                <div class="qr-code">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="16" height="16" x="4" y="4" rx="1"></rect>
+                    <path d="M10 4v4"></path>
+                    <path d="M4 10h4"></path>
+                    <path d="M10 16v4"></path>
+                    <path d="M16 4v4"></path>
+                    <path d="M20 10h-4"></path>
+                    <path d="M16 16v4"></path>
+                    <path d="M4 16h4"></path>
+                    <path d="M4 4v4"></path>
+                    <path d="M16 16h4"></path>
+                    <path d="M20 20v-4"></path>
+                    <path d="M20 4v4"></path>
+                    <path d="M4 20v-4"></path>
+                  </svg>
+                </div>
+              ` : ''}
+            </div>
+          </body>
+        </html>
+      `);
+      
+      newWindow.document.close();
+      setTransmissionOpen(true);
+      
+      newWindow.onbeforeunload = () => {
+        setTransmissionOpen(false);
+        transmissionWindowRef.current = null;
+      };
+    }
+  };
+  
+  const finishTransmission = () => {
+    // Close the transmission window
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      transmissionWindowRef.current.close();
+      transmissionWindowRef.current = null;
+      setTransmissionOpen(false);
+    }
+    
+    // Only show final action if it's not 'none'
+    if (finalAction !== 'none') {
+      setFinalActionTimeLeft(20);
+      setFinalActionOpen(true);
+    } else {
+      toast({
+        title: "Transmissão finalizada",
+        description: "A transmissão foi encerrada com sucesso."
+      });
+    }
+  };
+  
+  const closeFinalAction = () => {
+    if (finalActionTimerId) {
+      clearInterval(finalActionTimerId);
+      setFinalActionTimerId(null);
+    }
+    setFinalActionOpen(false);
+    setFinalActionTimeLeft(20);
+    
+    toast({
+      title: "Transmissão finalizada",
+      description: "A transmissão foi encerrada com sucesso."
+    });
+  };
+  
+  const handleFinalActionClick = () => {
+    if (finalActionLink) {
+      window.open(finalActionLink, '_blank');
+    }
   };
 
   const renderPreviewContent = () => {
@@ -265,13 +480,25 @@ const TelaoPage = () => {
                 <CardTitle className="flex items-center gap-2">
                   Controle de Transmissão
                 </CardTitle>
-                <Button 
-                  className="hutz-button-accent"
-                  onClick={openTransmissionWindow}
-                >
-                  <Film className="h-4 w-4 mr-2" />
-                  Iniciar Transmissão
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    className="hutz-button-accent"
+                    onClick={openTransmissionWindow}
+                    disabled={transmissionOpen}
+                  >
+                    <Film className="h-4 w-4 mr-2" />
+                    Iniciar Transmissão
+                  </Button>
+                  
+                  <Button 
+                    variant="destructive"
+                    onClick={finishTransmission}
+                    disabled={!transmissionOpen}
+                  >
+                    <StopCircle className="h-4 w-4 mr-2" />
+                    Finalizar Transmissão
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -655,6 +882,57 @@ const TelaoPage = () => {
           </DialogHeader>
           <div className="p-6">
             {renderPreviewContent()}
+          </div>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Final Action Dialog */}
+      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
+        <DialogContent className="max-w-3xl p-0 border-white/10 bg-black">
+          <button 
+            onClick={closeFinalAction} 
+            className="absolute top-2 right-2 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors text-white z-10"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          
+          <div className="relative">
+            {finalAction === 'image' && finalActionImage && (
+              <div 
+                className="p-8 flex flex-col items-center justify-center min-h-[300px] cursor-pointer"
+                onClick={handleFinalActionClick}
+              >
+                <img 
+                  src={finalActionImage} 
+                  alt="Final action" 
+                  className="max-w-full h-auto rounded-md"
+                />
+                {finalActionLink && (
+                  <p className="mt-4 text-accent underline">Clique para acessar o link</p>
+                )}
+              </div>
+            )}
+            
+            {finalAction === 'coupon' && (
+              <div 
+                className="p-8 flex flex-col items-center justify-center min-h-[300px] cursor-pointer"
+                onClick={handleFinalActionClick}
+              >
+                <div className="bg-white/5 border border-accent p-8 rounded-lg text-center">
+                  <h3 className="text-2xl font-bold mb-4">Cupom de Desconto</h3>
+                  <div className="text-4xl font-bold py-4 px-8 bg-accent/20 border border-dashed border-accent rounded-md">
+                    {finalActionCoupon || "DESCONTO20"}
+                  </div>
+                  {finalActionLink && (
+                    <p className="mt-6 text-accent underline">Clique para resgatar</p>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            <div className="absolute bottom-4 right-4 bg-black/60 px-3 py-1 rounded-full text-sm">
+              Fechando em: {finalActionTimeLeft}s
+            </div>
           </div>
         </DialogContent>
       </Dialog>
