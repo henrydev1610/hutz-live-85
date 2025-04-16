@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 
 const TelaoPage = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -25,29 +27,43 @@ const TelaoPage = () => {
   const [finalActionCoupon, setFinalActionCouponCode] = useState("");
   const { toast } = useToast();
   
+  // Font and text styling options
+  const [selectedFont, setSelectedFont] = useState("sans-serif");
+  const [selectedTextColor, setSelectedTextColor] = useState("#FFFFFF");
+  const [qrDescriptionFontSize, setQrDescriptionFontSize] = useState(16);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrCodeRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const [transmissionOpen, setTransmissionOpen] = useState(false);
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
   
-  // New states for additional features
-  const [selectedFont, setSelectedFont] = useState("sans-serif");
-  const [selectedTextColor, setSelectedTextColor] = useState("#FFFFFF");
-  const [qrDescriptionFontSize, setQrDescriptionFontSize] = useState(16);
-  
+  // Separate positions for QR code and text
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
     y: 20, 
-    width: 120, 
-    height: 120 
+    width: 100, // Smaller initial QR code size
+    height: 100 
   });
+
+  const [qrDescriptionPosition, setQrDescriptionPosition] = useState({
+    x: 20,
+    y: 130, // Position below QR code
+    width: 200,
+    height: 60
+  });
+
+  // Dragging and resizing states
   const [isDraggingQR, setIsDraggingQR] = useState(false);
-  const [resizeHandle, setResizeHandle] = useState<string | null>(null);
+  const [isDraggingText, setIsDraggingText] = useState(false);
+  const [resizeHandleQR, setResizeHandleQR] = useState<string | null>(null);
+  const [resizeHandleText, setResizeHandleText] = useState<string | null>(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
+  
   const transmissionWindowRef = useRef<Window | null>(null);
   const [qrCodeDescription, setQrCodeDescription] = useState("Escaneie o QR Code para participar");
 
@@ -217,22 +233,14 @@ const TelaoPage = () => {
     });
   };
 
-  // Font size controls for QR code description
-  const increaseFontSize = () => {
-    setQrDescriptionFontSize(prev => Math.min(prev + 2, 32));
-  };
-
-  const decreaseFontSize = () => {
-    setQrDescriptionFontSize(prev => Math.max(prev - 2, 10));
-  };
-
-  const startDragging = (e: React.MouseEvent<HTMLDivElement>) => {
+  // QR Code drag and resize handlers
+  const startDraggingQR = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!qrCodeVisible) return;
     
     const target = e.target as HTMLElement;
     if (target.className && typeof target.className === 'string' && target.className.includes('resize-handle')) {
       const handle = target.getAttribute('data-handle');
-      setResizeHandle(handle);
+      setResizeHandleQR(handle);
       setStartPos({ x: e.clientX, y: e.clientY });
       setStartSize({ 
         width: qrCodePosition.width, 
@@ -247,9 +255,33 @@ const TelaoPage = () => {
     }
   };
 
+  // Text drag and resize handlers
+  const startDraggingText = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!qrCodeVisible) return;
+    
+    const target = e.target as HTMLElement;
+    if (target.className && typeof target.className === 'string' && target.className.includes('resize-handle')) {
+      const handle = target.getAttribute('data-handle');
+      setResizeHandleText(handle);
+      setStartPos({ x: e.clientX, y: e.clientY });
+      setStartSize({ 
+        width: qrDescriptionPosition.width, 
+        height: qrDescriptionPosition.height 
+      });
+    } else {
+      setIsDraggingText(true);
+      setStartPos({ 
+        x: e.clientX - qrDescriptionPosition.x, 
+        y: e.clientY - qrDescriptionPosition.y 
+      });
+    }
+  };
+
   const stopDragging = () => {
     setIsDraggingQR(false);
-    setResizeHandle(null);
+    setIsDraggingText(false);
+    setResizeHandleQR(null);
+    setResizeHandleText(null);
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -265,17 +297,29 @@ const TelaoPage = () => {
         
         setQrCodePosition(prev => ({ ...prev, x, y }));
       }
-    } else if (resizeHandle) {
+    } else if (isDraggingText) {
+      const newX = e.clientX - startPos.x;
+      const newY = e.clientY - startPos.y;
+      
+      const container = previewContainerRef.current?.getBoundingClientRect();
+      
+      if (container) {
+        const x = Math.max(0, Math.min(newX, container.width - qrDescriptionPosition.width));
+        const y = Math.max(0, Math.min(newY, container.height - qrDescriptionPosition.height));
+        
+        setQrDescriptionPosition(prev => ({ ...prev, x, y }));
+      }
+    } else if (resizeHandleQR) {
       const dx = e.clientX - startPos.x;
       const dy = e.clientY - startPos.y;
       
       let newWidth = startSize.width;
       let newHeight = startSize.height;
       
-      if (resizeHandle.includes('r')) { // Right handles
+      if (resizeHandleQR.includes('r')) { // Right handles
         newWidth = Math.max(80, startSize.width + dx);
       }
-      if (resizeHandle.includes('b')) { // Bottom handles
+      if (resizeHandleQR.includes('b')) { // Bottom handles
         newHeight = Math.max(80, startSize.height + dy);
       }
       
@@ -286,7 +330,35 @@ const TelaoPage = () => {
         width: size,
         height: size
       }));
+    } else if (resizeHandleText) {
+      const dx = e.clientX - startPos.x;
+      const dy = e.clientY - startPos.y;
+      
+      let newWidth = startSize.width;
+      let newHeight = startSize.height;
+      
+      if (resizeHandleText.includes('r')) { // Right handles
+        newWidth = Math.max(80, startSize.width + dx);
+      }
+      if (resizeHandleText.includes('b')) { // Bottom handles
+        newHeight = Math.max(30, startSize.height + dy);
+      }
+      
+      setQrDescriptionPosition(prev => ({ 
+        ...prev, 
+        width: newWidth,
+        height: newHeight
+      }));
     }
+  };
+
+  // Font size controls for QR code description
+  const increaseFontSize = () => {
+    setQrDescriptionFontSize(prev => Math.min(prev + 2, 32));
+  };
+
+  const decreaseFontSize = () => {
+    setQrDescriptionFontSize(prev => Math.max(prev - 2, 10));
   };
 
   const openTransmissionWindow = () => {
@@ -359,22 +431,16 @@ const TelaoPage = () => {
                 height: 32px;
                 opacity: 0.7;
               }
-              .qr-code-container {
+              .qr-code {
                 position: absolute;
                 left: ${qrCodePosition.x}px;
                 top: ${qrCodePosition.y}px;
                 width: ${qrCodePosition.width}px;
-                display: ${qrCodeVisible ? 'flex' : 'none'};
-                flex-direction: column;
-                align-items: center;
-              }
-              .qr-code {
+                height: ${qrCodePosition.height}px;
                 background-color: white;
                 padding: 4px;
                 border-radius: 8px;
-                width: 100%;
-                height: ${qrCodePosition.height}px;
-                display: flex;
+                display: ${qrCodeVisible ? 'flex' : 'none'};
                 align-items: center;
                 justify-content: center;
               }
@@ -383,15 +449,23 @@ const TelaoPage = () => {
                 height: 100%;
               }
               .qr-description {
-                margin-top: 8px;
+                position: absolute;
+                left: ${qrDescriptionPosition.x}px;
+                top: ${qrDescriptionPosition.y}px;
+                width: ${qrDescriptionPosition.width}px;
+                height: ${qrDescriptionPosition.height}px;
                 color: ${selectedTextColor};
                 padding: 4px 8px;
+                box-sizing: border-box;
                 border-radius: 4px;
                 font-size: ${qrDescriptionFontSize}px;
                 text-align: center;
                 font-weight: bold;
-                width: 100%;
                 font-family: ${selectedFont};
+                display: ${qrCodeVisible ? 'flex' : 'none'};
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
               }
             </style>
           </head>
@@ -419,28 +493,24 @@ const TelaoPage = () => {
                 `).join('')}
               </div>
               
-              ${qrCodeVisible ? `
-                <div class="qr-code-container">
-                  <div class="qr-code">
-                    <svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <rect width="16" height="16" x="4" y="4" rx="1"></rect>
-                      <path d="M10 4v4"></path>
-                      <path d="M4 10h4"></path>
-                      <path d="M10 16v4"></path>
-                      <path d="M16 4v4"></path>
-                      <path d="M20 10h-4"></path>
-                      <path d="M16 16v4"></path>
-                      <path d="M4 16h4"></path>
-                      <path d="M4 4v4"></path>
-                      <path d="M16 16h4"></path>
-                      <path d="M20 20v-4"></path>
-                      <path d="M20 4v4"></path>
-                      <path d="M4 20v-4"></path>
-                    </svg>
-                  </div>
-                  <div class="qr-description">${qrCodeDescription}</div>
-                </div>
-              ` : ''}
+              <div class="qr-code">
+                <svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="16" height="16" x="4" y="4" rx="1"></rect>
+                  <path d="M10 4v4"></path>
+                  <path d="M4 10h4"></path>
+                  <path d="M10 16v4"></path>
+                  <path d="M16 4v4"></path>
+                  <path d="M20 10h-4"></path>
+                  <path d="M16 16v4"></path>
+                  <path d="M4 16h4"></path>
+                  <path d="M4 4v4"></path>
+                  <path d="M16 16h4"></path>
+                  <path d="M20 20v-4"></path>
+                  <path d="M20 4v4"></path>
+                  <path d="M4 20v-4"></path>
+                </svg>
+              </div>
+              <div class="qr-description">${qrCodeDescription}</div>
             </div>
           </body>
         </html>
@@ -540,41 +610,70 @@ const TelaoPage = () => {
         </div>
         
         {qrCodeVisible && (
-          <div className="absolute flex flex-col items-center"
-            style={{
-              left: `${qrCodePosition.x}px`,
-              top: `${qrCodePosition.y}px`,
-              width: `${qrCodePosition.width}px`,
-            }}
-          >
+          <>
+            {/* QR Code (independently draggable and resizable) */}
             <div 
-              ref={qrCodeRef}
-              className="w-full bg-white p-1 rounded-lg cursor-move"
+              className="absolute cursor-move"
               style={{
-                height: `${qrCodePosition.height}px`,
+                left: `${qrCodePosition.x}px`,
+                top: `${qrCodePosition.y}px`,
+                width: `${qrCodePosition.width}px`,
               }}
-              onMouseDown={startDragging}
+              onMouseDown={startDraggingQR}
+              ref={qrCodeRef}
             >
-              <div className="w-full h-full bg-white flex items-center justify-center">
-                <QrCode className="w-full h-full text-black" />
+              <div 
+                className="w-full bg-white p-1 rounded-lg"
+                style={{
+                  height: `${qrCodePosition.height}px`,
+                }}
+              >
+                <div className="w-full h-full bg-white flex items-center justify-center">
+                  <QrCode className="w-full h-full text-black" />
+                </div>
+                
+                {/* QR Code resize handles */}
+                <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
+                <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
+                <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
+                <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
               </div>
-              
-              <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
-              <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
-              <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
-              <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
             </div>
+            
+            {/* Text description (independently draggable and resizable) */}
             <div 
-              className="mt-2 text-center font-bold"
+              className="absolute cursor-move"
               style={{
+                left: `${qrDescriptionPosition.x}px`,
+                top: `${qrDescriptionPosition.y}px`,
+                width: `${qrDescriptionPosition.width}px`,
+                height: `${qrDescriptionPosition.height}px`,
                 color: selectedTextColor,
                 fontFamily: selectedFont,
-                fontSize: `${qrDescriptionFontSize}px`
+                fontSize: `${qrDescriptionFontSize}px`,
+                fontWeight: 'bold',
+                textAlign: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px dashed rgba(255,255,255,0.3)',
+                borderRadius: '4px',
+                padding: '4px',
+                boxSizing: 'border-box',
+                overflow: 'hidden'
               }}
+              onMouseDown={startDraggingText}
+              ref={textRef}
             >
               {qrCodeDescription}
+              
+              {/* Text resize handles */}
+              <div className="absolute right-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
+              <div className="absolute right-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
+              <div className="absolute left-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
+              <div className="absolute left-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
             </div>
-          </div>
+          </>
         )}
       </div>
     );
@@ -729,6 +828,37 @@ const TelaoPage = () => {
                         className="hutz-input"
                       />
                     </div>
+                    
+                    {/* Font and text color controls moved to Layout tab */}
+                    <div>
+                      <Label className="mb-2 block">Fonte do Texto</Label>
+                      <Select value={selectedFont} onValueChange={setSelectedFont}>
+                        <SelectTrigger className="hutz-input">
+                          <SelectValue placeholder="Selecione a fonte" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {fontOptions.map((font) => (
+                            <SelectItem key={font.value} value={font.value}>
+                              <span style={{ fontFamily: font.value }}>{font.name}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Label className="mb-2 block">Cor do Texto</Label>
+                      <div className="grid grid-cols-9 gap-1">
+                        {textColors.map((color) => (
+                          <button
+                            key={color}
+                            className={`w-6 h-6 rounded-full border ${selectedTextColor === color ? 'border-white ring-2 ring-accent' : 'border-white/20'}`}
+                            style={{ backgroundColor: color }}
+                            onClick={() => setSelectedTextColor(color)}
+                          />
+                        ))}
+                      </div>
+                    </div>
 
                     <div>
                       <Label className="mb-2 block">Tamanho do Texto</Label>
@@ -750,38 +880,6 @@ const TelaoPage = () => {
                         >
                           <Plus className="h-4 w-4" />
                         </Button>
-                      </div>
-                    </div>
-                    
-                    {/* Added font selection to Layout tab */}
-                    <div>
-                      <Label className="mb-2 block">Fonte do Texto</Label>
-                      <Select value={selectedFont} onValueChange={setSelectedFont}>
-                        <SelectTrigger className="hutz-input">
-                          <SelectValue placeholder="Selecione a fonte" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {fontOptions.map((font) => (
-                            <SelectItem key={font.value} value={font.value}>
-                              <span style={{ fontFamily: font.value }}>{font.name}</span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    {/* Added text color selection to Layout tab */}
-                    <div>
-                      <Label className="mb-2 block">Cor do Texto</Label>
-                      <div className="grid grid-cols-9 gap-1">
-                        {textColors.map((color) => (
-                          <button
-                            key={color}
-                            className={`w-6 h-6 rounded-full border ${selectedTextColor === color ? 'border-white ring-2 ring-accent' : 'border-white/20'}`}
-                            style={{ backgroundColor: color }}
-                            onClick={() => setSelectedTextColor(color)}
-                          />
-                        ))}
                       </div>
                     </div>
                   </div>
@@ -832,7 +930,7 @@ const TelaoPage = () => {
                 </TabsContent>
                 
                 <TabsContent value="qrcode" className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
                     <div>
                       <div className="flex gap-2">
                         <Button 
@@ -872,56 +970,57 @@ const TelaoPage = () => {
                           <div className="text-xs break-all bg-secondary/40 p-2 rounded">
                             {qrCodeURL}
                           </div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div>
-                      <Label className="block mb-2">
-                        Ação ao Finalizar Transmissão
-                      </Label>
-                      <Select value={finalAction} onValueChange={(value: 'none' | 'image' | 'coupon') => setFinalAction(value)}>
-                        <SelectTrigger className="hutz-input">
-                          <SelectValue placeholder="Escolher ação" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Nenhuma ação</SelectItem>
-                          <SelectItem value="image">Mostrar Imagem Clicável</SelectItem>
-                          <SelectItem value="coupon">Mostrar Cupom</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      
-                      {finalAction === 'image' && (
-                        <div className="mt-2">
-                          <Input
-                            placeholder="Link da imagem (URL)"
-                            value={finalActionLink}
-                            onChange={(e) => setFinalActionLink(e.target.value)}
-                            className="mb-2 hutz-input"
-                          />
-                          <Input
-                            placeholder="Link para redirecionamento"
-                            value={finalActionImage || ''}
-                            onChange={(e) => setFinalActionImage(e.target.value)}
-                            className="hutz-input"
-                          />
-                        </div>
-                      )}
-                      
-                      {finalAction === 'coupon' && (
-                        <div className="mt-2">
-                          <Input
-                            placeholder="Código do cupom"
-                            value={finalActionCoupon}
-                            onChange={(e) => setFinalActionCouponCode(e.target.value)}
-                            className="mb-2 hutz-input"
-                          />
-                          <Input
-                            placeholder="Link para redirecionamento (opcional)"
-                            value={finalActionLink}
-                            onChange={(e) => setFinalActionLink(e.target.value)}
-                            className="hutz-input"
-                          />
+                          
+                          {/* Moved final action section below QR code link */}
+                          <div className="mt-4">
+                            <Label className="block mb-2">
+                              Ação ao Finalizar Transmissão
+                            </Label>
+                            <Select value={finalAction} onValueChange={(value: 'none' | 'image' | 'coupon') => setFinalAction(value)}>
+                              <SelectTrigger className="hutz-input">
+                                <SelectValue placeholder="Escolher ação" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Nenhuma ação</SelectItem>
+                                <SelectItem value="image">Mostrar Imagem Clicável</SelectItem>
+                                <SelectItem value="coupon">Mostrar Cupom</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            
+                            {finalAction === 'image' && (
+                              <div className="mt-2">
+                                <Input
+                                  placeholder="Link da imagem (URL)"
+                                  value={finalActionImage || ''}
+                                  onChange={(e) => setFinalActionImage(e.target.value)}
+                                  className="mb-2 hutz-input"
+                                />
+                                <Input
+                                  placeholder="Link para redirecionamento"
+                                  value={finalActionLink}
+                                  onChange={(e) => setFinalActionLink(e.target.value)}
+                                  className="hutz-input"
+                                />
+                              </div>
+                            )}
+                            
+                            {finalAction === 'coupon' && (
+                              <div className="mt-2">
+                                <Input
+                                  placeholder="Código do cupom"
+                                  value={finalActionCoupon}
+                                  onChange={(e) => setFinalActionCouponCode(e.target.value)}
+                                  className="mb-2 hutz-input"
+                                />
+                                <Input
+                                  placeholder="Link para redirecionamento (opcional)"
+                                  value={finalActionLink}
+                                  onChange={(e) => setFinalActionLink(e.target.value)}
+                                  className="hutz-input"
+                                />
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
