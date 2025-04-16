@@ -70,7 +70,12 @@ const TelaoPage = () => {
     "#0C4A6E", "#0E7490", "#0F766E", "#047857", "#065F46", 
     "#064E3B", "#14532D", "#166534", "#15803D", "#16A34A",
     "#1E3A8A", "#1E40AF", "#1D4ED8", "#2563EB", "#3B82F6",
-    "#881337", "#9F1239", "#BE123C", "#E11D48", "#F43F5E"
+    "#881337", "#9F1239", "#BE123C", "#E11D48", "#F43F5E",
+    // Adding 20 more varied background colors
+    "#3F0071", "#7B1FA2", "#C2185B", "#F50057", "#FF4081",
+    "#D81B60", "#8E24AA", "#5E35B1", "#3949AB", "#1E88E5",
+    "#039BE5", "#00ACC1", "#00897B", "#43A047", "#7CB342",
+    "#C0CA33", "#FDD835", "#FFB300", "#FB8C00", "#F4511E"
   ];
 
   // Font options
@@ -80,7 +85,10 @@ const TelaoPage = () => {
     "Comic Sans MS", "Lucida Sans", "Palatino", "Garamond", "Bookman",
     "Copperplate", "Papyrus", "Brush Script MT", "Luminari", "Didot",
     "American Typewriter", "Andale Mono", "Bradley Hand", "Chalkduster", "Futura",
-    "Marker Felt", "Optima", "Snell Roundhand", "Zapfino", "Baskerville"
+    "Marker Felt", "Optima", "Snell Roundhand", "Zapfino", "Baskerville",
+    // Adding more font options
+    "Pacifico", "Dancing Script", "Satisfy", "Great Vibes", "Lobster",
+    "Montserrat", "Roboto", "Lato", "Open Sans", "Raleway"
   ];
 
   // Text color options
@@ -91,7 +99,11 @@ const TelaoPage = () => {
     "#D9F99D", "#BEF264", "#A3E635", "#84CC16", "#65A30D", "#4D7C0F",
     "#BFDBFE", "#93C5FD", "#60A5FA", "#3B82F6", "#2563EB", "#1D4ED8",
     "#C7D2FE", "#A5B4FC", "#818CF8", "#6366F1", "#4F46E5", "#4338CA",
-    "#F5D0FE", "#F0ABFC", "#E879F9", "#D946EF", "#C026D3", "#A21CAF"
+    "#F5D0FE", "#F0ABFC", "#E879F9", "#D946EF", "#C026D3", "#A21CAF",
+    // Adding more text color options
+    "#FFD700", "#FFB900", "#FF6B6B", "#FF9671", "#FFC75F",
+    "#FDCB6E", "#00B894", "#55EFC4", "#81ECEC", "#74B9FF",
+    "#6C5CE7", "#A29BFE", "#FDA7DF", "#E84393", "#B53471"
   ];
 
   useEffect(() => {
@@ -703,7 +715,7 @@ const TelaoPage = () => {
               </CardDescription>
               
               <Tabs defaultValue="participants" className="w-full">
-                <TabsList className="grid grid-cols-4 mb-6">
+                <TabsList className="grid grid-cols-5 mb-6">
                   <TabsTrigger value="participants">
                     <Users className="h-4 w-4 mr-2" />
                     Participantes
@@ -743,13 +755,13 @@ const TelaoPage = () => {
                               {participant.selected ? (
                                 <Check className="h-3 w-3 mr-1" />
                               ) : null}
-                              {participant.selected ? 'Selecionado' : 'Selecionar'}
+                              {participant.selected ? "Selecionado" : "Selecionar"}
                             </Button>
                             
                             <Button 
-                              variant="outline" 
+                              variant="destructive" 
                               size="sm"
-                              className="h-8 border-white/20 hover:bg-red-500/20 hover:text-red-400"
+                              className="h-8 aspect-square p-0"
                               onClick={() => handleParticipantRemove(participant.id)}
                             >
                               <Trash2 className="h-3 w-3" />
@@ -759,290 +771,190 @@ const TelaoPage = () => {
                       </Card>
                     ))}
                   </div>
-                  
-                  <div className="flex flex-col gap-3 mt-4">
-                    <div>
-                      <Label htmlFor="participant-count" className="mb-2 block">
-                        Número de participantes na tela
-                      </Label>
-                      <div className="flex items-center gap-2">
-                        <Input 
-                          id="participant-count" 
-                          type="number" 
-                          min="2"
-                          max="16"
-                          value={participantCount}
-                          onChange={(e) => setParticipantCount(Number(e.target.value))}
-                          className="max-w-[100px]"
-                        />
-                        <span className="text-sm text-gray-400">
-                          ({selectedParticipantsCount} selecionados)
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <h3 className="text-lg font-medium mb-2">Gerar QR Code</h3>
-                      <p className="text-sm text-gray-400 mb-3">
-                        Gere um QR Code para compartilhar com os participantes
-                      </p>
+                </TabsContent>
+                
+                <TabsContent value="layout" className="space-y-4">
+                  <Card className="bg-secondary/60 border border-white/10">
+                    <CardContent className="p-4">
+                      <h3 className="text-lg font-medium mb-4">Configurações de Visualização</h3>
                       
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <Button onClick={handleGenerateQRCode} disabled={qrCodeGenerated}>
-                          <QrCode className="h-4 w-4 mr-2" />
-                          Gerar QR Code
-                        </Button>
-                        
-                        <Button 
-                          variant="outline" 
-                          onClick={handleQRCodeToTransmission}
-                          disabled={!qrCodeGenerated || qrCodeVisible}
-                        >
-                          <MonitorPlay className="h-4 w-4 mr-2" />
-                          Adicionar à transmissão
-                        </Button>
-                      </div>
-                      
-                      {qrCodeGenerated && (
-                        <div className="mt-3 flex items-center gap-2">
-                          <div className="bg-white p-2 rounded">
-                            <QrCode className="h-10 w-10 text-black" />
+                      <div className="space-y-4">
+                        <div>
+                          <Label className="mb-2 block">Número de Participantes</Label>
+                          <div className="flex items-center gap-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => setParticipantCount(prev => Math.max(1, prev - 1))}
+                              disabled={participantCount <= 1}
+                            >
+                              -
+                            </Button>
+                            <span className="font-mono bg-secondary/30 px-3 py-1 rounded">
+                              {participantCount}
+                            </span>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => setParticipantCount(prev => Math.min(12, prev + 1))}
+                              disabled={participantCount >= 12}
+                            >
+                              +
+                            </Button>
                           </div>
-                          <div>
-                            <p className="text-sm font-medium">
-                              URL: <span className="text-accent">{qrCodeURL}</span>
-                            </p>
-                            <div className="flex gap-2 mt-1">
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                className="h-8 text-xs"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(qrCodeURL);
-                                  toast({
-                                    title: "URL copiada",
-                                    description: "URL do QR Code copiada para a área de transferência.",
-                                  });
-                                }}
+                        </div>
+                        
+                        <div>
+                          <Label className="mb-2 block">QR Code para Participantes</Label>
+                          <div className="flex gap-2">
+                            <Button 
+                              variant="outline"
+                              size="sm" 
+                              onClick={handleGenerateQRCode}
+                              disabled={qrCodeGenerated}
+                            >
+                              <QrCode className="h-4 w-4 mr-2" />
+                              Gerar QR Code
+                            </Button>
+                            
+                            <Button 
+                              variant="outline"
+                              size="sm" 
+                              onClick={handleQRCodeToTransmission}
+                              disabled={!qrCodeGenerated || qrCodeVisible}
+                            >
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Adicionar à Transmissão
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <Label className="mb-2 block">Texto de Descrição</Label>
+                          <Input 
+                            value={qrCodeDescription}
+                            onChange={(e) => setQrCodeDescription(e.target.value)}
+                            placeholder="Texto de descrição para o QR Code"
+                            className="bg-secondary/30"
+                          />
+                        </div>
+                        
+                        <div>
+                          <Label className="mb-2 block">Fonte do Texto</Label>
+                          <div className="grid grid-cols-6 gap-2">
+                            {fontOptions.map((font) => (
+                              <button
+                                key={font}
+                                className={`p-1 text-xs rounded border ${selectedFont === font ? 'border-accent bg-accent/20' : 'border-white/10 hover:border-white/30'}`}
+                                style={{ fontFamily: font }}
+                                onClick={() => setSelectedFont(font)}
                               >
-                                Copiar URL
+                                {font}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <Label className="mb-2 block">Cor do Texto</Label>
+                          <div className="grid grid-cols-10 gap-1">
+                            {textColors.map((color) => (
+                              <button
+                                key={color}
+                                className={`w-6 h-6 rounded-full ${selectedTextColor === color ? 'ring-2 ring-accent ring-offset-2 ring-offset-background' : ''}`}
+                                style={{ backgroundColor: color }}
+                                onClick={() => setSelectedTextColor(color)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+                
+                <TabsContent value="appearance" className="space-y-4">
+                  <Card className="bg-secondary/60 border border-white/10">
+                    <CardContent className="p-4">
+                      <h3 className="text-lg font-medium mb-4">Personalização Visual</h3>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <Label className="mb-2 block">Cor de Fundo</Label>
+                          <div className="grid grid-cols-10 gap-1">
+                            {backgroundColors.map((color) => (
+                              <button
+                                key={color}
+                                className={`w-6 h-6 rounded-sm ${selectedBackgroundColor === color ? 'ring-2 ring-accent ring-offset-2 ring-offset-background' : ''}`}
+                                style={{ backgroundColor: color }}
+                                onClick={() => setSelectedBackgroundColor(color)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <Label className="mb-2 block">Imagem de Fundo</Label>
+                          <div className="flex flex-col gap-2">
+                            <input
+                              type="file"
+                              ref={fileInputRef}
+                              onChange={handleFileSelect}
+                              accept="image/*"
+                              className="hidden"
+                            />
+                            <div className="flex gap-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={triggerFileInput}
+                              >
+                                <Image className="h-4 w-4 mr-2" />
+                                Selecionar Imagem
                               </Button>
                               
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                className="h-8 text-xs"
-                                onClick={() => window.open(qrCodeURL, '_blank')}
-                              >
-                                <ExternalLink className="h-3 w-3 mr-1" />
-                                Abrir
-                              </Button>
+                              {backgroundImage && (
+                                <Button 
+                                  variant="destructive" 
+                                  size="sm"
+                                  onClick={removeBackgroundImage}
+                                >
+                                  <X className="h-4 w-4 mr-2" />
+                                  Remover Imagem
+                                </Button>
+                              )}
                             </div>
+                            
+                            {backgroundImage && (
+                              <div className="relative aspect-video w-full max-w-xs overflow-hidden rounded-md border border-white/10">
+                                <img 
+                                  src={backgroundImage} 
+                                  alt="Background Preview" 
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="layout" className="space-y-6">
-                  <div>
-                    <Label htmlFor="qrcode-description" className="mb-2 block">
-                      Texto de Descrição (QR Code)
-                    </Label>
-                    <div className="flex flex-col gap-3">
-                      <Input 
-                        id="qrcode-description" 
-                        type="text" 
-                        value={qrCodeDescription}
-                        onChange={(e) => setQrCodeDescription(e.target.value)}
-                        placeholder="Escaneie o QR Code para participar"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <Label className="mb-2 block">
-                      Fonte
-                    </Label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-2">
-                      {fontOptions.map(font => (
-                        <Button 
-                          key={font}
-                          variant={selectedFont === font ? "default" : "outline"}
-                          className={`h-10 text-xs ${selectedFont === font ? 'bg-accent text-white' : 'border-white/20'}`}
-                          onClick={() => setSelectedFont(font)}
-                          style={{ fontFamily: font }}
-                        >
-                          {font}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <Label className="mb-2 block">
-                      Cor do Texto
-                    </Label>
-                    <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 gap-2">
-                      {textColors.map((color) => (
-                        <button
-                          key={color}
-                          type="button"
-                          className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                            selectedTextColor === color ? 'ring-2 ring-white ring-offset-2 ring-offset-black' : ''
-                          }`}
-                          style={{ backgroundColor: color }}
-                          onClick={() => setSelectedTextColor(color)}
-                          aria-label={`Select color ${color}`}
-                        >
-                          {selectedTextColor === color && (
-                            <Check className="h-4 w-4 text-black dark:text-white" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="appearance" className="space-y-6">
-                  <div>
-                    <div className="flex justify-between mb-2">
-                      <Label className="block">
-                        Imagem de Fundo
-                      </Label>
-                      {backgroundImage && (
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={removeBackgroundImage}
-                          className="text-xs h-7 px-2 hover:bg-red-500/20 hover:text-red-400"
-                        >
-                          <Trash2 className="h-3 w-3 mr-1" />
-                          Remover
-                        </Button>
-                      )}
-                    </div>
-                    
-                    <div className="mb-4">
-                      <input 
-                        type="file" 
-                        ref={fileInputRef}
-                        className="hidden" 
-                        accept="image/*"
-                        onChange={handleFileSelect}
-                      />
-                      
-                      <div 
-                        className="border-dashed border-2 border-gray-600 rounded-lg p-4 text-center cursor-pointer hover:bg-gray-800 transition-colors"
-                        onClick={triggerFileInput}
-                      >
-                        {backgroundImage ? (
-                          <div className="relative aspect-video overflow-hidden rounded">
-                            <img 
-                              src={backgroundImage} 
-                              alt="Background Preview" 
-                              className="w-full h-full object-cover"
-                            />
-                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                              <p className="text-white font-medium">Alterar imagem</p>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            <Image className="h-10 w-10 mx-auto mb-2 text-gray-400" />
-                            <p className="text-sm text-gray-400">
-                              Clique para selecionar uma imagem
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              PNG, JPG ou GIF até 10MB
-                            </p>
-                          </>
-                        )}
                       </div>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <Label className="mb-2 block">
-                      Cor de Fundo
-                    </Label>
-                    <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 gap-2">
-                      {backgroundColors.map((color) => (
-                        <button
-                          key={color}
-                          type="button"
-                          className={`w-6 h-6 rounded flex items-center justify-center ${
-                            selectedBackgroundColor === color ? 'ring-2 ring-white ring-offset-2 ring-offset-black' : ''
-                          }`}
-                          style={{ backgroundColor: color }}
-                          onClick={() => setSelectedBackgroundColor(color)}
-                          aria-label={`Select color ${color}`}
-                        >
-                          {selectedBackgroundColor === color && (
-                            <Check className="h-3 w-3 text-white" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <Label className="mb-2 block">
-                      Ação Final
-                    </Label>
-                    <div className="space-y-3">
-                      <Select
-                        value={finalAction}
-                        onValueChange={(value: 'none' | 'image' | 'coupon') => setFinalAction(value)}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Selecione uma ação final" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Nenhuma</SelectItem>
-                          <SelectItem value="image">Imagem</SelectItem>
-                          <SelectItem value="coupon">Cupom</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      
-                      {finalAction === 'image' && (
-                        <div className="space-y-3">
-                          <div>
-                            <Label htmlFor="final-action-link" className="mb-2 block text-sm">
-                              URL de redirecionamento
-                            </Label>
-                            <Input 
-                              id="final-action-link"
-                              value={finalActionLink}
-                              onChange={(e) => setFinalActionLink(e.target.value)}
-                              placeholder="https://exemplo.com"
-                            />
-                          </div>
-                        </div>
-                      )}
-                      
-                      {finalAction === 'coupon' && (
-                        <div className="space-y-3">
-                          <div>
-                            <Label htmlFor="final-action-coupon" className="mb-2 block text-sm">
-                              Código do Cupom
-                            </Label>
-                            <Input 
-                              id="final-action-coupon"
-                              value={finalActionCoupon}
-                              onChange={(e) => setFinalActionCouponCode(e.target.value)}
-                              placeholder="CUPOM10"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 </TabsContent>
                 
-                <TabsContent value="preview" className="space-y-4">
-                  {renderPreviewContent()}
+                <TabsContent value="preview">
+                  <Card className="bg-secondary/60 border border-white/10 overflow-hidden">
+                    <CardContent className="p-4 space-y-4">
+                      <h3 className="text-lg font-medium">Pré-visualização da Transmissão</h3>
+                      
+                      <div className="relative overflow-hidden rounded-lg border border-white/10">
+                        {renderPreviewContent()}
+                      </div>
+                      
+                      <p className="text-xs text-muted-foreground">
+                        * Os elementos podem ser arrastados e redimensionados para personalizar a transmissão
+                      </p>
+                    </CardContent>
+                  </Card>
                 </TabsContent>
               </Tabs>
             </CardContent>
@@ -1052,15 +964,84 @@ const TelaoPage = () => {
         <div>
           <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 h-full">
             <CardHeader>
-              <CardTitle>Pré-visualização</CardTitle>
+              <CardTitle>Ações Finais</CardTitle>
               <CardDescription>
-                Veja como sua transmissão ficará no telão
+                Configure a ação a ser exibida quando a transmissão terminar
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="aspect-video bg-black rounded-lg overflow-hidden">
-                {renderPreviewContent()}
+            
+            <CardContent className="space-y-4">
+              <div>
+                <Label className="mb-2 block">Tipo de Ação Final</Label>
+                <Select
+                  value={finalAction}
+                  onValueChange={(value: 'none' | 'image' | 'coupon') => setFinalAction(value)}
+                >
+                  <SelectTrigger className="bg-secondary/30">
+                    <SelectValue placeholder="Selecione um tipo de ação" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhuma</SelectItem>
+                    <SelectItem value="image">Imagem/Link</SelectItem>
+                    <SelectItem value="coupon">Cupom de Desconto</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+              
+              {finalAction === 'image' && (
+                <div className="space-y-4">
+                  <div>
+                    <Label className="mb-2 block">Link da Ação</Label>
+                    <Input 
+                      value={finalActionLink}
+                      onChange={(e) => setFinalActionLink(e.target.value)}
+                      placeholder="Ex: https://meusite.com/promo"
+                      className="bg-secondary/30"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label className="mb-2 block">Imagem da Ação (opcional)</Label>
+                    <Input 
+                      type="file"
+                      accept="image/*"
+                      className="bg-secondary/30"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            setFinalActionImage(event.target?.result as string);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </div>
+                  
+                  {finalActionImage && (
+                    <div className="relative aspect-video max-w-xs overflow-hidden rounded-md border border-white/10">
+                      <img 
+                        src={finalActionImage} 
+                        alt="Final Action" 
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {finalAction === 'coupon' && (
+                <div>
+                  <Label className="mb-2 block">Código do Cupom</Label>
+                  <Input 
+                    value={finalActionCoupon}
+                    onChange={(e) => setFinalActionCouponCode(e.target.value)}
+                    placeholder="Ex: PROMO20"
+                    className="bg-secondary/30"
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1069,68 +1050,57 @@ const TelaoPage = () => {
       <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Obrigado pela participação!</DialogTitle>
+            <DialogTitle>Obrigado por participar!</DialogTitle>
             <DialogDescription>
-              A transmissão foi finalizada.
+              Esta ação será encerrada em {finalActionTimeLeft} segundos
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex flex-col items-center justify-center py-4">
+          <div className="flex flex-col items-center justify-center space-y-4 py-4">
             {finalAction === 'image' && (
-              <div className="space-y-4 w-full text-center">
+              <div className="flex flex-col items-center space-y-4">
                 {finalActionImage ? (
-                  <div className="mx-auto max-w-xs">
+                  <div className="relative aspect-video max-w-xs overflow-hidden rounded-md">
                     <img 
                       src={finalActionImage} 
-                      alt="Final Action" 
-                      className="w-full rounded-lg"
+                      alt="Ação Final" 
+                      className="w-full h-full object-contain"
                     />
                   </div>
                 ) : (
-                  <div className="aspect-video bg-gray-800 rounded-lg flex items-center justify-center">
-                    <Image className="h-16 w-16 text-gray-600" />
+                  <div className="flex h-40 w-full items-center justify-center rounded-md border border-dashed">
+                    <Image className="h-10 w-10 text-muted-foreground" />
                   </div>
                 )}
                 
                 {finalActionLink && (
-                  <Button 
-                    className="mt-4"
-                    onClick={handleFinalActionClick}
-                  >
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Visitar site
+                  <Button onClick={handleFinalActionClick}>
+                    Acessar Link
                   </Button>
                 )}
               </div>
             )}
             
             {finalAction === 'coupon' && (
-              <div className="space-y-4 w-full text-center">
-                <div className="bg-gradient-to-r from-purple-600 to-blue-600 p-6 rounded-lg">
-                  <h3 className="text-xl font-bold mb-2">Seu cupom de desconto</h3>
-                  <div className="bg-white text-black text-xl font-mono p-3 rounded tracking-wider">
-                    {finalActionCoupon || 'CUPOM10'}
+              <div className="flex flex-col items-center space-y-4">
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Seu cupom de desconto</p>
+                  <div className="mt-2 p-3 bg-secondary rounded-md">
+                    <span className="font-mono font-bold text-xl">
+                      {finalActionCoupon}
+                    </span>
                   </div>
                 </div>
               </div>
             )}
-            
-            <div className="w-full text-center mt-6">
-              <p className="text-sm text-gray-400 mb-1">
-                Esta tela será fechada automaticamente em
-              </p>
-              <p className="text-xl font-semibold">
-                {finalActionTimeLeft} segundos
-              </p>
-            </div>
           </div>
           
           <div className="flex justify-end">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="destructive"
               onClick={closeFinalAction}
             >
-              Fechar agora
+              Fechar
             </Button>
           </div>
         </DialogContent>
