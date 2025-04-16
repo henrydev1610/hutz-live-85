@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { TimelineItem } from '@/types/lightshow';
 import { X, Camera, Video } from 'lucide-react';
@@ -21,26 +22,6 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const flashIntervalRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const frameIdRef = useRef<number | null>(null);
-  
-  const [qrCodePosition, setQrCodePosition] = useState({ 
-    x: 20, 
-    y: 20, 
-    width: 120, 
-    height: 120 
-  });
-  const [qrDescriptionPosition, setQrDescriptionPosition] = useState({
-    x: 20,
-    y: 150,
-    width: 200,
-    height: 60
-  });
-  const [isDraggingQR, setIsDraggingQR] = useState(false);
-  const [isDraggingText, setIsDraggingText] = useState(false);
-  const [resizeHandleQR, setResizeHandleQR] = useState<string | null>(null);
-  const [resizeHandleText, setResizeHandleText] = useState<string | null>(null);
-  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
-  const [startSize, setStartSize] = useState({ width: 0, height: 0 });
-  const [calculatedFontSize, setCalculatedFontSize] = useState(16);
   
   useEffect(() => {
     return () => {
@@ -83,15 +64,6 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
       setShowControls(false);
     }
   }, [isPlaying]);
-  
-  // Update font size based on text box width
-  useEffect(() => {
-    // Scale font size based on width, but keep it within reasonable bounds
-    const baseFontSize = 16;
-    const scaleFactor = qrDescriptionPosition.width / 200; // baseline width of 200px
-    const newFontSize = Math.max(10, Math.min(32, baseFontSize * scaleFactor));
-    setCalculatedFontSize(newFontSize);
-  }, [qrDescriptionPosition.width]);
   
   const updateActiveElements = (time: number) => {
     if (flashIntervalRef.current) {
@@ -210,128 +182,6 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
     if (externalUrl && (callToActionType === 'imageWithButton' || callToActionType === 'coupon')) {
       console.log(`Navigating to: ${externalUrl}`);
       window.open(externalUrl, '_blank');
-    }
-  };
-
-  const startDraggingQR = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!qrCodeVisible) return;
-    
-    const target = e.target as HTMLElement;
-    if (target.className && typeof target.className === 'string' && target.className.includes('resize-handle')) {
-      const handle = target.getAttribute('data-handle');
-      if (handle && handle.startsWith('qr-')) {
-        setResizeHandleQR(handle);
-        setStartPos({ x: e.clientX, y: e.clientY });
-        setStartSize({ 
-          width: qrCodePosition.width, 
-          height: qrCodePosition.height 
-        });
-      }
-    } else {
-      setIsDraggingQR(true);
-      setStartPos({ 
-        x: e.clientX - qrCodePosition.x, 
-        y: e.clientY - qrCodePosition.y 
-      });
-    }
-  };
-
-  const startDraggingText = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!qrCodeVisible) return;
-    
-    const target = e.target as HTMLElement;
-    if (target.className && typeof target.className === 'string' && target.className.includes('resize-handle')) {
-      const handle = target.getAttribute('data-handle');
-      if (handle && handle.startsWith('text-')) {
-        setResizeHandleText(handle);
-        setStartPos({ x: e.clientX, y: e.clientY });
-        setStartSize({ 
-          width: qrDescriptionPosition.width, 
-          height: qrDescriptionPosition.height 
-        });
-      }
-    } else {
-      setIsDraggingText(true);
-      setStartPos({ 
-        x: e.clientX - qrDescriptionPosition.x, 
-        y: e.clientY - qrDescriptionPosition.y 
-      });
-    }
-  };
-
-  const stopDragging = () => {
-    setIsDraggingQR(false);
-    setIsDraggingText(false);
-    setResizeHandleQR(null);
-    setResizeHandleText(null);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isDraggingQR) {
-      const newX = e.clientX - startPos.x;
-      const newY = e.clientY - startPos.y;
-      
-      const container = previewContainerRef.current?.getBoundingClientRect();
-      
-      if (container) {
-        const x = Math.max(0, Math.min(newX, container.width - qrCodePosition.width));
-        const y = Math.max(0, Math.min(newY, container.height - qrCodePosition.height));
-        
-        setQrCodePosition(prev => ({ ...prev, x, y }));
-      }
-    } else if (isDraggingText) {
-      const newX = e.clientX - startPos.x;
-      const newY = e.clientY - startPos.y;
-      
-      const container = previewContainerRef.current?.getBoundingClientRect();
-      
-      if (container) {
-        const x = Math.max(0, Math.min(newX, container.width - qrDescriptionPosition.width));
-        const y = Math.max(0, Math.min(newY, container.height - qrDescriptionPosition.height));
-        
-        setQrDescriptionPosition(prev => ({ ...prev, x, y }));
-      }
-    } else if (resizeHandleQR) {
-      const dx = e.clientX - startPos.x;
-      const dy = e.clientY - startPos.y;
-      
-      let newWidth = startSize.width;
-      let newHeight = startSize.height;
-      
-      if (resizeHandleQR.includes('r')) { // Right handles
-        newWidth = Math.max(80, startSize.width + dx);
-      }
-      if (resizeHandleQR.includes('b')) { // Bottom handles
-        newHeight = Math.max(80, startSize.height + dy);
-      }
-      
-      // Keep QR code square by using the larger dimension
-      const size = Math.max(newWidth, newHeight);
-      
-      setQrCodePosition(prev => ({ 
-        ...prev, 
-        width: size,
-        height: size
-      }));
-    } else if (resizeHandleText) {
-      const dx = e.clientX - startPos.x;
-      const dy = e.clientY - startPos.y;
-      
-      let newWidth = startSize.width;
-      let newHeight = startSize.height;
-      
-      if (resizeHandleText.includes('r')) { // Right handles
-        newWidth = Math.max(80, startSize.width + dx);
-      }
-      if (resizeHandleText.includes('b')) { // Bottom handles
-        newHeight = Math.max(30, startSize.height + dy);
-      }
-      
-      setQrDescriptionPosition(prev => ({ 
-        ...prev, 
-        width: newWidth,
-        height: newHeight
-      }));
     }
   };
 
