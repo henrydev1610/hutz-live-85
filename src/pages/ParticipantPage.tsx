@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Camera, Video, VideoOff } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 const ParticipantPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -13,17 +14,25 @@ const ParticipantPage = () => {
   const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
   const [connected, setConnected] = useState(false);
   const [transmitting, setTransmitting] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const { toast } = useToast();
   const participantIdRef = useRef<string>(Math.random().toString(36).substr(2, 9));
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const frameIntervalRef = useRef<number | null>(null);
   const connectionRetryCountRef = useRef<number>(0);
-  const maxConnectionRetries = 10; // Increased from 5 to 10
+  const maxConnectionRetries = 15; // Increased from 10 to 15
   const heartbeatIntervalRef = useRef<number | null>(null);
   const joinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localStorageChannelRef = useRef<BroadcastChannel | null>(null);
 
   useEffect(() => {
     console.log(`Session ID: ${sessionId}, Participant ID: ${participantIdRef.current}`);
+    
+    // Create a secondary communication channel using localStorage
+    // This helps overcome BroadcastChannel limitations in some browsers
+    setupLocalStorageChannel();
+    
     // Get list of video devices
     const getVideoDevices = async () => {
       try {
@@ -64,7 +73,7 @@ const ParticipantPage = () => {
           console.log("Connection not established, retrying...");
           connectToSession();
         }
-      }, 1000); // Reduced from 2000 to 1000 ms
+      }, 1000); // 1 second timeout
       
       joinTimeoutRef.current = fallbackTimer;
     }
@@ -87,11 +96,59 @@ const ParticipantPage = () => {
         clearTimeout(joinTimeoutRef.current);
         joinTimeoutRef.current = null;
       }
+      if (localStorageChannelRef.current) {
+        localStorageChannelRef.current.close();
+      }
     };
   }, [sessionId, toast]);
 
+  const setupLocalStorageChannel = () => {
+    try {
+      // Create a backup communication channel
+      const localChannel = new BroadcastChannel(`telao-local-${sessionId}`);
+      localStorageChannelRef.current = localChannel;
+      
+      // Listen for messages on the local channel
+      localChannel.onmessage = (event) => {
+        const data = event.data;
+        handleChannelMessage(data);
+      };
+      
+      console.log("Local storage channel set up successfully");
+    } catch (error) {
+      console.error("Error creating local storage channel:", error);
+    }
+  };
+
+  const handleChannelMessage = (data: any) => {
+    // Process messages from either communication channel
+    if (data.type === 'host-acknowledge' && data.participantId === participantIdRef.current) {
+      console.log("Connection acknowledged by host");
+      setConnected(true);
+      setConnecting(false);
+      setConnectionError(null);
+      connectionRetryCountRef.current = 0;
+      
+      // Start sending heartbeats
+      startHeartbeat();
+      
+      // Auto-start camera after connection if not already active
+      if (!cameraActive) {
+        startCamera();
+      }
+      
+      toast({
+        title: "Conectado à sessão",
+        description: `Você está conectado à sessão ${sessionId}.`,
+      });
+    }
+  };
+
   const connectToSession = () => {
     if (!sessionId) return;
+    
+    setConnecting(true);
+    setConnectionError(null);
     
     console.log(`Connecting to session: ${sessionId}, attempt ${connectionRetryCountRef.current + 1}`);
     
@@ -101,82 +158,170 @@ const ParticipantPage = () => {
     }
     
     try {
+      // Try to connect using BroadcastChannel (primary method)
       const channel = new BroadcastChannel(`telao-session-${sessionId}`);
       broadcastChannelRef.current = channel;
       
       // Set up message event listener
       channel.onmessage = (event) => {
-        const data = event.data;
-        
-        // Check for host acknowledgment
-        if (data.type === 'host-acknowledge' && data.participantId === participantIdRef.current) {
-          console.log("Connection acknowledged by host");
-          setConnected(true);
-          connectionRetryCountRef.current = 0;
-          
-          // Start sending heartbeats
-          startHeartbeat();
-          
-          // Auto-start camera after connection if not already active
-          if (!cameraActive) {
-            startCamera();
-          }
-          
-          toast({
-            title: "Conectado à sessão",
-            description: `Você está conectado à sessão ${sessionId}.`,
-          });
-        }
+        handleChannelMessage(event.data);
       };
       
       // Send a join message with the participant ID immediately
       sendJoinMessage();
       
-      // Also schedule repeated join messages until acknowledged (aggressive join)
+      // Use a more aggressive connection strategy with multiple join attempts
       const joinInterval = setInterval(() => {
         if (!connected) {
           sendJoinMessage();
+          
+          // Also try connecting through localStorage as a fallback
+          try {
+            window.localStorage.setItem(`telao-join-${sessionId}`, JSON.stringify({
+              type: 'participant-join',
+              id: participantIdRef.current,
+              timestamp: Date.now()
+            }));
+          } catch (e) {
+            console.warn("Could not use localStorage for fallback communication", e);
+          }
         } else {
           clearInterval(joinInterval);
         }
-      }, 2000);
+      }, 1500); // Send join request every 1.5 seconds
       
       // Clear join interval after reasonable time
       setTimeout(() => {
         clearInterval(joinInterval);
-      }, 30000);
+      }, 30000); // Try for 30 seconds max
       
       // If we haven't received an acknowledgment, retry connection
       setTimeout(() => {
-        if (!connected && connectionRetryCountRef.current < maxConnectionRetries) {
-          connectionRetryCountRef.current++;
-          connectToSession();
-        } else if (!connected && connectionRetryCountRef.current >= maxConnectionRetries) {
-          toast({
-            title: "Erro de conexão",
-            description: "Não foi possível conectar à sessão. Tente novamente ou gere um novo QR Code.",
-            variant: "destructive"
-          });
+        if (!connected) {
+          if (connectionRetryCountRef.current < maxConnectionRetries) {
+            connectionRetryCountRef.current++;
+            connectToSession();
+          } else {
+            setConnecting(false);
+            setConnectionError("Não foi possível conectar após várias tentativas. Verifique sua conexão e tente novamente.");
+            toast({
+              title: "Erro de conexão",
+              description: "Não foi possível conectar à sessão. Tente novamente ou gere um novo QR Code.",
+              variant: "destructive"
+            });
+          }
         }
-      }, 3000);
+      }, 4000); // Wait 4 seconds before trying again
+      
     } catch (error) {
       console.error("Error creating broadcast channel:", error);
-      toast({
-        title: "Erro de conexão",
-        description: "Houve um problema ao conectar à sessão.",
-        variant: "destructive"
-      });
+      setConnecting(false);
+      setConnectionError("Erro ao criar canal de comunicação. Seu navegador pode não ser compatível.");
+      
+      // Still try localStorage as fallback
+      try {
+        window.localStorage.setItem(`telao-join-${sessionId}`, JSON.stringify({
+          type: 'participant-join',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        }));
+        
+        // Set a timer to check localStorage for responses
+        const checkLocalStorage = setInterval(() => {
+          try {
+            const response = window.localStorage.getItem(`telao-ack-${sessionId}-${participantIdRef.current}`);
+            if (response) {
+              console.log("Got acknowledgment via localStorage");
+              window.localStorage.removeItem(`telao-ack-${sessionId}-${participantIdRef.current}`);
+              clearInterval(checkLocalStorage);
+              
+              setConnected(true);
+              setConnecting(false);
+              setConnectionError(null);
+              startHeartbeat();
+              
+              toast({
+                title: "Conectado à sessão",
+                description: `Você está conectado à sessão ${sessionId} (modo alternativo).`,
+              });
+            }
+          } catch (e) {
+            console.warn("Error checking localStorage", e);
+          }
+        }, 1000);
+        
+        // Stop checking after 30 seconds
+        setTimeout(() => {
+          clearInterval(checkLocalStorage);
+        }, 30000);
+        
+      } catch (e) {
+        console.error("Fallback communication also failed", e);
+        toast({
+          title: "Erro de conexão",
+          description: "Houve um problema ao conectar à sessão.",
+          variant: "destructive"
+        });
+      }
     }
   };
 
   const sendJoinMessage = () => {
     if (broadcastChannelRef.current) {
-      console.log("Sending join message");
+      console.log("Sending join message via BroadcastChannel");
       broadcastChannelRef.current.postMessage({
         type: 'participant-join',
         id: participantIdRef.current,
         timestamp: Date.now()
       });
+    }
+    
+    if (localStorageChannelRef.current) {
+      console.log("Sending join message via LocalStorageChannel");
+      localStorageChannelRef.current.postMessage({
+        type: 'participant-join',
+        id: participantIdRef.current,
+        timestamp: Date.now()
+      });
+    }
+    
+    // Also try to use the Realtime API from Supabase as an additional channel
+    try {
+      // Create a unique channel based on session ID
+      const channel = supabase.channel(`telao-${sessionId}`)
+        .on('broadcast', { event: 'presence' }, (payload) => {
+          if (payload.payload.type === 'host-acknowledge' && 
+              payload.payload.participantId === participantIdRef.current) {
+            setConnected(true);
+            setConnecting(false);
+            setConnectionError(null);
+            console.log("Connected via Supabase Realtime");
+            
+            // Start sending heartbeats
+            startHeartbeat();
+            
+            toast({
+              title: "Conectado à sessão",
+              description: `Você está conectado à sessão ${sessionId} (via internet).`,
+            });
+          }
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            // Send join message via Supabase Realtime
+            channel.send({
+              type: 'broadcast',
+              event: 'presence',
+              payload: {
+                type: 'participant-join',
+                id: participantIdRef.current,
+                timestamp: Date.now()
+              }
+            });
+          }
+        });
+    } catch (e) {
+      console.warn("Supabase Realtime connection failed", e);
     }
   };
 
@@ -195,7 +340,22 @@ const ParticipantPage = () => {
           timestamp: Date.now()
         });
       }
-    }, 2000); // Reduced from 3000 to 2000 ms
+      
+      if (localStorageChannelRef.current) {
+        localStorageChannelRef.current.postMessage({
+          type: 'participant-heartbeat',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        });
+      }
+      
+      // Also try localStorage as fallback
+      try {
+        window.localStorage.setItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`, Date.now().toString());
+      } catch (e) {
+        // Silent fail on localStorage
+      }
+    }, 2000); // Send heartbeat every 2 seconds
   };
 
   const disconnectFromSession = () => {
@@ -214,6 +374,23 @@ const ParticipantPage = () => {
         });
         broadcastChannelRef.current.close();
         broadcastChannelRef.current = null;
+      }
+      
+      if (localStorageChannelRef.current) {
+        localStorageChannelRef.current.postMessage({
+          type: 'participant-leave',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        });
+        localStorageChannelRef.current.close();
+        localStorageChannelRef.current = null;
+      }
+      
+      // Try localStorage as fallback
+      try {
+        window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, Date.now().toString());
+      } catch (e) {
+        // Silent fail on localStorage
       }
       
       // Clear the frame sending interval
@@ -445,25 +622,37 @@ const ParticipantPage = () => {
         </p>
         
         <div className="mt-6 flex items-center gap-2">
-          <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+          <div 
+            className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : connecting ? 'bg-yellow-500' : 'bg-red-500'}`}
+          ></div>
           <span className="text-xs text-white">
-            {connected ? 'Conectado à sessão' : 'Tentando conectar à sessão...'}
+            {connected ? 'Conectado à sessão' : 
+             connecting ? 'Tentando conectar à sessão...' : 
+             'Desconectado'}
           </span>
         </div>
+        
+        {connectionError && (
+          <p className="text-xs text-red-400 mt-2 text-center">
+            {connectionError}
+          </p>
+        )}
         
         {!connected && (
           <Button 
             variant="outline" 
             className="mt-4 border-white/20"
             onClick={() => {
+              connectionRetryCountRef.current = 0; // Reset retry count
               connectToSession();
               toast({
                 title: "Reconectando",
                 description: "Tentando conectar novamente à sessão.",
               });
             }}
+            disabled={connecting}
           >
-            Reconectar
+            {connecting ? 'Conectando...' : 'Reconectar'}
           </Button>
         )}
       </div>
