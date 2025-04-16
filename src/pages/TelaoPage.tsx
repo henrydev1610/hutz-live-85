@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -702,7 +703,7 @@ const TelaoPage = () => {
               </CardDescription>
               
               <Tabs defaultValue="participants" className="w-full">
-                <TabsList className="grid grid-cols-5 mb-6">
+                <TabsList className="grid grid-cols-4 mb-6">
                   <TabsTrigger value="participants">
                     <Users className="h-4 w-4 mr-2" />
                     Participantes
@@ -738,3 +739,404 @@ const TelaoPage = () => {
                               size="sm" 
                               className={`h-8 ${participant.selected ? 'bg-accent text-white' : 'border-white/20'}`}
                               onClick={() => handleParticipantSelect(participant.id)}
+                            >
+                              {participant.selected ? (
+                                <Check className="h-3 w-3 mr-1" />
+                              ) : null}
+                              {participant.selected ? 'Selecionado' : 'Selecionar'}
+                            </Button>
+                            
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              className="h-8 border-white/20 hover:bg-red-500/20 hover:text-red-400"
+                              onClick={() => handleParticipantRemove(participant.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  
+                  <div className="flex flex-col gap-3 mt-4">
+                    <div>
+                      <Label htmlFor="participant-count" className="mb-2 block">
+                        Número de participantes na tela
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Input 
+                          id="participant-count" 
+                          type="number" 
+                          min="2"
+                          max="16"
+                          value={participantCount}
+                          onChange={(e) => setParticipantCount(Number(e.target.value))}
+                          className="max-w-[100px]"
+                        />
+                        <span className="text-sm text-gray-400">
+                          ({selectedParticipantsCount} selecionados)
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-lg font-medium mb-2">Gerar QR Code</h3>
+                      <p className="text-sm text-gray-400 mb-3">
+                        Gere um QR Code para compartilhar com os participantes
+                      </p>
+                      
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button onClick={handleGenerateQRCode} disabled={qrCodeGenerated}>
+                          <QrCode className="h-4 w-4 mr-2" />
+                          Gerar QR Code
+                        </Button>
+                        
+                        <Button 
+                          variant="outline" 
+                          onClick={handleQRCodeToTransmission}
+                          disabled={!qrCodeGenerated || qrCodeVisible}
+                        >
+                          <MonitorPlay className="h-4 w-4 mr-2" />
+                          Adicionar à transmissão
+                        </Button>
+                      </div>
+                      
+                      {qrCodeGenerated && (
+                        <div className="mt-3 flex items-center gap-2">
+                          <div className="bg-white p-2 rounded">
+                            <QrCode className="h-10 w-10 text-black" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">
+                              URL: <span className="text-accent">{qrCodeURL}</span>
+                            </p>
+                            <div className="flex gap-2 mt-1">
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                className="h-8 text-xs"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(qrCodeURL);
+                                  toast({
+                                    title: "URL copiada",
+                                    description: "URL do QR Code copiada para a área de transferência.",
+                                  });
+                                }}
+                              >
+                                Copiar URL
+                              </Button>
+                              
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                className="h-8 text-xs"
+                                onClick={() => window.open(qrCodeURL, '_blank')}
+                              >
+                                <ExternalLink className="h-3 w-3 mr-1" />
+                                Abrir
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="layout" className="space-y-6">
+                  <div>
+                    <Label htmlFor="qrcode-description" className="mb-2 block">
+                      Texto de Descrição (QR Code)
+                    </Label>
+                    <div className="flex flex-col gap-3">
+                      <Input 
+                        id="qrcode-description" 
+                        type="text" 
+                        value={qrCodeDescription}
+                        onChange={(e) => setQrCodeDescription(e.target.value)}
+                        placeholder="Escaneie o QR Code para participar"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label className="mb-2 block">
+                      Fonte
+                    </Label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-2">
+                      {fontOptions.map(font => (
+                        <Button 
+                          key={font}
+                          variant={selectedFont === font ? "default" : "outline"}
+                          className={`h-10 text-xs ${selectedFont === font ? 'bg-accent text-white' : 'border-white/20'}`}
+                          onClick={() => setSelectedFont(font)}
+                          style={{ fontFamily: font }}
+                        >
+                          {font}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label className="mb-2 block">
+                      Cor do Texto
+                    </Label>
+                    <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 gap-2">
+                      {textColors.map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                            selectedTextColor === color ? 'ring-2 ring-white ring-offset-2 ring-offset-black' : ''
+                          }`}
+                          style={{ backgroundColor: color }}
+                          onClick={() => setSelectedTextColor(color)}
+                          aria-label={`Select color ${color}`}
+                        >
+                          {selectedTextColor === color && (
+                            <Check className="h-4 w-4 text-black dark:text-white" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="appearance" className="space-y-6">
+                  <div>
+                    <div className="flex justify-between mb-2">
+                      <Label className="block">
+                        Imagem de Fundo
+                      </Label>
+                      {backgroundImage && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={removeBackgroundImage}
+                          className="text-xs h-7 px-2 hover:bg-red-500/20 hover:text-red-400"
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          Remover
+                        </Button>
+                      )}
+                    </div>
+                    
+                    <div className="mb-4">
+                      <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        className="hidden" 
+                        accept="image/*"
+                        onChange={handleFileSelect}
+                      />
+                      
+                      <div 
+                        className="border-dashed border-2 border-gray-600 rounded-lg p-4 text-center cursor-pointer hover:bg-gray-800 transition-colors"
+                        onClick={triggerFileInput}
+                      >
+                        {backgroundImage ? (
+                          <div className="relative aspect-video overflow-hidden rounded">
+                            <img 
+                              src={backgroundImage} 
+                              alt="Background Preview" 
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                              <p className="text-white font-medium">Alterar imagem</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <Image className="h-10 w-10 mx-auto mb-2 text-gray-400" />
+                            <p className="text-sm text-gray-400">
+                              Clique para selecionar uma imagem
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              PNG, JPG ou GIF até 10MB
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label className="mb-2 block">
+                      Cor de Fundo
+                    </Label>
+                    <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 gap-2">
+                      {backgroundColors.map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          className={`w-6 h-6 rounded flex items-center justify-center ${
+                            selectedBackgroundColor === color ? 'ring-2 ring-white ring-offset-2 ring-offset-black' : ''
+                          }`}
+                          style={{ backgroundColor: color }}
+                          onClick={() => setSelectedBackgroundColor(color)}
+                          aria-label={`Select color ${color}`}
+                        >
+                          {selectedBackgroundColor === color && (
+                            <Check className="h-3 w-3 text-white" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label className="mb-2 block">
+                      Ação Final
+                    </Label>
+                    <div className="space-y-3">
+                      <Select
+                        value={finalAction}
+                        onValueChange={(value: 'none' | 'image' | 'coupon') => setFinalAction(value)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Selecione uma ação final" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Nenhuma</SelectItem>
+                          <SelectItem value="image">Imagem</SelectItem>
+                          <SelectItem value="coupon">Cupom</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
+                      {finalAction === 'image' && (
+                        <div className="space-y-3">
+                          <div>
+                            <Label htmlFor="final-action-link" className="mb-2 block text-sm">
+                              URL de redirecionamento
+                            </Label>
+                            <Input 
+                              id="final-action-link"
+                              value={finalActionLink}
+                              onChange={(e) => setFinalActionLink(e.target.value)}
+                              placeholder="https://exemplo.com"
+                            />
+                          </div>
+                        </div>
+                      )}
+                      
+                      {finalAction === 'coupon' && (
+                        <div className="space-y-3">
+                          <div>
+                            <Label htmlFor="final-action-coupon" className="mb-2 block text-sm">
+                              Código do Cupom
+                            </Label>
+                            <Input 
+                              id="final-action-coupon"
+                              value={finalActionCoupon}
+                              onChange={(e) => setFinalActionCouponCode(e.target.value)}
+                              placeholder="CUPOM10"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="preview" className="space-y-4">
+                  {renderPreviewContent()}
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </div>
+        
+        <div>
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 h-full">
+            <CardHeader>
+              <CardTitle>Pré-visualização</CardTitle>
+              <CardDescription>
+                Veja como sua transmissão ficará no telão
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                {renderPreviewContent()}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+      
+      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Obrigado pela participação!</DialogTitle>
+            <DialogDescription>
+              A transmissão foi finalizada.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex flex-col items-center justify-center py-4">
+            {finalAction === 'image' && (
+              <div className="space-y-4 w-full text-center">
+                {finalActionImage ? (
+                  <div className="mx-auto max-w-xs">
+                    <img 
+                      src={finalActionImage} 
+                      alt="Final Action" 
+                      className="w-full rounded-lg"
+                    />
+                  </div>
+                ) : (
+                  <div className="aspect-video bg-gray-800 rounded-lg flex items-center justify-center">
+                    <Image className="h-16 w-16 text-gray-600" />
+                  </div>
+                )}
+                
+                {finalActionLink && (
+                  <Button 
+                    className="mt-4"
+                    onClick={handleFinalActionClick}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Visitar site
+                  </Button>
+                )}
+              </div>
+            )}
+            
+            {finalAction === 'coupon' && (
+              <div className="space-y-4 w-full text-center">
+                <div className="bg-gradient-to-r from-purple-600 to-blue-600 p-6 rounded-lg">
+                  <h3 className="text-xl font-bold mb-2">Seu cupom de desconto</h3>
+                  <div className="bg-white text-black text-xl font-mono p-3 rounded tracking-wider">
+                    {finalActionCoupon || 'CUPOM10'}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div className="w-full text-center mt-6">
+              <p className="text-sm text-gray-400 mb-1">
+                Esta tela será fechada automaticamente em
+              </p>
+              <p className="text-xl font-semibold">
+                {finalActionTimeLeft} segundos
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex justify-end">
+            <Button 
+              variant="outline" 
+              onClick={closeFinalAction}
+            >
+              Fechar agora
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default TelaoPage;
