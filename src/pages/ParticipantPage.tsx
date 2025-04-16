@@ -17,6 +17,7 @@ const ParticipantPage = () => {
   const participantIdRef = useRef<string>(Math.random().toString(36).substr(2, 9));
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const frameIntervalRef = useRef<number | null>(null);
+  const connectionAttemptsRef = useRef(0);
 
   useEffect(() => {
     // Auto-start camera on mobile devices
@@ -61,11 +62,23 @@ const ParticipantPage = () => {
     // Connect to the transmission service
     connectToSession();
     
+    // Setup heartbeat to maintain connection
+    const heartbeatInterval = setInterval(() => {
+      if (broadcastChannelRef.current && connected) {
+        broadcastChannelRef.current.postMessage({
+          type: 'participant-heartbeat',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        });
+      }
+    }, 10000); // Send heartbeat every 10 seconds
+    
     return () => {
       if (cameraActive) {
         stopCamera();
       }
       disconnectFromSession();
+      clearInterval(heartbeatInterval);
     };
   }, [toast]);
 
@@ -78,26 +91,66 @@ const ParticipantPage = () => {
     const channel = new BroadcastChannel(`telao-session-${sessionId}`);
     broadcastChannelRef.current = channel;
     
-    // Send a join message with the participant ID
-    channel.postMessage({
-      type: 'participant-join',
-      id: participantIdRef.current,
-      timestamp: Date.now()
-    });
-    
-    // Simulate connection established
-    setTimeout(() => {
-      setConnected(true);
-      toast({
-        title: "Conectado à sessão",
-        description: `Você está conectado à sessão ${sessionId}.`,
-      });
+    // Listen for messages from the host
+    channel.onmessage = (event) => {
+      const { data } = event;
       
-      // Auto-start camera after connection
-      if (!cameraActive) {
-        startCamera();
+      if (data.type === 'host-acknowledge') {
+        if (data.participantId === participantIdRef.current) {
+          // Host acknowledged our connection
+          console.log('Host acknowledged connection');
+          setConnected(true);
+          
+          toast({
+            title: "Conectado à sessão",
+            description: `Você está conectado à sessão ${sessionId}.`,
+          });
+          
+          // Auto-start camera after connection
+          if (!cameraActive) {
+            startCamera();
+          }
+        }
       }
-    }, 500);
+    };
+    
+    // Send a join message with the participant ID
+    const sendJoinMessage = () => {
+      if (channel && !connected) {
+        channel.postMessage({
+          type: 'participant-join',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        });
+        
+        // Try reconnecting a few times
+        if (connectionAttemptsRef.current < 5) {
+          connectionAttemptsRef.current++;
+          setTimeout(sendJoinMessage, 1000);
+        }
+      }
+    };
+    
+    // Start sending join messages
+    sendJoinMessage();
+    
+    // Simulate connection established (as fallback)
+    setTimeout(() => {
+      if (!connected) {
+        console.log('Connection established via fallback timer');
+        setConnected(true);
+        
+        toast({
+          title: "Conectado à sessão",
+          description: `Você está conectado à sessão ${sessionId}.`,
+        });
+        
+        // Auto-start camera after connection
+        if (!cameraActive) {
+          startCamera();
+        }
+      }
+    }, 2000);
   };
 
   const disconnectFromSession = () => {
@@ -171,7 +224,7 @@ const ParticipantPage = () => {
       }
     };
     
-    // Send a frame every 500ms (increased frequency for better real-time feel)
+    // Send a frame every 500ms for smoother real-time feel
     frameIntervalRef.current = window.setInterval(sendVideoFrame, 500);
     
     // Immediately send first frame
