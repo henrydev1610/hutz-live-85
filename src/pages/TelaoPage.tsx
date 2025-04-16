@@ -10,6 +10,7 @@ import { QrCode, MonitorPlay, Users, Film, User, Image, Palette, Check, External
 import { Separator } from "@/components/ui/separator";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const TelaoPage = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -25,6 +26,11 @@ const TelaoPage = () => {
   const [finalActionCoupon, setFinalActionCouponCode] = useState("");
   const { toast } = useToast();
   
+  // Font and text styling options
+  const [selectedFont, setSelectedFont] = useState("Inter");
+  const [selectedTextColor, setSelectedTextColor] = useState("#FFFFFF");
+  const [qrCodeTextSize, setQrCodeTextSize] = useState(16);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrCodeRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -39,12 +45,50 @@ const TelaoPage = () => {
     width: 120, 
     height: 120 
   });
+  const [qrDescriptionPosition, setQrDescriptionPosition] = useState({
+    x: 20,
+    y: 150,
+    width: 120
+  });
   const [isDraggingQR, setIsDraggingQR] = useState(false);
+  const [isDraggingText, setIsDraggingText] = useState(false);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
   const transmissionWindowRef = useRef<Window | null>(null);
   const [qrCodeDescription, setQrCodeDescription] = useState("Escaneie o QR Code para participar");
+
+  // Background color options
+  const backgroundColors = [
+    "#000000", "#0F172A", "#18181B", "#292524", "#1E1E1E", "#1A1A1A",
+    "#2E1065", "#4C1D95", "#6B21A8", "#7E22CE", "#9333EA", 
+    "#581C87", "#701A75", "#831843", "#9D174D", "#BE185D",
+    "#0C4A6E", "#0E7490", "#0F766E", "#047857", "#065F46", 
+    "#064E3B", "#14532D", "#166534", "#15803D", "#16A34A",
+    "#1E3A8A", "#1E40AF", "#1D4ED8", "#2563EB", "#3B82F6",
+    "#881337", "#9F1239", "#BE123C", "#E11D48", "#F43F5E"
+  ];
+
+  // Font options
+  const fontOptions = [
+    "Inter", "Arial", "Helvetica", "Times New Roman", "Courier New", 
+    "Georgia", "Verdana", "Tahoma", "Trebuchet MS", "Impact", 
+    "Comic Sans MS", "Lucida Sans", "Palatino", "Garamond", "Bookman",
+    "Copperplate", "Papyrus", "Brush Script MT", "Luminari", "Didot",
+    "American Typewriter", "Andale Mono", "Bradley Hand", "Chalkduster", "Futura",
+    "Marker Felt", "Optima", "Snell Roundhand", "Zapfino", "Baskerville"
+  ];
+
+  // Text color options
+  const textColors = [
+    "#FFFFFF", "#F8FAFC", "#F1F5F9", "#E2E8F0", "#CBD5E1", "#94A3B8", 
+    "#64748B", "#475569", "#334155", "#1E293B", "#0F172A", "#000000",
+    "#FECACA", "#FCA5A5", "#F87171", "#EF4444", "#DC2626", "#B91C1C",
+    "#D9F99D", "#BEF264", "#A3E635", "#84CC16", "#65A30D", "#4D7C0F",
+    "#BFDBFE", "#93C5FD", "#60A5FA", "#3B82F6", "#2563EB", "#1D4ED8",
+    "#C7D2FE", "#A5B4FC", "#818CF8", "#6366F1", "#4F46E5", "#4338CA",
+    "#F5D0FE", "#F0ABFC", "#E879F9", "#D946EF", "#C026D3", "#A21CAF"
+  ];
 
   useEffect(() => {
     if (qrCodeGenerated) {
@@ -156,7 +200,7 @@ const TelaoPage = () => {
     });
   };
 
-  const startDragging = (e: React.MouseEvent<HTMLDivElement>) => {
+  const startDraggingQR = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!qrCodeVisible) return;
     
     const target = e.target as HTMLElement;
@@ -177,8 +221,19 @@ const TelaoPage = () => {
     }
   };
 
+  const startDraggingText = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!qrCodeVisible) return;
+    
+    setIsDraggingText(true);
+    setStartPos({ 
+      x: e.clientX - qrDescriptionPosition.x, 
+      y: e.clientY - qrDescriptionPosition.y 
+    });
+  };
+
   const stopDragging = () => {
     setIsDraggingQR(false);
+    setIsDraggingText(false);
     setResizeHandle(null);
   };
 
@@ -194,6 +249,18 @@ const TelaoPage = () => {
         const y = Math.max(0, Math.min(newY, container.height - qrCodePosition.height));
         
         setQrCodePosition(prev => ({ ...prev, x, y }));
+      }
+    } else if (isDraggingText) {
+      const newX = e.clientX - startPos.x;
+      const newY = e.clientY - startPos.y;
+      
+      const container = previewContainerRef.current?.getBoundingClientRect();
+      
+      if (container) {
+        const x = Math.max(0, Math.min(newX, container.width - qrDescriptionPosition.width));
+        const y = Math.max(0, Math.min(newY, container.height - 40)); // 40 is an approximate height for text
+        
+        setQrDescriptionPosition(prev => ({ ...prev, x, y }));
       }
     } else if (resizeHandle) {
       const dx = e.clientX - startPos.x;
@@ -216,7 +283,23 @@ const TelaoPage = () => {
         width: size,
         height: size
       }));
+      
+      // Update the description width to match QR code
+      setQrDescriptionPosition(prev => ({
+        ...prev,
+        width: size
+      }));
     }
+  };
+  
+  const handleTextSizeChange = (direction: 'increase' | 'decrease') => {
+    setQrCodeTextSize(prev => {
+      if (direction === 'increase') {
+        return Math.min(prev + 2, 36);
+      } else {
+        return Math.max(prev - 2, 10);
+      }
+    });
   };
 
   const openTransmissionWindow = () => {
@@ -245,6 +328,7 @@ const TelaoPage = () => {
           <head>
             <title>Transmissão ao Vivo</title>
             <style>
+              @import url('https://fonts.googleapis.com/css2?family=${selectedFont.replace(' ', '+')}&display=swap');
               body {
                 margin: 0;
                 padding: 0;
@@ -313,15 +397,17 @@ const TelaoPage = () => {
                 height: 100%;
               }
               .qr-description {
-                margin-top: 8px;
-                background-color: white;
-                color: black;
+                position: absolute;
+                left: ${qrDescriptionPosition.x}px;
+                top: ${qrDescriptionPosition.y}px;
+                width: ${qrDescriptionPosition.width}px;
+                color: ${selectedTextColor};
                 padding: 4px 8px;
                 border-radius: 4px;
-                font-size: 16px;
+                font-size: ${qrCodeTextSize}px;
                 text-align: center;
                 font-weight: bold;
-                width: 100%;
+                font-family: '${selectedFont}', sans-serif;
               }
             </style>
           </head>
@@ -368,8 +454,8 @@ const TelaoPage = () => {
                       <path d="M4 20v-4"></path>
                     </svg>
                   </div>
-                  <div class="qr-description">${qrCodeDescription}</div>
                 </div>
+                <div class="qr-description">${qrCodeDescription}</div>
               ` : ''}
             </div>
           </body>
@@ -470,34 +556,49 @@ const TelaoPage = () => {
         </div>
         
         {qrCodeVisible && (
-          <div className="absolute flex flex-col items-center"
-            style={{
-              left: `${qrCodePosition.x}px`,
-              top: `${qrCodePosition.y}px`,
-              width: `${qrCodePosition.width}px`,
-            }}
-          >
-            <div 
-              ref={qrCodeRef}
-              className="w-full bg-white p-1 rounded-lg cursor-move"
+          <>
+            <div className="absolute"
               style={{
-                height: `${qrCodePosition.height}px`,
+                left: `${qrCodePosition.x}px`,
+                top: `${qrCodePosition.y}px`,
+                width: `${qrCodePosition.width}px`,
               }}
-              onMouseDown={startDragging}
             >
-              <div className="w-full h-full bg-white flex items-center justify-center">
-                <QrCode className="w-full h-full text-black" />
+              <div 
+                ref={qrCodeRef}
+                className="w-full bg-white p-1 rounded-lg cursor-move"
+                style={{
+                  height: `${qrCodePosition.height}px`,
+                }}
+                onMouseDown={startDraggingQR}
+              >
+                <div className="w-full h-full bg-white flex items-center justify-center">
+                  <QrCode className="w-full h-full text-black" />
+                </div>
+                
+                <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
+                <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
+                <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
+                <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
               </div>
-              
-              <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
-              <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
-              <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
-              <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
             </div>
-            <div className="mt-2 p-1 bg-white text-black text-sm font-medium rounded text-center">
+            
+            <div 
+              className="absolute cursor-move text-center"
+              style={{
+                left: `${qrDescriptionPosition.x}px`,
+                top: `${qrDescriptionPosition.y}px`,
+                width: `${qrDescriptionPosition.width}px`,
+                color: selectedTextColor,
+                fontFamily: `'${selectedFont}', sans-serif`,
+                fontSize: `${qrCodeTextSize}px`,
+                fontWeight: 'bold'
+              }}
+              onMouseDown={startDraggingText}
+            >
               {qrCodeDescription}
             </div>
-          </div>
+          </>
         )}
       </div>
     );
@@ -652,6 +753,43 @@ const TelaoPage = () => {
                         className="hutz-input"
                       />
                     </div>
+                    
+                    <div>
+                      <Label className="mb-2 block">
+                        Fonte do Texto
+                      </Label>
+                      <Select 
+                        value={selectedFont} 
+                        onValueChange={setSelectedFont}
+                      >
+                        <SelectTrigger className="hutz-input">
+                          <SelectValue placeholder="Selecione uma fonte" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {fontOptions.map(font => (
+                            <SelectItem key={font} value={font} style={{fontFamily: font}}>
+                              {font}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Label className="mb-2 block">
+                        Cor do Texto
+                      </Label>
+                      <div className="grid grid-cols-10 gap-1">
+                        {textColors.map(color => (
+                          <div
+                            key={color}
+                            className={`w-full aspect-square rounded-md cursor-pointer hover:scale-110 transition-transform border ${selectedTextColor === color ? 'border-accent' : 'border-white/20'}`}
+                            style={{ backgroundColor: color }}
+                            onClick={() => setSelectedTextColor(color)}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </TabsContent>
                 
@@ -659,8 +797,8 @@ const TelaoPage = () => {
                   <div className="space-y-6">
                     <div>
                       <Label className="mb-2 block">Cor de Fundo</Label>
-                      <div className="grid grid-cols-6 gap-2">
-                        {['#000000', '#0F172A', '#18181B', '#292524', '#1E1E1E', '#1A1A1A'].map(color => (
+                      <div className="grid grid-cols-12 gap-1">
+                        {backgroundColors.map(color => (
                           <div
                             key={color}
                             className={`w-full aspect-square rounded-md cursor-pointer hover:scale-110 transition-transform border ${selectedBackgroundColor === color ? 'border-accent' : 'border-white/20'}`}
@@ -822,6 +960,33 @@ const TelaoPage = () => {
                 
                 <TabsContent value="preview" className="space-y-4">
                   {renderPreviewContent()}
+                  
+                  <div className="bg-secondary/40 p-4 rounded-lg">
+                    <h3 className="text-sm font-medium mb-2">Ajustes do Texto</h3>
+                    <div className="flex items-center gap-3">
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleTextSizeChange('decrease')}
+                        disabled={qrCodeTextSize <= 10}
+                        className="h-8 w-8 p-0 flex items-center justify-center"
+                      >
+                        -
+                      </Button>
+                      <div className="text-sm">
+                        Tamanho do Texto: {qrCodeTextSize}px
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleTextSizeChange('increase')}
+                        disabled={qrCodeTextSize >= 36}
+                        className="h-8 w-8 p-0 flex items-center justify-center"
+                      >
+                        +
+                      </Button>
+                    </div>
+                  </div>
                   
                   <div className="text-center text-sm text-white/60">
                     <p>Esta é a pré-visualização de como ficará sua transmissão</p>
@@ -992,4 +1157,3 @@ const TelaoPage = () => {
 };
 
 export default TelaoPage;
-
