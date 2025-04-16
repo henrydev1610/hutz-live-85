@@ -22,6 +22,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
   const flashIntervalRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const frameIdRef = useRef<number | null>(null);
+  const phoneContainerRef = useRef<HTMLDivElement>(null);
   
   useEffect(() => {
     return () => {
@@ -263,7 +264,7 @@ const PhonePreview = ({ isPlaying, currentTime, timelineItems }: PhonePreviewPro
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative w-64 h-[500px] bg-black rounded-3xl border-8 border-gray-800 overflow-hidden shadow-xl">
+      <div className="relative w-64 h-[500px] bg-black rounded-3xl border-8 border-gray-800 overflow-hidden shadow-xl" ref={phoneContainerRef}>
         <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-24 h-5 bg-black rounded-b-xl z-30"></div>
         
         <div 

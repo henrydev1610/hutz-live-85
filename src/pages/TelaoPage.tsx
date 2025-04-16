@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -622,7 +621,7 @@ const TelaoPage = () => {
               </CardDescription>
               
               <Tabs defaultValue="participants" className="w-full">
-                <TabsList className="grid grid-cols-5 mb-6">
+                <TabsList className="grid grid-cols-4 mb-6">
                   <TabsTrigger value="participants">
                     <Users className="h-4 w-4 mr-2" />
                     Participantes
@@ -635,13 +634,9 @@ const TelaoPage = () => {
                     <Palette className="h-4 w-4 mr-2" />
                     Aparência
                   </TabsTrigger>
-                  <TabsTrigger value="text">
-                    <Type className="h-4 w-4 mr-2" />
-                    Texto
-                  </TabsTrigger>
-                  <TabsTrigger value="preview">
-                    <Film className="h-4 w-4 mr-2" />
-                    Pré-visualização
+                  <TabsTrigger value="qrcode">
+                    <QrCode className="h-4 w-4 mr-2" />
+                    QR Code
                   </TabsTrigger>
                 </TabsList>
                 
@@ -757,6 +752,38 @@ const TelaoPage = () => {
                         </Button>
                       </div>
                     </div>
+                    
+                    {/* Added font selection to Layout tab */}
+                    <div>
+                      <Label className="mb-2 block">Fonte do Texto</Label>
+                      <Select value={selectedFont} onValueChange={setSelectedFont}>
+                        <SelectTrigger className="hutz-input">
+                          <SelectValue placeholder="Selecione a fonte" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {fontOptions.map((font) => (
+                            <SelectItem key={font.value} value={font.value}>
+                              <span style={{ fontFamily: font.value }}>{font.name}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    {/* Added text color selection to Layout tab */}
+                    <div>
+                      <Label className="mb-2 block">Cor do Texto</Label>
+                      <div className="grid grid-cols-9 gap-1">
+                        {textColors.map((color) => (
+                          <button
+                            key={color}
+                            className={`w-6 h-6 rounded-full border ${selectedTextColor === color ? 'border-white ring-2 ring-accent' : 'border-white/20'}`}
+                            style={{ backgroundColor: color }}
+                            onClick={() => setSelectedTextColor(color)}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </TabsContent>
                 
@@ -804,44 +831,8 @@ const TelaoPage = () => {
                   </div>
                 </TabsContent>
                 
-                <TabsContent value="text" className="space-y-4">
-                  <div className="space-y-6">
-                    <div>
-                      <Label className="mb-2 block">Fonte do Texto</Label>
-                      <Select value={selectedFont} onValueChange={setSelectedFont}>
-                        <SelectTrigger className="hutz-input">
-                          <SelectValue placeholder="Selecione a fonte" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {fontOptions.map((font) => (
-                            <SelectItem key={font.value} value={font.value}>
-                              <span style={{ fontFamily: font.value }}>{font.name}</span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div>
-                      <Label className="mb-2 block">Cor do Texto</Label>
-                      <div className="grid grid-cols-9 gap-1">
-                        {textColors.map((color) => (
-                          <button
-                            key={color}
-                            className={`w-6 h-6 rounded-full border ${selectedTextColor === color ? 'border-white ring-2 ring-accent' : 'border-white/20'}`}
-                            style={{ backgroundColor: color }}
-                            onClick={() => setSelectedTextColor(color)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="preview" className="space-y-4">
-                  {renderPreviewContent()}
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <TabsContent value="qrcode" className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <div className="flex gap-2">
                         <Button 
