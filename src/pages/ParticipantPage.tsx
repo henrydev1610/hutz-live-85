@@ -14,6 +14,9 @@ const ParticipantPage = () => {
   const [connected, setConnected] = useState(false);
   const [transmitting, setTransmitting] = useState(false);
   const { toast } = useToast();
+  const participantIdRef = useRef<string>(Math.random().toString(36).substr(2, 9));
+  const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+  const frameIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Auto-start camera on mobile devices
@@ -67,17 +70,18 @@ const ParticipantPage = () => {
   }, [toast]);
 
   const connectToSession = () => {
-    // In a real implementation, we would connect to a WebRTC service
-    // For now, we'll simulate the connection
+    if (!sessionId) return;
+    
     console.log(`Connecting to session: ${sessionId}`);
     
     // Create a broadcast channel to communicate with the host
     const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+    broadcastChannelRef.current = channel;
     
-    // Send a join message
+    // Send a join message with the participant ID
     channel.postMessage({
       type: 'participant-join',
-      id: Math.random().toString(36).substr(2, 9),
+      id: participantIdRef.current,
       timestamp: Date.now()
     });
     
@@ -88,6 +92,11 @@ const ParticipantPage = () => {
         title: "Conectado à sessão",
         description: `Você está conectado à sessão ${sessionId}.`,
       });
+      
+      // Auto-start camera after connection
+      if (!cameraActive) {
+        startCamera();
+      }
     }, 500);
   };
 
@@ -99,25 +108,39 @@ const ParticipantPage = () => {
       setTransmitting(false);
       
       // Send a leave message on the broadcast channel
-      const channel = new BroadcastChannel(`telao-session-${sessionId}`);
-      channel.postMessage({
-        type: 'participant-leave',
-        timestamp: Date.now()
-      });
-      channel.close();
+      if (broadcastChannelRef.current) {
+        broadcastChannelRef.current.postMessage({
+          type: 'participant-leave',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        });
+        broadcastChannelRef.current.close();
+        broadcastChannelRef.current = null;
+      }
+      
+      // Clear the frame sending interval
+      if (frameIntervalRef.current) {
+        clearInterval(frameIntervalRef.current);
+        frameIntervalRef.current = null;
+      }
     }
   };
 
   const startTransmitting = () => {
     if (!connected || !cameraActive) return;
     
-    // In a real implementation, we would start sending video data
+    // Stop any existing transmission
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+      frameIntervalRef.current = null;
+    }
+    
     setTransmitting(true);
     console.log(`Started transmitting video to session: ${sessionId}`);
     
     // Send a frame periodically to simulate video transmission
     const sendVideoFrame = () => {
-      if (videoRef.current && videoRef.current.srcObject) {
+      if (videoRef.current && videoRef.current.srcObject && broadcastChannelRef.current) {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
@@ -134,10 +157,10 @@ const ParticipantPage = () => {
           try {
             const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
             
-            // Send the frame to the host
-            const channel = new BroadcastChannel(`telao-session-${sessionId}`);
-            channel.postMessage({
+            // Send the frame to the host with the participant ID
+            broadcastChannelRef.current.postMessage({
               type: 'video-frame',
+              id: participantIdRef.current,
               frame: dataUrl,
               timestamp: Date.now()
             });
@@ -148,11 +171,11 @@ const ParticipantPage = () => {
       }
     };
     
-    // Send a frame every second (again, very inefficient but works for demo)
-    const intervalId = setInterval(sendVideoFrame, 1000);
+    // Send a frame every 500ms (increased frequency for better real-time feel)
+    frameIntervalRef.current = window.setInterval(sendVideoFrame, 500);
     
-    // Store the interval ID somewhere so it can be cleared later
-    (window as any).frameIntervalId = intervalId;
+    // Immediately send first frame
+    sendVideoFrame();
   };
 
   const stopTransmitting = () => {
@@ -163,9 +186,9 @@ const ParticipantPage = () => {
     console.log(`Stopped transmitting video to session: ${sessionId}`);
     
     // Clear the frame sending interval
-    if ((window as any).frameIntervalId) {
-      clearInterval((window as any).frameIntervalId);
-      (window as any).frameIntervalId = null;
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+      frameIntervalRef.current = null;
     }
   };
 

@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -448,9 +447,10 @@ const TelaoPage = () => {
       const transmissionWidth = width;
       const transmissionHeight = height;
       
-      const widthScale = transmissionWidth / previewWidth;
-      const heightScale = transmissionHeight / previewHeight;
-      const scale = Math.min(widthScale, heightScale) * 2; // Doubled scale to make things bigger
+      const widthRatio = transmissionWidth / previewWidth;
+      const heightRatio = transmissionHeight / previewHeight;
+      
+      const scale = Math.min(widthRatio, heightRatio) * 0.9;
       
       newWindow.document.write(`
         <html>
@@ -470,7 +470,15 @@ const TelaoPage = () => {
                 width: 100vw;
                 height: 100vh;
                 overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
                 background-color: ${backgroundImage ? 'transparent' : selectedBackgroundColor};
+              }
+              .content-wrapper {
+                position: relative;
+                width: ${previewWidth * scale}px;
+                height: ${previewHeight * scale}px;
               }
               .bg-image {
                 position: absolute;
@@ -546,38 +554,40 @@ const TelaoPage = () => {
           </head>
           <body>
             <div class="container">
-              ${backgroundImage ? `<img src="${backgroundImage}" class="bg-image" alt="Background" />` : ''}
-              
-              <div class="participants-grid">
-                ${participantList
-                  .filter(p => p.selected)
-                  .slice(0, participantCount)
-                  .map((participant, i) => `
-                    <div class="participant" id="participant-${participant.id}">
-                      ${participant.frameData 
-                        ? `<img src="${participant.frameData}" alt="${participant.name}" />`
-                        : `<svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="12" cy="7" r="4"></circle>
-                          </svg>`
-                      }
+              <div class="content-wrapper">
+                ${backgroundImage ? `<img src="${backgroundImage}" class="bg-image" alt="Background" />` : ''}
+                
+                <div class="participants-grid">
+                  ${participantList
+                    .filter(p => p.selected)
+                    .slice(0, participantCount)
+                    .map((participant, i) => `
+                      <div class="participant" id="participant-${participant.id}">
+                        ${participant.frameData 
+                          ? `<img src="${participant.frameData}" alt="${participant.name}" />`
+                          : `<svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                              <circle cx="12" cy="7" r="4"></circle>
+                            </svg>`
+                        }
+                      </div>
+                    `).join('')}
+                  
+                  ${Array.from({ length: Math.max(0, participantCount - participantList.filter(p => p.selected).length) }, (_, i) => `
+                    <div class="participant" style="background-color: rgba(0, 0, 0, 0.2);">
+                      <svg class="participant-icon" style="opacity: 0.3;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                      </svg>
                     </div>
                   `).join('')}
+                </div>
                 
-                ${Array.from({ length: Math.max(0, participantCount - participantList.filter(p => p.selected).length) }, (_, i) => `
-                  <div class="participant" style="background-color: rgba(0, 0, 0, 0.2);">
-                    <svg class="participant-icon" style="opacity: 0.3;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                      <circle cx="12" cy="7" r="4"></circle>
-                    </svg>
-                  </div>
-                `).join('')}
+                <div class="qr-code">
+                  ${qrCodeSvg ? `<img src="${qrCodeSvg}" alt="QR Code" />` : ''}
+                </div>
+                <div class="qr-description">${qrCodeDescription}</div>
               </div>
-              
-              <div class="qr-code">
-                ${qrCodeSvg ? `<img src="${qrCodeSvg}" alt="QR Code" />` : ''}
-              </div>
-              <div class="qr-description">${qrCodeDescription}</div>
             </div>
             
             <script>
@@ -589,7 +599,10 @@ const TelaoPage = () => {
                 const data = event.data;
                 
                 if (data.type === 'video-frame') {
-                  const participantElement = document.getElementById("participant-" + data.id);
+                  // Update the video frame for the participant
+                  const participantId = data.id;
+                  const participantElement = document.getElementById("participant-" + participantId);
+                  
                   if (participantElement) {
                     // Check if there's already an image
                     let img = participantElement.querySelector('img');
@@ -604,6 +617,9 @@ const TelaoPage = () => {
                     img.src = data.frame;
                     img.alt = "Participant Video";
                   }
+                } else if (data.type === 'participant-join') {
+                  console.log('New participant joined:', data.id);
+                  // The main window will handle adding the participant to the list
                 }
               };
               
@@ -672,7 +688,7 @@ const TelaoPage = () => {
         onMouseUp={stopDragging}
         onMouseLeave={stopDragging}
         ref={previewContainerRef}
-        style={{ height: '370px' }} // Increased preview height
+        style={{ height: '450px' }}
       >
         <div 
           className="absolute inset-0" 
