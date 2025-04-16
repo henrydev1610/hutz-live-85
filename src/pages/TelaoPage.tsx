@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,6 +9,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { QrCode, MonitorPlay, Users, Film, User, Image, Palette, Check, ExternalLink } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const TelaoPage = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -25,6 +27,8 @@ const TelaoPage = () => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrCodeRef = useRef<HTMLDivElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+  const [transmissionOpen, setTransmissionOpen] = useState(false);
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
@@ -117,7 +121,7 @@ const TelaoPage = () => {
     if (!qrCodeVisible) return;
     
     const target = e.target as HTMLElement;
-    if (target.className.includes('resize-handle')) {
+    if (target.className && typeof target.className === 'string' && target.className.includes('resize-handle')) {
       const handle = target.getAttribute('data-handle');
       setResizeHandle(handle);
       setStartPos({ x: e.clientX, y: e.clientY });
@@ -125,7 +129,7 @@ const TelaoPage = () => {
         width: qrCodePosition.width, 
         height: qrCodePosition.height 
       });
-    } else if (!target.className.includes('resize-handle')) {
+    } else {
       setIsDraggingQR(true);
       setStartPos({ 
         x: e.clientX - qrCodePosition.x, 
@@ -174,6 +178,79 @@ const TelaoPage = () => {
     }
   };
 
+  const openTransmissionWindow = () => {
+    setTransmissionOpen(true);
+  };
+
+  const renderPreviewContent = () => {
+    return (
+      <div 
+        className="aspect-video relative bg-black rounded-lg overflow-hidden" 
+        onMouseMove={handleMouseMove} 
+        onMouseUp={stopDragging}
+        onMouseLeave={stopDragging}
+        ref={previewContainerRef}
+      >
+        <div 
+          className="absolute inset-0" 
+          style={{
+            backgroundColor: backgroundImage ? 'transparent' : selectedBackgroundColor,
+          }}
+        >
+          {backgroundImage && (
+            <img 
+              src={backgroundImage} 
+              alt="Background" 
+              className="w-full h-full object-cover"
+            />
+          )}
+        </div>
+        
+        <div className="absolute top-[15%] right-[15%] bottom-[15%] left-[33%]">
+          <div className={`grid grid-cols-${Math.ceil(Math.sqrt(participantCount))} gap-2 h-full`}>
+            {participantList
+              .filter(p => p.selected)
+              .slice(0, participantCount)
+              .map((participant, i) => (
+                <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center">
+                  <User className="h-8 w-8 text-white/70" />
+                </div>
+              ))}
+            
+            {Array(Math.max(0, participantCount - selectedParticipantsCount)).fill(0).map((_, i) => (
+              <div key={`empty-preview-${i}`} className="bg-black/20 rounded overflow-hidden flex items-center justify-center">
+                <User className="h-8 w-8 text-white/30" />
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {qrCodeVisible && (
+          <div 
+            ref={qrCodeRef}
+            className="absolute bg-white p-1 rounded-lg cursor-move"
+            style={{
+              left: `${qrCodePosition.x}px`,
+              top: `${qrCodePosition.y}px`,
+              width: `${qrCodePosition.width}px`,
+              height: `${qrCodePosition.height}px`,
+            }}
+            onMouseDown={startDragging}
+          >
+            <div className="w-full h-full bg-white flex items-center justify-center">
+              <QrCode className="w-full h-full text-black" />
+            </div>
+            
+            <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
+            <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
+            <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
+            <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const selectedParticipantsCount = participantList.filter(p => p.selected).length;
 
   return (
@@ -184,20 +261,24 @@ const TelaoPage = () => {
         <div className="lg:col-span-2">
           <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 h-full">
             <CardHeader className="flex flex-row justify-between items-center">
-              <div>
+              <div className="flex items-center gap-4 w-full">
                 <CardTitle className="flex items-center gap-2">
                   Controle de Transmissão
-                  <Button className="hutz-button-accent ml-4">
-                    <Film className="h-4 w-4 mr-2" />
-                    Iniciar Transmissão
-                  </Button>
                 </CardTitle>
-                <CardDescription>
-                  Gerencie participantes, layout e aparência da sua transmissão ao vivo
-                </CardDescription>
+                <Button 
+                  className="hutz-button-accent"
+                  onClick={openTransmissionWindow}
+                >
+                  <Film className="h-4 w-4 mr-2" />
+                  Iniciar Transmissão
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
+              <CardDescription className="mb-4">
+                Gerencie participantes, layout e aparência da sua transmissão ao vivo
+              </CardDescription>
+              
               <Tabs defaultValue="participants" className="w-full">
                 <TabsList className="grid grid-cols-5 mb-6">
                   <TabsTrigger value="participants">
@@ -462,69 +543,7 @@ const TelaoPage = () => {
                 </TabsContent>
                 
                 <TabsContent value="preview" className="space-y-4">
-                  <div 
-                    className="aspect-video relative bg-black rounded-lg overflow-hidden" 
-                    onMouseMove={handleMouseMove} 
-                    onMouseUp={stopDragging}
-                    onMouseLeave={stopDragging}
-                  >
-                    <div 
-                      className="absolute inset-0" 
-                      style={{
-                        backgroundColor: backgroundImage ? 'transparent' : selectedBackgroundColor,
-                      }}
-                    >
-                      {backgroundImage && (
-                        <img 
-                          src={backgroundImage} 
-                          alt="Background" 
-                          className="w-full h-full object-cover"
-                        />
-                      )}
-                    </div>
-                    
-                    <div className="absolute top-[15%] right-[15%] bottom-[15%] left-[33%]">
-                      <div className={`grid grid-cols-${Math.ceil(Math.sqrt(participantCount))} gap-2 h-full`}>
-                        {participantList
-                          .filter(p => p.selected)
-                          .slice(0, participantCount)
-                          .map((participant, i) => (
-                            <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center">
-                              <User className="h-8 w-8 text-white/70" />
-                            </div>
-                          ))}
-                        
-                        {Array(Math.max(0, participantCount - selectedParticipantsCount)).fill(0).map((_, i) => (
-                          <div key={`empty-preview-${i}`} className="bg-black/20 rounded overflow-hidden flex items-center justify-center">
-                            <User className="h-8 w-8 text-white/30" />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    {qrCodeVisible && (
-                      <div 
-                        ref={qrCodeRef}
-                        className="absolute bg-white p-1 rounded-lg cursor-move"
-                        style={{
-                          left: `${qrCodePosition.x}px`,
-                          top: `${qrCodePosition.y}px`,
-                          width: `${qrCodePosition.width}px`,
-                          height: `${qrCodePosition.height}px`,
-                        }}
-                        onMouseDown={startDragging}
-                      >
-                        <div className="w-full h-full bg-white flex items-center justify-center">
-                          <QrCode className="w-full h-full text-black" />
-                        </div>
-                        
-                        <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
-                        <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
-                        <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
-                        <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
-                      </div>
-                    )}
-                  </div>
+                  {renderPreviewContent()}
                   
                   <div className="text-center text-sm text-white/60">
                     <p>Esta é a pré-visualização de como ficará sua transmissão</p>
@@ -624,6 +643,21 @@ const TelaoPage = () => {
           </Card>
         </div>
       </div>
+
+      {/* Transmission Dialog */}
+      <Dialog open={transmissionOpen} onOpenChange={setTransmissionOpen}>
+        <DialogContent className="max-w-4xl p-0 border-white/10 bg-black">
+          <DialogHeader className="p-6 pb-0">
+            <DialogTitle>Transmissão ao Vivo</DialogTitle>
+            <DialogDescription>
+              Transmissão iniciada. Compartilhe o QR Code para que os participantes se conectem.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-6">
+            {renderPreviewContent()}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
