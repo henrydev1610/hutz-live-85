@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -152,19 +153,40 @@ const TelaoPage = () => {
               selected: prev.filter(p => p.selected).length < participantCount
             };
             
+            // Acknowledge the connection to this participant
+            channel.postMessage({
+              type: 'host-acknowledge',
+              participantId: data.id,
+              timestamp: Date.now()
+            });
+            
+            toast({
+              title: "Novo participante conectado",
+              description: `Um novo participante se conectou à sessão.`,
+            });
+            
             return [...prev, newParticipant];
           });
         } 
         else if (data.type === 'participant-leave') {
           // Handle participant leaving
-          console.log('Participant left');
+          console.log('Participant left:', data.id);
+          setParticipantList(prev => 
+            prev.map(p => p.id === data.id ? { ...p, active: false } : p)
+          );
+        }
+        else if (data.type === 'participant-heartbeat') {
+          // Update participant's active status
+          setParticipantList(prev => 
+            prev.map(p => p.id === data.id ? { ...p, active: true } : p)
+          );
         }
         else if (data.type === 'video-frame') {
           // Update participant's video frame
           setParticipantList(prev => {
             return prev.map(p => {
               if (p.id === data.id) {
-                return { ...p, frameData: data.frame };
+                return { ...p, frameData: data.frame, active: true };
               }
               return p;
             });
@@ -174,7 +196,7 @@ const TelaoPage = () => {
       
       setBroadcastChannel(channel);
     }
-  }, [sessionId, participantCount]);
+  }, [sessionId, participantCount, toast]);
 
   useEffect(() => {
     if (qrCodeGenerated && qrCodeURL) {
@@ -464,21 +486,29 @@ const TelaoPage = () => {
                 background-color: #000;
                 color: white;
                 font-family: ${selectedFont};
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                width: 100vw;
               }
               .container {
                 position: relative;
-                width: 100vw;
-                height: 100vh;
                 overflow: hidden;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 background-color: ${backgroundImage ? 'transparent' : selectedBackgroundColor};
+                width: 100%;
+                height: 100%;
+                aspect-ratio: 16 / 9;
+                max-width: 100%;
+                max-height: 100%;
               }
               .content-wrapper {
                 position: relative;
-                width: ${previewWidth * scale}px;
-                height: ${previewHeight * scale}px;
+                width: 100%;
+                height: 100%;
               }
               .bg-image {
                 position: absolute;
@@ -490,7 +520,7 @@ const TelaoPage = () => {
                 position: absolute;
                 top: 15%;
                 right: 15%;
-                bottom: 15%;
+                bottom: 15%
                 left: 33%;
                 display: grid;
                 grid-template-columns: repeat(${Math.ceil(Math.sqrt(participantCount))}, 1fr);
@@ -688,7 +718,7 @@ const TelaoPage = () => {
         onMouseUp={stopDragging}
         onMouseLeave={stopDragging}
         ref={previewContainerRef}
-        style={{ height: '450px' }}
+        style={{ height: '600px' }}
       >
         <div 
           className="absolute inset-0" 
@@ -878,8 +908,9 @@ const TelaoPage = () => {
                               <User className="h-8 w-8 text-white/30" />
                             )}
                           </div>
-                          <p className="text-sm font-medium truncate">
+                          <p className="text-sm font-medium truncate flex items-center justify-center gap-2">
                             {participant.name}
+                            <span className={`w-2 h-2 rounded-full ${participant.active ? 'bg-green-500' : 'bg-gray-400'}`}></span>
                           </p>
                           <div className="flex justify-center gap-2 mt-2">
                             <Button 

@@ -17,6 +17,9 @@ const ParticipantPage = () => {
   const participantIdRef = useRef<string>(Math.random().toString(36).substr(2, 9));
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const frameIntervalRef = useRef<number | null>(null);
+  const connectionRetryCountRef = useRef<number>(0);
+  const maxConnectionRetries = 5;
+  const heartbeatIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Auto-start camera on mobile devices
@@ -61,22 +64,60 @@ const ParticipantPage = () => {
     // Connect to the transmission service
     connectToSession();
     
+    // Set a fallback timer to reconnect if connection not established
+    const fallbackTimer = setTimeout(() => {
+      if (!connected) {
+        console.log("Connection not established, retrying...");
+        connectToSession();
+      }
+    }, 2000);
+    
     return () => {
       if (cameraActive) {
         stopCamera();
       }
       disconnectFromSession();
+      clearTimeout(fallbackTimer);
     };
   }, [toast]);
 
   const connectToSession = () => {
     if (!sessionId) return;
     
-    console.log(`Connecting to session: ${sessionId}`);
+    console.log(`Connecting to session: ${sessionId}, attempt ${connectionRetryCountRef.current + 1}`);
     
     // Create a broadcast channel to communicate with the host
+    if (broadcastChannelRef.current) {
+      broadcastChannelRef.current.close();
+    }
+    
     const channel = new BroadcastChannel(`telao-session-${sessionId}`);
     broadcastChannelRef.current = channel;
+    
+    // Set up message event listener
+    channel.onmessage = (event) => {
+      const data = event.data;
+      
+      // Check for host acknowledgment
+      if (data.type === 'host-acknowledge' && data.participantId === participantIdRef.current) {
+        console.log("Connection acknowledged by host");
+        setConnected(true);
+        connectionRetryCountRef.current = 0;
+        
+        // Start sending heartbeats
+        startHeartbeat();
+        
+        // Auto-start camera after connection
+        if (!cameraActive) {
+          startCamera();
+        }
+        
+        toast({
+          title: "Conectado à sessão",
+          description: `Você está conectado à sessão ${sessionId}.`,
+        });
+      }
+    };
     
     // Send a join message with the participant ID
     channel.postMessage({
@@ -85,19 +126,31 @@ const ParticipantPage = () => {
       timestamp: Date.now()
     });
     
-    // Simulate connection established
+    // If we haven't received an acknowledgment, retry connection
     setTimeout(() => {
-      setConnected(true);
-      toast({
-        title: "Conectado à sessão",
-        description: `Você está conectado à sessão ${sessionId}.`,
-      });
-      
-      // Auto-start camera after connection
-      if (!cameraActive) {
-        startCamera();
+      if (!connected && connectionRetryCountRef.current < maxConnectionRetries) {
+        connectionRetryCountRef.current++;
+        connectToSession();
       }
-    }, 500);
+    }, 1500);
+  };
+
+  const startHeartbeat = () => {
+    // Clear any existing heartbeat interval
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+    }
+    
+    // Set up a new heartbeat interval
+    heartbeatIntervalRef.current = window.setInterval(() => {
+      if (broadcastChannelRef.current) {
+        broadcastChannelRef.current.postMessage({
+          type: 'participant-heartbeat',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        });
+      }
+    }, 3000);
   };
 
   const disconnectFromSession = () => {
@@ -123,6 +176,12 @@ const ParticipantPage = () => {
         clearInterval(frameIntervalRef.current);
         frameIntervalRef.current = null;
       }
+      
+      // Clear the heartbeat interval
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
     }
   };
 
@@ -140,21 +199,23 @@ const ParticipantPage = () => {
     
     // Send a frame periodically to simulate video transmission
     const sendVideoFrame = () => {
+      if (!connected) return;
+      
       if (videoRef.current && videoRef.current.srcObject && broadcastChannelRef.current) {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        if (ctx) {
-          // Set canvas dimensions to match video
-          canvas.width = videoRef.current.videoWidth;
-          canvas.height = videoRef.current.videoHeight;
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
           
-          // Draw the current video frame to the canvas
-          ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-          
-          // Convert the canvas to a data URL (this is very inefficient for real video streaming
-          // but works for this demo)
-          try {
+          if (ctx) {
+            // Set canvas dimensions to match video
+            canvas.width = videoRef.current.videoWidth;
+            canvas.height = videoRef.current.videoHeight;
+            
+            // Draw the current video frame to the canvas
+            ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+            
+            // Convert the canvas to a data URL (this is very inefficient for real video streaming
+            // but works for this demo)
             const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
             
             // Send the frame to the host with the participant ID
@@ -164,9 +225,9 @@ const ParticipantPage = () => {
               frame: dataUrl,
               timestamp: Date.now()
             });
-          } catch (e) {
-            console.error('Error creating data URL:', e);
           }
+        } catch (e) {
+          console.error('Error creating data URL:', e);
         }
       }
     };
