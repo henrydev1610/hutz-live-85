@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { QrCode, MonitorPlay, Users, Film, User, Image, Palette, Check, ExternalLink, X, StopCircle } from "lucide-react";
+import { QrCode, MonitorPlay, Users, Film, User, Image, Palette, Check, ExternalLink, X, StopCircle, Trash2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -44,6 +44,7 @@ const TelaoPage = () => {
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
   const transmissionWindowRef = useRef<Window | null>(null);
+  const [qrCodeDescription, setQrCodeDescription] = useState("Escaneie o QR Code para participar");
 
   useEffect(() => {
     if (qrCodeGenerated) {
@@ -145,6 +146,14 @@ const TelaoPage = () => {
   
   const triggerFileInput = () => {
     fileInputRef.current?.click();
+  };
+
+  const removeBackgroundImage = () => {
+    setBackgroundImage(null);
+    toast({
+      title: "Imagem removida",
+      description: "A imagem de fundo foi removida com sucesso."
+    });
   };
 
   const startDragging = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -280,22 +289,39 @@ const TelaoPage = () => {
                 height: 32px;
                 opacity: 0.7;
               }
-              .qr-code {
+              .qr-code-container {
                 position: absolute;
-                background-color: white;
-                padding: 4px;
-                border-radius: 8px;
                 left: ${qrCodePosition.x}px;
                 top: ${qrCodePosition.y}px;
                 width: ${qrCodePosition.width}px;
-                height: ${qrCodePosition.height}px;
                 display: ${qrCodeVisible ? 'flex' : 'none'};
+                flex-direction: column;
+                align-items: center;
+              }
+              .qr-code {
+                background-color: white;
+                padding: 4px;
+                border-radius: 8px;
+                width: 100%;
+                height: ${qrCodePosition.height}px;
+                display: flex;
                 align-items: center;
                 justify-content: center;
               }
               .qr-code svg {
                 width: 100%;
                 height: 100%;
+              }
+              .qr-description {
+                margin-top: 8px;
+                background-color: white;
+                color: black;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 16px;
+                text-align: center;
+                font-weight: bold;
+                width: 100%;
               }
             </style>
           </head>
@@ -324,22 +350,25 @@ const TelaoPage = () => {
               </div>
               
               ${qrCodeVisible ? `
-                <div class="qr-code">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect width="16" height="16" x="4" y="4" rx="1"></rect>
-                    <path d="M10 4v4"></path>
-                    <path d="M4 10h4"></path>
-                    <path d="M10 16v4"></path>
-                    <path d="M16 4v4"></path>
-                    <path d="M20 10h-4"></path>
-                    <path d="M16 16v4"></path>
-                    <path d="M4 16h4"></path>
-                    <path d="M4 4v4"></path>
-                    <path d="M16 16h4"></path>
-                    <path d="M20 20v-4"></path>
-                    <path d="M20 4v4"></path>
-                    <path d="M4 20v-4"></path>
-                  </svg>
+                <div class="qr-code-container">
+                  <div class="qr-code">
+                    <svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect width="16" height="16" x="4" y="4" rx="1"></rect>
+                      <path d="M10 4v4"></path>
+                      <path d="M4 10h4"></path>
+                      <path d="M10 16v4"></path>
+                      <path d="M16 4v4"></path>
+                      <path d="M20 10h-4"></path>
+                      <path d="M16 16v4"></path>
+                      <path d="M4 16h4"></path>
+                      <path d="M4 4v4"></path>
+                      <path d="M16 16h4"></path>
+                      <path d="M20 20v-4"></path>
+                      <path d="M20 4v4"></path>
+                      <path d="M4 20v-4"></path>
+                    </svg>
+                  </div>
+                  <div class="qr-description">${qrCodeDescription}</div>
                 </div>
               ` : ''}
             </div>
@@ -441,25 +470,33 @@ const TelaoPage = () => {
         </div>
         
         {qrCodeVisible && (
-          <div 
-            ref={qrCodeRef}
-            className="absolute bg-white p-1 rounded-lg cursor-move"
+          <div className="absolute flex flex-col items-center"
             style={{
               left: `${qrCodePosition.x}px`,
               top: `${qrCodePosition.y}px`,
               width: `${qrCodePosition.width}px`,
-              height: `${qrCodePosition.height}px`,
             }}
-            onMouseDown={startDragging}
           >
-            <div className="w-full h-full bg-white flex items-center justify-center">
-              <QrCode className="w-full h-full text-black" />
+            <div 
+              ref={qrCodeRef}
+              className="w-full bg-white p-1 rounded-lg cursor-move"
+              style={{
+                height: `${qrCodePosition.height}px`,
+              }}
+              onMouseDown={startDragging}
+            >
+              <div className="w-full h-full bg-white flex items-center justify-center">
+                <QrCode className="w-full h-full text-black" />
+              </div>
+              
+              <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
+              <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
+              <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
+              <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
             </div>
-            
-            <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
-            <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
-            <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
-            <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
+            <div className="mt-2 p-1 bg-white text-black text-sm font-medium rounded text-center">
+              {qrCodeDescription}
+            </div>
           </div>
         )}
       </div>
@@ -610,6 +647,8 @@ const TelaoPage = () => {
                       <Input
                         id="description-text"
                         placeholder="Escaneie o QR Code para participar"
+                        value={qrCodeDescription}
+                        onChange={(e) => setQrCodeDescription(e.target.value)}
                         className="hutz-input"
                       />
                     </div>
@@ -636,21 +675,33 @@ const TelaoPage = () => {
                       <Label htmlFor="bg-image-upload" className="mb-2 block">
                         Imagem de Fundo
                       </Label>
-                      <input 
-                        ref={fileInputRef}
-                        type="file" 
-                        id="bg-image-upload" 
-                        accept="image/*" 
-                        className="hidden" 
-                        onChange={handleFileSelect}
-                      />
-                      <Button 
-                        onClick={triggerFileInput} 
-                        className="w-full hutz-button-secondary"
-                      >
-                        <Image className="h-4 w-4 mr-2" />
-                        Carregar Imagem
-                      </Button>
+                      <div className="flex gap-2">
+                        <input 
+                          ref={fileInputRef}
+                          type="file" 
+                          id="bg-image-upload" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={handleFileSelect}
+                        />
+                        <Button 
+                          onClick={triggerFileInput} 
+                          className="hutz-button-secondary flex-1"
+                        >
+                          <Image className="h-4 w-4 mr-2" />
+                          Carregar Imagem
+                        </Button>
+                        
+                        {backgroundImage && (
+                          <Button 
+                            variant="destructive" 
+                            onClick={removeBackgroundImage}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Remover Imagem
+                          </Button>
+                        )}
+                      </div>
                       
                       {backgroundImage && (
                         <div className="mt-2 relative">
@@ -941,3 +992,4 @@ const TelaoPage = () => {
 };
 
 export default TelaoPage;
+
