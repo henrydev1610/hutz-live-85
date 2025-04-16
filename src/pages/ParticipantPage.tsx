@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -20,7 +19,6 @@ const ParticipantPage = () => {
   const participantIdRef = useRef<string>(Math.random().toString(36).substr(2, 9));
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const supabaseChannelRef = useRef<any>(null);
-  // Fix the type for frameIntervalRef - change from number to ReturnType<typeof setInterval>
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectionRetryCountRef = useRef<number>(0);
   const maxConnectionRetries = 15;
@@ -33,17 +31,14 @@ const ParticipantPage = () => {
   useEffect(() => {
     console.log(`Session ID: ${sessionId}, Participant ID: ${participantIdRef.current}`);
     
-    // Create a secondary communication channel using localStorage
     setupLocalStorageChannel();
     
-    // Get list of video devices
     const getVideoDevices = async () => {
       try {
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = devices.filter(device => device.kind === 'videoinput');
         setAvailableDevices(videoDevices);
         
-        // Automatically select front camera if available
         const frontCamera = videoDevices.find(device => 
           device.label.toLowerCase().includes('front') || 
           device.label.toLowerCase().includes('frente')
@@ -66,22 +61,19 @@ const ParticipantPage = () => {
 
     getVideoDevices();
     
-    // Connect to the transmission service
     if (sessionId) {
       connectToSession();
       
-      // Set a fallback timer to reconnect if connection not established
       const fallbackTimer = setTimeout(() => {
         if (!connected) {
           console.log("Connection not established, retrying...");
           connectToSession();
         }
-      }, 2000); // Increased timeout
+      }, 2000);
       
       joinTimeoutRef.current = fallbackTimer;
     }
     
-    // Auto-start camera on mobile devices after a short delay
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     if (isMobile) {
       const timer = setTimeout(() => {
@@ -96,7 +88,6 @@ const ParticipantPage = () => {
       }
       disconnectFromSession();
       
-      // Clean up all timers and intervals
       if (joinTimeoutRef.current) {
         clearTimeout(joinTimeoutRef.current);
         joinTimeoutRef.current = null;
@@ -116,7 +107,6 @@ const ParticipantPage = () => {
         localStorageChannelRef.current.close();
       }
       
-      // Close Supabase channel
       if (supabaseChannelRef.current) {
         supabaseChannelRef.current.unsubscribe();
       }
@@ -125,11 +115,9 @@ const ParticipantPage = () => {
 
   const setupLocalStorageChannel = () => {
     try {
-      // Create a backup communication channel
       const localChannel = new BroadcastChannel(`telao-local-${sessionId}`);
       localStorageChannelRef.current = localChannel;
       
-      // Listen for messages on the local channel
       localChannel.onmessage = (event) => {
         const data = event.data;
         handleChannelMessage(data);
@@ -142,7 +130,6 @@ const ParticipantPage = () => {
   };
 
   const handleChannelMessage = (data: any) => {
-    // Process messages from either communication channel
     if (data.type === 'host-acknowledge' && data.participantId === participantIdRef.current) {
       console.log("Connection acknowledged by host");
       setConnected(true);
@@ -150,10 +137,8 @@ const ParticipantPage = () => {
       setConnectionError(null);
       connectionRetryCountRef.current = 0;
       
-      // Start sending heartbeats
       startHeartbeat();
       
-      // Auto-start camera after connection if not already active
       if (!cameraActive) {
         startCamera();
       }
@@ -173,7 +158,6 @@ const ParticipantPage = () => {
     
     console.log(`Connecting to session: ${sessionId}, attempt ${connectionRetryCountRef.current + 1}`);
     
-    // Clear any existing timers or connections
     if (broadcastChannelRef.current) {
       broadcastChannelRef.current.close();
     }
@@ -188,12 +172,10 @@ const ParticipantPage = () => {
       connectionTimerRef.current = null;
     }
     
-    // Clear Supabase channel subscription
     if (supabaseChannelRef.current) {
       supabaseChannelRef.current.unsubscribe();
     }
     
-    // Method 1: Try BroadcastChannel
     try {
       const channel = new BroadcastChannel(`telao-session-${sessionId}`);
       broadcastChannelRef.current = channel;
@@ -202,17 +184,13 @@ const ParticipantPage = () => {
         handleChannelMessage(event.data);
       };
       
-      // Send a join message immediately
       sendJoinMessage();
       
-      // Try both channel and localStorage methods to ensure connectivity
-      // Set up a more aggressive join interval
       const joinInterval = setInterval(() => {
         if (!connected) {
           console.log("Sending join message...");
           sendJoinMessage();
           
-          // Also try localStorage as fallback
           try {
             const timestamp = Date.now();
             window.localStorage.setItem(`telao-join-${sessionId}`, JSON.stringify({
@@ -221,41 +199,34 @@ const ParticipantPage = () => {
               timestamp: timestamp
             }));
             
-            // Remove old entry after a delay to prevent pollution
             setTimeout(() => {
               try {
                 window.localStorage.removeItem(`telao-join-${sessionId}`);
               } catch (e) {
-                // Silent fail
               }
             }, 5000);
           } catch (e) {
             console.warn("Could not use localStorage for fallback communication", e);
           }
         } else {
-          // If connected, clear the interval
           clearInterval(joinInterval);
           joinIntervalRef.current = null;
         }
-      }, 1000); // Send join request every 1 second
+      }, 1000);
       
       joinIntervalRef.current = joinInterval;
       
-      // Clear join interval after reasonable time
       setTimeout(() => {
         if (joinIntervalRef.current) {
           clearInterval(joinIntervalRef.current);
           joinIntervalRef.current = null;
         }
-      }, 30000); // Try for 30 seconds max
-      
+      }, 30000);
     } catch (error) {
       console.error("Error creating broadcast channel:", error);
     }
     
-    // Method 2: Set up Supabase Realtime channel
     try {
-      // Create channel with unique name based on session
       const channel = supabase.channel(`session-${sessionId}`)
         .on('broadcast', { event: 'message' }, (payload) => {
           if (payload.payload.type === 'host-acknowledge' && 
@@ -266,7 +237,6 @@ const ParticipantPage = () => {
             setConnectionError(null);
             startHeartbeat();
             
-            // Auto-start camera if not active
             if (!cameraActive) {
               startCamera();
             }
@@ -280,18 +250,8 @@ const ParticipantPage = () => {
         .subscribe((status) => {
           console.log("Supabase channel status:", status);
           if (status === 'SUBSCRIBED') {
-            // Send join message via Supabase Realtime
-            channel.send({
-              type: 'broadcast',
-              event: 'message',
-              payload: {
-                type: 'participant-join',
-                id: participantIdRef.current,
-                timestamp: Date.now()
-              }
-            });
+            sendJoinMessage();
             
-            // Set up interval to keep sending join messages
             const supabaseJoinInterval = setInterval(() => {
               if (!connected) {
                 channel.send({
@@ -308,7 +268,6 @@ const ParticipantPage = () => {
               }
             }, 2000);
             
-            // Clear interval after 30 seconds
             setTimeout(() => clearInterval(supabaseJoinInterval), 30000);
           }
         });
@@ -318,7 +277,6 @@ const ParticipantPage = () => {
       console.warn("Supabase Realtime connection failed", e);
     }
     
-    // Method 3: Check for localStorage acknowledgments periodically
     try {
       const checkLocalStorage = setInterval(() => {
         if (!connected) {
@@ -335,7 +293,6 @@ const ParticipantPage = () => {
               setConnectionError(null);
               startHeartbeat();
               
-              // Auto-start camera if not active
               if (!cameraActive) {
                 startCamera();
               }
@@ -346,14 +303,12 @@ const ParticipantPage = () => {
               });
             }
           } catch (e) {
-            // Silent fail
           }
         } else {
           clearInterval(checkLocalStorage);
         }
       }, 1000);
       
-      // Stop checking after 30 seconds
       setTimeout(() => {
         clearInterval(checkLocalStorage);
       }, 30000);
@@ -361,23 +316,19 @@ const ParticipantPage = () => {
       console.warn("LocalStorage checking failed", e);
     }
     
-    // Set connection timeout with retry logic
     connectionTimerRef.current = setTimeout(() => {
       if (!connected) {
         console.log(`Connection attempt ${connectionRetryCountRef.current + 1} timed out`);
         
         if (connectionRetryCountRef.current < maxConnectionRetries) {
           connectionRetryCountRef.current++;
-          // Reset connection state for next attempt
           setConnecting(false);
           setConnectionError(`Tentativa ${connectionRetryCountRef.current} falhou. Tentando novamente...`);
           
-          // Wait before next attempt
           setTimeout(() => {
             connectToSession();
           }, 1000);
         } else {
-          // Give up after max retries
           setConnecting(false);
           setConnectionError("Não foi possível conectar após várias tentativas. Verifique sua conexão ou tente gerar um novo QR Code.");
           
@@ -388,13 +339,10 @@ const ParticipantPage = () => {
           });
         }
       }
-    }, 5000); // Wait 5 seconds for connection
+    }, 5000);
   };
 
   const sendJoinMessage = () => {
-    // Try all available communication methods
-    
-    // Method 1: BroadcastChannel
     if (broadcastChannelRef.current) {
       try {
         console.log("Sending join message via BroadcastChannel");
@@ -408,7 +356,6 @@ const ParticipantPage = () => {
       }
     }
     
-    // Method 2: LocalStorageChannel
     if (localStorageChannelRef.current) {
       try {
         console.log("Sending join message via LocalStorageChannel");
@@ -422,16 +369,22 @@ const ParticipantPage = () => {
       }
     }
     
-    // Method 3: Supabase Realtime
     if (supabaseChannelRef.current) {
       try {
-        // Already sending in the channel subscribe callback
+        supabaseChannelRef.current.send({
+          type: 'broadcast',
+          event: 'message',
+          payload: {
+            type: 'participant-join',
+            id: participantIdRef.current,
+            timestamp: Date.now()
+          }
+        });
       } catch (e) {
         console.warn("Error sending via Supabase Realtime:", e);
       }
     }
     
-    // Method 4: Direct localStorage (for cross-tab/window communication)
     try {
       window.localStorage.setItem(`telao-join-${sessionId}-${Date.now()}`, JSON.stringify({
         type: 'participant-join',
@@ -439,12 +392,10 @@ const ParticipantPage = () => {
         timestamp: Date.now()
       }));
       
-      // Clean up old items
       setTimeout(() => {
         try {
           window.localStorage.removeItem(`telao-join-${sessionId}-${Date.now()}`);
         } catch (e) {
-          // Silent fail
         }
       }, 5000);
     } catch (e) {
@@ -453,19 +404,15 @@ const ParticipantPage = () => {
   };
 
   const startHeartbeat = () => {
-    // Clear any existing heartbeat interval
     if (heartbeatIntervalRef.current) {
       clearInterval(heartbeatIntervalRef.current);
     }
     
-    // Set up a new heartbeat interval
     heartbeatIntervalRef.current = window.setInterval(() => {
-      // Only send heartbeats if connected
       if (!connected) {
         return;
       }
       
-      // Method 1: BroadcastChannel
       if (broadcastChannelRef.current) {
         try {
           broadcastChannelRef.current.postMessage({
@@ -478,7 +425,6 @@ const ParticipantPage = () => {
         }
       }
       
-      // Method 2: LocalStorageChannel
       if (localStorageChannelRef.current) {
         try {
           localStorageChannelRef.current.postMessage({
@@ -491,7 +437,6 @@ const ParticipantPage = () => {
         }
       }
       
-      // Method 3: Supabase Realtime
       if (supabaseChannelRef.current) {
         try {
           supabaseChannelRef.current.send({
@@ -508,32 +453,26 @@ const ParticipantPage = () => {
         }
       }
       
-      // Method 4: localStorage as fallback
       try {
         window.localStorage.setItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`, Date.now().toString());
         
-        // Clean up old heartbeat
         setTimeout(() => {
           try {
             window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
           } catch (e) {
-            // Silent fail
           }
         }, 5000);
       } catch (e) {
-        // Silent fail on localStorage
       }
-    }, 2000); // Send heartbeat every 2 seconds
+    }, 2000);
   };
 
   const disconnectFromSession = () => {
-    // In a real implementation, we would disconnect from the WebRTC service
     if (connected) {
       console.log(`Disconnecting from session: ${sessionId}`);
       setConnected(false);
       setTransmitting(false);
       
-      // Method 1: BroadcastChannel
       if (broadcastChannelRef.current) {
         try {
           broadcastChannelRef.current.postMessage({
@@ -548,7 +487,6 @@ const ParticipantPage = () => {
         }
       }
       
-      // Method 2: LocalStorageChannel
       if (localStorageChannelRef.current) {
         try {
           localStorageChannelRef.current.postMessage({
@@ -563,7 +501,6 @@ const ParticipantPage = () => {
         }
       }
       
-      // Method 3: Supabase Realtime
       if (supabaseChannelRef.current) {
         try {
           supabaseChannelRef.current.send({
@@ -582,14 +519,11 @@ const ParticipantPage = () => {
         }
       }
       
-      // Method 4: localStorage as fallback
       try {
         window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, Date.now().toString());
       } catch (e) {
-        // Silent fail on localStorage
       }
       
-      // Clear all intervals
       if (frameIntervalRef.current) {
         clearInterval(frameIntervalRef.current);
         frameIntervalRef.current = null;
@@ -610,7 +544,6 @@ const ParticipantPage = () => {
   const startTransmitting = () => {
     if (!connected || !cameraActive) return;
     
-    // Stop any existing transmission
     if (frameIntervalRef.current) {
       clearInterval(frameIntervalRef.current);
       frameIntervalRef.current = null;
@@ -619,7 +552,6 @@ const ParticipantPage = () => {
     setTransmitting(true);
     console.log(`Started transmitting video to session: ${sessionId}`);
     
-    // Send a frame periodically to simulate video transmission
     const sendVideoFrame = () => {
       if (!connected) return;
       
@@ -629,18 +561,13 @@ const ParticipantPage = () => {
           const ctx = canvas.getContext('2d');
           
           if (ctx) {
-            // Set canvas dimensions to match video
             canvas.width = videoRef.current.videoWidth;
             canvas.height = videoRef.current.videoHeight;
             
-            // Draw the current video frame to the canvas
             ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
             
-            // Convert the canvas to a data URL (this is very inefficient for real video streaming
-            // but works for this demo)
             const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
             
-            // Send the frame to the host with the participant ID
             broadcastChannelRef.current.postMessage({
               type: 'video-frame',
               id: participantIdRef.current,
@@ -654,21 +581,16 @@ const ParticipantPage = () => {
       }
     };
     
-    // Send a frame every 500ms (increased frequency for better real-time feel)
     frameIntervalRef.current = window.setInterval(sendVideoFrame, 500);
-    
-    // Immediately send first frame
     sendVideoFrame();
   };
 
   const stopTransmitting = () => {
     if (!transmitting) return;
     
-    // In a real implementation, we would stop sending video data
     setTransmitting(false);
     console.log(`Stopped transmitting video to session: ${sessionId}`);
     
-    // Clear the frame sending interval
     if (frameIntervalRef.current) {
       clearInterval(frameIntervalRef.current);
       frameIntervalRef.current = null;
@@ -692,16 +614,13 @@ const ParticipantPage = () => {
         description: "Sua imagem está sendo transmitida para a sessão.",
       });
       
-      // Automatically start transmitting when camera is activated
       setTimeout(() => {
         startTransmitting();
         
-        // If not connected yet, try connecting again
         if (!connected && sessionId) {
           sendJoinMessage();
         }
       }, 500);
-      
     } catch (error) {
       console.error('Error accessing camera:', error);
       toast({
@@ -715,7 +634,6 @@ const ParticipantPage = () => {
   const stopCamera = () => {
     if (!videoRef.current) return;
     
-    // Stop transmitting first
     stopTransmitting();
     
     const stream = videoRef.current.srcObject as MediaStream;
@@ -735,17 +653,14 @@ const ParticipantPage = () => {
   const switchCamera = async () => {
     if (availableDevices.length <= 1) return;
     
-    // Stop current camera
     stopCamera();
     
-    // Find next camera in the list
     const currentIndex = availableDevices.findIndex(device => device.deviceId === deviceId);
     const nextIndex = (currentIndex + 1) % availableDevices.length;
     const nextDeviceId = availableDevices[nextIndex].deviceId;
     
     setDeviceId(nextDeviceId);
     
-    // Small delay to ensure camera has stopped
     setTimeout(() => {
       startCamera();
     }, 300);
@@ -843,7 +758,7 @@ const ParticipantPage = () => {
             variant="outline" 
             className="mt-4 border-white/20"
             onClick={() => {
-              connectionRetryCountRef.current = 0; // Reset retry count
+              connectionRetryCountRef.current = 0;
               connectToSession();
               toast({
                 title: "Reconectando",
