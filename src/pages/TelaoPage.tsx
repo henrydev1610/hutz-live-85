@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -27,7 +26,6 @@ const TelaoPage = () => {
   const [finalActionCoupon, setFinalActionCouponCode] = useState("");
   const { toast } = useToast();
   
-  // Font and text styling options
   const [selectedFont, setSelectedFont] = useState("sans-serif");
   const [selectedTextColor, setSelectedTextColor] = useState("#FFFFFF");
   const [qrDescriptionFontSize, setQrDescriptionFontSize] = useState(16);
@@ -41,22 +39,20 @@ const TelaoPage = () => {
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
   
-  // Separate positions for QR code and text
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
     y: 20, 
-    width: 100, // Smaller initial QR code size
+    width: 100, 
     height: 100 
   });
 
   const [qrDescriptionPosition, setQrDescriptionPosition] = useState({
     x: 20,
-    y: 130, // Position below QR code
+    y: 130,
     width: 200,
     height: 60
   });
 
-  // Dragging and resizing states
   const [isDraggingQR, setIsDraggingQR] = useState(false);
   const [isDraggingText, setIsDraggingText] = useState(false);
   const [resizeHandleQR, setResizeHandleQR] = useState<string | null>(null);
@@ -67,18 +63,15 @@ const TelaoPage = () => {
   const transmissionWindowRef = useRef<Window | null>(null);
   const [qrCodeDescription, setQrCodeDescription] = useState("Escaneie o QR Code para participar");
 
-  // Available background colors
   const backgroundColors = [
     '#000000', '#0F172A', '#18181B', '#292524', '#1E1E1E', '#1A1A1A',
-    // New colors (20 more)
     '#1F2937', '#374151', '#4B5563', '#6B7280', '#9CA3AF',
     '#111827', '#1E293B', '#334155', '#475569', '#64748B',
     '#7F1D1D', '#991B1B', '#B91C1C', '#DC2626', '#EF4444',
     '#14532D', '#166534', '#15803D', '#16A34A', '#22C55E',
     '#0C4A6E', '#0E7490', '#0891B2', '#06B6D4', '#22D3EE'
   ];
-  
-  // Available font options
+
   const fontOptions = [
     { name: 'Sans-serif', value: 'sans-serif' },
     { name: 'Serif', value: 'serif' },
@@ -112,7 +105,6 @@ const TelaoPage = () => {
     { name: 'Franklin Gothic', value: 'Franklin Gothic, sans-serif' }
   ];
 
-  // Text color options
   const textColors = [
     '#FFFFFF', '#F8FAFC', '#F1F5F9', '#E2E8F0', '#CBD5E1', 
     '#94A3B8', '#64748B', '#475569', '#334155', '#1E293B', 
@@ -141,7 +133,6 @@ const TelaoPage = () => {
     }
   }, [qrCodeGenerated]);
 
-  // Timer effect for final action countdown
   useEffect(() => {
     if (finalActionOpen && finalActionTimeLeft > 0) {
       const timerId = window.setInterval(() => {
@@ -158,7 +149,6 @@ const TelaoPage = () => {
     }
   }, [finalActionOpen, finalActionTimeLeft]);
 
-  // Cleanup effect for the transmission window
   useEffect(() => {
     return () => {
       if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
@@ -233,7 +223,6 @@ const TelaoPage = () => {
     });
   };
 
-  // QR Code drag and resize handlers
   const startDraggingQR = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!qrCodeVisible) return;
     
@@ -255,7 +244,6 @@ const TelaoPage = () => {
     }
   };
 
-  // Text drag and resize handlers
   const startDraggingText = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!qrCodeVisible) return;
     
@@ -316,11 +304,11 @@ const TelaoPage = () => {
       let newWidth = startSize.width;
       let newHeight = startSize.height;
       
-      if (resizeHandleQR.includes('r')) { // Right handles
-        newWidth = Math.max(80, startSize.width + dx);
+      if (resizeHandleQR.includes('r')) { 
+        newWidth = Math.max(40, startSize.width + dx);
       }
-      if (resizeHandleQR.includes('b')) { // Bottom handles
-        newHeight = Math.max(80, startSize.height + dy);
+      if (resizeHandleQR.includes('b')) { 
+        newHeight = Math.max(40, startSize.height + dy);
       }
       
       const size = Math.max(newWidth, newHeight);
@@ -337,11 +325,11 @@ const TelaoPage = () => {
       let newWidth = startSize.width;
       let newHeight = startSize.height;
       
-      if (resizeHandleText.includes('r')) { // Right handles
-        newWidth = Math.max(80, startSize.width + dx);
+      if (resizeHandleText.includes('r')) { 
+        newWidth = Math.max(50, startSize.width + dx);
       }
-      if (resizeHandleText.includes('b')) { // Bottom handles
-        newHeight = Math.max(30, startSize.height + dy);
+      if (resizeHandleText.includes('b')) { 
+        newHeight = Math.max(20, startSize.height + dy);
       }
       
       setQrDescriptionPosition(prev => ({ 
@@ -352,7 +340,6 @@ const TelaoPage = () => {
     }
   };
 
-  // Font size controls for QR code description
   const increaseFontSize = () => {
     setQrDescriptionFontSize(prev => Math.min(prev + 2, 32));
   };
@@ -381,7 +368,16 @@ const TelaoPage = () => {
     if (newWindow) {
       transmissionWindowRef.current = newWindow;
       
-      // Add content to the new window with updated styles
+      const previewWidth = previewContainerRef.current?.clientWidth || 400;
+      const previewHeight = previewContainerRef.current?.clientHeight || 225;
+      
+      const transmissionWidth = 800;
+      const transmissionHeight = 600;
+      
+      const widthScale = transmissionWidth / previewWidth;
+      const heightScale = transmissionHeight / previewHeight;
+      const scale = Math.min(widthScale, heightScale);
+      
       newWindow.document.write(`
         <html>
           <head>
@@ -433,10 +429,10 @@ const TelaoPage = () => {
               }
               .qr-code {
                 position: absolute;
-                left: ${qrCodePosition.x}px;
-                top: ${qrCodePosition.y}px;
-                width: ${qrCodePosition.width}px;
-                height: ${qrCodePosition.height}px;
+                left: ${qrCodePosition.x * scale}px;
+                top: ${qrCodePosition.y * scale}px;
+                width: ${qrCodePosition.width * scale}px;
+                height: ${qrCodePosition.height * scale}px;
                 background-color: white;
                 padding: 4px;
                 border-radius: 8px;
@@ -450,15 +446,15 @@ const TelaoPage = () => {
               }
               .qr-description {
                 position: absolute;
-                left: ${qrDescriptionPosition.x}px;
-                top: ${qrDescriptionPosition.y}px;
-                width: ${qrDescriptionPosition.width}px;
-                height: ${qrDescriptionPosition.height}px;
+                left: ${qrDescriptionPosition.x * scale}px;
+                top: ${qrDescriptionPosition.y * scale}px;
+                width: ${qrDescriptionPosition.width * scale}px;
+                height: ${qrDescriptionPosition.height * scale}px;
                 color: ${selectedTextColor};
                 padding: 4px 8px;
                 box-sizing: border-box;
                 border-radius: 4px;
-                font-size: ${qrDescriptionFontSize}px;
+                font-size: ${qrDescriptionFontSize * scale}px;
                 text-align: center;
                 font-weight: bold;
                 font-family: ${selectedFont};
@@ -525,16 +521,14 @@ const TelaoPage = () => {
       };
     }
   };
-  
+
   const finishTransmission = () => {
-    // Close the transmission window
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
       transmissionWindowRef.current.close();
       transmissionWindowRef.current = null;
       setTransmissionOpen(false);
     }
     
-    // Only show final action if it's not 'none'
     if (finalAction !== 'none') {
       setFinalActionTimeLeft(20);
       setFinalActionOpen(true);
@@ -545,7 +539,7 @@ const TelaoPage = () => {
       });
     }
   };
-  
+
   const closeFinalAction = () => {
     if (finalActionTimerId) {
       clearInterval(finalActionTimerId);
@@ -559,7 +553,7 @@ const TelaoPage = () => {
       description: "A transmissão foi encerrada com sucesso."
     });
   };
-  
+
   const handleFinalActionClick = () => {
     if (finalActionLink) {
       window.open(finalActionLink, '_blank');
@@ -611,7 +605,6 @@ const TelaoPage = () => {
         
         {qrCodeVisible && (
           <>
-            {/* QR Code (independently draggable and resizable) */}
             <div 
               className="absolute cursor-move"
               style={{
@@ -632,7 +625,6 @@ const TelaoPage = () => {
                   <QrCode className="w-full h-full text-black" />
                 </div>
                 
-                {/* QR Code resize handles */}
                 <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
                 <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
                 <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
@@ -640,7 +632,6 @@ const TelaoPage = () => {
               </div>
             </div>
             
-            {/* Text description (independently draggable and resizable) */}
             <div 
               className="absolute cursor-move"
               style={{
@@ -667,7 +658,6 @@ const TelaoPage = () => {
             >
               {qrCodeDescription}
               
-              {/* Text resize handles */}
               <div className="absolute right-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
               <div className="absolute right-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
               <div className="absolute left-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
@@ -829,7 +819,6 @@ const TelaoPage = () => {
                       />
                     </div>
                     
-                    {/* Font and text color controls moved to Layout tab */}
                     <div>
                       <Label className="mb-2 block">Fonte do Texto</Label>
                       <Select value={selectedFont} onValueChange={setSelectedFont}>
@@ -971,7 +960,6 @@ const TelaoPage = () => {
                             {qrCodeURL}
                           </div>
                           
-                          {/* Moved final action section below QR code link */}
                           <div className="mt-4">
                             <Label className="block mb-2">
                               Ação ao Finalizar Transmissão
