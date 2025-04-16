@@ -13,6 +13,7 @@ import LightShowPage from "./pages/LightShowPage";
 import TelaoPage from "./pages/TelaoPage";
 import QuizPage from "./pages/QuizPage";
 import NotFound from "./pages/NotFound";
+import ParticipantPage from "./pages/ParticipantPage";
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
@@ -77,11 +78,15 @@ const AppRoutes = () => {
               </ProtectedRoute>
             } 
           />
+          {/* Public route for participants that doesn't require authentication */}
+          <Route path="/participant/:sessionId" element={<ParticipantPage />} />
           <Route path="*" element={<NotFound />} />
         </>
       ) : (
         <>
           <Route path="/auth" element={<Auth />} />
+          {/* Public route for participants that doesn't require authentication */}
+          <Route path="/participant/:sessionId" element={<ParticipantPage />} />
           <Route path="*" element={<Navigate to="/auth" replace />} />
         </>
       )}
