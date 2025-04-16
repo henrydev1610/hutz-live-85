@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,11 +23,9 @@ const TelaoPage = () => {
   const [finalActionCoupon, setFinalActionCouponCode] = useState("");
   const { toast } = useToast();
   
-  // Reference for file input and QR code
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrCodeRef = useRef<HTMLDivElement>(null);
   
-  // QR Code position
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
     y: 20, 
@@ -41,7 +38,6 @@ const TelaoPage = () => {
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
-    // Simulate some mock participants when QR code is generated
     if (qrCodeGenerated) {
       const mockParticipants = Array.from({ length: 15 }, (_, i) => ({
         id: `${i + 1}`,
@@ -51,7 +47,6 @@ const TelaoPage = () => {
       }));
       
       setParticipantList(prev => {
-        // Only add if not already there
         if (prev.length < 15) {
           return mockParticipants;
         }
@@ -61,7 +56,6 @@ const TelaoPage = () => {
   }, [qrCodeGenerated]);
 
   const handleGenerateQRCode = () => {
-    // Generate a unique session ID
     const sessionId = Math.random().toString(36).substring(2, 15);
     const baseURL = window.location.origin;
     const participantURL = `${baseURL}/participant/${sessionId}`;
@@ -90,10 +84,8 @@ const TelaoPage = () => {
 
   const handleParticipantRemove = (id: string) => {
     setParticipantList(prev => {
-      // Remove the participant
       const newList = prev.filter(p => p.id !== id);
       
-      // Generate a new participant to replace it
       const nextId = String(prev.length + 1);
       const newParticipant = {
         id: nextId,
@@ -121,7 +113,6 @@ const TelaoPage = () => {
     fileInputRef.current?.click();
   };
 
-  // QR Code drag and resize handlers
   const startDragging = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!qrCodeVisible) return;
     
@@ -134,9 +125,12 @@ const TelaoPage = () => {
         width: qrCodePosition.width, 
         height: qrCodePosition.height 
       });
-    } else {
+    } else if (!target.className.includes('resize-handle')) {
       setIsDraggingQR(true);
-      setStartPos({ x: e.clientX - qrCodePosition.x, y: e.clientY - qrCodePosition.y });
+      setStartPos({ 
+        x: e.clientX - qrCodePosition.x, 
+        y: e.clientY - qrCodePosition.y 
+      });
     }
   };
 
@@ -150,8 +144,8 @@ const TelaoPage = () => {
       const newX = e.clientX - startPos.x;
       const newY = e.clientY - startPos.y;
       
-      // Ensure QR code stays within preview bounds
       const container = e.currentTarget.getBoundingClientRect();
+      
       const x = Math.max(0, Math.min(newX, container.width - qrCodePosition.width));
       const y = Math.max(0, Math.min(newY, container.height - qrCodePosition.height));
       
@@ -160,7 +154,6 @@ const TelaoPage = () => {
       const dx = e.clientX - startPos.x;
       const dy = e.clientY - startPos.y;
       
-      // Calculate new size while maintaining aspect ratio
       let newWidth = startSize.width;
       let newHeight = startSize.height;
       
@@ -171,7 +164,6 @@ const TelaoPage = () => {
         newHeight = Math.max(80, startSize.height + dy);
       }
       
-      // Maintain aspect ratio (1:1 for QR code)
       const size = Math.max(newWidth, newHeight);
       
       setQrCodePosition(prev => ({ 
@@ -264,7 +256,6 @@ const TelaoPage = () => {
                       </Card>
                     ))}
                     
-                    {/* Empty participant slots */}
                     {Array(Math.max(0, 12 - participantList.length)).fill(0).map((_, i) => (
                       <Card key={`empty-${i}`} className="bg-secondary/60 border border-white/10">
                         <CardContent className="p-4 text-center">
@@ -430,8 +421,6 @@ const TelaoPage = () => {
                                   variant="outline" 
                                   className="w-full border-white/20"
                                   onClick={() => {
-                                    // Image selection logic would go here
-                                    // For now, mock it with a placeholder
                                     setFinalActionImage('https://via.placeholder.com/300x150')
                                   }}
                                 >
@@ -473,11 +462,12 @@ const TelaoPage = () => {
                 </TabsContent>
                 
                 <TabsContent value="preview" className="space-y-4">
-                  <div className="aspect-video relative bg-black rounded-lg overflow-hidden" 
-                       onMouseMove={handleMouseMove} 
-                       onMouseUp={stopDragging}
-                       onMouseLeave={stopDragging}>
-                    {/* Background color or image */}
+                  <div 
+                    className="aspect-video relative bg-black rounded-lg overflow-hidden" 
+                    onMouseMove={handleMouseMove} 
+                    onMouseUp={stopDragging}
+                    onMouseLeave={stopDragging}
+                  >
                     <div 
                       className="absolute inset-0" 
                       style={{
@@ -493,7 +483,6 @@ const TelaoPage = () => {
                       )}
                     </div>
                     
-                    {/* Participants grid - positioned in right 2/3 with 15% margin */}
                     <div className="absolute top-[15%] right-[15%] bottom-[15%] left-[33%]">
                       <div className={`grid grid-cols-${Math.ceil(Math.sqrt(participantCount))} gap-2 h-full`}>
                         {participantList
@@ -505,7 +494,6 @@ const TelaoPage = () => {
                             </div>
                           ))}
                         
-                        {/* Empty slots */}
                         {Array(Math.max(0, participantCount - selectedParticipantsCount)).fill(0).map((_, i) => (
                           <div key={`empty-preview-${i}`} className="bg-black/20 rounded overflow-hidden flex items-center justify-center">
                             <User className="h-8 w-8 text-white/30" />
@@ -514,7 +502,6 @@ const TelaoPage = () => {
                       </div>
                     </div>
                     
-                    {/* QR Code overlay - draggable and resizable */}
                     {qrCodeVisible && (
                       <div 
                         ref={qrCodeRef}
@@ -531,7 +518,6 @@ const TelaoPage = () => {
                           <QrCode className="w-full h-full text-black" />
                         </div>
                         
-                        {/* Resize handles */}
                         <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
                         <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
                         <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
