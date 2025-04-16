@@ -18,19 +18,12 @@ const ParticipantPage = () => {
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const frameIntervalRef = useRef<number | null>(null);
   const connectionRetryCountRef = useRef<number>(0);
-  const maxConnectionRetries = 5;
+  const maxConnectionRetries = 10; // Increased from 5 to 10
   const heartbeatIntervalRef = useRef<number | null>(null);
+  const joinTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    // Auto-start camera on mobile devices
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (isMobile) {
-      const timer = setTimeout(() => {
-        startCamera();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-    
+    console.log(`Session ID: ${sessionId}, Participant ID: ${participantIdRef.current}`);
     // Get list of video devices
     const getVideoDevices = async () => {
       try {
@@ -62,77 +55,129 @@ const ParticipantPage = () => {
     getVideoDevices();
     
     // Connect to the transmission service
-    connectToSession();
+    if (sessionId) {
+      connectToSession();
+      
+      // Set a fallback timer to reconnect if connection not established
+      const fallbackTimer = setTimeout(() => {
+        if (!connected) {
+          console.log("Connection not established, retrying...");
+          connectToSession();
+        }
+      }, 1000); // Reduced from 2000 to 1000 ms
+      
+      joinTimeoutRef.current = fallbackTimer;
+    }
     
-    // Set a fallback timer to reconnect if connection not established
-    const fallbackTimer = setTimeout(() => {
-      if (!connected) {
-        console.log("Connection not established, retrying...");
-        connectToSession();
-      }
-    }, 2000);
+    // Auto-start camera on mobile devices after a short delay
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      const timer = setTimeout(() => {
+        startCamera();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
     
     return () => {
       if (cameraActive) {
         stopCamera();
       }
       disconnectFromSession();
-      clearTimeout(fallbackTimer);
+      if (joinTimeoutRef.current) {
+        clearTimeout(joinTimeoutRef.current);
+        joinTimeoutRef.current = null;
+      }
     };
-  }, [toast]);
+  }, [sessionId, toast]);
 
   const connectToSession = () => {
     if (!sessionId) return;
     
     console.log(`Connecting to session: ${sessionId}, attempt ${connectionRetryCountRef.current + 1}`);
     
-    // Create a broadcast channel to communicate with the host
+    // Close any existing channel before creating a new one
     if (broadcastChannelRef.current) {
       broadcastChannelRef.current.close();
     }
     
-    const channel = new BroadcastChannel(`telao-session-${sessionId}`);
-    broadcastChannelRef.current = channel;
-    
-    // Set up message event listener
-    channel.onmessage = (event) => {
-      const data = event.data;
+    try {
+      const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+      broadcastChannelRef.current = channel;
       
-      // Check for host acknowledgment
-      if (data.type === 'host-acknowledge' && data.participantId === participantIdRef.current) {
-        console.log("Connection acknowledged by host");
-        setConnected(true);
-        connectionRetryCountRef.current = 0;
+      // Set up message event listener
+      channel.onmessage = (event) => {
+        const data = event.data;
         
-        // Start sending heartbeats
-        startHeartbeat();
-        
-        // Auto-start camera after connection
-        if (!cameraActive) {
-          startCamera();
+        // Check for host acknowledgment
+        if (data.type === 'host-acknowledge' && data.participantId === participantIdRef.current) {
+          console.log("Connection acknowledged by host");
+          setConnected(true);
+          connectionRetryCountRef.current = 0;
+          
+          // Start sending heartbeats
+          startHeartbeat();
+          
+          // Auto-start camera after connection if not already active
+          if (!cameraActive) {
+            startCamera();
+          }
+          
+          toast({
+            title: "Conectado à sessão",
+            description: `Você está conectado à sessão ${sessionId}.`,
+          });
         }
-        
-        toast({
-          title: "Conectado à sessão",
-          description: `Você está conectado à sessão ${sessionId}.`,
-        });
-      }
-    };
-    
-    // Send a join message with the participant ID
-    channel.postMessage({
-      type: 'participant-join',
-      id: participantIdRef.current,
-      timestamp: Date.now()
-    });
-    
-    // If we haven't received an acknowledgment, retry connection
-    setTimeout(() => {
-      if (!connected && connectionRetryCountRef.current < maxConnectionRetries) {
-        connectionRetryCountRef.current++;
-        connectToSession();
-      }
-    }, 1500);
+      };
+      
+      // Send a join message with the participant ID immediately
+      sendJoinMessage();
+      
+      // Also schedule repeated join messages until acknowledged (aggressive join)
+      const joinInterval = setInterval(() => {
+        if (!connected) {
+          sendJoinMessage();
+        } else {
+          clearInterval(joinInterval);
+        }
+      }, 2000);
+      
+      // Clear join interval after reasonable time
+      setTimeout(() => {
+        clearInterval(joinInterval);
+      }, 30000);
+      
+      // If we haven't received an acknowledgment, retry connection
+      setTimeout(() => {
+        if (!connected && connectionRetryCountRef.current < maxConnectionRetries) {
+          connectionRetryCountRef.current++;
+          connectToSession();
+        } else if (!connected && connectionRetryCountRef.current >= maxConnectionRetries) {
+          toast({
+            title: "Erro de conexão",
+            description: "Não foi possível conectar à sessão. Tente novamente ou gere um novo QR Code.",
+            variant: "destructive"
+          });
+        }
+      }, 3000);
+    } catch (error) {
+      console.error("Error creating broadcast channel:", error);
+      toast({
+        title: "Erro de conexão",
+        description: "Houve um problema ao conectar à sessão.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const sendJoinMessage = () => {
+    if (broadcastChannelRef.current) {
+      console.log("Sending join message");
+      broadcastChannelRef.current.postMessage({
+        type: 'participant-join',
+        id: participantIdRef.current,
+        timestamp: Date.now()
+      });
+    }
   };
 
   const startHeartbeat = () => {
@@ -150,7 +195,7 @@ const ParticipantPage = () => {
           timestamp: Date.now()
         });
       }
-    }, 3000);
+    }, 2000); // Reduced from 3000 to 2000 ms
   };
 
   const disconnectFromSession = () => {
@@ -273,6 +318,11 @@ const ParticipantPage = () => {
       // Automatically start transmitting when camera is activated
       setTimeout(() => {
         startTransmitting();
+        
+        // If not connected yet, try connecting again
+        if (!connected && sessionId) {
+          sendJoinMessage();
+        }
       }, 500);
       
     } catch (error) {
@@ -397,9 +447,25 @@ const ParticipantPage = () => {
         <div className="mt-6 flex items-center gap-2">
           <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
           <span className="text-xs text-white">
-            {connected ? 'Conectado à sessão' : 'Desconectado'}
+            {connected ? 'Conectado à sessão' : 'Tentando conectar à sessão...'}
           </span>
         </div>
+        
+        {!connected && (
+          <Button 
+            variant="outline" 
+            className="mt-4 border-white/20"
+            onClick={() => {
+              connectToSession();
+              toast({
+                title: "Reconectando",
+                description: "Tentando conectar novamente à sessão.",
+              });
+            }}
+          >
+            Reconectar
+          </Button>
+        )}
       </div>
     </div>
   );

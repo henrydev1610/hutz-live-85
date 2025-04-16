@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -121,31 +120,40 @@ const TelaoPage = () => {
   ];
 
   useEffect(() => {
-    // Clean up broadcast channel on component unmount
+    if (participantList.length === 0) {
+      const initialParticipants = Array(4).fill(0).map((_, i) => ({
+        id: `placeholder-${i}`,
+        name: `Participante ${i + 1}`,
+        active: false,
+        selected: false
+      }));
+      setParticipantList(initialParticipants);
+    }
+    
     return () => {
       if (broadcastChannel) {
         broadcastChannel.close();
       }
     };
-  }, [broadcastChannel]);
+  }, []);
 
   useEffect(() => {
     if (sessionId) {
-      // Set up broadcast channel for this session
+      console.log("Setting up broadcast channel for session:", sessionId);
       const channel = new BroadcastChannel(`telao-session-${sessionId}`);
       
       channel.onmessage = (event) => {
         const { data } = event;
+        console.log("Received broadcast message:", data.type, data.id);
         
         if (data.type === 'participant-join') {
           console.log('Participant joined:', data.id);
-          // Add participant to the list
           setParticipantList(prev => {
-            // Check if participant already exists
             const exists = prev.some(p => p.id === data.id);
-            if (exists) return prev;
+            if (exists) {
+              return prev.map(p => p.id === data.id ? { ...p, active: true } : p);
+            }
             
-            // Add new participant
             const newParticipant = {
               id: data.id,
               name: `Participante ${prev.length + 1}`,
@@ -153,7 +161,6 @@ const TelaoPage = () => {
               selected: prev.filter(p => p.selected).length < participantCount
             };
             
-            // Acknowledge the connection to this participant
             channel.postMessage({
               type: 'host-acknowledge',
               participantId: data.id,
@@ -169,20 +176,17 @@ const TelaoPage = () => {
           });
         } 
         else if (data.type === 'participant-leave') {
-          // Handle participant leaving
           console.log('Participant left:', data.id);
           setParticipantList(prev => 
             prev.map(p => p.id === data.id ? { ...p, active: false } : p)
           );
         }
         else if (data.type === 'participant-heartbeat') {
-          // Update participant's active status
           setParticipantList(prev => 
             prev.map(p => p.id === data.id ? { ...p, active: true } : p)
           );
         }
         else if (data.type === 'video-frame') {
-          // Update participant's video frame
           setParticipantList(prev => {
             return prev.map(p => {
               if (p.id === data.id) {
@@ -252,6 +256,7 @@ const TelaoPage = () => {
 
   const handleGenerateQRCode = () => {
     const newSessionId = Math.random().toString(36).substring(2, 15);
+    console.log("Generated new session ID:", newSessionId);
     setSessionId(newSessionId);
     
     const baseURL = window.location.origin;
@@ -259,6 +264,9 @@ const TelaoPage = () => {
     
     setQrCodeURL(participantURL);
     setQrCodeGenerated(true);
+    
+    setParticipantList([]);
+    
     toast({
       title: "QR Code gerado",
       description: "QR Code gerado com sucesso. Compartilhe com os participantes.",
@@ -520,7 +528,7 @@ const TelaoPage = () => {
                 position: absolute;
                 top: 15%;
                 right: 15%;
-                bottom: 15%
+                bottom: 15%;
                 left: 33%;
                 display: grid;
                 grid-template-columns: repeat(${Math.ceil(Math.sqrt(participantCount))}, 1fr);
@@ -621,41 +629,40 @@ const TelaoPage = () => {
             </div>
             
             <script>
-              // Set up channel to receive participant updates
               const sessionId = "${sessionId}";
+              console.log("Transmission window opened for session:", sessionId);
               const channel = new BroadcastChannel("telao-session-" + sessionId);
               
               channel.onmessage = (event) => {
                 const data = event.data;
                 
                 if (data.type === 'video-frame') {
-                  // Update the video frame for the participant
                   const participantId = data.id;
                   const participantElement = document.getElementById("participant-" + participantId);
                   
                   if (participantElement) {
-                    // Check if there's already an image
                     let img = participantElement.querySelector('img');
                     if (!img) {
-                      // Create a new image if one doesn't exist
                       participantElement.innerHTML = '';
                       img = document.createElement('img');
                       participantElement.appendChild(img);
                     }
                     
-                    // Update the image source
                     img.src = data.frame;
                     img.alt = "Participant Video";
                   }
                 } else if (data.type === 'participant-join') {
-                  console.log('New participant joined:', data.id);
-                  // The main window will handle adding the participant to the list
+                  console.log('New participant joined in transmission window:', data.id);
+                  channel.postMessage({
+                    type: 'host-acknowledge',
+                    participantId: data.id,
+                    timestamp: Date.now()
+                  });
                 }
               };
               
-              // Listen for window close to notify the main page
               window.addEventListener('beforeunload', () => {
-                // This will be caught by the main page
+                console.log("Transmission window closing");
               });
             </script>
           </body>
@@ -749,7 +756,7 @@ const TelaoPage = () => {
                       className="w-full h-full object-cover" 
                     />
                   ) : (
-                    <User className="h-8 w-8 text-white/70" />
+                    <User className="h-8 w-8 text-white/30" />
                   )}
                 </div>
               ))}
