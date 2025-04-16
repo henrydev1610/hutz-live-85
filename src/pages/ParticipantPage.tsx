@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,8 @@ const ParticipantPage = () => {
   const participantIdRef = useRef<string>(Math.random().toString(36).substr(2, 9));
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const supabaseChannelRef = useRef<any>(null);
-  const frameIntervalRef = useRef<number | null>(null);
+  // Fix the type for frameIntervalRef - change from number to ReturnType<typeof setInterval>
+  const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectionRetryCountRef = useRef<number>(0);
   const maxConnectionRetries = 15;
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
