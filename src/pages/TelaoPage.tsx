@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,7 +19,7 @@ const TelaoPage = () => {
   const [qrCodeGenerated, setQrCodeGenerated] = useState(false);
   const [qrCodeURL, setQrCodeURL] = useState("");
   const [qrCodeVisible, setQrCodeVisible] = useState(false);
-  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean}[]>([]);
+  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean, frameData?: string}[]>([]);
   const [selectedBackgroundColor, setSelectedBackgroundColor] = useState("#000000");
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
   const [finalAction, setFinalAction] = useState<'none' | 'image' | 'coupon'>('image');
@@ -40,17 +41,19 @@ const TelaoPage = () => {
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [broadcastChannel, setBroadcastChannel] = useState<BroadcastChannel | null>(null);
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
     y: 20, 
-    width: 100, 
-    height: 100 
+    width: 80, 
+    height: 80 
   });
 
   const [qrDescriptionPosition, setQrDescriptionPosition] = useState({
     x: 20,
-    y: 130,
+    y: 110,
     width: 200,
     height: 60
   });
@@ -118,22 +121,67 @@ const TelaoPage = () => {
   ];
 
   useEffect(() => {
-    if (qrCodeGenerated) {
-      const mockParticipants = Array.from({ length: 15 }, (_, i) => ({
-        id: `${i + 1}`,
-        name: `Participante ${i + 1}`,
-        active: true,
-        selected: i < 4
-      }));
+    // Clean up broadcast channel on component unmount
+    return () => {
+      if (broadcastChannel) {
+        broadcastChannel.close();
+      }
+    };
+  }, [broadcastChannel]);
+
+  useEffect(() => {
+    if (sessionId) {
+      // Set up broadcast channel for this session
+      const channel = new BroadcastChannel(`telao-session-${sessionId}`);
       
-      setParticipantList(prev => {
-        if (prev.length < 15) {
-          return mockParticipants;
+      channel.onmessage = (event) => {
+        const { data } = event;
+        
+        if (data.type === 'participant-join') {
+          console.log('Participant joined:', data.id);
+          // Add participant to the list
+          setParticipantList(prev => {
+            // Check if participant already exists
+            const exists = prev.some(p => p.id === data.id);
+            if (exists) return prev;
+            
+            // Add new participant
+            const newParticipant = {
+              id: data.id,
+              name: `Participante ${prev.length + 1}`,
+              active: true,
+              selected: prev.filter(p => p.selected).length < participantCount
+            };
+            
+            return [...prev, newParticipant];
+          });
+        } 
+        else if (data.type === 'participant-leave') {
+          // Handle participant leaving
+          console.log('Participant left');
         }
-        return prev;
-      });
+        else if (data.type === 'video-frame') {
+          // Update participant's video frame
+          setParticipantList(prev => {
+            return prev.map(p => {
+              if (p.id === data.id) {
+                return { ...p, frameData: data.frame };
+              }
+              return p;
+            });
+          });
+        }
+      };
+      
+      setBroadcastChannel(channel);
     }
-  }, [qrCodeGenerated]);
+  }, [sessionId, participantCount]);
+
+  useEffect(() => {
+    if (qrCodeGenerated && qrCodeURL) {
+      generateQRCode(qrCodeURL);
+    }
+  }, [qrCodeGenerated, qrCodeURL]);
 
   useEffect(() => {
     if (finalActionOpen && finalActionTimeLeft > 0) {
@@ -182,9 +230,11 @@ const TelaoPage = () => {
   };
 
   const handleGenerateQRCode = () => {
-    const sessionId = Math.random().toString(36).substring(2, 15);
+    const newSessionId = Math.random().toString(36).substring(2, 15);
+    setSessionId(newSessionId);
+    
     const baseURL = window.location.origin;
-    const participantURL = `${baseURL}/participant/${sessionId}`;
+    const participantURL = `${baseURL}/participant/${newSessionId}`;
     
     setQrCodeURL(participantURL);
     setQrCodeGenerated(true);
@@ -329,10 +379,10 @@ const TelaoPage = () => {
       let newHeight = startSize.height;
       
       if (resizeHandleQR.includes('r')) { 
-        newWidth = Math.max(40, startSize.width + dx);
+        newWidth = Math.max(20, startSize.width + dx);
       }
       if (resizeHandleQR.includes('b')) { 
-        newHeight = Math.max(40, startSize.height + dy);
+        newHeight = Math.max(20, startSize.height + dy);
       }
       
       const size = Math.max(newWidth, newHeight);
@@ -350,10 +400,10 @@ const TelaoPage = () => {
       let newHeight = startSize.height;
       
       if (resizeHandleText.includes('r')) { 
-        newWidth = Math.max(50, startSize.width + dx);
+        newWidth = Math.max(30, startSize.width + dx);
       }
       if (resizeHandleText.includes('b')) { 
-        newHeight = Math.max(20, startSize.height + dy);
+        newHeight = Math.max(15, startSize.height + dy);
       }
       
       setQrDescriptionPosition(prev => ({ 
@@ -378,8 +428,8 @@ const TelaoPage = () => {
       return;
     }
     
-    const width = 800;
-    const height = 600;
+    const width = window.innerWidth * 0.9;
+    const height = window.innerHeight * 0.9;
     const left = (window.screen.width - width) / 2;
     const top = (window.screen.height - height) / 2;
     
@@ -395,12 +445,12 @@ const TelaoPage = () => {
       const previewWidth = previewContainerRef.current?.clientWidth || 400;
       const previewHeight = previewContainerRef.current?.clientHeight || 225;
       
-      const transmissionWidth = 800;
-      const transmissionHeight = 600;
+      const transmissionWidth = width;
+      const transmissionHeight = height;
       
       const widthScale = transmissionWidth / previewWidth;
       const heightScale = transmissionHeight / previewHeight;
-      const scale = Math.min(widthScale, heightScale);
+      const scale = Math.min(widthScale, heightScale) * 2; // Doubled scale to make things bigger
       
       newWindow.document.write(`
         <html>
@@ -446,6 +496,11 @@ const TelaoPage = () => {
                 justify-content: center;
                 overflow: hidden;
               }
+              .participant img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+              }
               .participant-icon {
                 width: 32px;
                 height: 32px;
@@ -464,7 +519,7 @@ const TelaoPage = () => {
                 align-items: center;
                 justify-content: center;
               }
-              .qr-code svg {
+              .qr-code img {
                 width: 100%;
                 height: 100%;
               }
@@ -478,7 +533,7 @@ const TelaoPage = () => {
                 padding: 4px 8px;
                 box-sizing: border-box;
                 border-radius: 4px;
-                font-size: ${qrDescriptionFontSize * scale}px;
+                font-size: ${qrDescriptionFontSize * scale / 2}px;
                 text-align: center;
                 font-weight: bold;
                 font-family: ${selectedFont};
@@ -494,14 +549,20 @@ const TelaoPage = () => {
               ${backgroundImage ? `<img src="${backgroundImage}" class="bg-image" alt="Background" />` : ''}
               
               <div class="participants-grid">
-                ${Array.from({ length: Math.min(participantCount, participantList.filter(p => p.selected).length) }, (_, i) => `
-                  <div class="participant">
-                    <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                      <circle cx="12" cy="7" r="4"></circle>
-                    </svg>
-                  </div>
-                `).join('')}
+                ${participantList
+                  .filter(p => p.selected)
+                  .slice(0, participantCount)
+                  .map((participant, i) => `
+                    <div class="participant" id="participant-${participant.id}">
+                      ${participant.frameData 
+                        ? `<img src="${participant.frameData}" alt="${participant.name}" />`
+                        : `<svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                          </svg>`
+                      }
+                    </div>
+                  `).join('')}
                 
                 ${Array.from({ length: Math.max(0, participantCount - participantList.filter(p => p.selected).length) }, (_, i) => `
                   <div class="participant" style="background-color: rgba(0, 0, 0, 0.2);">
@@ -514,24 +575,43 @@ const TelaoPage = () => {
               </div>
               
               <div class="qr-code">
-                <svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect width="16" height="16" x="4" y="4" rx="1"></rect>
-                  <path d="M10 4v4"></path>
-                  <path d="M4 10h4"></path>
-                  <path d="M10 16v4"></path>
-                  <path d="M16 4v4"></path>
-                  <path d="M20 10h-4"></path>
-                  <path d="M16 16v4"></path>
-                  <path d="M4 16h4"></path>
-                  <path d="M4 4v4"></path>
-                  <path d="M16 16h4"></path>
-                  <path d="M20 20v-4"></path>
-                  <path d="M20 4v4"></path>
-                  <path d="M4 20v-4"></path>
-                </svg>
+                ${qrCodeSvg ? `<img src="${qrCodeSvg}" alt="QR Code" />` : ''}
               </div>
               <div class="qr-description">${qrCodeDescription}</div>
             </div>
+            
+            <script>
+              // Set up channel to receive participant updates
+              const sessionId = "${sessionId}";
+              const channel = new BroadcastChannel("telao-session-" + sessionId);
+              
+              channel.onmessage = (event) => {
+                const data = event.data;
+                
+                if (data.type === 'video-frame') {
+                  const participantElement = document.getElementById("participant-" + data.id);
+                  if (participantElement) {
+                    // Check if there's already an image
+                    let img = participantElement.querySelector('img');
+                    if (!img) {
+                      // Create a new image if one doesn't exist
+                      participantElement.innerHTML = '';
+                      img = document.createElement('img');
+                      participantElement.appendChild(img);
+                    }
+                    
+                    // Update the image source
+                    img.src = data.frame;
+                    img.alt = "Participant Video";
+                  }
+                }
+              };
+              
+              // Listen for window close to notify the main page
+              window.addEventListener('beforeunload', () => {
+                // This will be caught by the main page
+              });
+            </script>
           </body>
         </html>
       `);
@@ -592,6 +672,7 @@ const TelaoPage = () => {
         onMouseUp={stopDragging}
         onMouseLeave={stopDragging}
         ref={previewContainerRef}
+        style={{ height: '370px' }} // Increased preview height
       >
         <div 
           className="absolute inset-0" 
@@ -615,7 +696,15 @@ const TelaoPage = () => {
               .slice(0, participantCount)
               .map((participant, i) => (
                 <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center">
-                  <User className="h-8 w-8 text-white/70" />
+                  {participant.frameData ? (
+                    <img 
+                      src={participant.frameData} 
+                      alt={participant.name}
+                      className="w-full h-full object-cover" 
+                    />
+                  ) : (
+                    <User className="h-8 w-8 text-white/70" />
+                  )}
                 </div>
               ))}
             
@@ -645,8 +734,12 @@ const TelaoPage = () => {
                   height: `${qrCodePosition.height}px`,
                 }}
               >
-                <div className="w-full h-full bg-white flex items-center justify-center">
-                  <QrCode className="w-full h-full text-black" />
+                <div className="w-full h-full bg-white flex items-center justify-center overflow-hidden">
+                  {qrCodeSvg ? (
+                    <img src={qrCodeSvg} alt="QR Code" className="w-full h-full" />
+                  ) : (
+                    <QrCode className="w-full h-full text-black" />
+                  )}
                 </div>
                 
                 <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
@@ -759,7 +852,15 @@ const TelaoPage = () => {
                       <Card key={participant.id} className={`bg-secondary/60 border ${participant.selected ? 'border-accent' : 'border-white/10'}`}>
                         <CardContent className="p-4 text-center">
                           <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2">
-                            <User className="h-8 w-8 text-white/30" />
+                            {participant.frameData ? (
+                              <img 
+                                src={participant.frameData} 
+                                alt={participant.name}
+                                className="w-full h-full object-cover" 
+                              />
+                            ) : (
+                              <User className="h-8 w-8 text-white/30" />
+                            )}
                           </div>
                           <p className="text-sm font-medium truncate">
                             {participant.name}

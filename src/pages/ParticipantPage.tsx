@@ -71,14 +71,24 @@ const ParticipantPage = () => {
     // For now, we'll simulate the connection
     console.log(`Connecting to session: ${sessionId}`);
     
-    // Simulating connection established
+    // Create a broadcast channel to communicate with the host
+    const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+    
+    // Send a join message
+    channel.postMessage({
+      type: 'participant-join',
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: Date.now()
+    });
+    
+    // Simulate connection established
     setTimeout(() => {
       setConnected(true);
       toast({
         title: "Conectado à sessão",
         description: `Você está conectado à sessão ${sessionId}.`,
       });
-    }, 1500);
+    }, 500);
   };
 
   const disconnectFromSession = () => {
@@ -87,6 +97,14 @@ const ParticipantPage = () => {
       console.log(`Disconnecting from session: ${sessionId}`);
       setConnected(false);
       setTransmitting(false);
+      
+      // Send a leave message on the broadcast channel
+      const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+      channel.postMessage({
+        type: 'participant-leave',
+        timestamp: Date.now()
+      });
+      channel.close();
     }
   };
 
@@ -96,6 +114,45 @@ const ParticipantPage = () => {
     // In a real implementation, we would start sending video data
     setTransmitting(true);
     console.log(`Started transmitting video to session: ${sessionId}`);
+    
+    // Send a frame periodically to simulate video transmission
+    const sendVideoFrame = () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        if (ctx) {
+          // Set canvas dimensions to match video
+          canvas.width = videoRef.current.videoWidth;
+          canvas.height = videoRef.current.videoHeight;
+          
+          // Draw the current video frame to the canvas
+          ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+          
+          // Convert the canvas to a data URL (this is very inefficient for real video streaming
+          // but works for this demo)
+          try {
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+            
+            // Send the frame to the host
+            const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+            channel.postMessage({
+              type: 'video-frame',
+              frame: dataUrl,
+              timestamp: Date.now()
+            });
+          } catch (e) {
+            console.error('Error creating data URL:', e);
+          }
+        }
+      }
+    };
+    
+    // Send a frame every second (again, very inefficient but works for demo)
+    const intervalId = setInterval(sendVideoFrame, 1000);
+    
+    // Store the interval ID somewhere so it can be cleared later
+    (window as any).frameIntervalId = intervalId;
   };
 
   const stopTransmitting = () => {
@@ -104,6 +161,12 @@ const ParticipantPage = () => {
     // In a real implementation, we would stop sending video data
     setTransmitting(false);
     console.log(`Stopped transmitting video to session: ${sessionId}`);
+    
+    // Clear the frame sending interval
+    if ((window as any).frameIntervalId) {
+      clearInterval((window as any).frameIntervalId);
+      (window as any).frameIntervalId = null;
+    }
   };
 
   const startCamera = async () => {
@@ -124,7 +187,9 @@ const ParticipantPage = () => {
       });
       
       // Automatically start transmitting when camera is activated
-      startTransmitting();
+      setTimeout(() => {
+        startTransmitting();
+      }, 500);
       
     } catch (error) {
       console.error('Error accessing camera:', error);
@@ -178,7 +243,7 @@ const ParticipantPage = () => {
   return (
     <div className="min-h-screen bg-black flex flex-col">
       <div className="flex flex-col items-center justify-center flex-1 p-4">
-        <h1 className="text-xl font-semibold mb-4">Transmissão ao Vivo</h1>
+        <h1 className="text-xl font-semibold mb-4 text-white">Transmissão ao Vivo</h1>
         <p className="text-sm text-white/70 mb-6">
           Sessão: {sessionId}
         </p>
@@ -187,7 +252,8 @@ const ParticipantPage = () => {
           <video 
             ref={videoRef} 
             autoPlay 
-            playsInline 
+            playsInline
+            muted
             className="w-full h-full object-cover"
           />
           
@@ -210,7 +276,7 @@ const ParticipantPage = () => {
         <div className="flex gap-2 mt-6">
           {!cameraActive ? (
             <Button 
-              className="hutz-button-accent"
+              className="bg-accent hover:bg-accent/90 text-white"
               onClick={startCamera}
             >
               <Video className="h-4 w-4 mr-2" />
@@ -246,7 +312,7 @@ const ParticipantPage = () => {
         
         <div className="mt-6 flex items-center gap-2">
           <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-          <span className="text-xs">
+          <span className="text-xs text-white">
             {connected ? 'Conectado à sessão' : 'Desconectado'}
           </span>
         </div>
