@@ -29,7 +29,62 @@ const ParticipantPage = () => {
   const joinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const localStorageChannelRef = useRef<BroadcastChannel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const pageVisibilityRef = useRef<boolean>(true);
+  const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
+  // Setup visibility change detection to better handle mobile browser behavior
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const isVisible = !document.hidden;
+      pageVisibilityRef.current = isVisible;
+      
+      console.log(`Page visibility changed to ${isVisible ? 'visible' : 'hidden'}`);
+      
+      // If coming back to visible and we're connected but not transmitting, restart
+      if (isVisible && connected && !transmitting && cameraActive) {
+        console.log("Page became visible again, restarting transmission");
+        if (streamRef.current && sessionId) {
+          initWebRTC(streamRef.current);
+        }
+      }
+      
+      // If going to hidden state, send heartbeat to maintain connection
+      if (!isVisible && connected) {
+        console.log("Page hidden, sending keep-alive heartbeat");
+        sendHeartbeat();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [connected, transmitting, cameraActive, sessionId]);
+
+  // Check for mobile low-power mode issues
+  useEffect(() => {
+    if (isMobileDevice) {
+      // On mobile, periodically check if the video track is still active
+      const checkInterval = setInterval(() => {
+        if (cameraActive && streamRef.current) {
+          const videoTracks = streamRef.current.getVideoTracks();
+          if (videoTracks.length > 0) {
+            const track = videoTracks[0];
+            if (!track.enabled || track.readyState !== 'live') {
+              console.log("Video track is disabled or not live, attempting to restart camera");
+              stopCamera();
+              setTimeout(() => startCamera(), 500);
+            }
+          }
+        }
+      }, 5000);
+      
+      return () => clearInterval(checkInterval);
+    }
+  }, [cameraActive, isMobileDevice]);
+
+  // Handle session connection and cleanup
   useEffect(() => {
     console.log(`Session ID: ${sessionId}, Participant ID: ${participantIdRef.current}`);
     
@@ -37,25 +92,44 @@ const ParticipantPage = () => {
     
     const getVideoDevices = async () => {
       try {
+        await ensureMediaPermissions();
+        
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = devices.filter(device => device.kind === 'videoinput');
         setAvailableDevices(videoDevices);
         
-        const frontCamera = videoDevices.find(device => 
-          device.label.toLowerCase().includes('front') || 
-          device.label.toLowerCase().includes('frente')
-        );
-        
-        if (frontCamera) {
-          setDeviceId(frontCamera.deviceId);
-        } else if (videoDevices.length > 0) {
-          setDeviceId(videoDevices[0].deviceId);
+        // On mobile, prefer back camera by default
+        if (isMobileDevice) {
+          const backCamera = videoDevices.find(device => 
+            device.label.toLowerCase().includes('back') || 
+            device.label.toLowerCase().includes('traseira') ||
+            device.label.toLowerCase().includes('rear')
+          );
+          
+          const frontCamera = videoDevices.find(device => 
+            device.label.toLowerCase().includes('front') || 
+            device.label.toLowerCase().includes('frente')
+          );
+          
+          // If we have a back camera, use it (better quality usually)
+          if (backCamera) {
+            setDeviceId(backCamera.deviceId);
+          } else if (frontCamera) {
+            setDeviceId(frontCamera.deviceId);
+          } else if (videoDevices.length > 0) {
+            setDeviceId(videoDevices[0].deviceId);
+          }
+        } else {
+          // Desktop usually uses webcam (front facing)
+          if (videoDevices.length > 0) {
+            setDeviceId(videoDevices[0].deviceId);
+          }
         }
       } catch (error) {
         console.error('Error getting video devices:', error);
         toast({
           title: "Erro ao acessar câmeras",
-          description: "Não foi possível listar as câmeras disponíveis.",
+          description: "Não foi possível listar as câmeras disponíveis. Verifique as permissões.",
           variant: "destructive"
         });
       }
@@ -66,7 +140,7 @@ const ParticipantPage = () => {
     if (sessionId) {
       connectToSession();
       
-      // Correção do tipo para NodeJS.Timeout
+      // Bail-out timer in case connection takes too long
       const fallbackTimer = setTimeout(() => {
         if (!connected) {
           console.log("Connection not established, retrying...");
@@ -77,9 +151,8 @@ const ParticipantPage = () => {
       joinTimeoutRef.current = fallbackTimer;
     }
     
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (isMobile) {
-      // Correção do tipo para NodeJS.Timeout
+    // On mobile, automatically start camera after permissions
+    if (isMobileDevice) {
       const timer = setTimeout(() => {
         startCamera();
       }, 1000) as unknown as NodeJS.Timeout;
@@ -87,10 +160,18 @@ const ParticipantPage = () => {
       return () => clearTimeout(timer);
     }
     
+    // Add proper cleanup
     return () => {
+      // Send explicit disconnect message
+      if (connected && sessionId) {
+        sendDisconnectMessage();
+      }
+      
       if (cameraActive) {
         stopCamera();
       }
+      
+      // Full connection cleanup
       disconnectFromSession();
       
       if (joinTimeoutRef.current) {
@@ -116,7 +197,25 @@ const ParticipantPage = () => {
         supabaseChannelRef.current.unsubscribe();
       }
     };
-  }, [sessionId, toast]);
+  }, [sessionId, toast, isMobileDevice]);
+
+  // Ensure camera permissions are granted
+  const ensureMediaPermissions = async () => {
+    try {
+      // Request minimal permissions to trigger the permission dialog
+      const tempStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false
+      });
+      
+      // Immediately stop all tracks to free up the camera
+      tempStream.getTracks().forEach(track => track.stop());
+      return true;
+    } catch (error) {
+      console.error("Error requesting media permissions:", error);
+      return false;
+    }
+  };
 
   const setupLocalStorageChannel = () => {
     try {
@@ -356,7 +455,7 @@ const ParticipantPage = () => {
       console.warn("LocalStorage checking failed", e);
     }
     
-    // Correção do tipo para NodeJS.Timeout
+    // Connection timeout timer
     connectionTimerRef.current = setTimeout(() => {
       if (!connected) {
         console.log(`Connection attempt ${connectionRetryCountRef.current + 1} timed out`);
@@ -366,7 +465,6 @@ const ParticipantPage = () => {
           setConnecting(false);
           setConnectionError(`Tentativa ${connectionRetryCountRef.current} falhou. Tentando novamente...`);
           
-          // Correção do tipo para NodeJS.Timeout
           setTimeout(() => {
             connectToSession();
           }, 1000);
@@ -434,7 +532,6 @@ const ParticipantPage = () => {
         timestamp: Date.now()
       }));
       
-      // Correção do tipo para NodeJS.Timeout
       setTimeout(() => {
         try {
           window.localStorage.removeItem(`telao-join-${sessionId}-${Date.now()}`);
@@ -444,6 +541,74 @@ const ParticipantPage = () => {
       }, 5000);
     } catch (e) {
       console.warn("Error using localStorage directly:", e);
+    }
+  };
+
+  // Send explicit disconnect message
+  const sendDisconnectMessage = () => {
+    console.log(`Sending explicit disconnect message for ${participantIdRef.current}`);
+    
+    // Via BroadcastChannel
+    if (broadcastChannelRef.current) {
+      try {
+        broadcastChannelRef.current.postMessage({
+          type: 'participant-leave',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        });
+      } catch (e) {
+        console.warn("Error sending disconnect via BroadcastChannel:", e);
+      }
+    }
+    
+    // Via LocalStorage
+    if (localStorageChannelRef.current) {
+      try {
+        localStorageChannelRef.current.postMessage({
+          type: 'participant-leave',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        });
+      } catch (e) {
+        console.warn("Error sending disconnect via LocalStorageChannel:", e);
+      }
+    }
+    
+    // Via Supabase
+    if (supabaseChannelRef.current) {
+      try {
+        supabaseChannelRef.current.send({
+          type: 'broadcast',
+          event: 'message',
+          payload: {
+            type: 'participant-leave',
+            id: participantIdRef.current,
+            timestamp: Date.now()
+          }
+        });
+      } catch (e) {
+        console.warn("Error sending disconnect via Supabase Realtime:", e);
+      }
+    }
+    
+    // Via localStorage
+    try {
+      window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, JSON.stringify({
+        type: 'participant-leave',
+        id: participantIdRef.current,
+        timestamp: Date.now()
+      }));
+      
+      // Correção do tipo para NodeJS.Timeout
+      setTimeout(() => {
+        try {
+          window.localStorage.removeItem(`telao-leave-${sessionId}-${participantIdRef.current}`);
+        } catch (e) {
+          // Ignore errors
+        }
+      }, 10000);
+    } catch (e) {
+      console.warn("Error using localStorage for disconnect:", e);
     }
   };
 
@@ -457,76 +622,76 @@ const ParticipantPage = () => {
         return;
       }
       
-      if (broadcastChannelRef.current) {
-        try {
-          broadcastChannelRef.current.postMessage({
-            type: 'participant-heartbeat',
-            id: participantIdRef.current,
-            timestamp: Date.now()
-          });
-        } catch (e) {
-          console.warn("Error sending heartbeat via BroadcastChannel:", e);
-        }
-      }
-      
-      if (localStorageChannelRef.current) {
-        try {
-          localStorageChannelRef.current.postMessage({
-            type: 'participant-heartbeat',
-            id: participantIdRef.current,
-            timestamp: Date.now()
-          });
-        } catch (e) {
-          console.warn("Error sending heartbeat via LocalStorageChannel:", e);
-        }
-      }
-      
-      if (supabaseChannelRef.current) {
-        try {
-          supabaseChannelRef.current.send({
-            type: 'broadcast',
-            event: 'message',
-            payload: {
-              type: 'participant-heartbeat',
-              id: participantIdRef.current,
-              timestamp: Date.now()
-            }
-          });
-        } catch (e) {
-          console.warn("Error sending heartbeat via Supabase Realtime:", e);
-        }
-      }
-      
-      try {
-        window.localStorage.setItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`, Date.now().toString());
-        
-        // Correção do tipo para NodeJS.Timeout
-        setTimeout(() => {
-          try {
-            window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
-          } catch (e) {
-            // Ignore errors
-          }
-        }, 5000);
-      } catch (e) {
-        // Ignore errors
-      }
+      sendHeartbeat();
     }, 2000);
+  };
+  
+  const sendHeartbeat = () => {
+    if (broadcastChannelRef.current) {
+      try {
+        broadcastChannelRef.current.postMessage({
+          type: 'participant-heartbeat',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        });
+      } catch (e) {
+        console.warn("Error sending heartbeat via BroadcastChannel:", e);
+      }
+    }
+    
+    if (localStorageChannelRef.current) {
+      try {
+        localStorageChannelRef.current.postMessage({
+          type: 'participant-heartbeat',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        });
+      } catch (e) {
+        console.warn("Error sending heartbeat via LocalStorageChannel:", e);
+      }
+    }
+    
+    if (supabaseChannelRef.current) {
+      try {
+        supabaseChannelRef.current.send({
+          type: 'broadcast',
+          event: 'message',
+          payload: {
+            type: 'participant-heartbeat',
+            id: participantIdRef.current,
+            timestamp: Date.now()
+          }
+        });
+      } catch (e) {
+        console.warn("Error sending heartbeat via Supabase Realtime:", e);
+      }
+    }
+    
+    try {
+      window.localStorage.setItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`, Date.now().toString());
+      
+      setTimeout(() => {
+        try {
+          window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
+        } catch (e) {
+          // Ignore errors
+        }
+      }, 5000);
+    } catch (e) {
+      // Ignore errors
+    }
   };
 
   const disconnectFromSession = () => {
     if (connected) {
       console.log(`Disconnecting from session: ${sessionId}`);
+      sendDisconnectMessage();
+      
       setConnected(false);
       setTransmitting(false);
       
       if (broadcastChannelRef.current) {
         try {
-          broadcastChannelRef.current.postMessage({
-            type: 'participant-leave',
-            id: participantIdRef.current,
-            timestamp: Date.now()
-          });
           broadcastChannelRef.current.close();
           broadcastChannelRef.current = null;
         } catch (e) {
@@ -536,11 +701,6 @@ const ParticipantPage = () => {
       
       if (localStorageChannelRef.current) {
         try {
-          localStorageChannelRef.current.postMessage({
-            type: 'participant-leave',
-            id: participantIdRef.current,
-            timestamp: Date.now()
-          });
           localStorageChannelRef.current.close();
           localStorageChannelRef.current = null;
         } catch (e) {
@@ -550,15 +710,6 @@ const ParticipantPage = () => {
       
       if (supabaseChannelRef.current) {
         try {
-          supabaseChannelRef.current.send({
-            type: 'broadcast',
-            event: 'message',
-            payload: {
-              type: 'participant-leave',
-              id: participantIdRef.current,
-              timestamp: Date.now()
-            }
-          });
           supabaseChannelRef.current.unsubscribe();
           supabaseChannelRef.current = null;
         } catch (e) {
@@ -566,8 +717,16 @@ const ParticipantPage = () => {
         }
       }
       
+      // Make sure disconnect is persisted in localStorage
       try {
-        window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, Date.now().toString());
+        window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, JSON.stringify({
+          type: 'participant-leave',
+          id: participantIdRef.current,
+          timestamp: Date.now()
+        }));
+        
+        // Clear heartbeat
+        window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
       } catch (e) {
         // Ignore errors
       }
@@ -612,13 +771,15 @@ const ParticipantPage = () => {
     try {
       if (!videoRef.current) return;
       
-      // Request high-quality video with preference for H.264
-      const constraints = {
+      // Request high-quality video with preference for H.264 and support for mobile
+      const constraints: MediaStreamConstraints = {
         video: {
           deviceId: deviceId ? { exact: deviceId } : undefined,
           width: { ideal: 1280 },
           height: { ideal: 720 },
-          frameRate: { ideal: 30 }
+          frameRate: { ideal: 30 },
+          // For mobile devices, facingMode helps select the right camera
+          facingMode: isMobileDevice ? "environment" : "user" 
         },
         audio: false
       };
@@ -640,7 +801,7 @@ const ParticipantPage = () => {
         await initWebRTC(stream);
       }
       
-      // Correção do tipo para NodeJS.Timeout
+      // Ensure we're sending a join message when camera is ready
       setTimeout(() => {
         if (connected) {
           startTransmitting();
@@ -650,6 +811,37 @@ const ParticipantPage = () => {
           sendJoinMessage();
         }
       }, 500);
+      
+      // On mobile, add wake lock to prevent screen from turning off
+      try {
+        if (isMobileDevice && 'wakeLock' in navigator) {
+          // @ts-ignore - TypeScript doesn't know about wakeLock API yet
+          const wakeLock = await navigator.wakeLock.request('screen');
+          console.log("Wake Lock acquired to keep screen on");
+          
+          // Release it when component unmounts or user navigates away
+          const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+              // @ts-ignore
+              navigator.wakeLock.request('screen')
+                .then(() => console.log("Wake Lock re-acquired"))
+                .catch(err => console.warn("Failed to re-acquire Wake Lock:", err));
+            }
+          };
+          
+          document.addEventListener('visibilitychange', handleVisibilityChange);
+          
+          return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            wakeLock.release()
+              .then(() => console.log("Wake Lock released"))
+              .catch(err => console.warn("Failed to release Wake Lock:", err));
+          };
+        }
+      } catch (err) {
+        console.warn("Wake Lock API not supported or failed:", err);
+      }
+      
     } catch (error) {
       console.error('Error accessing camera:', error);
       toast({
@@ -691,11 +883,27 @@ const ParticipantPage = () => {
     
     setDeviceId(nextDeviceId);
     
-    // Correção do tipo para NodeJS.Timeout
     setTimeout(() => {
       startCamera();
     }, 300);
   };
+
+  // Handle page unload/navigation to ensure disconnect
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (connected && sessionId) {
+        // Send disconnect message before user navigates away
+        console.log("User navigating away, sending disconnect");
+        sendDisconnectMessage();
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [connected, sessionId]);
 
   return (
     <div className="min-h-screen bg-black flex flex-col">
@@ -764,6 +972,7 @@ const ParticipantPage = () => {
         
         <p className="text-xs text-white/50 mt-8 text-center">
           Mantenha esta janela aberta para continuar transmitindo sua imagem.<br />
+          {isMobileDevice && "Caso esteja utilizando um celular, mantenha a tela ligada durante a transmissão."}<br />
           Sua câmera será exibida apenas quando o host incluir você na transmissão.
         </p>
         

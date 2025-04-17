@@ -34,6 +34,22 @@ const iceServers = {
       urls: 'turn:turn.anyfirewall.com:443?transport=tcp',
       credential: 'webrtc',
       username: 'webrtc'
+    },
+    // Add public TURN servers to better support mobile networks
+    {
+      urls: 'turn:global.turn.twilio.com:3478?transport=udp',
+      username: 'f4b4035eaa76f4a55de5f4351567653ee4ff6fa97b50b6b334fcc1be9c27212d',
+      credential: 'w1uxM55V9yYoqyVFjt+KXc/q6MrZ0nhrpLbuzCa1aes='
+    },
+    {
+      urls: 'turn:global.turn.twilio.com:3478?transport=tcp',
+      username: 'f4b4035eaa76f4a55de5f4351567653ee4ff6fa97b50b6b334fcc1be9c27212d',
+      credential: 'w1uxM55V9yYoqyVFjt+KXc/q6MrZ0nhrpLbuzCa1aes='
+    },
+    {
+      urls: 'turn:global.turn.twilio.com:443?transport=tcp',
+      username: 'f4b4035eaa76f4a55de5f4351567653ee4ff6fa97b50b6b334fcc1be9c27212d',
+      credential: 'w1uxM55V9yYoqyVFjt+KXc/q6MrZ0nhrpLbuzCa1aes='
     }
   ],
   iceCandidatePoolSize: 10,
@@ -47,6 +63,9 @@ const peerConnectionConfig = {
   // Prefer UDP but allow fallback to TCP/TLS
   iceTransportPolicy: 'all',
 };
+
+// Track disconnection events for cleanup
+const disconnectionEventHandlers: Record<string, () => void> = {};
 
 // Initialize WebRTC for a participant
 export const initParticipantWebRTC = async (
@@ -85,6 +104,25 @@ export const initParticipantWebRTC = async (
     // Store local stream
     setLocalStream(localStream);
   }
+
+  // Setup disconnect handler to clean up when leaving
+  if (disconnectionEventHandlers[participantId]) {
+    window.removeEventListener('beforeunload', disconnectionEventHandlers[participantId]);
+  }
+  
+  const disconnectHandler = () => {
+    console.log(`Participant ${participantId} disconnecting from session ${sessionId}`);
+    sendSignalingMessage({
+      type: 'offer',
+      sender: participantId,
+      payload: { type: 'participant-leave' },
+      sessionId,
+      timestamp: Date.now(),
+    });
+  };
+  
+  disconnectionEventHandlers[participantId] = disconnectHandler;
+  window.addEventListener('beforeunload', disconnectHandler);
 };
 
 // Initialize WebRTC for a host
@@ -124,8 +162,8 @@ export const createPeerConnection = async (
     });
     
     // Set codec preferences with H.264 first
-    const codecs = RTCRtpSender.getCapabilities('video')?.codecs;
-    if (codecs) {
+    const codecs = RTCRtpSender.getCapabilities?.('video')?.codecs;
+    if (codecs && transceiver.setCodecPreferences) {
       // Prioritize H.264 codecs
       const h264Codecs = codecs.filter(codec => 
         codec.mimeType.toLowerCase() === 'video/h264'
@@ -135,7 +173,7 @@ export const createPeerConnection = async (
         codec.mimeType.toLowerCase() !== 'video/h264'
       );
       
-      if (h264Codecs.length > 0 && transceiver.setCodecPreferences) {
+      if (h264Codecs.length > 0) {
         transceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
         console.log("Successfully prioritized H.264 codec");
       }
@@ -420,13 +458,18 @@ const handleSignalingMessage = async (
         console.error("Error creating offer:", error);
       }
     } 
-    // Fix the type error by checking payload type property instead
-    else if (payload?.type === 'participant-leave') {
+    // Fix handling 'participant-leave' by checking in payload.type instead
+    else if (type === 'offer' && payload?.type === 'participant-leave') {
       // Participant has left, clean up their connection
       console.log(`Participant ${sender} has left, cleaning up their connection`);
       if (peerConnections[sender]) {
         peerConnections[sender].connection.close();
         delete peerConnections[sender];
+      }
+      
+      // Notify any subscribers about this disconnection
+      if (onParticipantDisconnected) {
+        onParticipantDisconnected(sender);
       }
     }
     else if (type === 'answer') {
@@ -465,15 +508,15 @@ const handleSignalingMessage = async (
         
         const pc = new RTCPeerConnection(peerConnectionConfig as RTCConfiguration);
         
-        // Configure to prefer H.264 codec
+        // Configure to prefer H.264 codec for mobile compatibility
         try {
           const transceiver = pc.addTransceiver('video', {
             direction: 'sendrecv'
           });
           
           // Set codec preferences with H.264 first
-          const codecs = RTCRtpSender.getCapabilities('video')?.codecs;
-          if (codecs) {
+          const codecs = RTCRtpSender.getCapabilities?.('video')?.codecs;
+          if (codecs && transceiver.setCodecPreferences) {
             // Prioritize H.264 codecs
             const h264Codecs = codecs.filter(codec => 
               codec.mimeType.toLowerCase() === 'video/h264'
@@ -483,7 +526,7 @@ const handleSignalingMessage = async (
               codec.mimeType.toLowerCase() !== 'video/h264'
             );
             
-            if (h264Codecs.length > 0 && transceiver.setCodecPreferences) {
+            if (h264Codecs.length > 0) {
               transceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
               console.log("Successfully prioritized H.264 codec on participant side");
             }
@@ -529,7 +572,7 @@ const handleSignalingMessage = async (
           if (pc.iceConnectionState === 'failed') {
             console.error("Participant ICE connection failed, attempting recovery");
             
-            // Try to restart ICE
+            // Try to restart ICE if supported
             if (pc.restartIce) {
               pc.restartIce();
             }
@@ -674,9 +717,17 @@ export const sendSignalingMessage = (message: WebRTCMessage) => {
 // Callback for when a participant's track is received
 let onParticipantTrack: ((participantId: string, event: RTCTrackEvent) => void) | null = null;
 
+// Callback for when a participant disconnects
+let onParticipantDisconnected: ((participantId: string) => void) | null = null;
+
 // Set the callback function for participant tracks
 export const setOnParticipantTrackCallback = (callback: (participantId: string, event: RTCTrackEvent) => void) => {
   onParticipantTrack = callback;
+};
+
+// Set the callback function for participant disconnection
+export const setOnParticipantDisconnectedCallback = (callback: (participantId: string) => void) => {
+  onParticipantDisconnected = callback;
 };
 
 // Helper to get a participant's connection
@@ -691,6 +742,12 @@ export const cleanupWebRTC = (participantId?: string) => {
     const connection = peerConnections[participantId].connection;
     connection.close();
     delete peerConnections[participantId];
+    
+    // Remove disconnect event handler
+    if (disconnectionEventHandlers[participantId]) {
+      window.removeEventListener('beforeunload', disconnectionEventHandlers[participantId]);
+      delete disconnectionEventHandlers[participantId];
+    }
   } else {
     // Close all connections
     console.log(`Cleaning up all WebRTC connections`);
@@ -700,6 +757,12 @@ export const cleanupWebRTC = (participantId?: string) => {
     // Clear the connections object
     Object.keys(peerConnections).forEach(id => {
       delete peerConnections[id];
+    });
+    
+    // Remove all disconnect event handlers
+    Object.keys(disconnectionEventHandlers).forEach(id => {
+      window.removeEventListener('beforeunload', disconnectionEventHandlers[id]);
+      delete disconnectionEventHandlers[id];
     });
   }
 };

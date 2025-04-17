@@ -20,6 +20,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
   const maxReconnectAttempts = 5;
   const videoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const inactivityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const streamCheckRef = useRef<NodeJS.Timeout | null>(null);
   
   // Reset state when participant changes
   useEffect(() => {
@@ -40,6 +41,11 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       inactivityTimeoutRef.current = null;
     }
     
+    if (streamCheckRef.current) {
+      clearInterval(streamCheckRef.current);
+      streamCheckRef.current = null;
+    }
+    
     // Set up a more aggressive timeout to consider the participant disconnected if nothing happens
     inactivityTimeoutRef.current = setTimeout(() => {
       if (connectionStatus === 'connecting') {
@@ -57,6 +63,11 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       if (inactivityTimeoutRef.current) {
         clearTimeout(inactivityTimeoutRef.current);
         inactivityTimeoutRef.current = null;
+      }
+      
+      if (streamCheckRef.current) {
+        clearInterval(streamCheckRef.current);
+        streamCheckRef.current = null;
       }
     };
   }, [participantId]);
@@ -98,6 +109,35 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       // Set srcObject to trigger video loading
       videoRef.current.srcObject = stream;
       
+      // Implement a continuous stream check to fix blinking issues
+      streamCheckRef.current = setInterval(() => {
+        if (stream && videoRef.current) {
+          const videoTracks = stream.getVideoTracks();
+          if (videoTracks.length > 0) {
+            const videoTrack = videoTracks[0];
+            
+            // Check if track is enabled but video isn't active
+            if (videoTrack.enabled && videoTrack.readyState === 'live' && !videoActive) {
+              console.log(`Re-activating video for ${participantId}`);
+              setVideoActive(true);
+              setConnectionStatus('connected');
+              
+              if (videoRef.current.paused) {
+                videoRef.current.play().catch(err => 
+                  console.warn(`Play failed during check: ${err}`)
+                );
+              }
+            }
+            
+            // Check if track is disabled or ended but video is marked active
+            if ((videoTrack.readyState !== 'live' || !videoTrack.enabled) && videoActive) {
+              console.log(`Deactivating stale video for ${participantId}`);
+              setVideoActive(false);
+            }
+          }
+        }
+      }, 1000); // Check every second
+      
       // Monitor track status more aggressively
       const videoTracks = stream.getVideoTracks();
       if (videoTracks.length > 0) {
@@ -114,19 +154,18 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
           lastUpdateTimeRef.current = Date.now();
           reconnectAttemptRef.current = 0;
           
-          // Auto-play the video element
-          videoRef.current.play().catch(err => {
-            console.warn(`Auto-play failed: ${err}, will try again`);
-            
-            // Try once more with user interaction simulation
-            setTimeout(() => {
-              if (videoRef.current) {
-                videoRef.current.play().catch(e => 
-                  console.error(`Second play attempt failed: ${e}`)
-                );
-              }
-            }, 1000);
-          });
+          // Auto-play the video element with more aggressive retry
+          const tryPlay = () => {
+            if (videoRef.current) {
+              videoRef.current.play().catch(err => {
+                console.warn(`Auto-play failed: ${err}, retrying...`);
+                // Try again with user interaction simulation
+                setTimeout(tryPlay, 500);
+              });
+            }
+          };
+          
+          tryPlay();
         }
         
         // Listen for track events with better handling
@@ -161,6 +200,11 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
           if (inactivityTimeoutRef.current) {
             clearTimeout(inactivityTimeoutRef.current);
             inactivityTimeoutRef.current = null;
+          }
+          
+          if (streamCheckRef.current) {
+            clearInterval(streamCheckRef.current);
+            streamCheckRef.current = null;
           }
           
           videoTrack.removeEventListener('ended', onEnded);
@@ -204,11 +248,16 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         inactivityTimeoutRef.current = null;
       }
       
+      if (streamCheckRef.current) {
+        clearInterval(streamCheckRef.current);
+        streamCheckRef.current = null;
+      }
+      
       if (videoRef.current) {
         videoRef.current.srcObject = null;
       }
     };
-  }, [stream, participantId, connectionStatus, videoActive]);
+  }, [stream, participantId]);
 
   // Stabilization effect to prevent flickering and detect stale connections
   useEffect(() => {
@@ -234,11 +283,22 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
                 if (videoRef.current) {
                   videoRef.current.srcObject = currentStream;
                   
-                  // Force play
-                  videoRef.current.play().catch(err => {
-                    console.warn(`Failed to play after recovery: ${err}`);
-                    setConnectionStatus('disconnected');
-                  });
+                  // Force play with more aggressive retry
+                  const tryPlay = () => {
+                    if (videoRef.current) {
+                      videoRef.current.play().catch(err => {
+                        console.warn(`Recovery play failed: ${err}, retrying...`);
+                        // If still connected, try again
+                        if (reconnectAttemptRef.current < maxReconnectAttempts) {
+                          setTimeout(tryPlay, 500);
+                        } else {
+                          setConnectionStatus('disconnected');
+                        }
+                      });
+                    }
+                  };
+                  
+                  tryPlay();
                 }
               }, 500);
               
@@ -283,7 +343,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     setConnectionStatus('disconnected');
   };
 
-  // Periodically update the last update time while video is playing
+  // Periodically update the last update time while video is playing to prevent timing out
   useEffect(() => {
     if (videoActive && connectionStatus === 'connected') {
       const updateTimer = setInterval(() => {
@@ -315,18 +375,29 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         } catch (error) {
           console.warn(`Could not force play for ${participantId}:`, error);
           
-          // Set a timeout to try again one more time
-          setTimeout(() => {
-            if (videoRef.current) {
+          // Set a timeout to try again with multiple attempts
+          let attempts = 0;
+          const maxAttempts = 5;
+          
+          const tryPlay = () => {
+            if (videoRef.current && attempts < maxAttempts) {
+              attempts++;
               videoRef.current.play()
                 .then(() => {
                   setVideoActive(true);
                   setConnectionStatus('connected');
                   lastUpdateTimeRef.current = Date.now();
                 })
-                .catch(err => console.warn(`Retry play failed: ${err}`));
+                .catch(err => {
+                  console.warn(`Retry play failed (${attempts}/${maxAttempts}): ${err}`);
+                  if (attempts < maxAttempts) {
+                    setTimeout(tryPlay, 1000);
+                  }
+                });
             }
-          }, 2000);
+          };
+          
+          tryPlay();
         }
       };
       
@@ -349,6 +420,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         className="w-full h-full object-cover"
         onLoadedData={handleVideoLoadedData}
         onError={handleVideoError}
+        style={{ objectFit: 'cover' }} // Ensure video fills container on all browsers
       />
       
       {/* Enhanced connection status indicators */}
