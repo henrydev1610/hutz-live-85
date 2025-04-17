@@ -1,5 +1,5 @@
 
-import { User, Check } from 'lucide-react';
+import { User, Check, Video, VideoOff } from 'lucide-react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -8,6 +8,7 @@ interface Participant {
   name: string;
   active: boolean;
   selected: boolean;
+  hasVideo?: boolean;
 }
 
 interface ParticipantGridProps {
@@ -26,8 +27,17 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
         {activeParticipants.map((participant) => (
           <Card key={participant.id} className={`bg-secondary/60 border ${participant.selected ? 'border-accent' : 'border-white/10'}`}>
             <CardContent className="p-4 text-center">
-              <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2">
+              <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2 relative">
                 <User className="h-8 w-8 text-white/30" />
+                {participant.hasVideo ? (
+                  <div className="absolute top-2 right-2 bg-green-500/20 p-1 rounded-full">
+                    <Video className="h-3 w-3 text-green-500" />
+                  </div>
+                ) : (
+                  <div className="absolute top-2 right-2 bg-orange-500/20 p-1 rounded-full">
+                    <VideoOff className="h-3 w-3 text-orange-500" />
+                  </div>
+                )}
               </div>
               <p className="text-sm font-medium truncate flex items-center justify-center gap-2">
                 {participant.name}

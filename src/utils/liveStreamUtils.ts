@@ -1,3 +1,4 @@
+
 import { createSession, endSession, addParticipantToSession, updateParticipantStatus, notifyParticipants } from './sessionUtils';
 
 interface ParticipantCallbacks {
@@ -150,6 +151,13 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
         timestamp: Date.now()
       });
     }
+    // Handle video stream data for participants
+    else if (data.type === 'video-stream-info') {
+      console.log('Received video stream info from participant:', data.id);
+      // Forward this information to all channels to ensure all components are updated
+      channel.postMessage(data);
+      backupChannel.postMessage(data);
+    }
   };
   
   // Listen for backup channel messages
@@ -203,6 +211,13 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
         type: 'pong',
         timestamp: Date.now()
       });
+    }
+    // Handle video stream data for participants
+    else if (data.type === 'video-stream-info') {
+      console.log('Received video stream info from participant (backup):', data.id);
+      // Forward this information to all channels to ensure all components are updated
+      backupChannel.postMessage(data);
+      channel.postMessage(data);
     }
   };
   
@@ -263,6 +278,73 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
       joinInterval = null;
     }
   };
+  
+  // Set up function to send video stream info
+  const sendVideoStreamInfo = (stream: MediaStream | null) => {
+    if (!stream) return;
+    
+    const videoTrackInfo = stream.getVideoTracks().map(track => ({
+      id: track.id,
+      enabled: track.enabled,
+      readyState: track.readyState,
+      kind: track.kind,
+      label: track.label
+    }));
+    
+    const streamInfo = {
+      type: 'video-stream-info',
+      id: participantId,
+      timestamp: Date.now(),
+      hasStream: true,
+      videoTracks: videoTrackInfo,
+      audioTrackCount: stream.getAudioTracks().length
+    };
+    
+    console.log('Sending video stream info:', streamInfo);
+    
+    // Send on both channels
+    channel.postMessage(streamInfo);
+    backupChannel.postMessage(streamInfo);
+    
+    // Also store in localStorage for maximum reliability
+    try {
+      localStorage.setItem(`telao-stream-info-${sessionId}-${participantId}`, JSON.stringify(streamInfo));
+    } catch (e) {
+      console.warn("Error storing stream info in localStorage:", e);
+    }
+  };
+  
+  // Function to handle when user media is obtained
+  const handleUserMedia = (stream: MediaStream) => {
+    console.log('Got user media stream with tracks:', 
+      stream.getTracks().map(t => `${t.kind}:${t.label} (${t.readyState})`));
+    
+    // Send initial stream info
+    sendVideoStreamInfo(stream);
+    
+    // Set up periodic stream info updates
+    const streamInfoInterval = setInterval(() => {
+      sendVideoStreamInfo(stream);
+    }, 5000);
+    
+    // Clean up interval when window unloads
+    window.addEventListener('beforeunload', () => {
+      clearInterval(streamInfoInterval);
+    });
+  };
+  
+  // Try to get user media for video and send stream info
+  navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    .then(handleUserMedia)
+    .catch(err => {
+      console.error('Error getting user media:', err);
+      // Try with just video as fallback
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(handleUserMedia)
+        .catch(videoErr => {
+          console.error('Error getting video-only media:', videoErr);
+        });
+    });
   
   // Listen for acknowledgment
   const channelMessageHandler = (event: MessageEvent) => {

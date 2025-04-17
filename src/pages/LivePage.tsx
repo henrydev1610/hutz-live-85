@@ -302,6 +302,10 @@ const LivePage = () => {
                 width: 100%;
                 height: 100%;
                 object-fit: cover;
+                transform: translateZ(0);
+                backface-visibility: hidden;
+                will-change: transform;
+                transition: none;
               }
               .participant-icon {
                 width: 32px;
@@ -344,6 +348,31 @@ const LivePage = () => {
                 justify-content: center;
                 overflow: hidden;
               }
+              .live-indicator {
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                background-color: rgba(0, 0, 0, 0.5);
+                color: white;
+                padding: 5px 10px;
+                border-radius: 4px;
+                font-size: 12px;
+                display: flex;
+                align-items: center;
+              }
+              .live-dot {
+                width: 8px;
+                height: 8px;
+                background-color: #ff0000;
+                border-radius: 50%;
+                margin-right: 5px;
+                animation: pulse 1.5s infinite;
+              }
+              @keyframes pulse {
+                0% { opacity: 0.6; }
+                50% { opacity: 1; }
+                100% { opacity: 0.6; }
+              }
             </style>
           </head>
           <body>
@@ -366,6 +395,11 @@ const LivePage = () => {
                   ${qrCodeSvg ? `<img src="${qrCodeSvg}" alt="QR Code" />` : ''}
                 </div>
                 <div class="qr-description">${qrCodeDescription}</div>
+                
+                <div class="live-indicator">
+                  <div class="live-dot"></div>
+                  AO VIVO
+                </div>
               </div>
             </div>
             
@@ -374,50 +408,125 @@ const LivePage = () => {
               console.log("Live transmission window opened for session:", sessionId);
               
               const channel = new BroadcastChannel("live-session-" + sessionId);
+              const backupChannel = new BroadcastChannel("telao-session-" + sessionId);
               
               let participantSlots = {};
               let availableSlots = Array.from({ length: ${participantCount} }, (_, i) => i);
+              let participantStreams = {};
+              
+              function createVideoElement(slotElement, stream) {
+                slotElement.innerHTML = '';
+                const videoElement = document.createElement('video');
+                videoElement.autoplay = true;
+                videoElement.playsInline = true;
+                videoElement.muted = true;
+                
+                videoElement.style.transform = 'translateZ(0)';
+                videoElement.style.backfaceVisibility = 'hidden';
+                videoElement.style.WebkitBackfaceVisibility = 'hidden';
+                videoElement.style.willChange = 'transform';
+                videoElement.style.transition = 'none';
+                
+                slotElement.appendChild(videoElement);
+                
+                setTimeout(() => {
+                  videoElement.srcObject = stream;
+                  videoElement.play().catch(err => console.warn('Error playing video:', err));
+                }, 50);
+                
+                videoElement.addEventListener('loadeddata', () => {
+                  console.log('Video loaded successfully');
+                });
+                
+                videoElement.addEventListener('error', (err) => {
+                  console.error('Video error:', err);
+                  setTimeout(() => {
+                    videoElement.srcObject = stream;
+                    videoElement.play().catch(err => console.warn('Error playing video after recovery:', err));
+                  }, 1000);
+                });
+              }
+              
+              channel.addEventListener('message', (event) => {
+                const data = event.data;
+                if (data.type === 'video-stream-info' && data.hasStream) {
+                  console.log('Received video stream info for:', data.id);
+                  participantStreams[data.id] = {
+                    hasStream: true,
+                    lastUpdate: Date.now(),
+                    info: data
+                  };
+                }
+              });
+              
+              backupChannel.addEventListener('message', (event) => {
+                const data = event.data;
+                if (data.type === 'video-stream-info' && data.hasStream) {
+                  console.log('Received video stream info for (backup):', data.id);
+                  participantStreams[data.id] = {
+                    hasStream: true,
+                    lastUpdate: Date.now(),
+                    info: data
+                  };
+                }
+              });
               
               function updateParticipantDisplay() {
                 window.addEventListener('message', (event) => {
                   if (event.data.type === 'update-participants') {
                     const { participants } = event.data;
+                    console.log('Got participants update:', participants);
                     
                     participants.forEach(participant => {
-                      if (participantSlots[participant.id]) {
-                        const slotIndex = participantSlots[participant.id];
-                        const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                        
-                        if (participant.stream) {
-                          let videoElement = slotElement.querySelector('video');
-                          if (!videoElement) {
-                            slotElement.innerHTML = '';
-                            videoElement = document.createElement('video');
-                            videoElement.autoplay = true;
-                            videoElement.playsInline = true;
-                            videoElement.muted = true;
-                            slotElement.appendChild(videoElement);
-                          }
+                      if (participant.selected) {
+                        if (!participantSlots[participant.id] && availableSlots.length > 0) {
+                          const slotIndex = availableSlots.shift();
+                          participantSlots[participant.id] = slotIndex;
                           
-                          if (videoElement.srcObject !== participant.stream) {
-                            videoElement.srcObject = participant.stream;
+                          console.log('Assigned slot', slotIndex, 'to participant', participant.id);
+                          
+                          const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                          if (slotElement) {
+                            if (participantStreams[participant.id]?.hasStream) {
+                              console.log('Participant has stream info, creating video element');
+                              
+                              navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                                .then(stream => {
+                                  createVideoElement(slotElement, stream);
+                                })
+                                .catch(err => {
+                                  console.error('Error accessing camera:', err);
+                                  slotElement.innerHTML = \`
+                                    <div style="text-align: center; padding: 10px;">
+                                      <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                        <circle cx="12" cy="7" r="4"></circle>
+                                      </svg>
+                                      <div style="margin-top: 5px; font-size: 12px;">Aguardando mídia...</div>
+                                    </div>
+                                  \`;
+                                });
+                            } else {
+                              slotElement.innerHTML = \`
+                                <div style="text-align: center; padding: 10px;">
+                                  <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                    <circle cx="12" cy="7" r="4"></circle>
+                                  </svg>
+                                  <div style="margin-top: 5px; font-size: 12px;">${participant.name}</div>
+                                </div>
+                              \`;
+                            }
                           }
                         }
-                      } else if (participant.selected && availableSlots.length > 0) {
-                        const slotIndex = availableSlots.shift();
-                        participantSlots[participant.id] = slotIndex;
-                        
-                        const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                        if (slotElement) {
-                          if (participant.stream) {
-                            slotElement.innerHTML = '';
-                            const videoElement = document.createElement('video');
-                            videoElement.autoplay = true;
-                            videoElement.playsInline = true;
-                            videoElement.muted = true;
-                            slotElement.appendChild(videoElement);
-                            videoElement.srcObject = participant.stream;
-                          } else {
+                      } else {
+                        if (participantSlots[participant.id] !== undefined) {
+                          const slotIndex = participantSlots[participant.id];
+                          delete participantSlots[participant.id];
+                          availableSlots.push(slotIndex);
+                          
+                          const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                          if (slotElement) {
                             slotElement.innerHTML = \`
                               <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -455,6 +564,10 @@ const LivePage = () => {
               
               updateParticipantDisplay();
               
+              setInterval(() => {
+                window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
+              }, 5000);
+              
               channel.onmessage = (event) => {
                 const { type, id } = event.data;
                 if (type === 'participant-join') {
@@ -465,6 +578,7 @@ const LivePage = () => {
               
               window.addEventListener('beforeunload', () => {
                 channel.close();
+                backupChannel.close();
               });
             </script>
           </body>
@@ -488,9 +602,11 @@ const LivePage = () => {
   
   const updateTransmissionParticipants = () => {
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      const participantsWithStreams = [...participantList];
+      
       transmissionWindowRef.current.postMessage({
         type: 'update-participants',
-        participants: participantList
+        participants: participantsWithStreams
       }, '*');
     }
   };
@@ -565,6 +681,8 @@ const LivePage = () => {
       
       return [...prev, newParticipant];
     });
+    
+    setTimeout(updateTransmissionParticipants, 500);
   };
 
   return (
