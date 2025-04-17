@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { generateSessionId, isSessionActive, getSessionParticipants, addParticipantToSession, updateParticipantStatus } from '@/utils/sessionUtils';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
-import { ParticipantGrid } from '@/components/live/ParticipantGrid';
+import ParticipantGrid from '@/components/live/ParticipantGrid';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Check, Copy, Link, RefreshCw, Tv2 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
