@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import QRCode from 'qrcode';
+import { initHostWebRTC, setOnParticipantTrackCallback, getParticipantConnection, cleanupWebRTC } from '@/utils/webrtc';
+import WebRTCVideo from '@/components/telao/WebRTCVideo';
 
 const TelaoPage = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -42,6 +44,7 @@ const TelaoPage = () => {
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [broadcastChannel, setBroadcastChannel] = useState<BroadcastChannel | null>(null);
+  const [participantStreams, setParticipantStreams] = useState<{[key: string]: MediaStream}>({});
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
@@ -155,6 +158,14 @@ const TelaoPage = () => {
           setParticipantList(prev => 
             prev.map(p => p.id === data.id ? { ...p, active: false } : p)
           );
+          
+          // Clean up WebRTC for this participant
+          cleanupWebRTC(data.id);
+          setParticipantStreams(prev => {
+            const newStreams = {...prev};
+            delete newStreams[data.id];
+            return newStreams;
+          });
         }
         else if (data.type === 'participant-heartbeat') {
           setParticipantList(prev => 
@@ -174,6 +185,25 @@ const TelaoPage = () => {
       };
       
       setBroadcastChannel(channel);
+      
+      // Initialize WebRTC for host
+      initHostWebRTC(sessionId);
+      
+      // Set up callback for when we receive tracks from participants
+      setOnParticipantTrackCallback((participantId, event) => {
+        console.log(`Received ${event.track.kind} track from participant ${participantId}`);
+        
+        if (event.track.kind === 'video') {
+          const [videoTrack] = event.streams;
+          if (videoTrack) {
+            console.log("Setting up stream for participant", participantId);
+            setParticipantStreams(prev => ({
+              ...prev,
+              [participantId]: videoTrack
+            }));
+          }
+        }
+      });
       
       // Also set up a localStorage listener as fallback
       const checkLocalStorageJoins = setInterval(() => {
@@ -203,6 +233,7 @@ const TelaoPage = () => {
         if (channel) {
           channel.close();
         }
+        cleanupWebRTC(); // Clean up all WebRTC connections
       };
     }
   }, [sessionId, participantCount, toast]);
@@ -547,6 +578,11 @@ const TelaoPage = () => {
                 justify-content: center;
                 overflow: hidden;
               }
+              .participant video {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+              }
               .participant img {
                 width: 100%;
                 height: 100%;
@@ -636,7 +672,13 @@ const TelaoPage = () => {
             <script>
               const sessionId = "${sessionId}";
               console.log("Transmission window opened for session:", sessionId);
+              let webrtcStreamElements = {}; // Store video elements for WebRTC streams
+              
+              // Legacy channel for backward compatibility
               const channel = new BroadcastChannel("telao-session-" + sessionId);
+              
+              // WebRTC channel for real-time communication
+              const webrtcChannel = new BroadcastChannel("telao-webrtc-" + sessionId);
               
               channel.onmessage = (event) => {
                 const data = event.data;
@@ -663,11 +705,60 @@ const TelaoPage = () => {
                     participantId: data.id,
                     timestamp: Date.now()
                   });
+                  
+                  // Also acknowledge via WebRTC channel
+                  webrtcChannel.postMessage({
+                    type: 'host-acknowledge',
+                    participantId: data.id,
+                    timestamp: Date.now()
+                  });
                 }
               };
               
+              // Handle WebRTC stream updates from the main window
+              window.addEventListener('message', (event) => {
+                if (event.data.type === 'webrtc-stream') {
+                  const { participantId, stream } = event.data;
+                  console.log('Received WebRTC stream for participant:', participantId);
+                  
+                  const participantElement = document.getElementById("participant-" + participantId);
+                  if (participantElement && stream) {
+                    // Remove existing content
+                    participantElement.innerHTML = '';
+                    
+                    // Create video element for WebRTC stream
+                    const video = document.createElement('video');
+                    video.autoplay = true;
+                    video.playsInline = true;
+                    video.muted = true;
+                    video.style.width = '100%';
+                    video.style.height = '100%';
+                    video.style.objectFit = 'cover';
+                    
+                    participantElement.appendChild(video);
+                    webrtcStreamElements[participantId] = video;
+                    
+                    // Set the stream as source
+                    video.srcObject = stream;
+                  }
+                }
+              });
+              
               window.addEventListener('beforeunload', () => {
                 console.log("Transmission window closing");
+                channel.close();
+                webrtcChannel.close();
+                
+                // Clean up video elements
+                Object.values(webrtcStreamElements).forEach(video => {
+                  if (video.srcObject) {
+                    const stream = video.srcObject;
+                    if (stream instanceof MediaStream) {
+                      stream.getTracks().forEach(track => track.stop());
+                    }
+                    video.srcObject = null;
+                  }
+                });
               });
             </script>
           </body>
@@ -681,6 +772,25 @@ const TelaoPage = () => {
         setTransmissionOpen(false);
         transmissionWindowRef.current = null;
       };
+      
+      // Forward WebRTC streams to the transmission window
+      const sendStreamsToTransmissionWindow = () => {
+        if (!transmissionWindowRef.current || transmissionWindowRef.current.closed) return;
+        
+        Object.entries(participantStreams).forEach(([participantId, stream]) => {
+          transmissionWindowRef.current?.postMessage({
+            type: 'webrtc-stream',
+            participantId,
+            stream
+          }, '*');
+        });
+      };
+      
+      // Send streams initially and whenever they change
+      sendStreamsToTransmissionWindow();
+      const streamUpdateInterval = setInterval(sendStreamsToTransmissionWindow, 1000);
+      
+      return () => clearInterval(streamUpdateInterval);
     }
   };
 
@@ -752,9 +862,15 @@ const TelaoPage = () => {
             {participantList
               .filter(p => p.selected)
               .slice(0, participantCount)
-              .map((participant, i) => (
+              .map((participant) => (
                 <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center">
-                  {participant.frameData ? (
+                  {participantStreams[participant.id] ? (
+                    <WebRTCVideo 
+                      stream={participantStreams[participant.id]} 
+                      participantId={participant.id}
+                      className="w-full h-full"
+                    />
+                  ) : participant.frameData ? (
                     <img 
                       src={participant.frameData} 
                       alt={participant.name}

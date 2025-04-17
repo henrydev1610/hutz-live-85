@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Camera, Video, VideoOff } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { initParticipantWebRTC, setLocalStream } from '@/utils/webrtc';
 
 const ParticipantPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -19,7 +20,6 @@ const ParticipantPage = () => {
   const participantIdRef = useRef<string>(Math.random().toString(36).substr(2, 9));
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const supabaseChannelRef = useRef<any>(null);
-  const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectionRetryCountRef = useRef<number>(0);
   const maxConnectionRetries = 15;
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -27,6 +27,7 @@ const ParticipantPage = () => {
   const connectionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const joinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const localStorageChannelRef = useRef<BroadcastChannel | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     console.log(`Session ID: ${sessionId}, Participant ID: ${participantIdRef.current}`);
@@ -141,12 +142,33 @@ const ParticipantPage = () => {
       
       if (!cameraActive) {
         startCamera();
+      } else if (streamRef.current && sessionId) {
+        // Initialize WebRTC if we already have camera active
+        initWebRTC(streamRef.current);
       }
       
       toast({
         title: "Conectado à sessão",
         description: `Você está conectado à sessão ${sessionId}.`,
       });
+    }
+  };
+
+  const initWebRTC = async (stream: MediaStream) => {
+    if (!sessionId) return;
+    
+    console.log("Initializing WebRTC connection");
+    setLocalStream(stream);
+    
+    try {
+      await initParticipantWebRTC(
+        sessionId,
+        participantIdRef.current,
+        stream
+      );
+      console.log("WebRTC initialized successfully");
+    } catch (error) {
+      console.error("Error initializing WebRTC:", error);
     }
   };
 
@@ -240,6 +262,9 @@ const ParticipantPage = () => {
             
             if (!cameraActive) {
               startCamera();
+            } else if (streamRef.current && sessionId) {
+              // Initialize WebRTC if we already have camera active
+              initWebRTC(streamRef.current);
             }
             
             toast({
@@ -296,6 +321,9 @@ const ParticipantPage = () => {
               
               if (!cameraActive) {
                 startCamera();
+              } else if (streamRef.current && sessionId) {
+                // Initialize WebRTC if we already have camera active
+                initWebRTC(streamRef.current);
               }
               
               toast({
@@ -545,58 +573,17 @@ const ParticipantPage = () => {
 
   const startTransmitting = () => {
     if (!connected || !cameraActive) return;
-    
-    if (frameIntervalRef.current) {
-      clearInterval(frameIntervalRef.current);
-      frameIntervalRef.current = null;
-    }
-    
     setTransmitting(true);
     console.log(`Started transmitting video to session: ${sessionId}`);
-    
-    const sendVideoFrame = () => {
-      if (!connected) return;
-      
-      if (videoRef.current && videoRef.current.srcObject && broadcastChannelRef.current) {
-        try {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          
-          if (ctx) {
-            canvas.width = videoRef.current.videoWidth;
-            canvas.height = videoRef.current.videoHeight;
-            
-            ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-            
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
-            
-            broadcastChannelRef.current.postMessage({
-              type: 'video-frame',
-              id: participantIdRef.current,
-              frame: dataUrl,
-              timestamp: Date.now()
-            });
-          }
-        } catch (e) {
-          console.error('Error creating data URL:', e);
-        }
-      }
-    };
-    
-    frameIntervalRef.current = setInterval(sendVideoFrame, 500);
-    sendVideoFrame();
+
+    // With WebRTC we don't need to do more here since the connection is already set up
+    // WebRTC will handle the streaming
   };
 
   const stopTransmitting = () => {
     if (!transmitting) return;
-    
     setTransmitting(false);
     console.log(`Stopped transmitting video to session: ${sessionId}`);
-    
-    if (frameIntervalRef.current) {
-      clearInterval(frameIntervalRef.current);
-      frameIntervalRef.current = null;
-    }
   };
 
   const startCamera = async () => {
@@ -609,12 +596,18 @@ const ParticipantPage = () => {
       });
       
       videoRef.current.srcObject = stream;
+      streamRef.current = stream;
       setCameraActive(true);
       
       toast({
         title: "Câmera ativada",
         description: "Sua imagem está sendo transmitida para a sessão.",
       });
+      
+      // Initialize WebRTC if connected to a session
+      if (connected && sessionId) {
+        await initWebRTC(stream);
+      }
       
       setTimeout(() => {
         startTransmitting();
@@ -643,6 +636,7 @@ const ParticipantPage = () => {
       const tracks = stream.getTracks();
       tracks.forEach(track => track.stop());
       videoRef.current.srcObject = null;
+      streamRef.current = null;
       setCameraActive(false);
       
       toast({
