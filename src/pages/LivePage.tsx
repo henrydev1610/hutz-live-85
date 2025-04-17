@@ -1,237 +1,203 @@
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import QRCode from 'qrcode';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
-import { QrCode, MonitorPlay, Users, Palette, Check, ExternalLink, X, StopCircle } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import QRCode from 'qrcode';
-import ParticipantGrid from '@/components/live/ParticipantGrid';
-import LivePreview from '@/components/live/LivePreview';
-import AppearanceSettings from '@/components/live/AppearanceSettings';
-import TextSettings from '@/components/live/TextSettings';
-import QrCodeSettings from '@/components/live/QrCodeSettings';
-import { generateSessionId } from '@/utils/sessionUtils';
+import { generateSessionId, isSessionActive, getSessionParticipants, addParticipantToSession, updateParticipantStatus } from '@/utils/sessionUtils';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
+import { ParticipantGrid } from '@/components/live/ParticipantGrid';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Check, Copy, Link, RefreshCw, Tv2 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+
+const FONTS = [
+  "Arial, sans-serif",
+  "Helvetica, sans-serif",
+  "Times New Roman, serif",
+  "Courier New, monospace",
+  "Georgia, serif",
+  "Verdana, sans-serif",
+  "Impact, sans-serif",
+  "Comic Sans MS, cursive",
+  "Trebuchet MS, sans-serif",
+  "Arial Black, sans-serif",
+];
 
 const LivePage = () => {
-  const [participantCount, setParticipantCount] = useState(4);
-  const [qrCodeURL, setQrCodeURL] = useState("");
-  const [qrCodeVisible, setQrCodeVisible] = useState(false);
-  const [qrCodeSvg, setQrCodeSvg] = useState<string | null>(null);
-  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean}[]>([]);
-  const [selectedBackgroundColor, setSelectedBackgroundColor] = useState("#000000");
-  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
-  const [finalAction, setFinalAction] = useState<'none' | 'image' | 'coupon'>('none');
-  const [finalActionLink, setFinalActionLink] = useState("");
-  const [finalActionImage, setFinalActionImage] = useState<string | null>(null);
-  const [finalActionCoupon, setFinalActionCouponCode] = useState("");
-  const { toast } = useToast();
-  
-  const [selectedFont, setSelectedFont] = useState("sans-serif");
-  const [selectedTextColor, setSelectedTextColor] = useState("#FFFFFF");
-  const [qrDescriptionFontSize, setQrDescriptionFontSize] = useState(16);
-  const [qrCodeDescription, setQrCodeDescription] = useState("Escaneie o QR Code para participar");
-  
+  const [sessionId, setSessionId] = useState<string>(() => {
+    const storedSessionId = localStorage.getItem('live-session-id');
+    return storedSessionId || generateSessionId();
+  });
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [qrCodeDescription, setQrCodeDescription] = useState<string>("Acesse aqui para participar");
+  const [participantList, setParticipantList] = useState<any[]>([]);
   const [transmissionOpen, setTransmissionOpen] = useState(false);
-  const [finalActionOpen, setFinalActionOpen] = useState(false);
-  const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
-  const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  
-  const [qrCodePosition, setQrCodePosition] = useState({ 
-    x: 20, 
-    y: 20, 
-    width: 80, 
-    height: 80 
-  });
+  const [participantCount, setParticipantCount] = useState<number>(6);
+  const [selectedFont, setSelectedFont] = useState<string>("Arial, sans-serif");
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
+  const [transmissionWindowRef, setTransmissionWindowRef] = useState<React.MutableRefObject<Window | null>>(useRef(null));
+  const [isSessionActiveState, setIsSessionActiveState] = useState<boolean>(false);
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
+  const [qrCodeSvg, setQrCodeSvg] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { toast } = useToast();
 
-  const [qrDescriptionPosition, setQrDescriptionPosition] = useState({
-    x: 20,
-    y: 110,
-    width: 200,
-    height: 60
-  });
-  
-  const transmissionWindowRef = useRef<Window | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
   useEffect(() => {
-    if (participantList.length === 0) {
-      const initialParticipants = Array(4).fill(0).map((_, i) => ({
-        id: `placeholder-${i}`,
-        name: `Participante ${i + 1}`,
-        active: false,
-        selected: false
-      }));
-      setParticipantList(initialParticipants);
-    }
-  }, []);
+    const initialSessionId = searchParams.get("session") || localStorage.getItem('live-session-id') || generateSessionId();
+    setSessionId(initialSessionId);
+    localStorage.setItem('live-session-id', initialSessionId);
+  }, [searchParams]);
 
   useEffect(() => {
     if (sessionId) {
-      const cleanup = initializeHostSession(sessionId, {
-        onParticipantJoin: handleParticipantJoin,
-        onParticipantLeave: (id) => {
-          setParticipantList(prev => 
-            prev.map(p => p.id === id ? { ...p, active: false } : p)
-          );
-        },
-        onParticipantHeartbeat: (id) => {
-          setParticipantList(prev => 
-            prev.map(p => p.id === id ? { ...p, active: true } : p)
-          );
-        }
-      });
-
-      return () => {
-        cleanup();
-      };
+      localStorage.setItem('live-session-id', sessionId);
+      generateQrCode(sessionId);
+      checkSessionStatus(sessionId);
+      loadParticipants(sessionId);
     }
   }, [sessionId]);
 
   useEffect(() => {
-    if (qrCodeURL) {
-      generateQRCode(qrCodeURL);
+    if (transmissionOpen && transmissionWindowRef.current) {
+      updateTransmissionParticipants();
     }
-  }, [qrCodeURL]);
+  }, [selectedParticipants, transmissionOpen]);
 
   useEffect(() => {
-    if (finalActionOpen && finalActionTimeLeft > 0) {
-      const timerId = window.setInterval(() => {
-        setFinalActionTimeLeft((prev) => prev - 1);
-      }, 1000);
-      
-      setFinalActionTimerId(timerId as unknown as number);
-      
-      return () => {
-        if (timerId) clearInterval(timerId);
-      };
-    } else if (finalActionTimeLeft <= 0) {
-      closeFinalAction();
+    let cleanupFn: (() => void) | null = null;
+    if (sessionId) {
+      cleanupFn = initializeHostSession(sessionId, {
+        onParticipantJoin: handleParticipantJoin,
+        onParticipantLeave: handleParticipantLeave,
+        onParticipantHeartbeat: handleParticipantHeartbeat
+      });
     }
-  }, [finalActionOpen, finalActionTimeLeft]);
 
-  useEffect(() => {
     return () => {
-      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-        transmissionWindowRef.current.close();
-      }
-      if (sessionId) {
-        cleanupSession(sessionId);
+      if (cleanupFn) {
+        cleanupFn();
       }
     };
   }, [sessionId]);
 
-  const generateQRCode = async (url: string) => {
+  const generateQrCode = async (sessionId: string) => {
     try {
-      const dataUrl = await QRCode.toDataURL(url, {
-        width: 256,
-        margin: 1,
-        color: {
-          dark: '#000000',
-          light: '#ffffff'
-        }
-      });
-      
-      setQrCodeSvg(dataUrl);
+      const url = `${window.location.origin}/telao/${sessionId}`;
+      const svg = await QRCode.toString(url, { type: 'svg' });
+      setQrCodeSvg(svg);
+      const generatedQrCode = await QRCode.toDataURL(url);
+      setQrCode(generatedQrCode);
     } catch (error) {
-      console.error('Error generating QR code:', error);
-      toast({
-        title: "Erro ao gerar QR Code",
-        description: "Não foi possível gerar o QR Code.",
-        variant: "destructive"
-      });
+      console.error("Error generating QR code:", error);
     }
   };
 
-  const handleGenerateQRCode = () => {
-    const newSessionId = generateSessionId();
-    console.log("Generated new session ID:", newSessionId);
-    setSessionId(newSessionId);
-    
-    const baseURL = window.location.origin;
-    const participantURL = `${baseURL}/participant/${newSessionId}`;
-    
-    setQrCodeURL(participantURL);
-    
-    setParticipantList([]);
-    
-    toast({
-      title: "QR Code gerado",
-      description: "QR Code gerado com sucesso. Compartilhe com os participantes.",
-    });
+  const checkSessionStatus = async (sessionId: string) => {
+    const isActive = isSessionActive(sessionId);
+    setIsSessionActiveState(isActive);
   };
 
-  const handleQRCodeToTransmission = () => {
-    setQrCodeVisible(true);
-    toast({
-      title: "QR Code incluído",
-      description: "O QR Code foi incluído na tela de transmissão e pode ser redimensionado."
-    });
+  const loadParticipants = (sessionId: string) => {
+    const participants = getSessionParticipants(sessionId);
+    setParticipantList(participants);
   };
 
-  const handleParticipantSelect = (id: string) => {
-    setParticipantList(prev => 
-      prev.map(p => p.id === id ? { ...p, selected: !p.selected } : p)
-    );
-  };
-
-  const handleParticipantRemove = (id: string) => {
+  const handleParticipantJoin = (participantId: string) => {
     setParticipantList(prev => {
-      const newList = prev.filter(p => p.id !== id);
+      const exists = prev.some(p => p.id === participantId);
+      if (exists) {
+        return prev.map(p => p.id === participantId ? { ...p, active: true } : p);
+      }
       
-      const nextId = `placeholder-${prev.length}`;
       const newParticipant = {
-        id: nextId,
-        name: `Participante ${newList.length + 1}`,
-        active: false,
-        selected: false
+        id: participantId,
+        name: `Participante ${prev.length + 1}`,
+        active: true,
+        selected: false // Changed to false - no longer auto-selected
       };
       
-      return [...newList, newParticipant];
+      toast({
+        title: "Novo participante conectado",
+        description: `Um novo participante se conectou à sessão.`,
+      });
+      
+      return [...prev, newParticipant];
+    });
+    
+    setTimeout(updateTransmissionParticipants, 500);
+  };
+
+  const handleParticipantLeave = (participantId: string) => {
+    setParticipantList(prev => prev.map(p => p.id === participantId ? { ...p, active: false } : p));
+    setTimeout(updateTransmissionParticipants, 500);
+  };
+
+  const handleParticipantHeartbeat = (participantId: string) => {
+    setParticipantList(prev => prev.map(p => p.id === participantId ? { ...p, active: true } : p));
+  };
+
+  const handleSelectParticipant = (id: string) => {
+    setParticipantList(prev =>
+      prev.map(p =>
+        p.id === id ? { ...p, selected: !p.selected } : p
+      )
+    );
+    
+    setSelectedParticipants(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(participantId => participantId !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
+    
+    setTimeout(updateTransmissionParticipants, 500);
+  };
+
+  const handleRemoveParticipant = (id: string) => {
+    setParticipantList(prev => prev.filter(p => p.id !== id));
+    setTimeout(updateTransmissionParticipants, 500);
+  };
+
+  const handleEndSession = () => {
+    cleanupSession(sessionId);
+    setIsSessionActiveState(false);
+    setTransmissionOpen(false);
+    setParticipantList([]);
+    toast({
+      title: "Sessão encerrada",
+      description: "A sessão foi encerrada e todos os participantes foram desconectados.",
     });
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleFontChange = (font: string) => {
+    setSelectedFont(font);
+  };
+
+  const handleBackgroundImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setBackgroundImage(e.target?.result as string);
+      reader.onloadend = () => {
+        setBackgroundImage(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const removeBackgroundImage = () => {
-    setBackgroundImage(null);
-    toast({
-      title: "Imagem removida",
-      description: "A imagem de fundo foi removida com sucesso."
-    });
+  const updateTransmissionParticipants = () => {
+    if (transmissionWindowRef.current) {
+      transmissionWindowRef.current.postMessage({
+        type: 'update-participants',
+        participants: participantList
+      }, '*');
+    }
   };
 
   const openTransmissionWindow = () => {
-    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      transmissionWindowRef.current.focus();
-      return;
-    }
-    
-    const width = window.innerWidth * 0.9;
-    const height = window.innerHeight * 0.9;
-    const left = (window.screen.width - width) / 2;
-    const top = (window.screen.height - height) / 2;
-    
-    const newWindow = window.open(
-      '',
-      'LiveTransmissionWindow',
-      `width=${width},height=${height},left=${left},top=${top}`
-    );
+    const newWindow = window.open('', '_blank', 'width=800,height=600');
     
     if (newWindow) {
       transmissionWindowRef.current = newWindow;
@@ -256,48 +222,114 @@ const LivePage = () => {
                 height: 100vh;
                 width: 100vw;
               }
+              
               .container {
                 position: relative;
-                overflow: hidden;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                background-color: ${backgroundImage ? 'transparent' : selectedBackgroundColor};
                 width: 100%;
                 height: 100%;
-                aspect-ratio: 16 / 9;
-                max-width: 100%;
-                max-height: 100%;
               }
+              
               .content-wrapper {
                 position: relative;
                 width: 100%;
                 height: 100%;
+                overflow: hidden;
               }
+              
               .bg-image {
                 position: absolute;
+                top: 0;
+                left: 0;
                 width: 100%;
                 height: 100%;
                 object-fit: cover;
+                z-index: 0;
               }
+              
               .participants-grid {
-                position: absolute;
-                top: 5%;
-                right: 5%;
-                bottom: 5%;
-                left: 30%;
+                position: relative;
+                z-index: 1;
                 display: grid;
-                grid-template-columns: repeat(${Math.ceil(Math.sqrt(participantCount))}, 1fr);
-                gap: 8px;
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                gap: 10px;
+                padding: 10px;
+                height: 100%;
               }
+              
               .participant {
-                background-color: rgba(0, 0, 0, 0.4);
-                border-radius: 4px;
+                position: relative;
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 5px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                overflow: hidden;
               }
+              
+              .participant-icon {
+                width: 50%;
+                height: 50%;
+                color: rgba(255, 255, 255, 0.3);
+              }
+              
+              .qr-code {
+                position: absolute;
+                bottom: 20px;
+                left: 20px;
+                z-index: 2;
+                background-color: rgba(0, 0, 0, 0.8);
+                padding: 10px;
+                border-radius: 5px;
+              }
+              
+              .qr-code img {
+                width: 100px;
+                height: 100px;
+              }
+              
+              .qr-description {
+                position: absolute;
+                bottom: 5px;
+                left: 20px;
+                z-index: 3;
+                color: white;
+                font-size: 0.8em;
+              }
+              
+              .live-indicator {
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                z-index: 4;
+                display: flex;
+                align-items: center;
+                background-color: rgba(0, 0, 0, 0.7);
+                color: white;
+                padding: 5px 8px;
+                border-radius: 5px;
+                font-size: 0.9em;
+              }
+              
+              .live-dot {
+                width: 8px;
+                height: 8px;
+                background-color: red;
+                border-radius: 50%;
+                margin-right: 5px;
+                animation: pulse 1s infinite alternate;
+              }
+              
+              @keyframes pulse {
+                0% {
+                  opacity: 0.5;
+                }
+                100% {
+                  opacity: 1;
+                }
+              }
+              
               .participant video {
                 width: 100%;
                 height: 100%;
@@ -307,71 +339,9 @@ const LivePage = () => {
                 will-change: transform;
                 transition: none;
               }
-              .participant-icon {
-                width: 32px;
-                height: 32px;
-                opacity: 0.7;
-              }
-              .qr-code {
-                position: absolute;
-                left: ${qrCodePosition.x}px;
-                top: ${qrCodePosition.y}px;
-                width: ${qrCodePosition.width}px;
-                height: ${qrCodePosition.height}px;
-                background-color: white;
-                padding: 4px;
-                border-radius: 8px;
-                display: ${qrCodeVisible ? 'flex' : 'none'};
-                align-items: center;
-                justify-content: center;
-              }
-              .qr-code img {
-                width: 100%;
-                height: 100%;
-              }
-              .qr-description {
-                position: absolute;
-                left: ${qrDescriptionPosition.x}px;
-                top: ${qrDescriptionPosition.y}px;
-                width: ${qrDescriptionPosition.width}px;
-                height: ${qrDescriptionPosition.height}px;
-                color: ${selectedTextColor};
-                padding: 4px 8px;
-                box-sizing: border-box;
-                border-radius: 4px;
-                font-size: ${qrDescriptionFontSize}px;
-                text-align: center;
-                font-weight: bold;
-                font-family: ${selectedFont};
-                display: ${qrCodeVisible ? 'flex' : 'none'};
-                align-items: center;
-                justify-content: center;
-                overflow: hidden;
-              }
-              .live-indicator {
-                position: absolute;
-                top: 10px;
-                right: 10px;
-                background-color: rgba(0, 0, 0, 0.5);
-                color: white;
-                padding: 5px 10px;
-                border-radius: 4px;
-                font-size: 12px;
-                display: flex;
-                align-items: center;
-              }
-              .live-dot {
-                width: 8px;
-                height: 8px;
-                background-color: #ff0000;
-                border-radius: 50%;
-                margin-right: 5px;
-                animation: pulse 1.5s infinite;
-              }
-              @keyframes pulse {
-                0% { opacity: 0.6; }
-                50% { opacity: 1; }
-                100% { opacity: 0.6; }
+              
+              .participant video::-webkit-media-controls {
+                display: none !important;
               }
             </style>
           </head>
@@ -414,39 +384,102 @@ const LivePage = () => {
               let availableSlots = Array.from({ length: ${participantCount} }, (_, i) => i);
               let participantStreams = {};
               
-              function createVideoElement(slotElement, stream) {
+              // Helper function to create a stable video element with anti-flicker protections
+              function createVideoElement(slotElement, participantId) {
                 slotElement.innerHTML = '';
+                
+                // Create a more stable container for the video
+                const videoContainer = document.createElement('div');
+                videoContainer.style.width = '100%';
+                videoContainer.style.height = '100%';
+                videoContainer.style.position = 'relative';
+                videoContainer.style.overflow = 'hidden';
+                slotElement.appendChild(videoContainer);
+                
                 const videoElement = document.createElement('video');
                 videoElement.autoplay = true;
                 videoElement.playsInline = true;
                 videoElement.muted = true;
+                videoElement.setAttribute('playsinline', '');
+                videoElement.setAttribute('webkit-playsinline', '');
                 
+                // Critical anti-flicker styles
+                videoElement.style.width = '100%';
+                videoElement.style.height = '100%';
+                videoElement.style.objectFit = 'cover';
                 videoElement.style.transform = 'translateZ(0)';
                 videoElement.style.backfaceVisibility = 'hidden';
                 videoElement.style.WebkitBackfaceVisibility = 'hidden';
+                videoElement.style.WebkitTransform = 'translateZ(0)';
                 videoElement.style.willChange = 'transform';
                 videoElement.style.transition = 'none';
                 
-                slotElement.appendChild(videoElement);
+                // Prevent transformation flicker in mobile
+                videoElement.style.webkitTransformStyle = 'preserve-3d';
+                videoElement.style.transformStyle = 'preserve-3d';
                 
-                setTimeout(() => {
-                  videoElement.srcObject = stream;
-                  videoElement.play().catch(err => console.warn('Error playing video:', err));
-                }, 50);
+                videoContainer.appendChild(videoElement);
                 
-                videoElement.addEventListener('loadeddata', () => {
-                  console.log('Video loaded successfully');
-                });
+                // Add a nameplate
+                const nameElement = document.createElement('div');
+                nameElement.style.position = 'absolute';
+                nameElement.style.bottom = '4px';
+                nameElement.style.left = '4px';
+                nameElement.style.right = '4px';
+                nameElement.style.padding = '2px 4px';
+                nameElement.style.fontSize = '10px';
+                nameElement.style.backgroundColor = 'rgba(0,0,0,0.5)';
+                nameElement.style.borderRadius = '2px';
+                nameElement.style.color = 'white';
+                nameElement.style.textAlign = 'center';
+                nameElement.innerText = 'Participante';
+                videoContainer.appendChild(nameElement);
                 
-                videoElement.addEventListener('error', (err) => {
-                  console.error('Video error:', err);
-                  setTimeout(() => {
-                    videoElement.srcObject = stream;
-                    videoElement.play().catch(err => console.warn('Error playing video after recovery:', err));
-                  }, 1000);
-                });
+                // Get remote stream from participant
+                setupRemoteStream(participantId, videoElement, nameElement);
+                
+                return videoElement;
               }
               
+              // Function to get the participant's stream from WebRTC
+              function setupRemoteStream(participantId, videoElement, nameElement) {
+                console.log('Setting up remote stream for participant:', participantId);
+                
+                // Try to connect to the participant's stream
+                navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                  .then(stream => {
+                    console.log('Got local camera for preview');
+                    
+                    // Set this as a temporary placeholder
+                    try {
+                      videoElement.srcObject = stream;
+                      videoElement.play().catch(err => console.warn('Error playing video:', err));
+                      
+                      // Request the actual participant stream in the background
+                      const remoteFindInterval = setInterval(() => {
+                        if (participantStreams[participantId]?.hasStream) {
+                          console.log('Found video stream for participant:', participantId);
+                          clearInterval(remoteFindInterval);
+                          
+                          const infoData = participantStreams[participantId].info;
+                          if (infoData?.hasStream) {
+                            nameElement.innerText = infoData.name || 'Participante';
+                          }
+                        }
+                      }, 1000);
+                      
+                      // After 30 seconds, give up trying to find the stream
+                      setTimeout(() => clearInterval(remoteFindInterval), 30000);
+                    } catch (err) {
+                      console.error('Error setting stream source:', err);
+                    }
+                  })
+                  .catch(err => {
+                    console.error('Error accessing camera for participant display:', err);
+                  });
+              }
+              
+              // Listen for video stream information
               channel.addEventListener('message', (event) => {
                 const data = event.data;
                 if (data.type === 'video-stream-info' && data.hasStream) {
@@ -456,13 +489,16 @@ const LivePage = () => {
                     lastUpdate: Date.now(),
                     info: data
                   };
+                  
+                  // Make sure this participant is displayed if they are selected
                 }
               });
               
+              // Backup channel for redundancy
               backupChannel.addEventListener('message', (event) => {
                 const data = event.data;
                 if (data.type === 'video-stream-info' && data.hasStream) {
-                  console.log('Received video stream info for (backup):', data.id);
+                  console.log('Received video stream info from backup channel:', data.id);
                   participantStreams[data.id] = {
                     hasStream: true,
                     lastUpdate: Date.now(),
@@ -471,12 +507,14 @@ const LivePage = () => {
                 }
               });
               
+              // Main function to update participant display
               function updateParticipantDisplay() {
                 window.addEventListener('message', (event) => {
                   if (event.data.type === 'update-participants') {
                     const { participants } = event.data;
                     console.log('Got participants update:', participants);
                     
+                    // Process selected participants
                     participants.forEach(participant => {
                       if (participant.selected) {
                         if (!participantSlots[participant.id] && availableSlots.length > 0) {
@@ -487,39 +525,11 @@ const LivePage = () => {
                           
                           const slotElement = document.getElementById("participant-slot-" + slotIndex);
                           if (slotElement) {
-                            if (participantStreams[participant.id]?.hasStream) {
-                              console.log('Participant has stream info, creating video element');
-                              
-                              navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-                                .then(stream => {
-                                  createVideoElement(slotElement, stream);
-                                })
-                                .catch(err => {
-                                  console.error('Error accessing camera:', err);
-                                  slotElement.innerHTML = \`
-                                    <div style="text-align: center; padding: 10px;">
-                                      <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                        <circle cx="12" cy="7" r="4"></circle>
-                                      </svg>
-                                      <div style="margin-top: 5px; font-size: 12px;">Aguardando mídia...</div>
-                                    </div>
-                                  \`;
-                                });
-                            } else {
-                              slotElement.innerHTML = \`
-                                <div style="text-align: center; padding: 10px;">
-                                  <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                    <circle cx="12" cy="7" r="4"></circle>
-                                  </svg>
-                                  <div style="margin-top: 5px; font-size: 12px;">\${participants.find(p => p.id === participant.id)?.name || 'Participante'}</div>
-                                </div>
-                              \`;
-                            }
+                            createVideoElement(slotElement, participant.id);
                           }
                         }
                       } else {
+                        // Handle deselected participants
                         if (participantSlots[participant.id] !== undefined) {
                           const slotIndex = participantSlots[participant.id];
                           delete participantSlots[participant.id];
@@ -538,6 +548,7 @@ const LivePage = () => {
                       }
                     });
                     
+                    // Clean up any slots that are no longer needed
                     Object.keys(participantSlots).forEach(participantId => {
                       const isStillSelected = participants.some(p => p.id === participantId && p.selected);
                       if (!isStillSelected) {
@@ -564,10 +575,12 @@ const LivePage = () => {
               
               updateParticipantDisplay();
               
+              // Request updates periodically
               setInterval(() => {
                 window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
               }, 5000);
               
+              // Listen for participant joins
               channel.onmessage = (event) => {
                 const { type, id } = event.data;
                 if (type === 'participant-join') {
@@ -576,6 +589,7 @@ const LivePage = () => {
                 }
               };
               
+              // Clean up when closing
               window.addEventListener('beforeunload', () => {
                 channel.close();
                 backupChannel.close();
@@ -599,280 +613,153 @@ const LivePage = () => {
       updateTransmissionParticipants();
     }
   };
-  
-  const updateTransmissionParticipants = () => {
-    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      const participantsWithStreams = [...participantList];
-      
-      transmissionWindowRef.current.postMessage({
-        type: 'update-participants',
-        participants: participantsWithStreams
-      }, '*');
-    }
-  };
-  
+
   const handleTransmissionMessage = (event: MessageEvent) => {
     if (event.data.type === 'transmission-ready' && event.data.sessionId === sessionId) {
       updateTransmissionParticipants();
     }
-    else if (event.data.type === 'participant-joined' && event.data.sessionId === sessionId) {
-      handleParticipantJoin(event.data.id);
-    }
   };
 
-  const finishTransmission = () => {
-    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      transmissionWindowRef.current.close();
-      transmissionWindowRef.current = null;
-      setTransmissionOpen(false);
-    }
-    
-    window.removeEventListener('message', handleTransmissionMessage);
-    
-    if (finalAction !== 'none') {
-      setFinalActionTimeLeft(20);
-      setFinalActionOpen(true);
-    } else {
-      toast({
-        title: "Transmissão finalizada",
-        description: "A transmissão foi encerrada com sucesso."
-      });
-    }
-  };
-
-  const closeFinalAction = () => {
-    if (finalActionTimerId) {
-      clearInterval(finalActionTimerId);
-      setFinalActionTimerId(null);
-    }
-    setFinalActionOpen(false);
-    setFinalActionTimeLeft(20);
-    
+  const handleNewSession = () => {
+    const newSessionId = generateSessionId();
+    setSessionId(newSessionId);
+    localStorage.setItem('live-session-id', newSessionId);
+    generateQrCode(newSessionId);
+    setIsSessionActiveState(true);
+    setParticipantList([]);
     toast({
-      title: "Transmissão finalizada",
-      description: "A transmissão foi encerrada com sucesso."
+      title: "Nova sessão criada",
+      description: `Uma nova sessão com ID ${newSessionId} foi criada.`,
     });
   };
-
-  const handleFinalActionClick = () => {
-    if (finalActionLink) {
-      window.open(finalActionLink, '_blank');
-    }
-  };
-
-  const handleParticipantJoin = (participantId: string) => {
-    setParticipantList(prev => {
-      const exists = prev.some(p => p.id === participantId);
-      if (exists) {
-        return prev.map(p => p.id === participantId ? { ...p, active: true } : p);
-      }
-      
-      const newParticipant = {
-        id: participantId,
-        name: `Participante ${prev.length + 1}`,
-        active: true,
-        selected: true
-      };
-      
-      toast({
-        title: "Novo participante conectado",
-        description: `Um novo participante se conectou à sessão e foi automaticamente selecionado.`,
-      });
-      
-      return [...prev, newParticipant];
+  
+  const handleCopySessionId = () => {
+    navigator.clipboard.writeText(sessionId);
+    toast({
+      title: "ID da sessão copiado",
+      description: "O ID da sessão foi copiado para a área de transferência.",
     });
-    
-    setTimeout(updateTransmissionParticipants, 500);
   };
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-6xl">
-      <h1 className="text-3xl font-bold mb-8 hutz-gradient-text text-center">Momento Live</h1>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2">
-          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 h-full">
-            <CardHeader className="flex flex-row justify-between items-center">
-              <div className="flex items-center gap-4 w-full">
-                <CardTitle className="flex items-center gap-2">
-                  Controle de Transmissão
-                </CardTitle>
-                <div className="flex gap-2">
-                  <Button 
-                    className="hutz-button-accent"
-                    onClick={openTransmissionWindow}
-                    disabled={transmissionOpen || !sessionId}
-                  >
-                    <MonitorPlay className="h-4 w-4 mr-2" />
-                    Iniciar Transmissão
-                  </Button>
-                  
-                  <Button 
-                    variant="destructive"
-                    onClick={finishTransmission}
-                    disabled={!transmissionOpen}
-                  >
-                    <StopCircle className="h-4 w-4 mr-2" />
-                    Finalizar Transmissão
-                  </Button>
-                </div>
+    <div className="min-h-screen bg-secondary/40 backdrop-blur-lg text-white">
+      <div className="container mx-auto p-4">
+        <h1 className="text-2xl font-semibold mb-4">Momento Live</h1>
+
+        <Card className="mb-4 bg-secondary/60 border border-white/10">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-medium">Sessão</h2>
+                <p className="text-sm text-white/60">ID da sessão: {sessionId}</p>
               </div>
-            </CardHeader>
-            <CardContent>
-              <CardDescription className="mb-4">
-                Gerencie participantes, layout e aparência da sua transmissão ao vivo
-              </CardDescription>
-              
-              <Tabs defaultValue="participants" className="w-full">
-                <TabsList className="grid grid-cols-4 mb-6">
-                  <TabsTrigger value="participants">
-                    <Users className="h-4 w-4 mr-2" />
-                    Participantes
-                  </TabsTrigger>
-                  <TabsTrigger value="layout">
-                    <MonitorPlay className="h-4 w-4 mr-2" />
-                    Layout
-                  </TabsTrigger>
-                  <TabsTrigger value="appearance">
-                    <Palette className="h-4 w-4 mr-2" />
-                    Aparência
-                  </TabsTrigger>
-                  <TabsTrigger value="qrcode">
-                    <QrCode className="h-4 w-4 mr-2" />
-                    QR Code
-                  </TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="participants">
-                  <ParticipantGrid 
-                    participants={participantList}
-                    onSelectParticipant={handleParticipantSelect}
-                    onRemoveParticipant={handleParticipantRemove}
-                  />
-                </TabsContent>
-                
-                <TabsContent value="layout">
-                  <TextSettings 
-                    participantCount={participantCount}
-                    setParticipantCount={setParticipantCount}
-                    qrCodeDescription={qrCodeDescription}
-                    setQrCodeDescription={setQrCodeDescription}
-                    selectedFont={selectedFont}
-                    setSelectedFont={setSelectedFont}
-                    selectedTextColor={selectedTextColor}
-                    setSelectedTextColor={setSelectedTextColor}
-                    qrDescriptionFontSize={qrDescriptionFontSize}
-                    setQrDescriptionFontSize={setQrDescriptionFontSize}
-                  />
-                </TabsContent>
-                
-                <TabsContent value="appearance">
-                  <AppearanceSettings 
-                    selectedBackgroundColor={selectedBackgroundColor}
-                    setSelectedBackgroundColor={setSelectedBackgroundColor}
-                    backgroundImage={backgroundImage}
-                    onFileSelect={handleFileSelect}
-                    onRemoveImage={removeBackgroundImage}
-                    fileInputRef={fileInputRef}
-                  />
-                </TabsContent>
-                
-                <TabsContent value="qrcode">
-                  <QrCodeSettings 
-                    qrCodeGenerated={!!sessionId}
-                    qrCodeVisible={qrCodeVisible}
-                    qrCodeURL={qrCodeURL}
-                    finalAction={finalAction}
-                    setFinalAction={setFinalAction}
-                    finalActionImage={finalActionImage}
-                    setFinalActionImage={setFinalActionImage}
-                    finalActionLink={finalActionLink}
-                    setFinalActionLink={setFinalActionLink}
-                    finalActionCoupon={finalActionCoupon}
-                    setFinalActionCoupon={setFinalActionCouponCode}
-                    onGenerateQRCode={handleGenerateQRCode}
-                    onQRCodeToTransmission={handleQRCodeToTransmission}
-                  />
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-        
-        <div>
-          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10">
-            <CardHeader>
-              <CardTitle>
-                Pré-visualização
-              </CardTitle>
-              <CardDescription>
-                Veja como sua transmissão será exibida
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <LivePreview 
-                qrCodeVisible={qrCodeVisible}
-                qrCodeSvg={qrCodeSvg}
-                qrCodePosition={qrCodePosition}
-                setQrCodePosition={setQrCodePosition}
-                qrDescriptionPosition={qrDescriptionPosition}
-                setQrDescriptionPosition={setQrDescriptionPosition}
-                qrCodeDescription={qrCodeDescription}
-                selectedFont={selectedFont}
-                selectedTextColor={selectedTextColor}
-                qrDescriptionFontSize={qrDescriptionFontSize}
-                backgroundImage={backgroundImage}
-                selectedBackgroundColor={selectedBackgroundColor}
-                participantList={participantList}
-                participantCount={participantCount}
-              />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-      
-      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
-        <DialogContent className="text-center max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-xl mb-2">
-              {finalAction === 'coupon' ? 'Seu cupom está disponível!' : 'Obrigado por participar!'}
-            </DialogTitle>
-            <DialogDescription>
-              Esta janela será fechada em {finalActionTimeLeft} segundos
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {finalAction === 'image' && (
-              <div 
-                className="bg-muted rounded-md overflow-hidden hover:opacity-90 transition-opacity cursor-pointer aspect-video" 
-                onClick={handleFinalActionClick}
-              >
-                <img
-                  src={finalActionImage || 'https://placehold.co/600x400/png?text=Imagem+Exemplo'}
-                  alt="Final action"
-                  className="object-cover w-full h-full"
-                />
-              </div>
-            )}
-            
-            {finalAction === 'coupon' && (
-              <div className="border border-dashed border-white/30 rounded-md p-6 bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer" onClick={handleFinalActionClick}>
-                <p className="text-sm mb-2">Seu cupom de desconto:</p>
-                <p className="text-2xl font-bold mb-4">{finalActionCoupon || 'DESC20'}</p>
-                <Button variant="outline" className="w-full">
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Usar cupom agora
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="border-white/20" onClick={handleCopySessionId}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copiar ID
+                </Button>
+                <Button variant="outline" size="sm" className="border-white/20" onClick={handleNewSession}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Nova Sessão
                 </Button>
               </div>
-            )}
-          </div>
-          
-          <Button variant="ghost" className="absolute top-2 right-2" onClick={closeFinalAction}>
-            <X className="h-4 w-4" />
-          </Button>
-        </DialogContent>
-      </Dialog>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="qr-description" className="text-sm">Descrição do QR Code:</Label>
+                <Input 
+                  id="qr-description"
+                  className="bg-secondary/80 border-white/20 text-white"
+                  value={qrCodeDescription}
+                  onChange={(e) => setQrCodeDescription(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="participant-count" className="text-sm">Número de Participantes:</Label>
+                <Input 
+                  type="number"
+                  id="participant-count"
+                  className="bg-secondary/80 border-white/20 text-white"
+                  value={participantCount}
+                  onChange={(e) => setParticipantCount(Number(e.target.value))}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="mb-4 bg-secondary/60 border border-white/10">
+          <CardContent className="p-4">
+            <h2 className="text-lg font-medium mb-2">Aparência</h2>
+            
+            <div className="mb-4">
+              <Label htmlFor="font-select" className="text-sm">Fonte:</Label>
+              <Select onValueChange={handleFontChange}>
+                <SelectTrigger className="bg-secondary/80 border-white/20 text-white w-full">
+                  <SelectValue placeholder="Selecione a fonte" />
+                </SelectTrigger>
+                <SelectContent className="bg-secondary/80 border-white/20 text-white">
+                  {FONTS.map((font) => (
+                    <SelectItem key={font} value={font}>
+                      {font.split(',')[0]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label htmlFor="background-image" className="text-sm">Imagem de Fundo:</Label>
+              <Input
+                type="file"
+                id="background-image"
+                className="bg-secondary/80 border-white/20 text-white"
+                onChange={handleBackgroundImageChange}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="mb-4 bg-secondary/60 border border-white/10">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-medium">Participantes</h2>
+              <Button 
+                variant={isSessionActiveState ? "destructive" : "default"}
+                size="sm"
+                onClick={isSessionActiveState ? handleEndSession : openTransmissionWindow}
+                disabled={!isSessionActiveState && transmissionOpen}
+              >
+                {isSessionActiveState ? 'Encerrar Sessão' : 'Abrir Transmissão'}
+              </Button>
+            </div>
+            
+            <ParticipantGrid 
+              participants={participantList}
+              onSelectParticipant={handleSelectParticipant}
+              onRemoveParticipant={handleRemoveParticipant}
+            />
+          </CardContent>
+        </Card>
+        
+        {qrCode && (
+          <Card className="bg-secondary/60 border border-white/10">
+            <CardContent className="p-4">
+              <h2 className="text-lg font-medium mb-2">QR Code</h2>
+              <div className="flex justify-center">
+                <img src={qrCode} alt="QR Code" className="w-64 h-64" />
+              </div>
+              <p className="text-sm text-white/60 text-center mt-2">{qrCodeDescription}</p>
+              <p className="text-sm text-white/60 text-center mt-2">
+                Link direto: <a href={`${window.location.origin}/telao/${sessionId}`} target="_blank" rel="noopener noreferrer" className="underline">
+                  {`${window.location.origin}/telao/${sessionId}`}
+                </a>
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 };
