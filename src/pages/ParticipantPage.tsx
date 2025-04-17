@@ -808,8 +808,8 @@ const ParticipantPage = () => {
         
         videoRef.current.style.transform = 'translateZ(0)';
         videoRef.current.style.backfaceVisibility = 'hidden';
-        videoRef.current.style.webkitBackfaceVisibility = 'hidden';
-        videoRef.current.style.webkitTransform = 'translateZ(0)';
+        videoRef.current.style.WebkitBackfaceVisibility = 'hidden';
+        videoRef.current.style.WebkitTransform = 'translateZ(0)';
         videoRef.current.style.willChange = 'transform';
         videoRef.current.style.transformStyle = 'preserve-3d';
         
