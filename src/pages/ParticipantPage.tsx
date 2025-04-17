@@ -440,7 +440,7 @@ const ParticipantPage = () => {
                   }
                 });
               } else {
-                clearInterval(supabaseJoinInterval);
+                clearInterval(supababJoinInterval);
               }
             }, 2000);
             
