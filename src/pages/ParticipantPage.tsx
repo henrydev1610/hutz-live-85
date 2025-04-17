@@ -66,21 +66,24 @@ const ParticipantPage = () => {
     if (sessionId) {
       connectToSession();
       
+      // Correção do tipo para NodeJS.Timeout
       const fallbackTimer = setTimeout(() => {
         if (!connected) {
           console.log("Connection not established, retrying...");
           connectToSession();
         }
-      }, 2000);
+      }, 2000) as unknown as NodeJS.Timeout;
       
-      joinTimeoutRef.current = fallbackTimer as unknown as NodeJS.Timeout;
+      joinTimeoutRef.current = fallbackTimer;
     }
     
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     if (isMobile) {
+      // Correção do tipo para NodeJS.Timeout
       const timer = setTimeout(() => {
         startCamera();
-      }, 1000);
+      }, 1000) as unknown as NodeJS.Timeout;
+      
       return () => clearTimeout(timer);
     }
     
@@ -353,6 +356,7 @@ const ParticipantPage = () => {
       console.warn("LocalStorage checking failed", e);
     }
     
+    // Correção do tipo para NodeJS.Timeout
     connectionTimerRef.current = setTimeout(() => {
       if (!connected) {
         console.log(`Connection attempt ${connectionRetryCountRef.current + 1} timed out`);
@@ -362,6 +366,7 @@ const ParticipantPage = () => {
           setConnecting(false);
           setConnectionError(`Tentativa ${connectionRetryCountRef.current} falhou. Tentando novamente...`);
           
+          // Correção do tipo para NodeJS.Timeout
           setTimeout(() => {
             connectToSession();
           }, 1000);
@@ -429,10 +434,12 @@ const ParticipantPage = () => {
         timestamp: Date.now()
       }));
       
+      // Correção do tipo para NodeJS.Timeout
       setTimeout(() => {
         try {
           window.localStorage.removeItem(`telao-join-${sessionId}-${Date.now()}`);
         } catch (e) {
+          // Ignore errors
         }
       }, 5000);
     } catch (e) {
@@ -445,7 +452,7 @@ const ParticipantPage = () => {
       clearInterval(heartbeatIntervalRef.current);
     }
     
-    heartbeatIntervalRef.current = window.setInterval(() => {
+    heartbeatIntervalRef.current = setInterval(() => {
       if (!connected) {
         return;
       }
@@ -493,13 +500,16 @@ const ParticipantPage = () => {
       try {
         window.localStorage.setItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`, Date.now().toString());
         
+        // Correção do tipo para NodeJS.Timeout
         setTimeout(() => {
           try {
             window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
           } catch (e) {
+            // Ignore errors
           }
         }, 5000);
       } catch (e) {
+        // Ignore errors
       }
     }, 2000);
   };
@@ -559,6 +569,7 @@ const ParticipantPage = () => {
       try {
         window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, Date.now().toString());
       } catch (e) {
+        // Ignore errors
       }
       
       if (heartbeatIntervalRef.current) {
@@ -629,6 +640,7 @@ const ParticipantPage = () => {
         await initWebRTC(stream);
       }
       
+      // Correção do tipo para NodeJS.Timeout
       setTimeout(() => {
         if (connected) {
           startTransmitting();
@@ -679,6 +691,7 @@ const ParticipantPage = () => {
     
     setDeviceId(nextDeviceId);
     
+    // Correção do tipo para NodeJS.Timeout
     setTimeout(() => {
       startCamera();
     }, 300);

@@ -15,6 +15,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [videoActive, setVideoActive] = useState(false);
+  const lastUpdateTimeRef = useRef<number>(Date.now());
   
   useEffect(() => {
     if (stream && videoRef.current) {
@@ -26,6 +27,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       if (videoTrack) {
         setVideoActive(videoTrack.enabled && videoTrack.readyState === 'live');
         setConnectionStatus('connected');
+        lastUpdateTimeRef.current = Date.now();
         
         // Listen for track ended event
         const onEnded = () => {
@@ -42,6 +44,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         const onUnmute = () => {
           console.log(`Video track unmuted for participant ${participantId}`);
           setVideoActive(true);
+          lastUpdateTimeRef.current = Date.now();
         };
         
         videoTrack.addEventListener('ended', onEnded);
@@ -66,10 +69,27 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     };
   }, [stream, participantId]);
 
+  // Add a stabilization effect to prevent flickering
+  useEffect(() => {
+    const stabilityCheck = setInterval(() => {
+      if (connectionStatus === 'connected' && videoActive) {
+        // Se não receber atualizações por muito tempo, pode considerar desconectado
+        const timeSinceLastUpdate = Date.now() - lastUpdateTimeRef.current;
+        if (timeSinceLastUpdate > 10000) { // 10 segundos
+          console.log(`No updates from participant ${participantId} for 10 seconds`);
+          setConnectionStatus('disconnected');
+        }
+      }
+    }, 5000); // Verificar a cada 5 segundos
+    
+    return () => clearInterval(stabilityCheck);
+  }, [connectionStatus, videoActive, participantId]);
+
   // Handle video loading state
   const handleVideoLoadedData = () => {
     setVideoActive(true);
     setConnectionStatus('connected');
+    lastUpdateTimeRef.current = Date.now();
   };
 
   // Handle video error
