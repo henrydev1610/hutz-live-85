@@ -148,32 +148,7 @@ const TelaoPage = () => {
         
         if (data.type === 'participant-join') {
           console.log('Participant joined:', data.id);
-          setParticipantList(prev => {
-            const exists = prev.some(p => p.id === data.id);
-            if (exists) {
-              return prev.map(p => p.id === data.id ? { ...p, active: true } : p);
-            }
-            
-            const newParticipant = {
-              id: data.id,
-              name: `Participante ${prev.length + 1}`,
-              active: true,
-              selected: prev.filter(p => p.selected).length < participantCount
-            };
-            
-            channel.postMessage({
-              type: 'host-acknowledge',
-              participantId: data.id,
-              timestamp: Date.now()
-            });
-            
-            toast({
-              title: "Novo participante conectado",
-              description: `Um novo participante se conectou à sessão.`,
-            });
-            
-            return [...prev, newParticipant];
-          });
+          handleParticipantJoin(data.id);
         } 
         else if (data.type === 'participant-leave') {
           console.log('Participant left:', data.id);
@@ -199,6 +174,36 @@ const TelaoPage = () => {
       };
       
       setBroadcastChannel(channel);
+      
+      // Also set up a localStorage listener as fallback
+      const checkLocalStorageJoins = setInterval(() => {
+        try {
+          const keys = Object.keys(localStorage);
+          const joinKeys = keys.filter(k => k.startsWith(`telao-join-${sessionId}`));
+          
+          joinKeys.forEach(key => {
+            try {
+              const data = JSON.parse(localStorage.getItem(key) || '{}');
+              if (data.type === 'participant-join' && data.id) {
+                console.log('Participant joined via localStorage:', data.id);
+                handleParticipantJoin(data.id);
+                localStorage.removeItem(key);
+              }
+            } catch (e) {
+              console.error('Error parsing localStorage join data:', e);
+            }
+          });
+        } catch (e) {
+          console.warn('Error checking localStorage for joins:', e);
+        }
+      }, 1000);
+      
+      return () => {
+        clearInterval(checkLocalStorageJoins);
+        if (channel) {
+          channel.close();
+        }
+      };
     }
   }, [sessionId, participantCount, toast]);
 
@@ -840,6 +845,71 @@ const TelaoPage = () => {
   };
 
   const selectedParticipantsCount = participantList.filter(p => p.selected).length;
+
+  const handleParticipantJoin = (participantId: string) => {
+    setParticipantList(prev => {
+      const exists = prev.some(p => p.id === participantId);
+      if (exists) {
+        return prev.map(p => p.id === participantId ? { ...p, active: true } : p);
+      }
+      
+      const newParticipant = {
+        id: participantId,
+        name: `Participante ${prev.length + 1}`,
+        active: true,
+        selected: prev.filter(p => p.selected).length < participantCount
+      };
+      
+      if (broadcastChannel) {
+        try {
+          broadcastChannel.postMessage({
+            type: 'host-acknowledge',
+            participantId: participantId,
+            timestamp: Date.now()
+          });
+        } catch (e) {
+          console.warn('Error sending acknowledgment via BroadcastChannel:', e);
+        }
+      }
+      
+      try {
+        localStorage.setItem(`telao-ack-${sessionId}-${participantId}`, JSON.stringify({
+          type: 'host-acknowledge',
+          timestamp: Date.now()
+        }));
+        
+        setTimeout(() => {
+          try {
+            localStorage.removeItem(`telao-ack-${sessionId}-${participantId}`);
+          } catch (e) {
+            // Ignore errors
+          }
+        }, 5000);
+      } catch (e) {
+        // Ignore errors
+      }
+      
+      try {
+        const localChannel = new BroadcastChannel(`telao-local-${sessionId}`);
+        localChannel.postMessage({
+          type: 'host-acknowledge',
+          participantId: participantId,
+          timestamp: Date.now()
+        });
+        
+        setTimeout(() => localChannel.close(), 1000);
+      } catch (e) {
+        console.warn('Error using local channel for acknowledgment:', e);
+      }
+      
+      toast({
+        title: "Novo participante conectado",
+        description: `Um novo participante se conectou à sessão.`,
+      });
+      
+      return [...prev, newParticipant];
+    });
+  };
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-6xl">

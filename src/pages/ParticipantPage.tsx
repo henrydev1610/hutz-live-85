@@ -215,7 +215,7 @@ const ParticipantPage = () => {
         }
       }, 1000);
       
-      joinIntervalRef.current = joinInterval;
+      joinIntervalRef.current = joinInterval as unknown as NodeJS.Timeout;
       
       setTimeout(() => {
         if (joinIntervalRef.current) {
@@ -341,7 +341,7 @@ const ParticipantPage = () => {
           });
         }
       }
-    }, 5000);
+    }, 5000) as unknown as NodeJS.Timeout;
   };
 
   const sendJoinMessage = () => {
