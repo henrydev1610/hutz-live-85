@@ -15,7 +15,7 @@ import LivePreview from '@/components/live/LivePreview';
 import AppearanceSettings from '@/components/live/AppearanceSettings';
 import TextSettings from '@/components/live/TextSettings';
 import QrCodeSettings from '@/components/live/QrCodeSettings';
-import { generateSessionId } from '@/utils/sessionUtils';
+import { generateSessionId, addParticipantToSession } from '@/utils/sessionUtils';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
 
 const LivePage = () => {
@@ -23,7 +23,7 @@ const LivePage = () => {
   const [qrCodeURL, setQrCodeURL] = useState("");
   const [qrCodeVisible, setQrCodeVisible] = useState(false);
   const [qrCodeSvg, setQrCodeSvg] = useState<string | null>(null);
-  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean}[]>([]);
+  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean, hasVideo: boolean}[]>([]);
   const [selectedBackgroundColor, setSelectedBackgroundColor] = useState("#000000");
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
   const [finalAction, setFinalAction] = useState<'none' | 'image' | 'coupon'>('none');
@@ -66,7 +66,8 @@ const LivePage = () => {
         id: `placeholder-${i}`,
         name: `Participante ${i + 1}`,
         active: false,
-        selected: false
+        selected: false,
+        hasVideo: false
       }));
       setParticipantList(initialParticipants);
     }
@@ -190,7 +191,8 @@ const LivePage = () => {
         id: nextId,
         name: `Participante ${newList.length + 1}`,
         active: false,
-        selected: false
+        selected: false,
+        hasVideo: false
       };
       
       return [...newList, newParticipant];
@@ -664,9 +666,9 @@ const LivePage = () => {
   
   const updateTransmissionParticipants = () => {
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      const participantsWithStreams = [...participantList].map(p => ({
+      const participantsWithStreams = participantList.map(p => ({
         ...p,
-        hasStream: true
+        hasStream: p.active
       }));
       
       transmissionWindowRef.current.postMessage({
@@ -726,25 +728,33 @@ const LivePage = () => {
   };
 
   const handleParticipantJoin = (participantId: string) => {
+    console.log("Participant joined:", participantId);
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === participantId);
       if (exists) {
-        return prev.map(p => p.id === participantId ? { ...p, active: true } : p);
+        return prev.map(p => p.id === participantId ? { ...p, active: true, hasVideo: true } : p);
       }
       
+      const participantName = `Participante ${prev.filter(p => !p.id.startsWith('placeholder-')).length + 1}`;
       const newParticipant = {
         id: participantId,
-        name: `Participante ${prev.length + 1}`,
+        name: participantName,
         active: true,
-        selected: false
+        selected: false,
+        hasVideo: true
       };
+      
+      if (sessionId) {
+        addParticipantToSession(sessionId, participantId, participantName);
+      }
       
       toast({
         title: "Novo participante conectado",
-        description: `Um novo participante se conectou à sessão.`,
+        description: `${participantName} se conectou à sessão.`,
       });
       
-      return [...prev, newParticipant];
+      const filteredList = prev.filter(p => !p.id.startsWith('placeholder-') || p.active);
+      return [...filteredList, newParticipant];
     });
     
     setTimeout(updateTransmissionParticipants, 500);

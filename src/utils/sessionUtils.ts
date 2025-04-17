@@ -52,7 +52,7 @@ export const createSession = (sessionId: string): void => {
     localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(sessionData));
     
     // Also set a heartbeat to keep the session active
-    const intervalId = setInterval(() => {
+    const intervalId = window.setInterval(() => {
       try {
         // Get existing data to preserve participants
         const existingDataString = localStorage.getItem(`live-session-${sessionId}`);
