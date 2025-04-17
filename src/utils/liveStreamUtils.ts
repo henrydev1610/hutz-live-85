@@ -1,3 +1,4 @@
+
 import { createSession, endSession, addParticipantToSession, updateParticipantStatus, notifyParticipants } from './sessionUtils';
 
 interface ParticipantCallbacks {
@@ -324,63 +325,26 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
     // Set up periodic stream info updates
     const streamInfoInterval = setInterval(() => {
       sendVideoStreamInfo(stream);
-    }, 2000); // More frequent updates to ensure visibility
+    }, 5000);
     
     // Clean up interval when window unloads
     window.addEventListener('beforeunload', () => {
       clearInterval(streamInfoInterval);
     });
-    
-    return () => {
-      clearInterval(streamInfoInterval);
-    };
   };
   
   // Try to get user media for video and send stream info
-  // Try different combinations of constraints for better compatibility
-  const getMediaWithFallbacks = async () => {
-    // First try with ideal settings
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 }
-        }, 
-        audio: true 
-      });
-      return handleUserMedia(stream);
-    } catch (err) {
-      console.warn('Error getting ideal media:', err);
-      
-      // Try with just video (no audio)
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true
+  navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    .then(handleUserMedia)
+    .catch(err => {
+      console.error('Error getting user media:', err);
+      // Try with just video as fallback
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(handleUserMedia)
+        .catch(videoErr => {
+          console.error('Error getting video-only media:', videoErr);
         });
-        return handleUserMedia(stream);
-      } catch (videoErr) {
-        console.error('Error getting video-only media:', videoErr);
-        
-        // Final fallback - try with minimum constraints
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-              width: { ideal: 640 },
-              height: { ideal: 480 },
-              frameRate: { ideal: 15 }
-            }
-          });
-          return handleUserMedia(stream);
-        } catch (fallbackErr) {
-          console.error('All media acquisition attempts failed:', fallbackErr);
-        }
-      }
-    }
-  };
-  
-  // Start the media acquisition process
-  const cleanupMedia = getMediaWithFallbacks();
+    });
   
   // Listen for acknowledgment
   const channelMessageHandler = (event: MessageEvent) => {
@@ -516,7 +480,6 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
       // Ignore localStorage errors
     }
     
-    if (cleanupMedia) cleanupMedia();
     clearInterval(heartbeatInterval);
     clearInterval(joinInterval);
     clearInterval(localStorageCheckInterval);
