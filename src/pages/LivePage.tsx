@@ -513,7 +513,7 @@ const LivePage = () => {
                                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                                     <circle cx="12" cy="7" r="4"></circle>
                                   </svg>
-                                  <div style="margin-top: 5px; font-size: 12px;">${participant.name}</div>
+                                  <div style="margin-top: 5px; font-size: 12px;">\${participants.find(p => p.id === participant.id)?.name || 'Participante'}</div>
                                 </div>
                               \`;
                             }
@@ -868,13 +868,4 @@ const LivePage = () => {
             )}
           </div>
           
-          <Button variant="ghost" className="absolute top-2 right-2" onClick={closeFinalAction}>
-            <X className="h-4 w-4" />
-          </Button>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-};
-
-export default LivePage;
+          <Button variant="ghost" className="absolute top-2 right-2" onClick
