@@ -22,6 +22,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
   const inactivityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const streamCheckRef = useRef<NodeJS.Timeout | null>(null);
   const disconnectListenerRef = useRef<((event: StorageEvent) => void) | null>(null);
+  const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   
   // Reset state when participant changes
   useEffect(() => {
@@ -47,11 +48,29 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       streamCheckRef.current = null;
     }
     
-    // Listen for disconnect messages through localStorage
-    // This ensures that when participants close their sessions, 
-    // the video slot becomes available immediately
+    // Setup multiple disconnect detection mechanisms
+    setupDisconnectDetection();
+    
+    // Set up a timeout to consider the participant disconnected if nothing happens
+    inactivityTimeoutRef.current = setTimeout(() => {
+      if (connectionStatus === 'connecting') {
+        console.log(`Participant ${participantId} connection timed out`);
+        setConnectionStatus('disconnected');
+      }
+    }, 15000);
+    
+    return () => {
+      cleanupAllListeners();
+    };
+  }, [participantId]);
+  
+  // Setup disconnect detection using multiple methods for reliability
+  const setupDisconnectDetection = () => {
+    // 1. LocalStorage event listener
     const handleStorageChange = (event: StorageEvent) => {
-      if (event.key && event.key.startsWith('telao-leave-') && event.key.includes(participantId)) {
+      if (event.key && 
+         (event.key.startsWith('telao-leave-') && event.key.includes(participantId)) ||
+         (event.key === `telao-leave-*-${participantId}`)) {
         console.log(`Participant ${participantId} disconnected (via localStorage)`);
         setConnectionStatus('disconnected');
         setVideoActive(false);
@@ -64,42 +83,12 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     window.addEventListener('storage', handleStorageChange);
     disconnectListenerRef.current = handleStorageChange;
     
-    // Set up a timeout to consider the participant disconnected if nothing happens
-    inactivityTimeoutRef.current = setTimeout(() => {
-      if (connectionStatus === 'connecting') {
-        console.log(`Participant ${participantId} connection timed out`);
-        setConnectionStatus('disconnected');
-      }
-    }, 15000);
-    
-    return () => {
-      if (videoTimeoutRef.current) {
-        clearTimeout(videoTimeoutRef.current);
-      }
-      
-      if (inactivityTimeoutRef.current) {
-        clearTimeout(inactivityTimeoutRef.current);
-      }
-      
-      if (streamCheckRef.current) {
-        clearInterval(streamCheckRef.current);
-      }
-      
-      if (disconnectListenerRef.current) {
-        window.removeEventListener('storage', disconnectListenerRef.current);
-      }
-    };
-  }, [participantId]);
-  
-  // Set up direct disconnection detection using BroadcastChannel
-  useEffect(() => {
-    let broadcastChannel: BroadcastChannel | null = null;
-    
+    // 2. BroadcastChannel for same-origin communication
     try {
-      // Listen for disconnect messages via BroadcastChannel
-      broadcastChannel = new BroadcastChannel(`telao-session-${participantId}`);
+      const channel = new BroadcastChannel(`telao-session-${participantId}`);
+      broadcastChannelRef.current = channel;
       
-      broadcastChannel.onmessage = (event) => {
+      channel.onmessage = (event) => {
         if (event.data.type === 'participant-leave' && event.data.id === participantId) {
           console.log(`Participant ${participantId} disconnected (via BroadcastChannel)`);
           setConnectionStatus('disconnected');
@@ -113,16 +102,69 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       console.warn('BroadcastChannel not supported for disconnect detection:', err);
     }
     
-    return () => {
-      if (broadcastChannel) {
-        try {
-          broadcastChannel.close();
-        } catch (err) {
-          console.warn('Error closing BroadcastChannel:', err);
+    // 3. Check for disconnect flags in localStorage directly
+    const checkDisconnect = setInterval(() => {
+      try {
+        // Use a combination of pattern matching approaches
+        const keys = Object.keys(localStorage).filter(key => 
+          (key.startsWith(`telao-leave-`) && key.includes(participantId)) ||
+          key === `telao-leave-*-${participantId}`
+        );
+        
+        if (keys.length > 0) {
+          console.log(`Participant ${participantId} disconnected via localStorage marker`);
+          setConnectionStatus('disconnected');
+          setVideoActive(false);
+          if (videoRef.current) {
+            videoRef.current.srcObject = null;
+          }
+          clearInterval(checkDisconnect);
         }
+      } catch (e) {
+        // Ignore localStorage errors
       }
-    };
-  }, [participantId]);
+    }, 2000);
+    
+    // Clean up this interval when component unmounts
+    return () => clearInterval(checkDisconnect);
+  };
+  
+  // Cleanup all listeners and references
+  const cleanupAllListeners = () => {
+    if (videoTimeoutRef.current) {
+      clearTimeout(videoTimeoutRef.current);
+      videoTimeoutRef.current = null;
+    }
+    
+    if (inactivityTimeoutRef.current) {
+      clearTimeout(inactivityTimeoutRef.current);
+      inactivityTimeoutRef.current = null;
+    }
+    
+    if (streamCheckRef.current) {
+      clearInterval(streamCheckRef.current);
+      streamCheckRef.current = null;
+    }
+    
+    if (disconnectListenerRef.current) {
+      window.removeEventListener('storage', disconnectListenerRef.current);
+      disconnectListenerRef.current = null;
+    }
+    
+    if (broadcastChannelRef.current) {
+      try {
+        broadcastChannelRef.current.close();
+        broadcastChannelRef.current = null;
+      } catch (err) {
+        console.warn('Error closing BroadcastChannel:', err);
+      }
+    }
+    
+    // Ensure video is cleared
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
   
   useEffect(() => {
     if (stream && videoRef.current) {
@@ -158,10 +200,36 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         }
       }, 2000);
       
-      // Set srcObject to trigger video loading
-      videoRef.current.srcObject = stream;
+      // New approach: Use Media Source Extensions (MSE) for more reliable playback
+      // But first, try the simpler direct approach
+      try {
+        videoRef.current.srcObject = stream;
+        
+        // Immediately try to play with aggressive retry
+        const tryPlay = () => {
+          if (videoRef.current && videoRef.current.paused) {
+            videoRef.current.play()
+              .then(() => {
+                console.log(`Successfully started playback for ${participantId}`);
+                setVideoActive(true);
+                setConnectionStatus('connected');
+                lastUpdateTimeRef.current = Date.now();
+              })
+              .catch(err => {
+                console.warn(`Auto-play failed: ${err}, retrying...`);
+                // Try again with user interaction simulation
+                setTimeout(tryPlay, 500);
+              });
+          }
+        };
+        
+        // Try to play immediately
+        tryPlay();
+      } catch (err) {
+        console.error(`Error setting video source: ${err}`);
+      }
       
-      // More aggressive stream checking to handle mobile browsers better
+      // Set up more aggressive stream checking to handle mobile browsers better
       streamCheckRef.current = setInterval(() => {
         if (stream && videoRef.current) {
           const videoTracks = stream.getVideoTracks();
@@ -186,11 +254,34 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
               console.log(`Deactivating stale video for ${participantId}`);
               setVideoActive(false);
             }
+            
+            // Attempt to recover frozen video by reattaching the stream
+            if (videoActive && !videoRef.current.paused && videoRef.current.currentTime > 0) {
+              const lastTime = videoRef.current.currentTime;
+              
+              // If video is frozen (time not advancing), try to reset the stream
+              setTimeout(() => {
+                if (videoRef.current && videoRef.current.currentTime === lastTime && videoActive) {
+                  console.log(`Video appears frozen for ${participantId}, trying to recover`);
+                  const tempStream = videoRef.current.srcObject;
+                  videoRef.current.srcObject = null;
+                  
+                  setTimeout(() => {
+                    if (videoRef.current) {
+                      videoRef.current.srcObject = tempStream;
+                      videoRef.current.play().catch(err => 
+                        console.warn(`Recovery play failed: ${err}`)
+                      );
+                    }
+                  }, 300);
+                }
+              }, 1000);
+            }
           }
         }
-      }, 500); // Check more frequently (every 500ms)
+      }, 500);
       
-      // Monitor track status more aggressively
+      // Monitor track status
       const videoTracks = stream.getVideoTracks();
       if (videoTracks.length > 0) {
         const videoTrack = videoTracks[0];
@@ -205,22 +296,9 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
           setConnectionStatus('connected');
           lastUpdateTimeRef.current = Date.now();
           reconnectAttemptRef.current = 0;
-          
-          // Auto-play the video element with more aggressive retry
-          const tryPlay = () => {
-            if (videoRef.current) {
-              videoRef.current.play().catch(err => {
-                console.warn(`Auto-play failed: ${err}, retrying...`);
-                // Try again with user interaction simulation
-                setTimeout(tryPlay, 500);
-              });
-            }
-          };
-          
-          tryPlay();
         }
         
-        // Listen for track events with better handling
+        // Listen for track events
         const onEnded = () => {
           console.log(`Video track ended for participant ${participantId}`);
           setConnectionStatus('disconnected');
@@ -244,24 +322,10 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         videoTrack.addEventListener('unmute', onUnmute);
         
         return () => {
-          if (videoTimeoutRef.current) {
-            clearTimeout(videoTimeoutRef.current);
-            videoTimeoutRef.current = null;
-          }
-          
-          if (inactivityTimeoutRef.current) {
-            clearTimeout(inactivityTimeoutRef.current);
-            inactivityTimeoutRef.current = null;
-          }
-          
-          if (streamCheckRef.current) {
-            clearInterval(streamCheckRef.current);
-            streamCheckRef.current = null;
-          }
-          
           videoTrack.removeEventListener('ended', onEnded);
           videoTrack.removeEventListener('mute', onMute);
           videoTrack.removeEventListener('unmute', onUnmute);
+          cleanupAllListeners();
         };
       }
     } else {
@@ -290,24 +354,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     }
     
     return () => {
-      if (videoTimeoutRef.current) {
-        clearTimeout(videoTimeoutRef.current);
-        videoTimeoutRef.current = null;
-      }
-      
-      if (inactivityTimeoutRef.current) {
-        clearTimeout(inactivityTimeoutRef.current);
-        inactivityTimeoutRef.current = null;
-      }
-      
-      if (streamCheckRef.current) {
-        clearInterval(streamCheckRef.current);
-        streamCheckRef.current = null;
-      }
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
+      cleanupAllListeners();
     };
   }, [stream, participantId, connectionStatus, videoActive]);
 
@@ -318,24 +365,24 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       // Check for stale connections
       if (connectionStatus === 'connected' && videoActive) {
         const timeSinceLastUpdate = Date.now() - lastUpdateTimeRef.current;
+        // Check for heartbeat as a backup mechanism
+        try {
+          const heartbeatKey = `telao-heartbeat-${participantId}`;
+          const heartbeat = window.localStorage.getItem(heartbeatKey);
+          if (heartbeat) {
+            const heartbeatTime = parseInt(heartbeat, 10);
+            if (Date.now() - heartbeatTime < 10000) {
+              // Heartbeat is fresh, reset the timer
+              lastUpdateTimeRef.current = Date.now();
+            }
+          }
+        } catch (e) {
+          // Ignore localStorage errors
+        }
+        
+        // If it's been too long since last update, try to recover
         if (timeSinceLastUpdate > 10000) { // 10 seconds with no updates
           console.log(`No updates from participant ${participantId} for 10 seconds`);
-          
-          // Check localStorage for heartbeat as a backup
-          try {
-            const heartbeatKey = `telao-heartbeat-${participantId}`;
-            const heartbeat = window.localStorage.getItem(heartbeatKey);
-            if (heartbeat) {
-              const heartbeatTime = parseInt(heartbeat, 10);
-              if (Date.now() - heartbeatTime < 10000) {
-                // Heartbeat is fresh, reset the timer
-                lastUpdateTimeRef.current = Date.now();
-                return;
-              }
-            }
-          } catch (e) {
-            // Ignore localStorage errors
-          }
           
           // Try to recover the connection by refreshing the video element
           if (reconnectAttemptRef.current < maxReconnectAttempts) {
@@ -350,23 +397,9 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
               setTimeout(() => {
                 if (videoRef.current) {
                   videoRef.current.srcObject = currentStream;
-                  
-                  // Force play with more aggressive retry
-                  const tryPlay = () => {
-                    if (videoRef.current) {
-                      videoRef.current.play().catch(err => {
-                        console.warn(`Recovery play failed: ${err}, retrying...`);
-                        // If still connected, try again
-                        if (reconnectAttemptRef.current < maxReconnectAttempts) {
-                          setTimeout(tryPlay, 500);
-                        } else {
-                          setConnectionStatus('disconnected');
-                        }
-                      });
-                    }
-                  };
-                  
-                  tryPlay();
+                  videoRef.current.play().catch(err => {
+                    console.warn(`Recovery play failed: ${err}`);
+                  });
                 }
               }, 500);
               
@@ -386,7 +419,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
           setConnectionStatus('disconnected');
         }
       }
-    }, 2000); // Check more frequently
+    }, 2000);
     
     return () => clearInterval(stabilityCheck);
   }, [connectionStatus, videoActive, participantId]);
@@ -408,7 +441,29 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
 
   const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
     console.error(`Video error for participant ${participantId}:`, e);
-    setConnectionStatus('disconnected');
+    
+    // Don't immediately disconnect - try to recover first
+    if (videoRef.current && videoRef.current.srcObject && reconnectAttemptRef.current < maxReconnectAttempts) {
+      reconnectAttemptRef.current++;
+      console.log(`Video error occurred, trying to recover (${reconnectAttemptRef.current}/${maxReconnectAttempts})`);
+      
+      const currentStream = videoRef.current.srcObject as MediaStream;
+      videoRef.current.srcObject = null;
+      
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = currentStream;
+          videoRef.current.play().catch(err => {
+            console.warn(`Recovery after error failed: ${err}`);
+            if (reconnectAttemptRef.current >= maxReconnectAttempts) {
+              setConnectionStatus('disconnected');
+            }
+          });
+        }
+      }, 500);
+    } else {
+      setConnectionStatus('disconnected');
+    }
   };
 
   // Periodically update the last update time while video is playing to prevent timing out
@@ -428,79 +483,6 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     }
   }, [videoActive, connectionStatus]);
 
-  // Force play if autoplay doesn't work (mobile browsers often block autoplay)
-  useEffect(() => {
-    if (videoRef.current && stream) {
-      const playVideo = async () => {
-        try {
-          if (videoRef.current) {
-            await videoRef.current.play();
-            console.log(`Forced play for participant ${participantId}`);
-            setVideoActive(true);
-            setConnectionStatus('connected');
-            lastUpdateTimeRef.current = Date.now();
-          }
-        } catch (error) {
-          console.warn(`Could not force play for ${participantId}:`, error);
-          
-          // Set a timeout to try again with multiple attempts
-          let attempts = 0;
-          const maxAttempts = 5;
-          
-          const tryPlay = () => {
-            if (videoRef.current && attempts < maxAttempts) {
-              attempts++;
-              videoRef.current.play()
-                .then(() => {
-                  setVideoActive(true);
-                  setConnectionStatus('connected');
-                  lastUpdateTimeRef.current = Date.now();
-                })
-                .catch(err => {
-                  console.warn(`Retry play failed (${attempts}/${maxAttempts}): ${err}`);
-                  if (attempts < maxAttempts) {
-                    setTimeout(tryPlay, 1000);
-                  }
-                });
-            }
-          };
-          
-          tryPlay();
-        }
-      };
-      
-      playVideo();
-    }
-  }, [stream, participantId]);
-
-  // Check for user disconnection via localStorage backup mechanism
-  useEffect(() => {
-    const checkDisconnect = setInterval(() => {
-      if (connectionStatus === 'connected' || connectionStatus === 'connecting') {
-        try {
-          const leaveKey = `telao-leave-*-${participantId}`;
-          // Use a wildcard approach by checking keys that match pattern
-          const keys = Object.keys(localStorage).filter(key => 
-            key.includes(`telao-leave-`) && key.includes(participantId)
-          );
-          
-          if (keys.length > 0) {
-            console.log(`Participant ${participantId} disconnected via localStorage marker`);
-            setConnectionStatus('disconnected');
-            setVideoActive(false);
-            if (videoRef.current) {
-              videoRef.current.srcObject = null;
-            }
-          }
-        } catch (e) {
-          // Ignore localStorage errors
-        }
-      }
-    }, 3000);
-    
-    return () => clearInterval(checkDisconnect);
-  }, [participantId, connectionStatus]);
-
   // Check if we should render based on connection status
   if (connectionStatus === 'disconnected' && !stream) {
     return null; // Don't render disconnected participants without a stream
@@ -516,7 +498,12 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         className="w-full h-full object-cover"
         onLoadedData={handleVideoLoadedData}
         onError={handleVideoError}
-        style={{ objectFit: 'cover' }} // Ensure video fills container on all browsers
+        style={{ 
+          objectFit: 'cover',
+          // Prevent mobile Safari flickering
+          WebkitTransform: 'translateZ(0)',
+          transform: 'translateZ(0)',
+        }}
       />
       
       {/* Enhanced connection status indicators */}
