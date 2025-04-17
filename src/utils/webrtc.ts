@@ -1,4 +1,3 @@
-
 let localStream: MediaStream | null = null;
 
 export const setLocalStream = (stream: MediaStream) => {
