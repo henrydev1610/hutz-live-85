@@ -22,10 +22,10 @@ const ParticipantPage = () => {
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectionRetryCountRef = useRef<number>(0);
   const maxConnectionRetries = 15;
-  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const joinIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const connectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const joinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const joinIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const joinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const localStorageChannelRef = useRef<BroadcastChannel | null>(null);
 
   useEffect(() => {
