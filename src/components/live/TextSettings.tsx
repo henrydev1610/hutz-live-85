@@ -1,4 +1,3 @@
-
 import { Minus, Plus } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,11 +72,13 @@ const TextSettings = ({
   ];
 
   const increaseFontSize = () => {
-    setQrDescriptionFontSize(prev => Math.min(prev + 2, 32));
+    const newSize = Math.min(qrDescriptionFontSize + 2, 32);
+    setQrDescriptionFontSize(newSize);
   };
 
   const decreaseFontSize = () => {
-    setQrDescriptionFontSize(prev => Math.max(prev - 2, 10));
+    const newSize = Math.max(qrDescriptionFontSize - 2, 10);
+    setQrDescriptionFontSize(newSize);
   };
 
   return (
