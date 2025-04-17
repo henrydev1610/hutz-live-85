@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -602,7 +602,10 @@ const LivePage = () => {
   
   const updateTransmissionParticipants = () => {
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      const participantsWithStreams = [...participantList];
+      const participantsWithStreams = [...participantList].map(participant => ({
+        ...participant,
+        hasStream: true
+      }));
       
       transmissionWindowRef.current.postMessage({
         type: 'update-participants',
