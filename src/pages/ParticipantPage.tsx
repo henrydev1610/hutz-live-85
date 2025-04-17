@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -24,10 +23,10 @@ const ParticipantPage = () => {
   const connectionRetryCountRef = useRef<number>(0);
   const maxConnectionRetries = 15;
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const joinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const localStorageChannelRef = useRef<BroadcastChannel | null>(null);
   const joinIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const joinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localStorageChannelRef = useRef<BroadcastChannel | null>(null);
 
   useEffect(() => {
     console.log(`Session ID: ${sessionId}, Participant ID: ${participantIdRef.current}`);
