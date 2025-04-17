@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 
 export type WebRTCMessage = {
@@ -356,7 +357,7 @@ const handleSignalingMessage = async (
   
   if (role === 'host') {
     // Host-specific handling
-    if (type === 'offer' && payload.type === 'ready-to-connect') {
+    if (type === 'offer' && payload?.type === 'ready-to-connect') {
       // Participant is ready to connect
       console.log(`Creating connection for participant ${sender}`);
       
@@ -418,7 +419,9 @@ const handleSignalingMessage = async (
       } catch (error) {
         console.error("Error creating offer:", error);
       }
-    } else if (type === 'participant-leave' || payload?.type === 'participant-leave') {
+    } 
+    // Fix the type error by checking payload type property instead
+    else if (payload?.type === 'participant-leave') {
       // Participant has left, clean up their connection
       console.log(`Participant ${sender} has left, cleaning up their connection`);
       if (peerConnections[sender]) {
@@ -453,7 +456,7 @@ const handleSignalingMessage = async (
   } 
   else if (role === 'participant') {
     // Participant-specific handling
-    if (type === 'offer' && payload.type !== 'ready-to-connect') {
+    if (type === 'offer' && payload?.type !== 'ready-to-connect') {
       // Received offer from host
       console.log("Received full offer from host");
       try {
