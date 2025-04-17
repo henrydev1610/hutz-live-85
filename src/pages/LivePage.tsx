@@ -671,12 +671,12 @@ const LivePage = () => {
         id: participantId,
         name: `Participante ${prev.length + 1}`,
         active: true,
-        selected: true
+        selected: false
       };
       
       toast({
         title: "Novo participante conectado",
-        description: `Um novo participante se conectou à sessão e foi automaticamente selecionado.`,
+        description: `Um novo participante se conectou à sessão.`,
       });
       
       return [...prev, newParticipant];

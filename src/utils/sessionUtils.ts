@@ -145,7 +145,7 @@ export const addParticipantToSession = (sessionId: string, participantId: string
         joinedAt: Date.now(),
         lastActive: Date.now(),
         active: true,
-        selected: false // Don't auto-select participants
+        selected: false
       });
     }
     
