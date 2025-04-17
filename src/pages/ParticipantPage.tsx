@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { Camera, Video, VideoOff } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { initParticipantWebRTC, setLocalStream } from '@/utils/webrtc';
@@ -31,6 +31,9 @@ const ParticipantPage = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const pageVisibilityRef = useRef<boolean>(true);
   const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const cameraStartedRef = useRef<boolean>(false);
+  const toastShownRef = useRef<boolean>(false);
+  const autoStartTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Setup visibility change detection to better handle mobile browser behavior
   useEffect(() => {
@@ -41,9 +44,9 @@ const ParticipantPage = () => {
       console.log(`Page visibility changed to ${isVisible ? 'visible' : 'hidden'}`);
       
       // If coming back to visible and we're connected but not transmitting, restart
-      if (isVisible && connected && !transmitting && cameraActive) {
-        console.log("Page became visible again, restarting transmission");
-        if (streamRef.current && sessionId) {
+      if (isVisible && connected && !transmitting && cameraActive && streamRef.current) {
+        console.log("Page became visible again, restarting transmission if needed");
+        if (!transmitting && sessionId) {
           initWebRTC(streamRef.current);
         }
       }
@@ -73,8 +76,11 @@ const ParticipantPage = () => {
             const track = videoTracks[0];
             if (!track.enabled || track.readyState !== 'live') {
               console.log("Video track is disabled or not live, attempting to restart camera");
-              stopCamera();
-              setTimeout(() => startCamera(), 500);
+              // Only restart if we were previously active
+              if (cameraStartedRef.current) {
+                stopCamera();
+                setTimeout(() => startCamera(false), 500);
+              }
             }
           }
         }
@@ -127,11 +133,14 @@ const ParticipantPage = () => {
         }
       } catch (error) {
         console.error('Error getting video devices:', error);
-        toast({
-          title: "Erro ao acessar câmeras",
-          description: "Não foi possível listar as câmeras disponíveis. Verifique as permissões.",
-          variant: "destructive"
-        });
+        if (!toastShownRef.current) {
+          toast({
+            title: "Erro ao acessar câmeras",
+            description: "Não foi possível listar as câmeras disponíveis. Verifique as permissões.",
+            variant: "destructive"
+          });
+          toastShownRef.current = true;
+        }
       }
     };
 
@@ -151,13 +160,19 @@ const ParticipantPage = () => {
       joinTimeoutRef.current = fallbackTimer;
     }
     
-    // On mobile, automatically start camera after permissions
-    if (isMobileDevice) {
-      const timer = setTimeout(() => {
-        startCamera();
-      }, 1000) as unknown as NodeJS.Timeout;
+    // On mobile, automatically start camera after permissions but with a delay
+    if (isMobileDevice && !cameraStartedRef.current) {
+      // Clear any existing timer
+      if (autoStartTimerRef.current) {
+        clearTimeout(autoStartTimerRef.current);
+      }
       
-      return () => clearTimeout(timer);
+      // Set new timer with increased delay
+      autoStartTimerRef.current = setTimeout(() => {
+        if (!cameraStartedRef.current) {
+          startCamera(true);
+        }
+      }, 2000) as unknown as NodeJS.Timeout;
     }
     
     // Add proper cleanup
@@ -187,6 +202,11 @@ const ParticipantPage = () => {
       if (connectionTimerRef.current) {
         clearTimeout(connectionTimerRef.current);
         connectionTimerRef.current = null;
+      }
+      
+      if (autoStartTimerRef.current) {
+        clearTimeout(autoStartTimerRef.current);
+        autoStartTimerRef.current = null;
       }
       
       if (localStorageChannelRef.current) {
@@ -243,22 +263,25 @@ const ParticipantPage = () => {
       
       startHeartbeat();
       
-      if (!cameraActive) {
-        startCamera();
-      } else if (streamRef.current && sessionId) {
+      if (!cameraActive && !cameraStartedRef.current) {
+        startCamera(true);
+      } else if (streamRef.current && sessionId && !transmitting) {
         // Initialize WebRTC if we already have camera active
         initWebRTC(streamRef.current);
       }
       
-      toast({
-        title: "Conectado à sessão",
-        description: `Você está conectado à sessão ${sessionId}.`,
-      });
+      if (!toastShownRef.current) {
+        toast({
+          title: "Conectado à sessão",
+          description: `Você está conectado à sessão ${sessionId}.`,
+        });
+        toastShownRef.current = true;
+      }
     }
   };
 
   const initWebRTC = async (stream: MediaStream) => {
-    if (!sessionId) return;
+    if (!sessionId || transmitting) return;
     
     console.log("Initializing WebRTC connection with H.264 codec preference");
     setLocalStream(stream);
@@ -273,11 +296,14 @@ const ParticipantPage = () => {
       setTransmitting(true);
     } catch (error) {
       console.error("Error initializing WebRTC:", error);
-      toast({
-        title: "Erro na conexão de vídeo",
-        description: "Não foi possível estabelecer a conexão de vídeo. Tente novamente.",
-        variant: "destructive"
-      });
+      if (!toastShownRef.current) {
+        toast({
+          title: "Erro na conexão de vídeo",
+          description: "Não foi possível estabelecer a conexão de vídeo. Tente novamente.",
+          variant: "destructive"
+        });
+        toastShownRef.current = true;
+      }
     }
   };
 
@@ -472,11 +498,14 @@ const ParticipantPage = () => {
           setConnecting(false);
           setConnectionError("Não foi possível conectar após várias tentativas. Verifique sua conexão ou tente gerar um novo QR Code.");
           
-          toast({
-            title: "Erro de conexão",
-            description: "Não foi possível conectar à sessão. Por favor, tente novamente ou gere um novo QR Code.",
-            variant: "destructive"
-          });
+          if (!toastShownRef.current) {
+            toast({
+              title: "Erro de conexão",
+              description: "Não foi possível conectar à sessão. Por favor, tente novamente ou gere um novo QR Code.",
+              variant: "destructive"
+            });
+            toastShownRef.current = true;
+          }
         }
       }
     }, 5000) as unknown as NodeJS.Timeout;
@@ -744,16 +773,19 @@ const ParticipantPage = () => {
   };
 
   const startTransmitting = () => {
-    if (!connected || !cameraActive) return;
+    if (!connected || !cameraActive || transmitting) return;
     setTransmitting(true);
     console.log(`Started transmitting video to session: ${sessionId}`);
 
     // With WebRTC transmission is handled by the connection itself
     // The stream is already being sent after initWebRTC is called
-    toast({
-      title: "Transmissão iniciada",
-      description: "Sua imagem está sendo transmitida para a sessão com melhor qualidade (H.264).",
-    });
+    if (!toastShownRef.current) {
+      toast({
+        title: "Transmissão iniciada",
+        description: "Sua imagem está sendo transmitida para a sessão com melhor qualidade (H.264).",
+      });
+      toastShownRef.current = true;
+    }
   };
 
   const stopTransmitting = () => {
@@ -761,15 +793,22 @@ const ParticipantPage = () => {
     setTransmitting(false);
     console.log(`Stopped transmitting video to session: ${sessionId}`);
     
-    toast({
-      title: "Transmissão interrompida",
-      description: "Sua imagem não está mais sendo transmitida para a sessão.",
-    });
+    if (!toastShownRef.current) {
+      toast({
+        title: "Transmissão interrompida",
+        description: "Sua imagem não está mais sendo transmitida para a sessão.",
+      });
+      toastShownRef.current = true;
+    }
   };
 
-  const startCamera = async () => {
+  const startCamera = async (showToast: boolean) => {
     try {
-      if (!videoRef.current) return;
+      // Don't start camera if it's already active or in the process of starting
+      if (cameraActive || cameraStartedRef.current || !videoRef.current) return;
+      
+      // Set flag to prevent duplicate starts
+      cameraStartedRef.current = true;
       
       // Request high-quality video with preference for H.264 and support for mobile
       const constraints: MediaStreamConstraints = {
@@ -791,19 +830,22 @@ const ParticipantPage = () => {
       streamRef.current = stream;
       setCameraActive(true);
       
-      toast({
-        title: "Câmera ativada",
-        description: "Sua imagem está sendo transmitida para a sessão com melhor qualidade (H.264).",
-      });
+      if (showToast && !toastShownRef.current) {
+        toast({
+          title: "Câmera ativada",
+          description: "Sua câmera foi ativada com sucesso.",
+        });
+        toastShownRef.current = true;
+      }
       
       // Initialize WebRTC if connected to a session
-      if (connected && sessionId) {
+      if (connected && sessionId && !transmitting) {
         await initWebRTC(stream);
       }
       
       // Ensure we're sending a join message when camera is ready
       setTimeout(() => {
-        if (connected) {
+        if (connected && !transmitting) {
           startTransmitting();
         }
         
@@ -844,16 +886,20 @@ const ParticipantPage = () => {
       
     } catch (error) {
       console.error('Error accessing camera:', error);
-      toast({
-        title: "Erro ao acessar câmera",
-        description: "Verifique se você concedeu permissão para acessar a câmera.",
-        variant: "destructive"
-      });
+      cameraStartedRef.current = false;
+      if (!toastShownRef.current) {
+        toast({
+          title: "Erro ao acessar câmera",
+          description: "Verifique se você concedeu permissão para acessar a câmera.",
+          variant: "destructive"
+        });
+        toastShownRef.current = true;
+      }
     }
   };
 
   const stopCamera = () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || !cameraActive) return;
     
     stopTransmitting();
     
@@ -864,11 +910,16 @@ const ParticipantPage = () => {
       videoRef.current.srcObject = null;
       streamRef.current = null;
       setCameraActive(false);
+      cameraStartedRef.current = false;
+      toastShownRef.current = false;
       
-      toast({
-        title: "Câmera desativada",
-        description: "A transmissão da sua imagem foi interrompida.",
-      });
+      if (!toastShownRef.current) {
+        toast({
+          title: "Câmera desativada",
+          description: "A transmissão da sua imagem foi interrompida.",
+        });
+        toastShownRef.current = true;
+      }
     }
   };
 
@@ -876,6 +927,8 @@ const ParticipantPage = () => {
     if (availableDevices.length <= 1) return;
     
     stopCamera();
+    toastShownRef.current = false;
+    cameraStartedRef.current = false;
     
     const currentIndex = availableDevices.findIndex(device => device.deviceId === deviceId);
     const nextIndex = (currentIndex + 1) % availableDevices.length;
@@ -884,7 +937,7 @@ const ParticipantPage = () => {
     setDeviceId(nextDeviceId);
     
     setTimeout(() => {
-      startCamera();
+      startCamera(true);
     }, 300);
   };
 

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 interface WebRTCVideoProps {
@@ -25,6 +24,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const playAttemptedRef = useRef<boolean>(false);
   const videoStartedRef = useRef<boolean>(false);
+  const hasSetSrcObjectRef = useRef<boolean>(false);
   
   const tryPlayVideo = useCallback(() => {
     if (!videoRef.current || playAttemptedRef.current || videoStartedRef.current) return;
@@ -55,6 +55,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     reconnectAttemptRef.current = 0;
     playAttemptedRef.current = false;
     videoStartedRef.current = false;
+    hasSetSrcObjectRef.current = false;
     
     if (videoTimeoutRef.current) {
       clearTimeout(videoTimeoutRef.current);
@@ -203,32 +204,17 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         clearTimeout(videoTimeoutRef.current);
       }
       
-      // Only set timeout for the first play attempt if video hasn't started yet
-      if (!playAttemptedRef.current && !videoStartedRef.current) {
-        videoTimeoutRef.current = setTimeout(() => {
-          if (!videoActive && connectionStatus === 'connecting') {
-            console.log(`Video timeout for participant ${participantId}, attempting play once`);
-            if (videoRef.current && videoRef.current.readyState >= 2) {
-              tryPlayVideo();
-            }
-          }
-        }, 2000);
-      }
-      
-      // Only set srcObject if it's not already set to the same stream
-      if (!videoRef.current.srcObject || videoRef.current.srcObject !== stream) {
+      // Only set srcObject if it's not already set to the same stream to prevent flickering
+      if (!hasSetSrcObjectRef.current || (videoRef.current.srcObject !== stream)) {
         console.log(`Setting new srcObject for ${participantId}`);
         videoRef.current.srcObject = stream;
+        hasSetSrcObjectRef.current = true;
         
-        // Only reset play attempted if the stream is new
-        if (videoRef.current.srcObject !== stream) {
-          playAttemptedRef.current = false;
-          
+        // Only attempt to play if the video hasn't started yet
+        if (!videoStartedRef.current && !playAttemptedRef.current) {
           // Short timeout to try playing after srcObject is set
           setTimeout(() => {
-            if (!videoStartedRef.current) {
-              tryPlayVideo();
-            }
+            tryPlayVideo();
           }, 500);
         }
       }
@@ -248,7 +234,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
                 setVideoActive(true);
                 setConnectionStatus('connected');
                 
-                if (videoRef.current.paused && !videoStartedRef.current) {
+                if (videoRef.current.paused && !videoStartedRef.current && !playAttemptedRef.current) {
                   tryPlayVideo();
                 }
               } else if (!isTrackActive && videoActive) {
@@ -311,6 +297,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       
       if (videoRef.current && videoRef.current.srcObject) {
         videoRef.current.srcObject = null;
+        hasSetSrcObjectRef.current = false;
       }
       
       if (inactivityTimeoutRef.current) {
