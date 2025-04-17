@@ -440,7 +440,7 @@ const ParticipantPage = () => {
                   }
                 });
               } else {
-                clearInterval(supababJoinInterval);
+                clearInterval(supabaseJoinInterval);
               }
             }, 2000);
             
@@ -636,15 +636,9 @@ const ParticipantPage = () => {
         timestamp: Date.now()
       }));
       
-      setTimeout(() => {
-        try {
-          window.localStorage.removeItem(`telao-leave-${sessionId}-${participantIdRef.current}`);
-        } catch (e) {
-          // Ignore errors
-        }
-      }, 10000);
+      window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
     } catch (e) {
-      console.warn("Error using localStorage for disconnect:", e);
+      // Ignore errors
     }
   };
 
