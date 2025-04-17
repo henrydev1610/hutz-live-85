@@ -12,6 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import LightShowPage from "./pages/LightShowPage";
 import TelaoPage from "./pages/TelaoPage";
 import QuizPage from "./pages/QuizPage";
+import LivePage from "./pages/LivePage";
 import NotFound from "./pages/NotFound";
 import ParticipantPage from "./pages/ParticipantPage";
 
@@ -67,6 +68,14 @@ const AppRoutes = () => {
             element={
               <ProtectedRoute>
                 <TelaoPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/live" 
+            element={
+              <ProtectedRoute>
+                <LivePage />
               </ProtectedRoute>
             } 
           />
