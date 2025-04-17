@@ -31,7 +31,6 @@ const ParticipantPage = () => {
   const pageVisibilityRef = useRef<boolean>(true);
   const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-  // Setup visibility change detection to better handle mobile browser behavior
   useEffect(() => {
     const handleVisibilityChange = () => {
       const isVisible = !document.hidden;
@@ -39,7 +38,6 @@ const ParticipantPage = () => {
       
       console.log(`Page visibility changed to ${isVisible ? 'visible' : 'hidden'}`);
       
-      // If coming back to visible and we're connected but not transmitting, restart
       if (isVisible && connected && !transmitting && cameraActive) {
         console.log("Page became visible again, restarting transmission");
         if (streamRef.current && sessionId) {
@@ -47,7 +45,6 @@ const ParticipantPage = () => {
         }
       }
       
-      // If going to hidden state, send heartbeat to maintain connection
       if (!isVisible && connected) {
         console.log("Page hidden, sending keep-alive heartbeat");
         sendHeartbeat();
@@ -61,24 +58,19 @@ const ParticipantPage = () => {
     };
   }, [connected, transmitting, cameraActive, sessionId]);
 
-  // Anti-flicker camera monitoring
   useEffect(() => {
     if (cameraActive && streamRef.current) {
-      // Setup an interval to check if camera is still active and working properly
       const cameraCheckInterval = setInterval(() => {
         if (streamRef.current) {
           const videoTracks = streamRef.current.getVideoTracks();
           if (videoTracks.length > 0) {
             const track = videoTracks[0];
             
-            // Check if track is in problematic state
             if (!track.enabled || track.readyState !== 'live') {
               console.log("Camera track is not in optimal state, attempting recovery", track.readyState);
               
-              // Don't stop the camera immediately - try re-enabling the track first
               track.enabled = true;
               
-              // If that fails, do a full camera restart after a short delay
               setTimeout(() => {
                 if (!track.enabled || track.readyState !== 'live') {
                   console.log("Failed to recover camera track, restarting camera");
@@ -88,7 +80,6 @@ const ParticipantPage = () => {
               }, 1000);
             }
           } else {
-            // No video tracks found, restart camera
             console.log("No video tracks found, restarting camera");
             stopCamera();
             setTimeout(() => startCamera(), 500);
@@ -100,10 +91,8 @@ const ParticipantPage = () => {
     }
   }, [cameraActive]);
 
-  // Check for mobile low-power mode issues
   useEffect(() => {
     if (isMobileDevice) {
-      // On mobile, periodically check if the video track is still active
       const checkInterval = setInterval(() => {
         if (cameraActive && streamRef.current) {
           const videoTracks = streamRef.current.getVideoTracks();
@@ -122,7 +111,6 @@ const ParticipantPage = () => {
     }
   }, [cameraActive, isMobileDevice]);
 
-  // Handle session connection and cleanup
   useEffect(() => {
     console.log(`Session ID: ${sessionId}, Participant ID: ${participantIdRef.current}`);
     
@@ -136,7 +124,6 @@ const ParticipantPage = () => {
         const videoDevices = devices.filter(device => device.kind === 'videoinput');
         setAvailableDevices(videoDevices);
         
-        // On mobile, prefer back camera by default
         if (isMobileDevice) {
           const backCamera = videoDevices.find(device => 
             device.label.toLowerCase().includes('back') || 
@@ -149,7 +136,6 @@ const ParticipantPage = () => {
             device.label.toLowerCase().includes('frente')
           );
           
-          // If we have a back camera, use it (better quality usually)
           if (backCamera) {
             setDeviceId(backCamera.deviceId);
           } else if (frontCamera) {
@@ -158,7 +144,6 @@ const ParticipantPage = () => {
             setDeviceId(videoDevices[0].deviceId);
           }
         } else {
-          // Desktop usually uses webcam (front facing)
           if (videoDevices.length > 0) {
             setDeviceId(videoDevices[0].deviceId);
           }
@@ -178,7 +163,6 @@ const ParticipantPage = () => {
     if (sessionId) {
       connectToSession();
       
-      // Bail-out timer in case connection takes too long
       const fallbackTimer = setTimeout(() => {
         if (!connected) {
           console.log("Connection not established, retrying...");
@@ -189,7 +173,6 @@ const ParticipantPage = () => {
       joinTimeoutRef.current = fallbackTimer;
     }
     
-    // On mobile, automatically start camera after permissions
     if (isMobileDevice) {
       const timer = setTimeout(() => {
         startCamera();
@@ -198,9 +181,7 @@ const ParticipantPage = () => {
       return () => clearTimeout(timer);
     }
     
-    // Add proper cleanup
     return () => {
-      // Send explicit disconnect message
       if (connected && sessionId) {
         sendDisconnectMessage();
       }
@@ -209,7 +190,6 @@ const ParticipantPage = () => {
         stopCamera();
       }
       
-      // Full connection cleanup
       disconnectFromSession();
       
       if (joinTimeoutRef.current) {
@@ -237,16 +217,13 @@ const ParticipantPage = () => {
     };
   }, [sessionId, toast, isMobileDevice]);
 
-  // Ensure camera permissions are granted
   const ensureMediaPermissions = async () => {
     try {
-      // Request minimal permissions to trigger the permission dialog
       const tempStream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: false
       });
       
-      // Immediately stop all tracks to free up the camera
       tempStream.getTracks().forEach(track => track.stop());
       return true;
     } catch (error) {
@@ -284,7 +261,6 @@ const ParticipantPage = () => {
       if (!cameraActive) {
         startCamera();
       } else if (streamRef.current && sessionId) {
-        // Initialize WebRTC if we already have camera active
         initWebRTC(streamRef.current);
       }
       
@@ -410,7 +386,6 @@ const ParticipantPage = () => {
             if (!cameraActive) {
               startCamera();
             } else if (streamRef.current && sessionId) {
-              // Initialize WebRTC if we already have camera active
               initWebRTC(streamRef.current);
             }
             
@@ -469,7 +444,6 @@ const ParticipantPage = () => {
               if (!cameraActive) {
                 startCamera();
               } else if (streamRef.current && sessionId) {
-                // Initialize WebRTC if we already have camera active
                 initWebRTC(streamRef.current);
               }
               
@@ -493,7 +467,6 @@ const ParticipantPage = () => {
       console.warn("LocalStorage checking failed", e);
     }
     
-    // Connection timeout timer
     connectionTimerRef.current = setTimeout(() => {
       if (!connected) {
         console.log(`Connection attempt ${connectionRetryCountRef.current + 1} timed out`);
@@ -582,11 +555,9 @@ const ParticipantPage = () => {
     }
   };
 
-  // Send explicit disconnect message
   const sendDisconnectMessage = () => {
     console.log(`Sending explicit disconnect message for ${participantIdRef.current}`);
     
-    // Via BroadcastChannel
     if (broadcastChannelRef.current) {
       try {
         broadcastChannelRef.current.postMessage({
@@ -599,7 +570,6 @@ const ParticipantPage = () => {
       }
     }
     
-    // Via LocalStorage
     if (localStorageChannelRef.current) {
       try {
         localStorageChannelRef.current.postMessage({
@@ -612,7 +582,6 @@ const ParticipantPage = () => {
       }
     }
     
-    // Via Supabase
     if (supabaseChannelRef.current) {
       try {
         supabaseChannelRef.current.send({
@@ -629,7 +598,6 @@ const ParticipantPage = () => {
       }
     }
     
-    // Via localStorage
     try {
       window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, JSON.stringify({
         type: 'participant-leave',
@@ -637,7 +605,6 @@ const ParticipantPage = () => {
         timestamp: Date.now()
       }));
       
-      // Correção do tipo para NodeJS.Timeout
       setTimeout(() => {
         try {
           window.localStorage.removeItem(`telao-leave-${sessionId}-${participantIdRef.current}`);
@@ -755,7 +722,6 @@ const ParticipantPage = () => {
         }
       }
       
-      // Make sure disconnect is persisted in localStorage
       try {
         window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, JSON.stringify({
           type: 'participant-leave',
@@ -763,7 +729,6 @@ const ParticipantPage = () => {
           timestamp: Date.now()
         }));
         
-        // Clear heartbeat
         window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
       } catch (e) {
         // Ignore errors
@@ -786,8 +751,6 @@ const ParticipantPage = () => {
     setTransmitting(true);
     console.log(`Started transmitting video to session: ${sessionId}`);
 
-    // With WebRTC transmission is handled by the connection itself
-    // The stream is already being sent after initWebRTC is called
     toast({
       title: "Transmissão iniciada",
       description: "Sua imagem está sendo transmitida para a sessão com melhor qualidade (H.264).",
@@ -809,14 +772,12 @@ const ParticipantPage = () => {
     try {
       if (!videoRef.current) return;
       
-      // Request high-quality video with reduced flickering settings
       const constraints: MediaStreamConstraints = {
         video: {
           deviceId: deviceId ? { exact: deviceId } : undefined,
           width: { ideal: 1280 },
           height: { ideal: 720 },
           frameRate: { ideal: 30 },
-          // For mobile devices, facingMode helps select the right camera
           facingMode: isMobileDevice ? "environment" : "user"
         },
         audio: false
@@ -825,11 +786,8 @@ const ParticipantPage = () => {
       console.log("Requesting camera with constraints:", constraints);
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
-      // Apply anti-flicker settings to tracks
       stream.getTracks().forEach(track => {
-        // Set higher priority for video tracks
         if (track.kind === 'video') {
-          // Applying constraints to reduce flickering
           const videoTrack = track as MediaStreamTrack;
           if (videoTrack.getConstraints) {
             try {
@@ -848,7 +806,6 @@ const ParticipantPage = () => {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         
-        // Apply anti-flicker styles to video element
         videoRef.current.style.transform = 'translateZ(0)';
         videoRef.current.style.backfaceVisibility = 'hidden';
         videoRef.current.style.WebkitBackfaceVisibility = 'hidden';
@@ -856,7 +813,6 @@ const ParticipantPage = () => {
         videoRef.current.style.willChange = 'transform';
         videoRef.current.style.transformStyle = 'preserve-3d';
         
-        // Add oncanplay handler to ensure video starts correctly
         videoRef.current.oncanplay = () => {
           if (videoRef.current) {
             videoRef.current.play()
@@ -864,19 +820,16 @@ const ParticipantPage = () => {
           }
         };
         
-        // Force periodic refresh of video element to prevent freezing
         const videoRefreshInterval = setInterval(() => {
           if (videoRef.current && streamRef.current && streamRef.current.active) {
             const videoTracks = streamRef.current.getVideoTracks();
             if (videoTracks.length > 0 && videoTracks[0].readyState === 'live') {
-              // Small trick to refresh the video element without stopping the stream
               const currentTime = videoRef.current.currentTime;
               videoRef.current.currentTime = currentTime + 0.00001;
             }
           }
         }, 2000);
         
-        // Clean up interval on component unmount
         return () => clearInterval(videoRefreshInterval);
       }
       
@@ -888,12 +841,10 @@ const ParticipantPage = () => {
         description: "Sua imagem está sendo transmitida para a sessão com melhor qualidade (H.264).",
       });
       
-      // Initialize WebRTC if connected to a session
       if (connected && sessionId) {
         await initWebRTC(stream);
       }
       
-      // Ensure we're sending a join message when camera is ready
       setTimeout(() => {
         if (connected) {
           startTransmitting();
@@ -904,25 +855,19 @@ const ParticipantPage = () => {
         }
       }, 500);
       
-      // Send video info updates regularly to ensure host knows we have video
       const videoInfoInterval = setInterval(() => {
         if (stream && sessionId && connected) {
-          // Send video stream info through all available channels
           sendVideoStreamInfo(stream);
         }
       }, 2000);
       
-      // On mobile, add wake lock to prevent screen from turning off
       try {
         if (isMobileDevice && 'wakeLock' in navigator) {
-          // @ts-ignore - TypeScript doesn't know about wakeLock API yet
           const wakeLock = await navigator.wakeLock.request('screen');
           console.log("Wake Lock acquired to keep screen on");
           
-          // Release it when component unmounts or user navigates away
           const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
-              // @ts-ignore
               navigator.wakeLock.request('screen')
                 .then(() => console.log("Wake Lock re-acquired"))
                 .catch(err => console.warn("Failed to re-acquire Wake Lock:", err));
@@ -960,7 +905,6 @@ const ParticipantPage = () => {
     }
   };
 
-  // Add this helper function to send video stream info
   const sendVideoStreamInfo = (stream: MediaStream) => {
     if (!stream || !sessionId) return;
     
@@ -976,7 +920,7 @@ const ParticipantPage = () => {
     const streamInfo = {
       type: 'video-stream-info',
       id: participantIdRef.current,
-      name: `Participante ${Math.floor(Math.random() * 1000)}`, // Random number for demo
+      name: `Participante ${Math.floor(Math.random() * 1000)}`,
       timestamp: Date.now(),
       hasStream: true,
       videoTracks: videoTrackInfo,
@@ -985,7 +929,6 @@ const ParticipantPage = () => {
     
     console.log('Sending video stream info:', streamInfo);
     
-    // Send on both channels
     if (broadcastChannelRef.current) {
       try {
         broadcastChannelRef.current.postMessage(streamInfo);
@@ -1002,6 +945,168 @@ const ParticipantPage = () => {
       }
     }
     
-    // Also store in localStorage for maximum reliability
     try {
-      localStorage.
+      localStorage.setItem(`telao-stream-info-${sessionId}-${participantIdRef.current}`, JSON.stringify(streamInfo));
+      
+      setTimeout(() => {
+        try {
+          localStorage.removeItem(`telao-stream-info-${sessionId}-${participantIdRef.current}`);
+        } catch (e) {
+          // Ignore errors
+        }
+      }, 10000);
+    } catch (e) {
+      console.warn("Error using localStorage for stream info:", e);
+    }
+  };
+
+  const stopCamera = () => {
+    if (!cameraActive) return;
+    
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        track.stop();
+      });
+      streamRef.current = null;
+    }
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    
+    setCameraActive(false);
+    setTransmitting(false);
+    
+    console.log('Camera stopped');
+  };
+
+  const toggleCamera = () => {
+    if (cameraActive) {
+      stopCamera();
+    } else {
+      startCamera();
+    }
+  };
+
+  const switchCamera = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+      console.log("MediaDevices API not supported");
+      return;
+    }
+    
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      
+      if (videoDevices.length <= 1) {
+        toast({
+          title: "Só há uma câmera disponível",
+          description: "Não foram encontradas outras câmeras para alternar.",
+        });
+        return;
+      }
+      
+      const currentIndex = videoDevices.findIndex(device => device.deviceId === deviceId);
+      const nextIndex = (currentIndex + 1) % videoDevices.length;
+      const nextDeviceId = videoDevices[nextIndex].deviceId;
+      
+      stopCamera();
+      
+      setDeviceId(nextDeviceId);
+      
+      setTimeout(() => {
+        startCamera();
+      }, 300);
+      
+      console.log(`Switched camera to device ${nextIndex + 1} of ${videoDevices.length}`);
+      
+      toast({
+        title: `Câmera alterada (${nextIndex + 1}/${videoDevices.length})`,
+        description: `${videoDevices[nextIndex].label || 'Câmera desconhecida'}`,
+      });
+    } catch (error) {
+      console.error('Error switching camera:', error);
+      toast({
+        title: "Erro ao alternar câmera",
+        description: "Não foi possível alternar entre as câmeras.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-black p-4">
+      {!connected && !connecting && (
+        <div className="text-white text-center mb-4">
+          <h1 className="text-2xl font-bold mb-2">Conecte-se a uma Sessão</h1>
+          <p>Escaneie o QR code na tela principal para se conectar.</p>
+          {connectionError && <p className="text-red-400 mt-2">{connectionError}</p>}
+          <Button 
+            className="mt-4"
+            onClick={() => connectToSession()}
+          >
+            Tentar Conectar
+          </Button>
+        </div>
+      )}
+      
+      {connecting && !connected && (
+        <div className="text-white text-center mb-4">
+          <h1 className="text-2xl font-bold mb-2">Conectando...</h1>
+          <p>Aguarde enquanto nos conectamos à sessão {sessionId}.</p>
+          {connectionError && <p className="text-red-400 mt-2">{connectionError}</p>}
+          <div className="mt-4 w-8 h-8 border-t-2 border-accent animate-spin rounded-full mx-auto"></div>
+        </div>
+      )}
+      
+      {connected && (
+        <div className="text-white text-center mb-4">
+          <h1 className="text-2xl font-bold mb-2">Conectado à Sessão</h1>
+          <p className="mb-4">Sua imagem está sendo transmitida em tempo real!</p>
+        </div>
+      )}
+      
+      <div className="relative w-full max-w-md aspect-[9/16] mb-6 rounded-xl overflow-hidden bg-gray-900">
+        <video 
+          ref={videoRef}
+          className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]"
+          autoPlay 
+          playsInline
+          muted
+        />
+        
+        {!cameraActive && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-75">
+            <p className="text-white text-lg">Clique para ativar a câmera</p>
+          </div>
+        )}
+      </div>
+      
+      <div className="flex flex-wrap gap-4 justify-center">
+        <Button
+          size="lg"
+          variant={cameraActive ? "destructive" : "default"}
+          className="flex items-center gap-2"
+          onClick={toggleCamera}
+        >
+          {cameraActive ? <VideoOff size={20} /> : <Video size={20} />}
+          {cameraActive ? "Desativar Câmera" : "Ativar Câmera"}
+        </Button>
+        
+        {cameraActive && (
+          <Button
+            size="lg"
+            variant="secondary"
+            className="flex items-center gap-2"
+            onClick={switchCamera}
+          >
+            <Camera size={20} />
+            Mudar Câmera
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default ParticipantPage;
