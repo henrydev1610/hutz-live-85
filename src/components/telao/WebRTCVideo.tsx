@@ -18,22 +18,68 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
   const lastUpdateTimeRef = useRef<number>(Date.now());
   const reconnectAttemptRef = useRef<number>(0);
   const maxReconnectAttempts = 5;
+  const videoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Reset state when participant changes
+  useEffect(() => {
+    console.log(`WebRTCVideo: New participant ${participantId}`);
+    setConnectionStatus('connecting');
+    setVideoActive(false);
+    lastUpdateTimeRef.current = Date.now();
+    reconnectAttemptRef.current = 0;
+    
+    return () => {
+      if (videoTimeoutRef.current) {
+        clearTimeout(videoTimeoutRef.current);
+        videoTimeoutRef.current = null;
+      }
+    };
+  }, [participantId]);
   
   useEffect(() => {
     if (stream && videoRef.current) {
       console.log(`Setting video stream for participant ${participantId}`);
+      
+      // Force timeout if video doesn't play within a reasonable time
+      if (videoTimeoutRef.current) {
+        clearTimeout(videoTimeoutRef.current);
+      }
+      
+      videoTimeoutRef.current = setTimeout(() => {
+        if (!videoActive && connectionStatus === 'connecting') {
+          console.log(`Video timeout for participant ${participantId}, forcing play`);
+          if (videoRef.current && videoRef.current.readyState >= 2) {
+            try {
+              videoRef.current.play()
+                .then(() => {
+                  setVideoActive(true);
+                  setConnectionStatus('connected');
+                  lastUpdateTimeRef.current = Date.now();
+                })
+                .catch(err => console.error(`Could not force play: ${err}`));
+            } catch (err) {
+              console.error(`Error forcing play: ${err}`);
+            }
+          }
+        }
+      }, 2000);
+      
       videoRef.current.srcObject = stream;
       
       // Monitor track status
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) {
+      const videoTracks = stream.getVideoTracks();
+      if (videoTracks.length > 0) {
+        const videoTrack = videoTracks[0];
         console.log(`Video track state for ${participantId}:`, videoTrack.readyState, 'enabled:', videoTrack.enabled);
-        setVideoActive(videoTrack.enabled && videoTrack.readyState === 'live');
-        setConnectionStatus('connected');
+        
+        // Set initial state based on track
+        const isActive = videoTrack.enabled && videoTrack.readyState === 'live';
+        setVideoActive(isActive);
+        setConnectionStatus(isActive ? 'connected' : 'connecting');
         lastUpdateTimeRef.current = Date.now();
         reconnectAttemptRef.current = 0;
         
-        // Listen for track ended event
+        // Listen for track events
         const onEnded = () => {
           console.log(`Video track ended for participant ${participantId}`);
           setConnectionStatus('disconnected');
@@ -56,6 +102,11 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         videoTrack.addEventListener('unmute', onUnmute);
         
         return () => {
+          if (videoTimeoutRef.current) {
+            clearTimeout(videoTimeoutRef.current);
+            videoTimeoutRef.current = null;
+          }
+          
           videoTrack.removeEventListener('ended', onEnded);
           videoTrack.removeEventListener('mute', onMute);
           videoTrack.removeEventListener('unmute', onUnmute);
@@ -72,54 +123,79 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     }
     
     return () => {
+      if (videoTimeoutRef.current) {
+        clearTimeout(videoTimeoutRef.current);
+        videoTimeoutRef.current = null;
+      }
+      
       if (videoRef.current) {
         videoRef.current.srcObject = null;
       }
     };
-  }, [stream, participantId]);
+  }, [stream, participantId, connectionStatus, videoActive]);
 
-  // Stabilization effect to prevent flickering
+  // Stabilization effect to prevent flickering and detect stale connections
   useEffect(() => {
+    // More aggressive connection monitoring
     const stabilityCheck = setInterval(() => {
+      // Check for stale connections
       if (connectionStatus === 'connected' && videoActive) {
-        // Consider disconnected if no updates for a while
         const timeSinceLastUpdate = Date.now() - lastUpdateTimeRef.current;
-        if (timeSinceLastUpdate > 10000) { // 10 seconds
+        if (timeSinceLastUpdate > 10000) { // 10 seconds with no updates
           console.log(`No updates from participant ${participantId} for 10 seconds`);
-          setConnectionStatus('disconnected');
           
-          // Attempt to recover the connection if possible
+          // Try to recover the connection by refreshing the video element
           if (reconnectAttemptRef.current < maxReconnectAttempts) {
             reconnectAttemptRef.current++;
             console.log(`Attempting to recover connection (${reconnectAttemptRef.current}/${maxReconnectAttempts})`);
             
-            // Force a refresh of the video element
             if (videoRef.current && videoRef.current.srcObject) {
               const currentStream = videoRef.current.srcObject as MediaStream;
               videoRef.current.srcObject = null;
+              
+              // Short delay before reconnecting
               setTimeout(() => {
                 if (videoRef.current) {
                   videoRef.current.srcObject = currentStream;
+                  
+                  // Force play
+                  videoRef.current.play().catch(err => {
+                    console.warn(`Failed to play after recovery: ${err}`);
+                    setConnectionStatus('disconnected');
+                  });
                 }
               }, 500);
+              
+              lastUpdateTimeRef.current = Date.now(); // Reset timer
             }
+          } else {
+            console.log(`Max reconnection attempts reached for ${participantId}`);
+            setConnectionStatus('disconnected');
+            setVideoActive(false);
           }
         }
+      } else if (connectionStatus === 'connecting' && !videoActive) {
+        // If still connecting after a while, consider disconnected
+        const connectingTime = Date.now() - lastUpdateTimeRef.current;
+        if (connectingTime > 20000) { // 20 seconds in connecting state
+          console.log(`Participant ${participantId} failed to connect after 20 seconds`);
+          setConnectionStatus('disconnected');
+        }
       }
-    }, 5000); // Check every 5 seconds
+    }, 2000); // Check more frequently
     
     return () => clearInterval(stabilityCheck);
   }, [connectionStatus, videoActive, participantId]);
 
-  // Handle video loading state
+  // Video event handlers
   const handleVideoLoadedData = () => {
     console.log(`Video loaded for participant ${participantId}`);
     setVideoActive(true);
     setConnectionStatus('connected');
     lastUpdateTimeRef.current = Date.now();
+    reconnectAttemptRef.current = 0;
   };
 
-  // Handle video error
   const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
     console.error(`Video error for participant ${participantId}:`, e);
     setConnectionStatus('disconnected');
@@ -133,6 +209,9 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
           if (videoRef.current) {
             await videoRef.current.play();
             console.log(`Forced play for participant ${participantId}`);
+            setVideoActive(true);
+            setConnectionStatus('connected');
+            lastUpdateTimeRef.current = Date.now();
           }
         } catch (error) {
           console.warn(`Could not force play for ${participantId}:`, error);
@@ -142,6 +221,11 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       playVideo();
     }
   }, [stream, participantId]);
+
+  // Only render if we have a stream or are still connecting
+  if (connectionStatus === 'disconnected' && !stream) {
+    return null; // Don't render disconnected participants
+  }
 
   return (
     <div className={`relative overflow-hidden ${className}`}>

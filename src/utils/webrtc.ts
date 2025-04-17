@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 
 export type WebRTCMessage = {
@@ -56,17 +55,27 @@ export const initParticipantWebRTC = async (
 ): Promise<void> => {
   console.log(`Initializing WebRTC for participant ${participantId} in session ${sessionId}`);
   
-  // Create WebRTC channel for signaling
+  // Create WebRTC channel for signaling with multiple fallback mechanisms
   setupSignalingChannel(sessionId, participantId, 'participant');
   
-  // Send a notification that we're ready to connect
-  sendSignalingMessage({
-    type: 'offer',
-    sender: participantId,
-    payload: { type: 'ready-to-connect' },
-    sessionId,
-    timestamp: Date.now(),
-  });
+  // Send a notification that we're ready to connect with better retry logic
+  const sendReadyMessage = () => {
+    console.log("Sending ready-to-connect message");
+    sendSignalingMessage({
+      type: 'offer',
+      sender: participantId,
+      payload: { type: 'ready-to-connect' },
+      sessionId,
+      timestamp: Date.now(),
+    });
+  };
+  
+  // Initial send
+  sendReadyMessage();
+  
+  // Retry several times to ensure the message gets through
+  const retryInterval = setInterval(sendReadyMessage, 2000);
+  setTimeout(() => clearInterval(retryInterval), 10000); // Stop after 10 seconds
   
   // Store local stream for later use with connections
   const videoTrack = localStream.getVideoTracks()[0];
@@ -88,13 +97,21 @@ export const initHostWebRTC = (
   setupSignalingChannel(sessionId, hostId, 'host');
 };
 
-// Create a new peer connection for a participant
+// Create a new peer connection for a participant with improved reliability
 export const createPeerConnection = async (
   remoteId: string,
   localStream?: MediaStream,
   onTrack?: (event: RTCTrackEvent) => void
 ): Promise<RTCPeerConnection> => {
   console.log(`Creating peer connection with ${remoteId}`);
+  
+  // Clean up any existing connection first
+  if (peerConnections[remoteId]) {
+    const oldConnection = peerConnections[remoteId].connection;
+    console.log(`Closing existing connection for ${remoteId}`);
+    oldConnection.close();
+    delete peerConnections[remoteId];
+  }
   
   const pc = new RTCPeerConnection(peerConnectionConfig as RTCConfiguration);
   
@@ -178,10 +195,19 @@ export const createPeerConnection = async (
         attemptReconnection(remoteId, localStream, onTrack);
         break;
       case 'disconnected':
-        console.warn('ICE connection disconnected, may reconnect automatically');
+        console.warn('ICE connection disconnected');
+        // Try to recover automatically
+        setTimeout(() => {
+          if (pc.iceConnectionState === 'disconnected') {
+            console.log('Connection still disconnected, attempting recovery');
+            attemptReconnection(remoteId, localStream, onTrack);
+          }
+        }, 2000);
         break;
       case 'closed':
         console.log('ICE connection closed');
+        // Remove from active connections
+        delete peerConnections[remoteId];
         break;
     }
   };
@@ -192,14 +218,17 @@ export const createPeerConnection = async (
     
     // If connection fails, attempt to reconnect
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      console.log(`Connection ${pc.connectionState}, attempting reconnection`);
       attemptReconnection(remoteId, localStream, onTrack);
     }
   };
   
-  // Handle tracks from remote peer
+  // Improved track handling from remote peer
   if (onTrack) {
     pc.ontrack = (event) => {
       console.log(`Received ${event.track.kind} track from ${remoteId}, readyState: ${event.track.readyState}`);
+      
+      // Call the handler immediately
       onTrack(event);
       
       // Monitor track ended events
@@ -311,7 +340,7 @@ const setupSignalingChannel = (
   }
 };
 
-// Handle incoming signaling messages
+// Handle incoming signaling messages with improved participant reconnection logic
 const handleSignalingMessage = async (
   message: WebRTCMessage, 
   role: 'host' | 'participant',
@@ -330,6 +359,14 @@ const handleSignalingMessage = async (
     if (type === 'offer' && payload.type === 'ready-to-connect') {
       // Participant is ready to connect
       console.log(`Creating connection for participant ${sender}`);
+      
+      // Check if we already have a connection
+      const existingConnection = peerConnections[sender]?.connection;
+      if (existingConnection && existingConnection.connectionState === 'connected') {
+        console.log(`Already have a connected peer for ${sender}, ignoring duplicate ready message`);
+        return;
+      }
+      
       const pc = await createPeerConnection(sender, undefined, (event) => {
         // When we receive tracks from the participant
         console.log('Received track from participant:', event.track.kind);
@@ -359,16 +396,34 @@ const handleSignalingMessage = async (
         
         await pc.setLocalDescription(offer);
         
-        sendSignalingMessage({
-          type: 'offer',
-          sender: peerId,
-          receiver: sender,
-          payload: pc.localDescription,
-          sessionId,
-          timestamp: Date.now(),
-        });
+        // Send offer multiple times to ensure delivery
+        const sendOffer = () => {
+          sendSignalingMessage({
+            type: 'offer',
+            sender: peerId,
+            receiver: sender,
+            payload: pc.localDescription,
+            sessionId,
+            timestamp: Date.now(),
+          });
+        };
+        
+        // Initial send
+        sendOffer();
+        
+        // Retry a few times
+        setTimeout(sendOffer, 1000);
+        setTimeout(sendOffer, 3000);
+        
       } catch (error) {
         console.error("Error creating offer:", error);
+      }
+    } else if (type === 'participant-leave' || payload?.type === 'participant-leave') {
+      // Participant has left, clean up their connection
+      console.log(`Participant ${sender} has left, cleaning up their connection`);
+      if (peerConnections[sender]) {
+        peerConnections[sender].connection.close();
+        delete peerConnections[sender];
       }
     }
     else if (type === 'answer') {
@@ -629,11 +684,13 @@ export const getParticipantConnection = (participantId: string): PeerConnection 
 // Clean up WebRTC connections
 export const cleanupWebRTC = (participantId?: string) => {
   if (participantId && peerConnections[participantId]) {
+    console.log(`Cleaning up connection for participant ${participantId}`);
     const connection = peerConnections[participantId].connection;
     connection.close();
     delete peerConnections[participantId];
   } else {
     // Close all connections
+    console.log(`Cleaning up all WebRTC connections`);
     Object.keys(peerConnections).forEach(id => {
       peerConnections[id].connection.close();
     });
@@ -652,3 +709,19 @@ export const setLocalStream = (stream: MediaStream) => {
   localStream = stream;
 };
 
+// Check if a participant is connected
+export const isParticipantConnected = (participantId: string): boolean => {
+  const connection = peerConnections[participantId]?.connection;
+  if (!connection) return false;
+  
+  return (
+    connection.connectionState === 'connected' || 
+    connection.iceConnectionState === 'connected' ||
+    connection.iceConnectionState === 'completed'
+  );
+};
+
+// Get all connected participant IDs
+export const getConnectedParticipants = (): string[] => {
+  return Object.keys(peerConnections).filter(id => isParticipantConnected(id));
+};
