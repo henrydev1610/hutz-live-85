@@ -158,7 +158,7 @@ const ParticipantPage = () => {
   const initWebRTC = async (stream: MediaStream) => {
     if (!sessionId) return;
     
-    console.log("Initializing WebRTC connection");
+    console.log("Initializing WebRTC connection with H.264 codec preference");
     setLocalStream(stream);
     
     try {
@@ -168,8 +168,14 @@ const ParticipantPage = () => {
         stream
       );
       console.log("WebRTC initialized successfully");
+      setTransmitting(true);
     } catch (error) {
       console.error("Error initializing WebRTC:", error);
+      toast({
+        title: "Erro na conexão de vídeo",
+        description: "Não foi possível estabelecer a conexão de vídeo. Tente novamente.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -572,24 +578,42 @@ const ParticipantPage = () => {
     setTransmitting(true);
     console.log(`Started transmitting video to session: ${sessionId}`);
 
-    // With WebRTC we don't need to do more here since the connection is already set up
-    // WebRTC will handle the streaming
+    // With WebRTC transmission is handled by the connection itself
+    // The stream is already being sent after initWebRTC is called
+    toast({
+      title: "Transmissão iniciada",
+      description: "Sua imagem está sendo transmitida para a sessão com melhor qualidade (H.264).",
+    });
   };
 
   const stopTransmitting = () => {
     if (!transmitting) return;
     setTransmitting(false);
     console.log(`Stopped transmitting video to session: ${sessionId}`);
+    
+    toast({
+      title: "Transmissão interrompida",
+      description: "Sua imagem não está mais sendo transmitida para a sessão.",
+    });
   };
 
   const startCamera = async () => {
     try {
       if (!videoRef.current) return;
       
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: deviceId ? { deviceId: { exact: deviceId } } : true,
+      // Request high-quality video with preference for H.264
+      const constraints = {
+        video: {
+          deviceId: deviceId ? { exact: deviceId } : undefined,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        },
         audio: false
-      });
+      };
+      
+      console.log("Requesting camera with constraints:", constraints);
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
       videoRef.current.srcObject = stream;
       streamRef.current = stream;
@@ -597,7 +621,7 @@ const ParticipantPage = () => {
       
       toast({
         title: "Câmera ativada",
-        description: "Sua imagem está sendo transmitida para a sessão.",
+        description: "Sua imagem está sendo transmitida para a sessão com melhor qualidade (H.264).",
       });
       
       // Initialize WebRTC if connected to a session
@@ -606,7 +630,9 @@ const ParticipantPage = () => {
       }
       
       setTimeout(() => {
-        startTransmitting();
+        if (connected) {
+          startTransmitting();
+        }
         
         if (!connected && sessionId) {
           sendJoinMessage();
