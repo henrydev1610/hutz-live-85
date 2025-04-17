@@ -1004,4 +1004,4 @@ const ParticipantPage = () => {
     
     // Also store in localStorage for maximum reliability
     try {
-      localStorage.setItem(`tel
+      localStorage.
