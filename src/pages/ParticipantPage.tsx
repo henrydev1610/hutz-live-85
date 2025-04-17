@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -72,7 +73,7 @@ const ParticipantPage = () => {
         }
       }, 2000);
       
-      joinTimeoutRef.current = fallbackTimer;
+      joinTimeoutRef.current = fallbackTimer as unknown as NodeJS.Timeout;
     }
     
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -552,11 +553,6 @@ const ParticipantPage = () => {
       try {
         window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, Date.now().toString());
       } catch (e) {
-      }
-      
-      if (frameIntervalRef.current) {
-        clearInterval(frameIntervalRef.current);
-        frameIntervalRef.current = null;
       }
       
       if (heartbeatIntervalRef.current) {
