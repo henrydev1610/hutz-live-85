@@ -374,24 +374,13 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
           return handleUserMedia(stream);
         } catch (fallbackErr) {
           console.error('All media acquisition attempts failed:', fallbackErr);
-          return () => {}; // Return empty cleanup function in case of failure
         }
       }
     }
   };
   
   // Start the media acquisition process
-  const mediaPromise = getMediaWithFallbacks();
-  let cleanupMedia = () => {};
-  
-  // Properly handle the promise to get the cleanup function
-  mediaPromise.then(cleanup => {
-    if (typeof cleanup === 'function') {
-      cleanupMedia = cleanup;
-    }
-  }).catch(err => {
-    console.error("Error setting up media:", err);
-  });
+  const cleanupMedia = getMediaWithFallbacks();
   
   // Listen for acknowledgment
   const channelMessageHandler = (event: MessageEvent) => {
