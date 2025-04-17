@@ -868,4 +868,13 @@ const LivePage = () => {
             )}
           </div>
           
-          <Button variant="ghost" className="absolute top-2 right-2" onClick
+          <Button variant="ghost" className="absolute top-2 right-2" onClick={closeFinalAction}>
+            <X className="h-4 w-4" />
+          </Button>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default LivePage;
