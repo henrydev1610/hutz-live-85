@@ -1,4 +1,6 @@
+
 let localStream: MediaStream | null = null;
+let participantTrackCallbacks: Record<string, (participantId: string, event: RTCTrackEvent) => void> = {};
 
 export const setLocalStream = (stream: MediaStream) => {
   localStream = stream;
@@ -463,5 +465,268 @@ const listenForICECandidates = (sessionId: string, participantId: string, peerCo
     setTimeout(() => {
       clearInterval(candidateCheckInterval);
     }, 30000);
+  }
+};
+
+// NEW EXPORTS TO FIX THE MISSING FUNCTIONS
+
+// Set the callback for handling participant tracks
+export const setOnParticipantTrackCallback = (callback: (participantId: string, event: RTCTrackEvent) => void) => {
+  participantTrackCallbacks['global'] = callback;
+};
+
+// Get a specific participant connection
+export const getParticipantConnection = (participantId: string): RTCPeerConnection | null => {
+  if ((window as any)._peerConnections) {
+    const connections = (window as any)._peerConnections;
+    return Object.values(connections).find((pc: any) => 
+      pc && (pc._participantId === participantId || pc.participantId === participantId)
+    ) as RTCPeerConnection || null;
+  }
+  return null;
+};
+
+// Initialize WebRTC for host
+export const initHostWebRTC = (sessionId: string) => {
+  console.log(`Initializing host WebRTC for session: ${sessionId}`);
+  
+  // Listen for offers from participants
+  try {
+    const offerChannel = new BroadcastChannel(`telao-offer-${sessionId}`);
+    offerChannel.onmessage = async (event) => {
+      const data = event.data;
+      if (data && data.type === 'offer' && data.participantId && data.offer) {
+        handleParticipantOffer(sessionId, data.participantId, data.offer);
+      }
+    };
+    
+    // Also check localStorage periodically for offers
+    const checkLocalStorageForOffers = () => {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(`telao-offer-${sessionId}`)) {
+            try {
+              const offerData = localStorage.getItem(key);
+              if (offerData) {
+                const data = JSON.parse(offerData);
+                if (data && data.type === 'offer' && data.participantId && data.offer) {
+                  handleParticipantOffer(sessionId, data.participantId, data.offer);
+                  localStorage.removeItem(key);
+                }
+              }
+            } catch (e) {
+              console.warn("Error processing offer from localStorage:", e);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Error checking localStorage for offers:", e);
+      }
+    };
+    
+    const offerCheckInterval = setInterval(checkLocalStorageForOffers, 2000);
+    
+    // Clean up after 1 hour - should be called manually earlier
+    setTimeout(() => {
+      clearInterval(offerCheckInterval);
+      try { offerChannel.close(); } catch (e) {}
+    }, 3600000);
+    
+    // Listen for ICE candidates from participants
+    const candidateChannel = new BroadcastChannel(`telao-candidate-${sessionId}`);
+    candidateChannel.onmessage = async (event) => {
+      const data = event.data;
+      if (data && data.type === 'ice-candidate' && data.participantId && data.candidate) {
+        handleParticipantICECandidate(sessionId, data.participantId, data.candidate);
+      }
+    };
+    
+    console.log("Host WebRTC initialized successfully");
+    return true;
+  } catch (e) {
+    console.error("Error initializing host WebRTC:", e);
+    return false;
+  }
+};
+
+// Handle an offer from a participant
+const handleParticipantOffer = async (sessionId: string, participantId: string, offer: RTCSessionDescriptionInit) => {
+  console.log(`Handling offer from participant ${participantId}`);
+  
+  try {
+    // Check if we already have a connection for this participant
+    let peerConnection = (window as any)._peerConnections?.[participantId];
+    
+    if (!peerConnection) {
+      peerConnection = new RTCPeerConnection({
+        iceServers: getIceServers(),
+        iceTransportPolicy: 'all',
+        iceCandidatePoolSize: 10,
+        rtcpMuxPolicy: 'require',
+        bundlePolicy: 'max-bundle'
+      });
+      
+      // Store the participant ID with the connection
+      peerConnection._participantId = participantId;
+      peerConnection.participantId = participantId;
+      
+      // Set up track handling
+      peerConnection.ontrack = (event) => {
+        console.log(`Received track from participant ${participantId}:`, event.track.kind);
+        
+        // Notify via the global callback
+        if (participantTrackCallbacks['global']) {
+          participantTrackCallbacks['global'](participantId, event);
+        }
+      };
+      
+      // Handle ICE candidates
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log(`Host generated ICE candidate for ${participantId}`);
+          
+          // Send to participant via BroadcastChannel
+          try {
+            const candidateChannel = new BroadcastChannel(`telao-candidate-${sessionId}-${participantId}`);
+            candidateChannel.postMessage({
+              type: 'ice-candidate',
+              candidate: event.candidate,
+              timestamp: Date.now()
+            });
+            setTimeout(() => candidateChannel.close(), 500);
+          } catch (e) {
+            console.warn("Error sending ICE candidate via BroadcastChannel:", e);
+          }
+          
+          // Also use localStorage as fallback
+          try {
+            const candidateKey = `telao-ice-${sessionId}-${participantId}-host-${Date.now()}`;
+            localStorage.setItem(candidateKey, JSON.stringify({
+              type: 'ice-candidate',
+              candidate: event.candidate,
+              timestamp: Date.now()
+            }));
+            
+            // Clean up after 30 seconds
+            setTimeout(() => {
+              try { localStorage.removeItem(candidateKey); } catch (e) {}
+            }, 30000);
+          } catch (e) {
+            console.warn("Error sending ICE candidate via localStorage:", e);
+          }
+        }
+      };
+      
+      // Set up connection state monitoring
+      peerConnection.onconnectionstatechange = () => {
+        console.log(`Connection state for ${participantId}: ${peerConnection.connectionState}`);
+      };
+      
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log(`ICE connection state for ${participantId}: ${peerConnection.iceConnectionState}`);
+        
+        if (peerConnection.iceConnectionState === 'failed') {
+          console.log(`Attempting to restart ICE for ${participantId}`);
+          peerConnection.restartIce();
+        }
+      };
+      
+      // Store the connection
+      (window as any)._peerConnections = (window as any)._peerConnections || {};
+      (window as any)._peerConnections[participantId] = peerConnection;
+    }
+    
+    // Set the remote description (the offer)
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    
+    // Create answer
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    
+    // Send answer to participant via BroadcastChannel
+    try {
+      const answerChannel = new BroadcastChannel(`telao-answer-${sessionId}-${participantId}`);
+      answerChannel.postMessage({
+        type: 'answer',
+        answer: peerConnection.localDescription,
+        timestamp: Date.now()
+      });
+      setTimeout(() => answerChannel.close(), 500);
+    } catch (e) {
+      console.warn("Error sending answer via BroadcastChannel:", e);
+    }
+    
+    // Also use localStorage as fallback
+    try {
+      const answerKey = `telao-answer-${sessionId}-${participantId}`;
+      localStorage.setItem(answerKey, JSON.stringify({
+        type: 'answer',
+        answer: peerConnection.localDescription,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      console.warn("Error sending answer via localStorage:", e);
+    }
+    
+    console.log(`Successfully processed offer from participant ${participantId}`);
+  } catch (error) {
+    console.error(`Error handling offer from participant ${participantId}:`, error);
+  }
+};
+
+// Handle an ICE candidate from a participant
+const handleParticipantICECandidate = async (sessionId: string, participantId: string, candidate: RTCIceCandidateInit) => {
+  try {
+    // Get the peer connection for this participant
+    const peerConnection = (window as any)._peerConnections?.[participantId];
+    
+    if (peerConnection) {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      console.log(`Added ICE candidate from participant ${participantId}`);
+    } else {
+      console.warn(`No peer connection found for participant ${participantId}`);
+    }
+  } catch (error) {
+    console.error(`Error handling ICE candidate from participant ${participantId}:`, error);
+  }
+};
+
+// Clean up WebRTC connections
+export const cleanupWebRTC = (participantId?: string) => {
+  try {
+    if (participantId) {
+      // Clean up a specific participant connection
+      const peerConnection = (window as any)._peerConnections?.[participantId];
+      if (peerConnection) {
+        try {
+          peerConnection.close();
+          delete (window as any)._peerConnections[participantId];
+          console.log(`Cleaned up WebRTC connection for participant ${participantId}`);
+        } catch (e) {
+          console.warn(`Error cleaning up connection for ${participantId}:`, e);
+        }
+      }
+    } else {
+      // Clean up all connections
+      if ((window as any)._peerConnections) {
+        Object.keys((window as any)._peerConnections).forEach(id => {
+          try {
+            const pc = (window as any)._peerConnections[id];
+            if (pc && typeof pc.close === 'function') {
+              pc.close();
+            }
+          } catch (e) {
+            console.warn(`Error closing peer connection ${id}:`, e);
+          }
+        });
+        (window as any)._peerConnections = {};
+        console.log("Cleaned up all WebRTC connections");
+      }
+    }
+    return true;
+  } catch (e) {
+    console.error("Error in cleanupWebRTC:", e);
+    return false;
   }
 };
