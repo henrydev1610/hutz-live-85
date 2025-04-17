@@ -72,6 +72,8 @@ export const initParticipantWebRTC = async (
   const videoTrack = localStream.getVideoTracks()[0];
   if (videoTrack) {
     console.log("Got local video track for WebRTC");
+    // Store local stream
+    setLocalStream(localStream);
   }
 };
 
@@ -127,10 +129,15 @@ export const createPeerConnection = async (
   // Add local tracks to the connection if available
   if (localStream) {
     localStream.getTracks().forEach(track => {
-      if (!pc.getTransceivers().some(t => 
-        t.sender.track && t.sender.track.kind === track.kind
-      )) {
-        pc.addTrack(track, localStream);
+      console.log(`Adding ${track.kind} track to peer connection for ${remoteId}`);
+      try {
+        if (!pc.getTransceivers().some(t => 
+          t.sender.track && t.sender.track.kind === track.kind
+        )) {
+          pc.addTrack(track, localStream);
+        }
+      } catch (err) {
+        console.error(`Error adding ${track.kind} track:`, err);
       }
     });
   }
@@ -138,7 +145,7 @@ export const createPeerConnection = async (
   // Handle ICE candidates
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      console.log("ICE candidate generated:", event.candidate.protocol);
+      console.log(`ICE candidate generated for ${remoteId}:`, event.candidate.protocol);
       sendSignalingMessage({
         type: 'ice-candidate',
         sender: 'host',
@@ -167,7 +174,8 @@ export const createPeerConnection = async (
         break;
       case 'failed':
         console.error('ICE connection failed');
-        // We could implement a reconnection strategy here
+        // Implement a reconnection strategy
+        attemptReconnection(remoteId, localStream, onTrack);
         break;
       case 'disconnected':
         console.warn('ICE connection disconnected, may reconnect automatically');
@@ -181,11 +189,32 @@ export const createPeerConnection = async (
   // Handle connection state changes
   pc.onconnectionstatechange = () => {
     console.log(`Connection state with ${remoteId}: ${pc.connectionState}`);
+    
+    // If connection fails, attempt to reconnect
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      attemptReconnection(remoteId, localStream, onTrack);
+    }
   };
   
   // Handle tracks from remote peer
   if (onTrack) {
-    pc.ontrack = onTrack;
+    pc.ontrack = (event) => {
+      console.log(`Received ${event.track.kind} track from ${remoteId}, readyState: ${event.track.readyState}`);
+      onTrack(event);
+      
+      // Monitor track ended events
+      event.track.onended = () => {
+        console.log(`Track ${event.track.kind} from ${remoteId} ended`);
+      };
+      
+      event.track.onmute = () => {
+        console.log(`Track ${event.track.kind} from ${remoteId} muted`);
+      };
+      
+      event.track.onunmute = () => {
+        console.log(`Track ${event.track.kind} from ${remoteId} unmuted`);
+      };
+    };
   }
   
   // Store the connection
@@ -195,6 +224,59 @@ export const createPeerConnection = async (
   };
   
   return pc;
+};
+
+// Attempt to reconnect a failed connection
+const attemptReconnection = (
+  remoteId: string,
+  localStream?: MediaStream,
+  onTrack?: (event: RTCTrackEvent) => void
+) => {
+  console.log(`Attempting to reconnect with ${remoteId}`);
+  
+  // Clean up the existing connection
+  if (peerConnections[remoteId]) {
+    const oldConnection = peerConnections[remoteId].connection;
+    oldConnection.close();
+    delete peerConnections[remoteId];
+  }
+  
+  // Wait a moment before trying to reconnect
+  setTimeout(async () => {
+    try {
+      console.log(`Creating new connection for ${remoteId}`);
+      await createPeerConnection(remoteId, localStream, onTrack);
+      
+      // For host, create and send a new offer
+      if (onTrack) { // Host has onTrack handler
+        const pc = peerConnections[remoteId]?.connection;
+        if (pc) {
+          const offer = await pc.createOffer({
+            offerToReceiveVideo: true,
+            iceRestart: true
+          });
+          
+          // Set specific video bandwidth and parameters in SDP
+          if (offer.sdp) {
+            offer.sdp = setSdpBitrateAndParams(offer.sdp, 1500, true);
+          }
+          
+          await pc.setLocalDescription(offer);
+          
+          sendSignalingMessage({
+            type: 'offer',
+            sender: 'host',
+            receiver: remoteId,
+            payload: pc.localDescription,
+            sessionId: '', // Will be filled by the signaling channel
+            timestamp: Date.now(),
+          });
+        }
+      }
+    } catch (error) {
+      console.error(`Reconnection attempt with ${remoteId} failed:`, error);
+    }
+  }, 1000);
 };
 
 // Handle WebRTC signaling through different channels
@@ -209,14 +291,14 @@ const setupSignalingChannel = (
     
     channel.onmessage = async (event) => {
       const message: WebRTCMessage = event.data;
-      await handleSignalingMessage(message, role, peerId, localStream);
+      await handleSignalingMessage(message, role, peerId, sessionId);
     };
     
     // Set up Supabase Realtime as backup
     const supabaseChannel = supabase.channel(`webrtc-${sessionId}`)
       .on('broadcast', { event: 'message' }, async (payload) => {
         const message: WebRTCMessage = payload.payload;
-        await handleSignalingMessage(message, role, peerId, localStream);
+        await handleSignalingMessage(message, role, peerId, sessionId);
       })
       .subscribe();
       
@@ -234,9 +316,9 @@ const handleSignalingMessage = async (
   message: WebRTCMessage, 
   role: 'host' | 'participant',
   peerId: string,
-  localStream?: MediaStream
+  sessionId: string
 ) => {
-  const { type, sender, receiver, payload, sessionId } = message;
+  const { type, sender, receiver, payload } = message;
   
   // Filter messages not intended for this peer
   if (receiver && receiver !== peerId) return;
@@ -320,6 +402,9 @@ const handleSignalingMessage = async (
       // Received offer from host
       console.log("Received full offer from host");
       try {
+        // Clean up any existing connection first
+        cleanupWebRTC();
+        
         const pc = new RTCPeerConnection(peerConnectionConfig as RTCConfiguration);
         
         // Configure to prefer H.264 codec
@@ -351,9 +436,17 @@ const handleSignalingMessage = async (
         
         // Add local tracks
         if (localStream) {
+          console.log("Adding local stream tracks to peer connection");
           localStream.getTracks().forEach(track => {
-            pc.addTrack(track, localStream);
+            try {
+              console.log(`Adding ${track.kind} track to participant connection`);
+              pc.addTrack(track, localStream);
+            } catch (err) {
+              console.error(`Error adding track:`, err);
+            }
           });
+        } else {
+          console.warn("No local stream available for participant connection");
         }
         
         // Handle ICE candidates
@@ -374,6 +467,15 @@ const handleSignalingMessage = async (
         // Monitor ICE connection state
         pc.oniceconnectionstatechange = () => {
           console.log(`Participant ICE state: ${pc.iceConnectionState}`);
+          
+          if (pc.iceConnectionState === 'failed') {
+            console.error("Participant ICE connection failed, attempting recovery");
+            
+            // Try to restart ICE
+            if (pc.restartIce) {
+              pc.restartIce();
+            }
+          }
         };
         
         // Set remote description (the offer)
@@ -430,7 +532,7 @@ const setSdpBitrateAndParams = (sdp: string, bitrate: number, preferH264: boolea
   let modifiedSdp = sdp;
   
   // Set bitrate
-  const videoSection = modifiedSdp.split('m=video')[1].split('m=')[0];
+  const videoSection = modifiedSdp.split('m=video')[1]?.split('m=')[0];
   if (videoSection) {
     const lines = modifiedSdp.split('\r\n');
     const videoLineIndex = lines.findIndex(line => line.startsWith('m=video'));
@@ -471,6 +573,16 @@ const setSdpBitrateAndParams = (sdp: string, bitrate: number, preferH264: boolea
             mLineParts.splice(3, payloadTypes.length, ...newPayloadTypes);
             lines[videoLineIndex] = mLineParts.join(' ');
           }
+        }
+      }
+      
+      // Add specific parameters for better video quality
+      const fmtpLineIndex = lines.findIndex(line => line.includes('a=fmtp:') && line.includes('profile-level-id'));
+      if (fmtpLineIndex >= 0) {
+        // Already has fmtp line, modify it
+        const currentLine = lines[fmtpLineIndex];
+        if (!currentLine.includes('packetization-mode')) {
+          lines[fmtpLineIndex] = `${currentLine};packetization-mode=1`;
         }
       }
       
@@ -539,3 +651,4 @@ let localStream: MediaStream | undefined;
 export const setLocalStream = (stream: MediaStream) => {
   localStream = stream;
 };
+
