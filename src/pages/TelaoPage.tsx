@@ -190,18 +190,15 @@ const TelaoPage = () => {
       initHostWebRTC(sessionId);
       
       // Set up callback for when we receive tracks from participants
-      setOnParticipantTrackCallback((participantId, event) => {
-        console.log(`Received ${event.track.kind} track from participant ${participantId}`);
+      setOnParticipantTrackCallback((participantId, stream) => {
+        console.log(`Received ${stream.getTracks()[0].kind} track from participant ${participantId}`);
         
-        if (event.track.kind === 'video') {
-          const [videoTrack] = event.streams;
-          if (videoTrack) {
-            console.log("Setting up stream for participant", participantId);
-            setParticipantStreams(prev => ({
-              ...prev,
-              [participantId]: videoTrack
-            }));
-          }
+        if (stream.getTracks()[0].kind === 'video') {
+          console.log("Setting up stream for participant", participantId);
+          setParticipantStreams(prev => ({
+            ...prev,
+            [participantId]: stream
+          }));
         }
       });
       
