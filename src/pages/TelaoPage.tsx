@@ -1,319 +1,1447 @@
-import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/hooks/use-toast';
-import { Camera, CheckCircle, Loader2, XCircle } from 'lucide-react';
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
-import { initHostWebRTC, setOnParticipantTrackCallback, cleanupWebRTC } from '@/utils/webrtc';
-import { QRCode } from 'lucide-react';
-import QRCodeComponent from 'qrcode.react';
-import { supabase } from '@/integrations/supabase/client';
-import { Switch } from "@/components/ui/switch"
-import { useHotkeys } from 'react-hotkeys-hook';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Textarea } from "@/components/ui/textarea"
-import { Slider } from "@/components/ui/slider"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { toast } from "@/hooks/use-toast"
-import { useMediaQuery } from 'usehooks-ts'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet"
-import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu"
-import { MoreVertical } from "lucide-react"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Separator } from "@/components/ui/separator"
-import ParticipantGrid from '@/components/live/ParticipantGrid';
-import { Copy, Edit, Share2, UserPlus, Users2 } from 'lucide-react';
-import { generateRandomName } from '@/utils/name-generator';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { useSearchParams } from 'react-router-dom';
-import { InputEmoji } from 'react-input-emoji';
-import { Send } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
-
-interface Participant {
-  id: string;
-  name: string;
-  active: boolean;
-  selected: boolean;
-  hasVideo?: boolean;
-  lastActive?: number;
-}
+import { useState, useEffect, useRef } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/ui/use-toast";
+import { QrCode, MonitorPlay, Users, Film, User, Image, Palette, Check, ExternalLink, X, StopCircle, Trash2, Type, Minus, Plus } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import QRCode from 'qrcode';
+import { initHostWebRTC, setOnParticipantTrackCallback, getParticipantConnection, cleanupWebRTC } from '@/utils/webrtc';
+import WebRTCVideo from '@/components/telao/WebRTCVideo';
 
 const TelaoPage = () => {
-  const { sessionId } = useParams<{ sessionId: string }>();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [newSession, setNewSession] = useState(false);
-  const [sessionName, setSessionName] = useState<string>('');
-  const [sessionDescription, setSessionDescription] = useState<string>('');
-  const [sessionDate, setSessionDate] = useState<Date | null>(null);
-  const [sessionTime, setSessionTime] = useState<string>('');
-  const [sessionCategory, setSessionCategory] = useState<string>('');
-  const [sessionTags, setSessionTags] = useState<string[]>([]);
-  const [sessionVisibility, setSessionVisibility] = useState<'public' | 'private'>('public');
-  const [sessionPrice, setSessionPrice] = useState<number>(0);
-  const [sessionCurrency, setSessionCurrency] = useState<string>('BRL');
-  const [sessionLanguage, setSessionLanguage] = useState<string>('pt-BR');
-  const [sessionLocation, setSessionLocation] = useState<string>('');
-  const [sessionMaxParticipants, setSessionMaxParticipants] = useState<number>(100);
-  const [sessionAgeRestriction, setSessionAgeRestriction] = useState<number>(0);
-  const [sessionRecordingEnabled, setSessionRecordingEnabled] = useState<boolean>(false);
-  const [sessionChatEnabled, setSessionChatEnabled] = useState<boolean>(true);
-  const [sessionQnaEnabled, setSessionQnaEnabled] = useState<boolean>(true);
-  const [sessionPollsEnabled, setSessionPollsEnabled] = useState<boolean>(true);
-  const [sessionReactionsEnabled, setSessionReactionsEnabled] = useState<boolean>(true);
-  const [sessionFilesEnabled, setSessionFilesEnabled] = useState<boolean>(true);
-  const [sessionWhiteboardEnabled, setSessionWhiteboardEnabled] = useState<boolean>(true);
-  const [sessionLayout, setSessionLayout] = useState<'grid' | 'spotlight' | 'cinema'>('grid');
-  const [sessionTheme, setSessionTheme] = useState<'light' | 'dark'>('light');
-  const [sessionWatermark, setSessionWatermark] = useState<string>('');
-  const [sessionLogo, setSessionLogo] = useState<string>('');
-  const [sessionCustomCss, setSessionCustomCss] = useState<string>('');
-  const [sessionCustomJs, setSessionCustomJs] = useState<string>('');
-  const [sessionAnalyticsEnabled, setSessionAnalyticsEnabled] = useState<boolean>(false);
-  const [sessionAnalyticsId, setSessionAnalyticsId] = useState<string>('');
-	const [participants, setParticipants] = useState<Participant[]>([]);
-  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
-  const [qrCodeUrl, setQrCodeUrl] = useState('');
-  const [cameraActive, setCameraActive] = useState(false);
-  const [sharingScreen, setSharingScreen] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showChat, setShowChat] = useState(false);
-  const [chatMessages, setChatMessages] = useState<{ id: string; sender: string; message: string; timestamp: Date }[]>([]);
-  const [currentChatMessage, setCurrentChatMessage] = useState('');
-  const [isLive, setIsLive] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [showParticipants, setShowParticipants] = useState(true);
-  const [showQna, setShowQna] = useState(false);
-  const [showPolls, setShowPolls] = useState(false);
-  const [showFiles, setShowFiles] = useState(false);
-  const [showWhiteboard, setShowWhiteboard] = useState(false);
-  const [showReactions, setShowReactions] = useState(false);
-  const [showAnalytics, setShowAnalytics] = useState(false);
-  const [showCustomization, setShowCustomization] = useState(false);
-  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
-  const [showIntegrations, setShowIntegrations] = useState(false);
-  const [showBranding, setShowBranding] = useState(false);
-  const [showLayoutSettings, setShowLayoutSettings] = useState(false);
-  const [showThemeSettings, setShowThemeSettings] = useState(false);
-  const [showWatermarkSettings, setShowWatermarkSettings] = useState(false);
-  const [showLogoSettings, setShowLogoSettings] = useState(false);
-  const [showCustomCssSettings, setShowCustomCssSettings] = useState(false);
-  const [showCustomJsSettings, setShowCustomJsSettings] = useState(false);
-  const [showAnalyticsSettings, setShowAnalyticsSettings] = useState(false);
-  const [showAnalyticsIdSettings, setShowAnalyticsIdSettings] = useState(false);
-  const [showSessionNameSettings, setShowSessionNameSettings] = useState(false);
-  const [showSessionDescriptionSettings, setShowSessionDescriptionSettings] = useState(false);
-  const [showSessionDateSettings, setShowSessionDateSettings] = useState(false);
-  const [showSessionTimeSettings, setShowSessionTimeSettings] = useState(false);
-  const [showSessionCategorySettings, setShowSessionCategorySettings] = useState(false);
-  const [showSessionTagsSettings, setShowSessionTagsSettings] = useState(false);
-  const [showSessionVisibilitySettings, setShowSessionVisibilitySettings] = useState(false);
-  const [showSessionPriceSettings, setShowSessionPriceSettings] = useState(false);
-  const [showSessionCurrencySettings, setShowSessionCurrencySettings] = useState(false);
-  const [showSessionLanguageSettings, setShowSessionLanguageSettings] = useState(false);
-  const [showSessionLocationSettings, setShowSessionLocationSettings] = useState(false);
-  const [showSessionMaxParticipantsSettings, setShowSessionMaxParticipantsSettings] = useState(false);
-  const [showSessionAgeRestrictionSettings, setShowSessionAgeRestrictionSettings] = useState(false);
-  const [showSessionRecordingEnabledSettings, setShowSessionRecordingEnabledSettings] = useState(false);
-  const [showSessionChatEnabledSettings, setShowSessionChatEnabledSettings] = useState(false);
-  const [showSessionQnaEnabledSettings, setShowSessionQnaEnabledSettings] = useState(false);
-  const [showSessionPollsEnabledSettings, setShowSessionPollsEnabledSettings] = useState(false);
-  const [showSessionReactionsEnabledSettings, setShowSessionReactionsEnabledSettings] = useState(false);
-  const [showSessionFilesEnabledSettings, setShowSessionFilesEnabledSettings] = useState(false);
-  const [showSessionWhiteboardEnabledSettings, setShowSessionWhiteboardEnabledSettings] = useState(false);
-  const [isSmallScreen] = useMediaQuery('(max-width: 768px)')
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isSessionOwner, setIsSessionOwner] = useState(false);
-  const [sessionCreatedAt, setSessionCreatedAt] = useState<Date | null>(null);
-  const [sessionUpdatedAt, setSessionUpdatedAt] = useState<Date | null>(null);
-  const [sessionStartedAt, setSessionStartedAt] = useState<Date | null>(null);
-  const [sessionEndedAt, setSessionEndedAt] = useState<Date | null>(null);
-  const [sessionViews, setSessionViews] = useState<number>(0);
-  const [sessionLikes, setSessionLikes] = useState<number>(0);
-  const [sessionShares, setSessionShares] = useState<number>(0);
-  const [sessionComments, setSessionComments] = useState<number>(0);
-  const [sessionDownloads, setSessionDownloads] = useState<number>(0);
-  const [sessionRating, setSessionRating] = useState<number>(0);
-  const [sessionRatingCount, setSessionRatingCount] = useState<number>(0);
-  const [sessionRevenue, setSessionRevenue] = useState<number>(0);
-  const [sessionRevenueCurrency, setSessionRevenueCurrency] = useState<string>('BRL');
-  const [sessionParticipantsCount, setSessionParticipantsCount] = useState<number>(0);
-  const [sessionMessagesCount, setSessionMessagesCount] = useState<number>(0);
-  const [sessionQuestionsCount, setSessionQuestionsCount] = useState<number>(0);
-  const [sessionPollsCount, setSessionPollsCount] = useState<number>(0);
-  const [sessionFilesCount, setSessionFilesCount] = useState<number>(0);
-  const [sessionReactionsCount, setSessionReactionsCount] = useState<number>(0);
-  const [sessionWhiteboardCount, setSessionWhiteboardCount] = useState<number>(0);
-  const [sessionCustomData, setSessionCustomData] = useState<any>(null);
-  const [sessionCustomDataSchema, setSessionCustomDataSchema] = useState<any>(null);
-  const [sessionCustomDataUiSchema, setSessionCustomDataUiSchema] = useState<any>(null);
-  const [sessionCustomDataForm, setSessionCustomDataForm] = useState<any>(null);
-  const [sessionCustomDataFormSchema, setSessionCustomDataFormSchema] = useState<any>(null);
-  const [sessionCustomDataFormUiSchema, setSessionCustomDataFormUiSchema] = useState<any>(null);
-  const [sessionCustomDataFormValue, setSessionCustomDataFormValue] = useState<any>(null);
-  const [sessionCustomDataFormError, setSessionCustomDataFormError] = useState<any>(null);
-  const [sessionCustomDataFormTouched, setSessionCustomDataFormTouched] = useState<any>(null);
-  const [sessionCustomDataFormValid, setSessionCustomDataFormValid] = useState<boolean>(false);
-  const [sessionCustomDataFormDirty, setSessionCustomDataFormDirty] = useState<boolean>(false);
-  const [sessionCustomDataFormSubmitting, setSessionCustomDataFormSubmitting] = useState<boolean>(false);
-  const [sessionCustomDataFormSubmitted, setSessionCustomDataFormSubmitted] = useState<boolean>(false);
-  const [sessionCustomDataFormSubmitError, setSessionCustomDataFormSubmitError] = useState<any>(null);
-  const [sessionCustomDataFormSubmitSuccess, setSessionCustomDataFormSubmitSuccess] = useState<boolean>(false);
-  const [sessionCustomDataFormSubmitLoading, setSessionCustomDataFormSubmitLoading] = useState<boolean>(false);
-  const [sessionCustomDataFormSubmitButtonText, setSessionCustomDataFormSubmitButtonText] = useState<string>('Salvar');
-  const [sessionCustomDataFormCancelButtonText, setSessionCustomDataFormCancelButtonText] = useState<string>('Cancelar');
-  const [sessionCustomDataFormSubmitButtonIcon, setSessionCustomDataFormSubmitButtonIcon] = useState<any>(null);
-  const [sessionCustomDataFormCancelButtonIcon, setSessionCustomDataFormCancelButtonIcon] = useState<any>(null);
-  const [sessionCustomDataFormSubmitButtonClassName, setSessionCustomDataFormSubmitButtonClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonClassName, setSessionCustomDataFormCancelButtonClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonDisabled, setSessionCustomDataFormSubmitButtonDisabled] = useState<boolean>(false);
-  const [sessionCustomDataFormCancelButtonDisabled, setSessionCustomDataFormCancelButtonDisabled] = useState<boolean>(false);
-  const [sessionCustomDataFormSubmitButtonLoading, setSessionCustomDataFormSubmitButtonLoading] = useState<boolean>(false);
-  const [sessionCustomDataFormCancelButtonLoading, setSessionCustomDataFormCancelButtonLoading] = useState<boolean>(false);
-  const [sessionCustomDataFormSubmitButtonLoadingIcon, setSessionCustomDataFormSubmitButtonLoadingIcon] = useState<any>(null);
-  const [sessionCustomDataFormCancelButtonLoadingIcon, setSessionCustomDataFormCancelButtonLoadingIcon] = useState<any>(null);
-  const [sessionCustomDataFormSubmitButtonLoadingText, setSessionCustomDataFormSubmitButtonLoadingText] = useState<string>('Salvando...');
-  const [sessionCustomDataFormCancelButtonLoadingText, setSessionCustomDataFormCancelButtonLoadingText] = useState<string>('Cancelando...');
-  const [sessionCustomDataFormSubmitButtonLoadingClassName, setSessionCustomDataFormSubmitButtonLoadingClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingClassName, setSessionCustomDataFormCancelButtonLoadingClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingDisabled, setSessionCustomDataFormSubmitButtonLoadingDisabled] = useState<boolean>(false);
-  const [sessionCustomDataFormCancelButtonLoadingDisabled, setSessionCustomDataFormCancelButtonLoadingDisabled] = useState<boolean>(false);
-  const [sessionCustomDataFormSubmitButtonLoadingIconClassName, setSessionCustomDataFormSubmitButtonLoadingIconClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconClassName, setSessionCustomDataFormCancelButtonLoadingIconClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpin, setSessionCustomDataFormSubmitButtonLoadingIconSpin] = useState<boolean>(true);
-  const [sessionCustomDataFormCancelButtonLoadingIconSpin, setSessionCustomDataFormCancelButtonLoadingIconSpin] = useState<boolean>(true);
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinClassName, setSessionCustomDataFormSubmitButtonLoadingIconSpinClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinClassName, setSessionCustomDataFormCancelButtonLoadingIconSpinClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinDuration, setSessionCustomDataFormSubmitButtonLoadingIconSpinDuration] = useState<number>(1000);
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinDuration, setSessionCustomDataFormCancelButtonLoadingIconSpinDuration] = useState<number>(1000);
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinEasing, setSessionCustomDataFormSubmitButtonLoadingIconSpinEasing] = useState<string>('linear');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinEasing, setSessionCustomDataFormCancelButtonLoadingIconSpinEasing] = useState<string>('linear');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinIterations, setSessionCustomDataFormSubmitButtonLoadingIconSpinIterations] = useState<number>(0);
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinIterations, setSessionCustomDataFormCancelButtonLoadingIconSpinIterations] = useState<number>(0);
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinDirection, setSessionCustomDataFormSubmitButtonLoadingIconSpinDirection] = useState<string>('normal');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinDirection, setSessionCustomDataFormCancelButtonLoadingIconSpinDirection] = useState<string>('normal');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinFillMode, setSessionCustomDataFormSubmitButtonLoadingIconSpinFillMode] = useState<string>('forwards');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinFillMode, setSessionCustomDataFormCancelButtonLoadingIconSpinFillMode] = useState<string>('forwards');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinDelay, setSessionCustomDataFormSubmitButtonLoadingIconSpinDelay] = useState<number>(0);
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinDelay, setSessionCustomDataFormCancelButtonLoadingIconSpinDelay] = useState<number>(0);
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimation, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimation] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimation, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimation] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDuration, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDuration] = useState<number>(1000);
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDuration, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDuration] = useState<number>(1000);
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationEasing, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationEasing] = useState<string>('linear');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationEasing, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationEasing] = useState<string>('linear');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterations, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterations] = useState<number>(0);
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterations, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterations] = useState<number>(0);
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDirection, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDirection] = useState<string>('normal');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDirection, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDirection] = useState<string>('normal');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationFillMode, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationFillMode] = useState<string>('forwards');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationFillMode, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationFillMode] = useState<string>('forwards');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelay, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelay] = useState<number>(0);
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelay, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelay] = useState<number>(0);
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationClassName, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationClassName, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassName, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassName, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationEasingClassName, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationEasingClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationEasingClassName, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationEasingClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassName, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassName, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDirectionClassName, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDirectionClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDirectionClassName, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDirectionClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationFillModeClassName, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationFillModeClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationFillModeClassName, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationFillModeClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassName, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassName, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnit] = useState<string>('ms');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnit] = useState<string>('ms');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnit] = useState<string>('times');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnit] = useState<string>('times');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnit] = useState<string>('ms');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnit] = useState<string>('ms');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassName, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassName, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassName, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassName, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassName, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassName] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassName, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassName] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationIterationsClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit, setSessionCustomDataFormCancelButtonLoadingIconSpinAnimationDelayClassNameUnitClassNameUnitUnitUnitUnitUnitUnitUnitUnit] = useState<string>('');
-  const [sessionCustomDataFormSubmitButtonLoadingIconSpinAnimationDurationClassNameUnitClassNameUnit
+  const [participantCount, setParticipantCount] = useState(4);
+  const [qrCodeGenerated, setQrCodeGenerated] = useState(false);
+  const [qrCodeURL, setQrCodeURL] = useState("");
+  const [qrCodeVisible, setQrCodeVisible] = useState(false);
+  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean, frameData?: string}[]>([]);
+  const [selectedBackgroundColor, setSelectedBackgroundColor] = useState("#000000");
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
+  const [finalAction, setFinalAction] = useState<'none' | 'image' | 'coupon'>('image');
+  const [finalActionLink, setFinalActionLink] = useState("");
+  const [finalActionImage, setFinalActionImage] = useState<string | null>(null);
+  const [finalActionCoupon, setFinalActionCouponCode] = useState("");
+  const [qrCodeSvg, setQrCodeSvg] = useState<string | null>(null);
+  const { toast } = useToast();
+  
+  const [selectedFont, setSelectedFont] = useState("sans-serif");
+  const [selectedTextColor, setSelectedTextColor] = useState("#FFFFFF");
+  const [qrDescriptionFontSize, setQrDescriptionFontSize] = useState(16);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const qrCodeRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+  const [transmissionOpen, setTransmissionOpen] = useState(false);
+  const [finalActionOpen, setFinalActionOpen] = useState(false);
+  const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
+  const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [broadcastChannel, setBroadcastChannel] = useState<BroadcastChannel | null>(null);
+  const [participantStreams, setParticipantStreams] = useState<{[key: string]: MediaStream}>({});
+  
+  const [qrCodePosition, setQrCodePosition] = useState({ 
+    x: 20, 
+    y: 20, 
+    width: 80, 
+    height: 80 
+  });
+
+  const [qrDescriptionPosition, setQrDescriptionPosition] = useState({
+    x: 20,
+    y: 110,
+    width: 200,
+    height: 60
+  });
+
+  const [isDraggingQR, setIsDraggingQR] = useState(false);
+  const [isDraggingText, setIsDraggingText] = useState(false);
+  const [resizeHandleQR, setResizeHandleQR] = useState<string | null>(null);
+  const [resizeHandleText, setResizeHandleText] = useState<string | null>(null);
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+  const [startSize, setStartSize] = useState({ width: 0, height: 0 });
+  
+  const transmissionWindowRef = useRef<Window | null>(null);
+  const [qrCodeDescription, setQrCodeDescription] = useState("Escaneie o QR Code para participar");
+
+  const backgroundColors = [
+    '#000000', '#0F172A', '#18181B', '#292524', '#1E1E1E', '#1A1A1A',
+    '#1F2937', '#374151', '#4B5563', '#6B7280', '#9CA3AF',
+    '#111827', '#1E293B', '#334155', '#475569', '#64748B',
+    '#7F1D1D', '#991B1B', '#B91C1C', '#DC2626', '#EF4444',
+    '#14532D', '#166534', '#15803D', '#16A34A', '#22C55E',
+    '#0C4A6E', '#0E7490', '#0891B2', '#06B6D4', '#22D3EE'
+  ];
+
+  const fontOptions = [
+    { name: 'Sans-serif', value: 'sans-serif' },
+    { name: 'Serif', value: 'serif' },
+    { name: 'Monospace', value: 'monospace' },
+    { name: 'Cursive', value: 'cursive' },
+    { name: 'Fantasy', value: 'fantasy' },
+    { name: 'Arial', value: 'Arial, sans-serif' },
+    { name: 'Verdana', value: 'Verdana, sans-serif' },
+    { name: 'Tahoma', value: 'Tahoma, sans-serif' },
+    { name: 'Trebuchet MS', value: 'Trebuchet MS, sans-serif' },
+    { name: 'Georgia', value: 'Georgia, serif' },
+    { name: 'Garamond', value: 'Garamond, serif' },
+    { name: 'Courier New', value: 'Courier New, monospace' },
+    { name: 'Brush Script MT', value: 'Brush Script MT, cursive' },
+    { name: 'Comic Sans MS', value: 'Comic Sans MS, cursive' },
+    { name: 'Impact', value: 'Impact, fantasy' },
+    { name: 'Lucida Handwriting', value: 'Lucida Handwriting, cursive' },
+    { name: 'Lucida Console', value: 'Lucida Console, monospace' },
+    { name: 'Palatino', value: 'Palatino, serif' },
+    { name: 'Book Antiqua', value: 'Book Antiqua, serif' },
+    { name: 'Helvetica', value: 'Helvetica, sans-serif' },
+    { name: 'Times New Roman', value: 'Times New Roman, serif' },
+    { name: 'Arial Black', value: 'Arial Black, sans-serif' },
+    { name: 'Copperplate', value: 'Copperplate, fantasy' },
+    { name: 'Papyrus', value: 'Papyrus, fantasy' },
+    { name: 'Rockwell', value: 'Rockwell, serif' },
+    { name: 'Century Gothic', value: 'Century Gothic, sans-serif' },
+    { name: 'Calibri', value: 'Calibri, sans-serif' },
+    { name: 'Cambria', value: 'Cambria, serif' },
+    { name: 'Consolas', value: 'Consolas, monospace' },
+    { name: 'Franklin Gothic', value: 'Franklin Gothic, sans-serif' }
+  ];
+
+  const textColors = [
+    '#FFFFFF', '#F8FAFC', '#F1F5F9', '#E2E8F0', '#CBD5E1', 
+    '#94A3B8', '#64748B', '#475569', '#334155', '#1E293B', 
+    '#0F172A', '#020617', '#000000', '#FEF2F2', '#FEE2E2', 
+    '#FECACA', '#FCA5A5', '#F87171', '#EF4444', '#DC2626', 
+    '#B91C1C', '#ECFDF5', '#D1FAE5', '#A7F3D0', '#6EE7B7', 
+    '#34D399', '#10B981', '#059669', '#047857', '#FFEDD5', 
+    '#FED7AA'
+  ];
+
+  useEffect(() => {
+    if (participantList.length === 0) {
+      const initialParticipants = Array(4).fill(0).map((_, i) => ({
+        id: `placeholder-${i}`,
+        name: `Participante ${i + 1}`,
+        active: false,
+        selected: false
+      }));
+      setParticipantList(initialParticipants);
+    }
+    
+    return () => {
+      if (broadcastChannel) {
+        broadcastChannel.close();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (sessionId) {
+      console.log("Setting up broadcast channel for session:", sessionId);
+      const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+      
+      channel.onmessage = (event) => {
+        const { data } = event;
+        console.log("Received broadcast message:", data.type, data.id);
+        
+        if (data.type === 'participant-join') {
+          console.log('Participant joined:', data.id);
+          handleParticipantJoin(data.id);
+        } 
+        else if (data.type === 'participant-leave') {
+          console.log('Participant left:', data.id);
+          setParticipantList(prev => 
+            prev.map(p => p.id === data.id ? { ...p, active: false } : p)
+          );
+          
+          // Clean up WebRTC for this participant
+          cleanupWebRTC(data.id);
+          setParticipantStreams(prev => {
+            const newStreams = {...prev};
+            delete newStreams[data.id];
+            return newStreams;
+          });
+        }
+        else if (data.type === 'participant-heartbeat') {
+          setParticipantList(prev => 
+            prev.map(p => p.id === data.id ? { ...p, active: true } : p)
+          );
+        }
+        else if (data.type === 'video-frame') {
+          setParticipantList(prev => {
+            return prev.map(p => {
+              if (p.id === data.id) {
+                return { ...p, frameData: data.frame, active: true };
+              }
+              return p;
+            });
+          });
+        }
+      };
+      
+      setBroadcastChannel(channel);
+      
+      // Initialize WebRTC for host
+      initHostWebRTC(sessionId);
+      
+      // Set up callback for when we receive tracks from participants
+      setOnParticipantTrackCallback((participantId, event) => {
+        console.log(`Received ${event.track.kind} track from participant ${participantId}`);
+        
+        if (event.track.kind === 'video') {
+          const [videoTrack] = event.streams;
+          if (videoTrack) {
+            console.log("Setting up stream for participant", participantId);
+            setParticipantStreams(prev => ({
+              ...prev,
+              [participantId]: videoTrack
+            }));
+          }
+        }
+      });
+      
+      // Also set up a localStorage listener as fallback
+      const checkLocalStorageJoins = setInterval(() => {
+        try {
+          const keys = Object.keys(localStorage);
+          const joinKeys = keys.filter(k => k.startsWith(`telao-join-${sessionId}`));
+          
+          joinKeys.forEach(key => {
+            try {
+              const data = JSON.parse(localStorage.getItem(key) || '{}');
+              if (data.type === 'participant-join' && data.id) {
+                console.log('Participant joined via localStorage:', data.id);
+                handleParticipantJoin(data.id);
+                localStorage.removeItem(key);
+              }
+            } catch (e) {
+              console.error('Error parsing localStorage join data:', e);
+            }
+          });
+        } catch (e) {
+          console.warn('Error checking localStorage for joins:', e);
+        }
+      }, 1000);
+      
+      return () => {
+        clearInterval(checkLocalStorageJoins);
+        if (channel) {
+          channel.close();
+        }
+        cleanupWebRTC(); // Clean up all WebRTC connections
+      };
+    }
+  }, [sessionId, participantCount, toast]);
+
+  useEffect(() => {
+    if (qrCodeGenerated && qrCodeURL) {
+      generateQRCode(qrCodeURL);
+    }
+  }, [qrCodeGenerated, qrCodeURL]);
+
+  useEffect(() => {
+    if (finalActionOpen && finalActionTimeLeft > 0) {
+      const timerId = window.setInterval(() => {
+        setFinalActionTimeLeft((prev) => prev - 1);
+      }, 1000);
+      
+      setFinalActionTimerId(timerId as unknown as number);
+      
+      return () => {
+        if (timerId) clearInterval(timerId);
+      };
+    } else if (finalActionTimeLeft <= 0) {
+      closeFinalAction();
+    }
+  }, [finalActionOpen, finalActionTimeLeft]);
+
+  useEffect(() => {
+    return () => {
+      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+        transmissionWindowRef.current.close();
+      }
+    };
+  }, []);
+
+  const generateQRCode = async (url: string) => {
+    try {
+      const dataUrl = await QRCode.toDataURL(url, {
+        width: 256,
+        margin: 1,
+        color: {
+          dark: '#000000',
+          light: '#ffffff'
+        }
+      });
+      
+      setQrCodeSvg(dataUrl);
+    } catch (error) {
+      console.error('Error generating QR code:', error);
+      toast({
+        title: "Erro ao gerar QR Code",
+        description: "Não foi possível gerar o QR Code.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleGenerateQRCode = () => {
+    const newSessionId = Math.random().toString(36).substring(2, 15);
+    console.log("Generated new session ID:", newSessionId);
+    setSessionId(newSessionId);
+    
+    const baseURL = window.location.origin;
+    const participantURL = `${baseURL}/participant/${newSessionId}`;
+    
+    setQrCodeURL(participantURL);
+    setQrCodeGenerated(true);
+    
+    setParticipantList([]);
+    
+    toast({
+      title: "QR Code gerado",
+      description: "QR Code gerado com sucesso. Compartilhe com os participantes.",
+    });
+  };
+
+  const handleQRCodeToTransmission = () => {
+    setQrCodeVisible(true);
+    toast({
+      title: "QR Code incluído",
+      description: "O QR Code foi incluído na tela de transmissão e pode ser redimensionado."
+    });
+  };
+
+  const handleParticipantSelect = (id: string) => {
+    setParticipantList(prev => 
+      prev.map(p => p.id === id ? { ...p, selected: !p.selected } : p)
+    );
+  };
+
+  const handleParticipantRemove = (id: string) => {
+    setParticipantList(prev => {
+      const newList = prev.filter(p => p.id !== id);
+      
+      const nextId = String(prev.length + 1);
+      const newParticipant = {
+        id: nextId,
+        name: `Participante ${nextId}`,
+        active: true,
+        selected: false
+      };
+      
+      return [...newList, newParticipant];
+    });
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setBackgroundImage(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+  
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
+  };
+
+  const removeBackgroundImage = () => {
+    setBackgroundImage(null);
+    toast({
+      title: "Imagem removida",
+      description: "A imagem de fundo foi removida com sucesso."
+    });
+  };
+
+  const startDraggingQR = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!qrCodeVisible) return;
+    
+    const target = e.target as HTMLElement;
+    if (target.className && typeof target.className === 'string' && target.className.includes('resize-handle')) {
+      const handle = target.getAttribute('data-handle');
+      setResizeHandleQR(handle);
+      setStartPos({ x: e.clientX, y: e.clientY });
+      setStartSize({ 
+        width: qrCodePosition.width, 
+        height: qrCodePosition.height 
+      });
+    } else {
+      setIsDraggingQR(true);
+      setStartPos({ 
+        x: e.clientX - qrCodePosition.x, 
+        y: e.clientY - qrCodePosition.y 
+      });
+    }
+  };
+
+  const startDraggingText = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!qrCodeVisible) return;
+    
+    const target = e.target as HTMLElement;
+    if (target.className && typeof target.className === 'string' && target.className.includes('resize-handle')) {
+      const handle = target.getAttribute('data-handle');
+      setResizeHandleText(handle);
+      setStartPos({ x: e.clientX, y: e.clientY });
+      setStartSize({ 
+        width: qrDescriptionPosition.width, 
+        height: qrDescriptionPosition.height 
+      });
+    } else {
+      setIsDraggingText(true);
+      setStartPos({ 
+        x: e.clientX - qrDescriptionPosition.x, 
+        y: e.clientY - qrDescriptionPosition.y 
+      });
+    }
+  };
+
+  const stopDragging = () => {
+    setIsDraggingQR(false);
+    setIsDraggingText(false);
+    setResizeHandleQR(null);
+    setResizeHandleText(null);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (isDraggingQR) {
+      const newX = e.clientX - startPos.x;
+      const newY = e.clientY - startPos.y;
+      
+      const container = previewContainerRef.current?.getBoundingClientRect();
+      
+      if (container) {
+        const x = Math.max(0, Math.min(newX, container.width - qrCodePosition.width));
+        const y = Math.max(0, Math.min(newY, container.height - qrCodePosition.height));
+        
+        setQrCodePosition(prev => ({ ...prev, x, y }));
+      }
+    } else if (isDraggingText) {
+      const newX = e.clientX - startPos.x;
+      const newY = e.clientY - startPos.y;
+      
+      const container = previewContainerRef.current?.getBoundingClientRect();
+      
+      if (container) {
+        const x = Math.max(0, Math.min(newX, container.width - qrDescriptionPosition.width));
+        const y = Math.max(0, Math.min(newY, container.height - qrDescriptionPosition.height));
+        
+        setQrDescriptionPosition(prev => ({ ...prev, x, y }));
+      }
+    } else if (resizeHandleQR) {
+      const dx = e.clientX - startPos.x;
+      const dy = e.clientY - startPos.y;
+      
+      let newWidth = startSize.width;
+      let newHeight = startSize.height;
+      
+      if (resizeHandleQR.includes('r')) { 
+        newWidth = Math.max(20, startSize.width + dx);
+      }
+      if (resizeHandleQR.includes('b')) { 
+        newHeight = Math.max(20, startSize.height + dy);
+      }
+      
+      const size = Math.max(newWidth, newHeight);
+      
+      setQrCodePosition(prev => ({ 
+        ...prev, 
+        width: size,
+        height: size
+      }));
+    } else if (resizeHandleText) {
+      const dx = e.clientX - startPos.x;
+      const dy = e.clientY - startPos.y;
+      
+      let newWidth = startSize.width;
+      let newHeight = startSize.height;
+      
+      if (resizeHandleText.includes('r')) { 
+        newWidth = Math.max(30, startSize.width + dx);
+      }
+      if (resizeHandleText.includes('b')) { 
+        newHeight = Math.max(15, startSize.height + dy);
+      }
+      
+      setQrDescriptionPosition(prev => ({ 
+        ...prev, 
+        width: newWidth,
+        height: newHeight
+      }));
+    }
+  };
+
+  const increaseFontSize = () => {
+    setQrDescriptionFontSize(prev => Math.min(prev + 2, 32));
+  };
+
+  const decreaseFontSize = () => {
+    setQrDescriptionFontSize(prev => Math.max(prev - 2, 10));
+  };
+
+  const openTransmissionWindow = () => {
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      transmissionWindowRef.current.focus();
+      return;
+    }
+    
+    const width = window.innerWidth * 0.9;
+    const height = window.innerHeight * 0.9;
+    const left = (window.screen.width - width) / 2;
+    const top = (window.screen.height - height) / 2;
+    
+    const newWindow = window.open(
+      '',
+      'TransmissionWindow',
+      `width=${width},height=${height},left=${left},top=${top}`
+    );
+    
+    if (newWindow) {
+      transmissionWindowRef.current = newWindow;
+      
+      const previewWidth = previewContainerRef.current?.clientWidth || 400;
+      const previewHeight = previewContainerRef.current?.clientHeight || 225;
+      
+      const transmissionWidth = width;
+      const transmissionHeight = height;
+      
+      const widthRatio = transmissionWidth / previewWidth;
+      const heightRatio = transmissionHeight / previewHeight;
+      
+      const scale = Math.min(widthRatio, heightRatio) * 0.9;
+      
+      newWindow.document.write(`
+        <html>
+          <head>
+            <title>Transmissão ao Vivo</title>
+            <style>
+              body {
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
+                background-color: #000;
+                color: white;
+                font-family: ${selectedFont};
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                width: 100vw;
+              }
+              .container {
+                position: relative;
+                overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background-color: ${backgroundImage ? 'transparent' : selectedBackgroundColor};
+                width: 100%;
+                height: 100%;
+                aspect-ratio: 16 / 9;
+                max-width: 100%;
+                max-height: 100%;
+              }
+              .content-wrapper {
+                position: relative;
+                width: 100%;
+                height: 100%;
+              }
+              .bg-image {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+              }
+              .participants-grid {
+                position: absolute;
+                top: 15%;
+                right: 15%;
+                bottom: 15%;
+                left: 33%;
+                display: grid;
+                grid-template-columns: repeat(${Math.ceil(Math.sqrt(participantCount))}, 1fr);
+                gap: 8px;
+              }
+              .participant {
+                background-color: rgba(0, 0, 0, 0.4);
+                border-radius: 4px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+              }
+              .participant video {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+              }
+              .participant img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+              }
+              .participant-icon {
+                width: 32px;
+                height: 32px;
+                opacity: 0.7;
+              }
+              .qr-code {
+                position: absolute;
+                left: ${qrCodePosition.x * scale}px;
+                top: ${qrCodePosition.y * scale}px;
+                width: ${qrCodePosition.width * scale}px;
+                height: ${qrCodePosition.height * scale}px;
+                background-color: white;
+                padding: 4px;
+                border-radius: 8px;
+                display: ${qrCodeVisible ? 'flex' : 'none'};
+                align-items: center;
+                justify-content: center;
+              }
+              .qr-code img {
+                width: 100%;
+                height: 100%;
+              }
+              .qr-description {
+                position: absolute;
+                left: ${qrDescriptionPosition.x * scale}px;
+                top: ${qrDescriptionPosition.y * scale}px;
+                width: ${qrDescriptionPosition.width * scale}px;
+                height: ${qrDescriptionPosition.height * scale}px;
+                color: ${selectedTextColor};
+                padding: 4px 8px;
+                box-sizing: border-box;
+                border-radius: 4px;
+                font-size: ${qrDescriptionFontSize * scale / 2}px;
+                text-align: center;
+                font-weight: bold;
+                font-family: ${selectedFont};
+                display: ${qrCodeVisible ? 'flex' : 'none'};
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="content-wrapper">
+                ${backgroundImage ? `<img src="${backgroundImage}" class="bg-image" alt="Background" />` : ''}
+                
+                <div class="participants-grid">
+                  ${participantList
+                    .filter(p => p.selected)
+                    .slice(0, participantCount)
+                    .map((participant, i) => `
+                      <div class="participant" id="participant-${participant.id}">
+                        ${participant.frameData 
+                          ? `<img src="${participant.frameData}" alt="${participant.name}" />`
+                          : `<svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                              <circle cx="12" cy="7" r="4"></circle>
+                            </svg>`
+                        }
+                      </div>
+                    `).join('')}
+                  
+                  ${Array.from({ length: Math.max(0, participantCount - participantList.filter(p => p.selected).length) }, (_, i) => `
+                    <div class="participant" style="background-color: rgba(0, 0, 0, 0.2);">
+                      <svg class="participant-icon" style="opacity: 0.3;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                      </svg>
+                    </div>
+                  `).join('')}
+                </div>
+                
+                <div class="qr-code">
+                  ${qrCodeSvg ? `<img src="${qrCodeSvg}" alt="QR Code" />` : ''}
+                </div>
+                <div class="qr-description">${qrCodeDescription}</div>
+              </div>
+            </div>
+            
+            <script>
+              const sessionId = "${sessionId}";
+              console.log("Transmission window opened for session:", sessionId);
+              let webrtcStreamElements = {}; // Store video elements for WebRTC streams
+              
+              // Legacy channel for backward compatibility
+              const channel = new BroadcastChannel("telao-session-" + sessionId);
+              
+              // WebRTC channel for real-time communication
+              const webrtcChannel = new BroadcastChannel("telao-webrtc-" + sessionId);
+              
+              channel.onmessage = (event) => {
+                const data = event.data;
+                
+                if (data.type === 'video-frame') {
+                  const participantId = data.id;
+                  const participantElement = document.getElementById("participant-" + participantId);
+                  
+                  if (participantElement) {
+                    let img = participantElement.querySelector('img');
+                    if (!img) {
+                      participantElement.innerHTML = '';
+                      img = document.createElement('img');
+                      participantElement.appendChild(img);
+                    }
+                    
+                    img.src = data.frame;
+                    img.alt = "Participant Video";
+                  }
+                } else if (data.type === 'participant-join') {
+                  console.log('New participant joined in transmission window:', data.id);
+                  channel.postMessage({
+                    type: 'host-acknowledge',
+                    participantId: data.id,
+                    timestamp: Date.now()
+                  });
+                  
+                  // Also acknowledge via WebRTC channel
+                  webrtcChannel.postMessage({
+                    type: 'host-acknowledge',
+                    participantId: data.id,
+                    timestamp: Date.now()
+                  });
+                }
+              };
+              
+              // Handle WebRTC stream updates from the main window
+              window.addEventListener('message', (event) => {
+                if (event.data.type === 'webrtc-stream') {
+                  const { participantId, stream } = event.data;
+                  console.log('Received WebRTC stream for participant:', participantId);
+                  
+                  const participantElement = document.getElementById("participant-" + participantId);
+                  if (participantElement && stream) {
+                    // Remove existing content
+                    participantElement.innerHTML = '';
+                    
+                    // Create video element for WebRTC stream
+                    const video = document.createElement('video');
+                    video.autoplay = true;
+                    video.playsInline = true;
+                    video.muted = true;
+                    video.style.width = '100%';
+                    video.style.height = '100%';
+                    video.style.objectFit = 'cover';
+                    
+                    participantElement.appendChild(video);
+                    webrtcStreamElements[participantId] = video;
+                    
+                    // Set the stream as source
+                    video.srcObject = stream;
+                  }
+                }
+              });
+              
+              window.addEventListener('beforeunload', () => {
+                console.log("Transmission window closing");
+                channel.close();
+                webrtcChannel.close();
+                
+                // Clean up video elements
+                Object.values(webrtcStreamElements).forEach(video => {
+                  if (video.srcObject) {
+                    const stream = video.srcObject;
+                    if (stream instanceof MediaStream) {
+                      stream.getTracks().forEach(track => track.stop());
+                    }
+                    video.srcObject = null;
+                  }
+                });
+              });
+            </script>
+          </body>
+        </html>
+      `);
+      
+      newWindow.document.close();
+      setTransmissionOpen(true);
+      
+      newWindow.onbeforeunload = () => {
+        setTransmissionOpen(false);
+        transmissionWindowRef.current = null;
+      };
+      
+      // Forward WebRTC streams to the transmission window
+      const sendStreamsToTransmissionWindow = () => {
+        if (!transmissionWindowRef.current || transmissionWindowRef.current.closed) return;
+        
+        Object.entries(participantStreams).forEach(([participantId, stream]) => {
+          transmissionWindowRef.current?.postMessage({
+            type: 'webrtc-stream',
+            participantId,
+            stream
+          }, '*');
+        });
+      };
+      
+      // Send streams initially and whenever they change
+      sendStreamsToTransmissionWindow();
+      const streamUpdateInterval = setInterval(sendStreamsToTransmissionWindow, 1000);
+      
+      return () => clearInterval(streamUpdateInterval);
+    }
+  };
+
+  const finishTransmission = () => {
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      transmissionWindowRef.current.close();
+      transmissionWindowRef.current = null;
+      setTransmissionOpen(false);
+    }
+    
+    if (finalAction !== 'none') {
+      setFinalActionTimeLeft(20);
+      setFinalActionOpen(true);
+    } else {
+      toast({
+        title: "Transmissão finalizada",
+        description: "A transmissão foi encerrada com sucesso."
+      });
+    }
+  };
+
+  const closeFinalAction = () => {
+    if (finalActionTimerId) {
+      clearInterval(finalActionTimerId);
+      setFinalActionTimerId(null);
+    }
+    setFinalActionOpen(false);
+    setFinalActionTimeLeft(20);
+    
+    toast({
+      title: "Transmissão finalizada",
+      description: "A transmissão foi encerrada com sucesso."
+    });
+  };
+
+  const handleFinalActionClick = () => {
+    if (finalActionLink) {
+      window.open(finalActionLink, '_blank');
+    }
+  };
+
+  const renderPreviewContent = () => {
+    return (
+      <div 
+        className="aspect-video relative bg-black rounded-lg overflow-hidden" 
+        onMouseMove={handleMouseMove} 
+        onMouseUp={stopDragging}
+        onMouseLeave={stopDragging}
+        ref={previewContainerRef}
+        style={{ height: '600px' }}
+      >
+        <div 
+          className="absolute inset-0" 
+          style={{
+            backgroundColor: backgroundImage ? 'transparent' : selectedBackgroundColor,
+          }}
+        >
+          {backgroundImage && (
+            <img 
+              src={backgroundImage} 
+              alt="Background" 
+              className="w-full h-full object-cover"
+            />
+          )}
+        </div>
+        
+        <div className="absolute top-[15%] right-[15%] bottom-[15%] left-[33%]">
+          <div className={`grid grid-cols-${Math.ceil(Math.sqrt(participantCount))} gap-2 h-full`}>
+            {participantList
+              .filter(p => p.selected)
+              .slice(0, participantCount)
+              .map((participant) => (
+                <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center">
+                  {participantStreams[participant.id] ? (
+                    <WebRTCVideo 
+                      stream={participantStreams[participant.id]} 
+                      participantId={participant.id}
+                      className="w-full h-full"
+                    />
+                  ) : participant.frameData ? (
+                    <img 
+                      src={participant.frameData} 
+                      alt={participant.name}
+                      className="w-full h-full object-cover" 
+                    />
+                  ) : (
+                    <User className="h-8 w-8 text-white/30" />
+                  )}
+                </div>
+              ))}
+            
+            {Array(Math.max(0, participantCount - participantList.filter(p => p.selected).length)).fill(0).map((_, i) => (
+              <div key={`empty-preview-${i}`} className="bg-black/20 rounded overflow-hidden flex items-center justify-center">
+                <User className="h-8 w-8 text-white/30" />
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {qrCodeVisible && (
+          <>
+            <div 
+              className="absolute cursor-move"
+              style={{
+                left: `${qrCodePosition.x}px`,
+                top: `${qrCodePosition.y}px`,
+                width: `${qrCodePosition.width}px`,
+              }}
+              onMouseDown={startDraggingQR}
+              ref={qrCodeRef}
+            >
+              <div 
+                className="w-full bg-white p-1 rounded-lg"
+                style={{
+                  height: `${qrCodePosition.height}px`,
+                }}
+              >
+                <div className="w-full h-full bg-white flex items-center justify-center overflow-hidden">
+                  {qrCodeSvg ? (
+                    <img src={qrCodeSvg} alt="QR Code" className="w-full h-full" />
+                  ) : (
+                    <QrCode className="w-full h-full text-black" />
+                  )}
+                </div>
+                
+                <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
+                <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
+                <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
+                <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
+              </div>
+            </div>
+            
+            <div 
+              className="absolute cursor-move"
+              style={{
+                left: `${qrDescriptionPosition.x}px`,
+                top: `${qrDescriptionPosition.y}px`,
+                width: `${qrDescriptionPosition.width}px`,
+                height: `${qrDescriptionPosition.height}px`,
+                color: selectedTextColor,
+                fontFamily: selectedFont,
+                fontSize: `${qrDescriptionFontSize}px`,
+                fontWeight: 'bold',
+                textAlign: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px dashed rgba(255,255,255,0.3)',
+                borderRadius: '4px',
+                padding: '4px',
+                boxSizing: 'border-box',
+                overflow: 'hidden'
+              }}
+              onMouseDown={startDraggingText}
+              ref={textRef}
+            >
+              {qrCodeDescription}
+              
+              <div className="absolute right-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
+              <div className="absolute right-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
+              <div className="absolute left-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
+              <div className="absolute left-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const selectedParticipantsCount = participantList.filter(p => p.selected).length;
+
+  const handleParticipantJoin = (participantId: string) => {
+    setParticipantList(prev => {
+      const exists = prev.some(p => p.id === participantId);
+      if (exists) {
+        return prev.map(p => p.id === participantId ? { ...p, active: true } : p);
+      }
+      
+      const newParticipant = {
+        id: participantId,
+        name: `Participante ${prev.length + 1}`,
+        active: true,
+        selected: prev.filter(p => p.selected).length < participantCount
+      };
+      
+      if (broadcastChannel) {
+        try {
+          broadcastChannel.postMessage({
+            type: 'host-acknowledge',
+            participantId: participantId,
+            timestamp: Date.now()
+          });
+        } catch (e) {
+          console.warn('Error sending acknowledgment via BroadcastChannel:', e);
+        }
+      }
+      
+      try {
+        localStorage.setItem(`telao-ack-${sessionId}-${participantId}`, JSON.stringify({
+          type: 'host-acknowledge',
+          timestamp: Date.now()
+        }));
+        
+        setTimeout(() => {
+          try {
+            localStorage.removeItem(`telao-ack-${sessionId}-${participantId}`);
+          } catch (e) {
+            // Ignore errors
+          }
+        }, 5000);
+      } catch (e) {
+        // Ignore errors
+      }
+      
+      try {
+        const localChannel = new BroadcastChannel(`telao-local-${sessionId}`);
+        localChannel.postMessage({
+          type: 'host-acknowledge',
+          participantId: participantId,
+          timestamp: Date.now()
+        });
+        
+        setTimeout(() => localChannel.close(), 1000);
+      } catch (e) {
+        console.warn('Error using local channel for acknowledgment:', e);
+      }
+      
+      toast({
+        title: "Novo participante conectado",
+        description: `Um novo participante se conectou à sessão.`,
+      });
+      
+      return [...prev, newParticipant];
+    });
+  };
+
+  return (
+    <div className="container mx-auto py-8 px-4 max-w-6xl">
+      <h1 className="text-3xl font-bold mb-8 hutz-gradient-text text-center">Momento Telão</h1>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2">
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 h-full">
+            <CardHeader className="flex flex-row justify-between items-center">
+              <div className="flex items-center gap-4 w-full">
+                <CardTitle className="flex items-center gap-2">
+                  Controle de Transmissão
+                </CardTitle>
+                <div className="flex gap-2">
+                  <Button 
+                    className="hutz-button-accent"
+                    onClick={openTransmissionWindow}
+                    disabled={transmissionOpen}
+                  >
+                    <Film className="h-4 w-4 mr-2" />
+                    Iniciar Transmissão
+                  </Button>
+                  
+                  <Button 
+                    variant="destructive"
+                    onClick={finishTransmission}
+                    disabled={!transmissionOpen}
+                  >
+                    <StopCircle className="h-4 w-4 mr-2" />
+                    Finalizar Transmissão
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CardDescription className="mb-4">
+                Gerencie participantes, layout e aparência da sua transmissão ao vivo
+              </CardDescription>
+              
+              <Tabs defaultValue="participants" className="w-full">
+                <TabsList className="grid grid-cols-4 mb-6">
+                  <TabsTrigger value="participants">
+                    <Users className="h-4 w-4 mr-2" />
+                    Participantes
+                  </TabsTrigger>
+                  <TabsTrigger value="layout">
+                    <MonitorPlay className="h-4 w-4 mr-2" />
+                    Layout
+                  </TabsTrigger>
+                  <TabsTrigger value="appearance">
+                    <Palette className="h-4 w-4 mr-2" />
+                    Aparência
+                  </TabsTrigger>
+                  <TabsTrigger value="qrcode">
+                    <QrCode className="h-4 w-4 mr-2" />
+                    QR Code
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="participants" className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {participantList.map((participant, i) => (
+                      <Card key={participant.id} className={`bg-secondary/60 border ${participant.selected ? 'border-accent' : 'border-white/10'}`}>
+                        <CardContent className="p-4 text-center">
+                          <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2">
+                            {participant.frameData ? (
+                              <img 
+                                src={participant.frameData} 
+                                alt={participant.name}
+                                className="w-full h-full object-cover" 
+                              />
+                            ) : (
+                              <User className="h-8 w-8 text-white/30" />
+                            )}
+                          </div>
+                          <p className="text-sm font-medium truncate flex items-center justify-center gap-2">
+                            {participant.name}
+                            <span className={`w-2 h-2 rounded-full ${participant.active ? 'bg-green-500' : 'bg-gray-400'}`}></span>
+                          </p>
+                          <div className="flex justify-center gap-2 mt-2">
+                            <Button 
+                              variant={participant.selected ? "default" : "outline"} 
+                              size="sm" 
+                              className={`h-8 ${participant.selected ? 'bg-accent text-white' : 'border-white/20'}`}
+                              onClick={() => handleParticipantSelect(participant.id)}
+                            >
+                              {participant.selected ? (
+                                <>
+                                  <Check className="h-3 w-3 mr-1" />
+                                  Selecionado
+                                </>
+                              ) : 'Selecionar'}
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-8 text-white/60 hover:text-white"
+                              onClick={() => handleParticipantRemove(participant.id)}
+                            >
+                              Remover
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                    
+                    {Array(Math.max(0, 12 - participantList.length)).fill(0).map((_, i) => (
+                      <Card key={`empty-${i}`} className="bg-secondary/60 border border-white/10">
+                        <CardContent className="p-4 text-center">
+                          <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2">
+                            <User className="h-8 w-8 text-white/30" />
+                          </div>
+                          <p className="text-sm font-medium truncate">
+                            Aguardando...
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  
+                  <p className="text-sm text-white/60 mt-4">
+                    Limite de participantes: 100 (Ao remover um participante, outro será adicionado automaticamente)
+                  </p>
+                </TabsContent>
+                
+                <TabsContent value="layout" className="space-y-4">
+                  <div className="space-y-6">
+                    <div>
+                      <Label className="mb-2 block">
+                        Número de participantes na tela
+                      </Label>
+                      <div className="flex flex-wrap gap-2">
+                        {[1, 2, 4, 6, 9, 12, 16, 24].map((num) => (
+                          <Button
+                            key={num}
+                            variant={participantCount === num ? "default" : "outline"}
+                            onClick={() => setParticipantCount(num)}
+                            className={participantCount === num ? "bg-accent text-white" : "border-white/20"}
+                          >
+                            {num}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="description-text" className="mb-2 block">
+                        Texto de Descrição
+                      </Label>
+                      <Input
+                        id="description-text"
+                        placeholder="Escaneie o QR Code para participar"
+                        value={qrCodeDescription}
+                        onChange={(e) => setQrCodeDescription(e.target.value)}
+                        className="hutz-input"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label className="mb-2 block">Fonte do Texto</Label>
+                      <Select value={selectedFont} onValueChange={setSelectedFont}>
+                        <SelectTrigger className="hutz-input">
+                          <SelectValue placeholder="Selecione a fonte" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {fontOptions.map((font) => (
+                            <SelectItem key={font.value} value={font.value}>
+                              <span style={{ fontFamily: font.value }}>{font.name}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Label className="mb-2 block">Cor do Texto</Label>
+                      <div className="grid grid-cols-9 gap-1">
+                        {textColors.map((color) => (
+                          <button
+                            key={color}
+                            className={`w-6 h-6 rounded-full border ${selectedTextColor === color ? 'border-white ring-2 ring-accent' : 'border-white/20'}`}
+                            style={{ backgroundColor: color }}
+                            onClick={() => setSelectedTextColor(color)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block">Tamanho do Texto</Label>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={decreaseFontSize}
+                          disabled={qrDescriptionFontSize <= 10}
+                          className="border-white/20"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <span className="text-sm px-2">{qrDescriptionFontSize}px</span>
+                        <Button
+                          variant="outline"
+                          onClick={increaseFontSize}
+                          disabled={qrDescriptionFontSize >= 32}
+                          className="border-white/20"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="appearance" className="space-y-4">
+                  <div className="space-y-6">
+                    <div>
+                      <Label className="mb-2 block">Cor de Fundo</Label>
+                      <div className="grid grid-cols-9 gap-1">
+                        {backgroundColors.map((color) => (
+                          <button
+                            key={color}
+                            className={`w-6 h-6 rounded-full border ${selectedBackgroundColor === color ? 'border-white ring-2 ring-accent' : 'border-white/20'}`}
+                            style={{ backgroundColor: color }}
+                            onClick={() => setSelectedBackgroundColor(color)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label className="mb-2 block">Imagem de Fundo</Label>
+                      <div className="flex gap-2">
+                        <Button variant="outline" onClick={triggerFileInput} className="border-white/20">
+                          <Image className="h-4 w-4 mr-2" />
+                          Carregar Imagem
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          onClick={removeBackgroundImage} 
+                          className="border-white/20"
+                          disabled={!backgroundImage}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Remover Imagem
+                        </Button>
+                      </div>
+                      <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        onChange={handleFileSelect}
+                        accept="image/*"
+                        className="hidden" 
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="qrcode" className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
+                    <div>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant={qrCodeGenerated ? "outline" : "default"}
+                          onClick={handleGenerateQRCode}
+                          className={qrCodeGenerated ? "border-white/20" : ""}
+                        >
+                          <QrCode className="h-4 w-4 mr-2" />
+                          {qrCodeGenerated ? "Regenerar QR Code" : "Gerar QR Code"}
+                        </Button>
+                        
+                        <Button
+                          variant="outline"
+                          onClick={handleQRCodeToTransmission}
+                          disabled={!qrCodeGenerated}
+                          className="border-white/20"
+                        >
+                          {qrCodeVisible ? (
+                            <>
+                              <Check className="h-4 w-4 mr-2" />
+                              QR Code Inserido
+                            </>
+                          ) : (
+                            <>
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Inserir QR Code
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      
+                      {qrCodeGenerated && (
+                        <div className="mt-2">
+                          <Label className="block mb-1 text-xs">
+                            Link do QR Code:
+                          </Label>
+                          <div className="text-xs break-all bg-secondary/40 p-2 rounded">
+                            {qrCodeURL}
+                          </div>
+                          
+                          <div className="mt-4">
+                            <Label className="block mb-2">
+                              Ação ao Finalizar Transmissão
+                            </Label>
+                            <Select value={finalAction} onValueChange={(value: 'none' | 'image' | 'coupon') => setFinalAction(value)}>
+                              <SelectTrigger className="hutz-input">
+                                <SelectValue placeholder="Escolher ação" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Nenhuma ação</SelectItem>
+                                <SelectItem value="image">Mostrar Imagem Clicável</SelectItem>
+                                <SelectItem value="coupon">Mostrar Cupom</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            
+                            {finalAction === 'image' && (
+                              <div className="mt-2">
+                                <Input
+                                  placeholder="Link da imagem (URL)"
+                                  value={finalActionImage || ''}
+                                  onChange={(e) => setFinalActionImage(e.target.value)}
+                                  className="mb-2 hutz-input"
+                                />
+                                <Input
+                                  placeholder="Link para redirecionamento"
+                                  value={finalActionLink}
+                                  onChange={(e) => setFinalActionLink(e.target.value)}
+                                  className="hutz-input"
+                                />
+                              </div>
+                            )}
+                            
+                            {finalAction === 'coupon' && (
+                              <div className="mt-2">
+                                <Input
+                                  placeholder="Código do cupom"
+                                  value={finalActionCoupon}
+                                  onChange={(e) => setFinalActionCouponCode(e.target.value)}
+                                  className="mb-2 hutz-input"
+                                />
+                                <Input
+                                  placeholder="Link para redirecionamento (opcional)"
+                                  value={finalActionLink}
+                                  onChange={(e) => setFinalActionLink(e.target.value)}
+                                  className="hutz-input"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </div>
+        
+        <div>
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10">
+            <CardHeader>
+              <CardTitle>
+                Pré-visualização
+              </CardTitle>
+              <CardDescription>
+                Veja como sua transmissão será exibida
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {renderPreviewContent()}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+      
+      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
+        <DialogContent className="text-center max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl mb-2">
+              {finalAction === 'coupon' ? 'Seu cupom está disponível!' : 'Obrigado por participar!'}
+            </DialogTitle>
+            <DialogDescription>
+              Esta janela será fechada em {finalActionTimeLeft} segundos
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {finalAction === 'image' && (
+              <AspectRatio ratio={16/9} className="bg-muted rounded-md overflow-hidden hover:opacity-90 transition-opacity cursor-pointer" onClick={handleFinalActionClick}>
+                <img
+                  src={finalActionImage || 'https://placehold.co/600x400/png?text=Imagem+Exemplo'}
+                  alt="Final action"
+                  className="object-cover w-full h-full"
+                />
+              </AspectRatio>
+            )}
+            
+            {finalAction === 'coupon' && (
+              <div className="border border-dashed border-white/30 rounded-md p-6 bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer" onClick={handleFinalActionClick}>
+                <p className="text-sm mb-2">Seu cupom de desconto:</p>
+                <p className="text-2xl font-bold mb-4">{finalActionCoupon || 'DESC20'}</p>
+                <Button variant="outline" className="w-full">
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Usar cupom agora
+                </Button>
+              </div>
+            )}
+          </div>
+          
+          <Button variant="ghost" className="absolute top-2 right-2" onClick={closeFinalAction}>
+            <X className="h-4 w-4" />
+          </Button>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default TelaoPage;
