@@ -21,6 +21,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
   const videoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const inactivityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const streamCheckRef = useRef<NodeJS.Timeout | null>(null);
+  const disconnectListenerRef = useRef<((event: StorageEvent) => void) | null>(null);
   
   // Reset state when participant changes
   useEffect(() => {
@@ -46,7 +47,24 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       streamCheckRef.current = null;
     }
     
-    // Set up a more aggressive timeout to consider the participant disconnected if nothing happens
+    // Listen for disconnect messages through localStorage
+    // This ensures that when participants close their sessions, 
+    // the video slot becomes available immediately
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key && event.key.startsWith('telao-leave-') && event.key.includes(participantId)) {
+        console.log(`Participant ${participantId} disconnected (via localStorage)`);
+        setConnectionStatus('disconnected');
+        setVideoActive(false);
+        if (videoRef.current) {
+          videoRef.current.srcObject = null;
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    disconnectListenerRef.current = handleStorageChange;
+    
+    // Set up a timeout to consider the participant disconnected if nothing happens
     inactivityTimeoutRef.current = setTimeout(() => {
       if (connectionStatus === 'connecting') {
         console.log(`Participant ${participantId} connection timed out`);
@@ -57,17 +75,51 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     return () => {
       if (videoTimeoutRef.current) {
         clearTimeout(videoTimeoutRef.current);
-        videoTimeoutRef.current = null;
       }
       
       if (inactivityTimeoutRef.current) {
         clearTimeout(inactivityTimeoutRef.current);
-        inactivityTimeoutRef.current = null;
       }
       
       if (streamCheckRef.current) {
         clearInterval(streamCheckRef.current);
-        streamCheckRef.current = null;
+      }
+      
+      if (disconnectListenerRef.current) {
+        window.removeEventListener('storage', disconnectListenerRef.current);
+      }
+    };
+  }, [participantId]);
+  
+  // Set up direct disconnection detection using BroadcastChannel
+  useEffect(() => {
+    let broadcastChannel: BroadcastChannel | null = null;
+    
+    try {
+      // Listen for disconnect messages via BroadcastChannel
+      broadcastChannel = new BroadcastChannel(`telao-session-${participantId}`);
+      
+      broadcastChannel.onmessage = (event) => {
+        if (event.data.type === 'participant-leave' && event.data.id === participantId) {
+          console.log(`Participant ${participantId} disconnected (via BroadcastChannel)`);
+          setConnectionStatus('disconnected');
+          setVideoActive(false);
+          if (videoRef.current) {
+            videoRef.current.srcObject = null;
+          }
+        }
+      };
+    } catch (err) {
+      console.warn('BroadcastChannel not supported for disconnect detection:', err);
+    }
+    
+    return () => {
+      if (broadcastChannel) {
+        try {
+          broadcastChannel.close();
+        } catch (err) {
+          console.warn('Error closing BroadcastChannel:', err);
+        }
       }
     };
   }, [participantId]);
@@ -109,7 +161,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       // Set srcObject to trigger video loading
       videoRef.current.srcObject = stream;
       
-      // Implement a continuous stream check to fix blinking issues
+      // More aggressive stream checking to handle mobile browsers better
       streamCheckRef.current = setInterval(() => {
         if (stream && videoRef.current) {
           const videoTracks = stream.getVideoTracks();
@@ -136,7 +188,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
             }
           }
         }
-      }, 1000); // Check every second
+      }, 500); // Check more frequently (every 500ms)
       
       // Monitor track status more aggressively
       const videoTracks = stream.getVideoTracks();
@@ -257,7 +309,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         videoRef.current.srcObject = null;
       }
     };
-  }, [stream, participantId]);
+  }, [stream, participantId, connectionStatus, videoActive]);
 
   // Stabilization effect to prevent flickering and detect stale connections
   useEffect(() => {
@@ -268,6 +320,22 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         const timeSinceLastUpdate = Date.now() - lastUpdateTimeRef.current;
         if (timeSinceLastUpdate > 10000) { // 10 seconds with no updates
           console.log(`No updates from participant ${participantId} for 10 seconds`);
+          
+          // Check localStorage for heartbeat as a backup
+          try {
+            const heartbeatKey = `telao-heartbeat-${participantId}`;
+            const heartbeat = window.localStorage.getItem(heartbeatKey);
+            if (heartbeat) {
+              const heartbeatTime = parseInt(heartbeat, 10);
+              if (Date.now() - heartbeatTime < 10000) {
+                // Heartbeat is fresh, reset the timer
+                lastUpdateTimeRef.current = Date.now();
+                return;
+              }
+            }
+          } catch (e) {
+            // Ignore localStorage errors
+          }
           
           // Try to recover the connection by refreshing the video element
           if (reconnectAttemptRef.current < maxReconnectAttempts) {
@@ -404,6 +472,34 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       playVideo();
     }
   }, [stream, participantId]);
+
+  // Check for user disconnection via localStorage backup mechanism
+  useEffect(() => {
+    const checkDisconnect = setInterval(() => {
+      if (connectionStatus === 'connected' || connectionStatus === 'connecting') {
+        try {
+          const leaveKey = `telao-leave-*-${participantId}`;
+          // Use a wildcard approach by checking keys that match pattern
+          const keys = Object.keys(localStorage).filter(key => 
+            key.includes(`telao-leave-`) && key.includes(participantId)
+          );
+          
+          if (keys.length > 0) {
+            console.log(`Participant ${participantId} disconnected via localStorage marker`);
+            setConnectionStatus('disconnected');
+            setVideoActive(false);
+            if (videoRef.current) {
+              videoRef.current.srcObject = null;
+            }
+          }
+        } catch (e) {
+          // Ignore localStorage errors
+        }
+      }
+    }, 3000);
+    
+    return () => clearInterval(checkDisconnect);
+  }, [participantId, connectionStatus]);
 
   // Check if we should render based on connection status
   if (connectionStatus === 'disconnected' && !stream) {
