@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 
 interface WebRTCVideoProps {
@@ -88,6 +87,13 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       const channel = new BroadcastChannel(`telao-session-${participantId}`);
       broadcastChannelRef.current = channel;
       
+      // Send an initial ping to check if the connection is active
+      channel.postMessage({
+        type: 'ping',
+        id: participantId,
+        timestamp: Date.now()
+      });
+      
       channel.onmessage = (event) => {
         if (event.data.type === 'participant-leave' && event.data.id === participantId) {
           console.log(`Participant ${participantId} disconnected (via BroadcastChannel)`);
@@ -96,6 +102,13 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
           if (videoRef.current) {
             videoRef.current.srcObject = null;
           }
+        }
+        
+        // If we get a pong, update last update time
+        if (event.data.type === 'pong') {
+          console.log(`Received pong from ${participantId}`);
+          lastUpdateTimeRef.current = Date.now();
+          setConnectionStatus('connected');
         }
       };
     } catch (err) {
@@ -200,31 +213,40 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         }
       }, 2000);
       
-      // New approach: Use Media Source Extensions (MSE) for more reliable playback
-      // But first, try the simpler direct approach
+      // Try to set the stream with updated error handling
       try {
-        videoRef.current.srcObject = stream;
+        // Reset any previous stream
+        if (videoRef.current.srcObject) {
+          videoRef.current.srcObject = null;
+        }
         
-        // Immediately try to play with aggressive retry
-        const tryPlay = () => {
-          if (videoRef.current && videoRef.current.paused) {
-            videoRef.current.play()
-              .then(() => {
-                console.log(`Successfully started playback for ${participantId}`);
-                setVideoActive(true);
-                setConnectionStatus('connected');
-                lastUpdateTimeRef.current = Date.now();
-              })
-              .catch(err => {
-                console.warn(`Auto-play failed: ${err}, retrying...`);
-                // Try again with user interaction simulation
-                setTimeout(tryPlay, 500);
-              });
+        // Set the new stream with a slight delay to ensure DOM is updated
+        setTimeout(() => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            
+            // Immediately try to play with aggressive retry
+            const tryPlay = () => {
+              if (videoRef.current && videoRef.current.paused) {
+                videoRef.current.play()
+                  .then(() => {
+                    console.log(`Successfully started playback for ${participantId}`);
+                    setVideoActive(true);
+                    setConnectionStatus('connected');
+                    lastUpdateTimeRef.current = Date.now();
+                  })
+                  .catch(err => {
+                    console.warn(`Auto-play failed: ${err}, retrying...`);
+                    // Try again with user interaction simulation
+                    setTimeout(tryPlay, 500);
+                  });
+              }
+            };
+            
+            // Try to play immediately
+            tryPlay();
           }
-        };
-        
-        // Try to play immediately
-        tryPlay();
+        }, 100);
       } catch (err) {
         console.error(`Error setting video source: ${err}`);
       }
