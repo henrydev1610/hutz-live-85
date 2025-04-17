@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -237,7 +236,6 @@ const LivePage = () => {
     if (newWindow) {
       transmissionWindowRef.current = newWindow;
       
-      // Create HTML content for the new window
       const html = `
         <!DOCTYPE html>
         <html>
@@ -375,29 +373,22 @@ const LivePage = () => {
               const sessionId = "${sessionId}";
               console.log("Live transmission window opened for session:", sessionId);
               
-              // Channel for communication with host
               const channel = new BroadcastChannel("live-session-" + sessionId);
               
-              // Map of participant IDs to their positions in the grid
               let participantSlots = {};
               let availableSlots = Array.from({ length: ${participantCount} }, (_, i) => i);
               
               function updateParticipantDisplay() {
-                // Get selected participants from the main window
                 window.addEventListener('message', (event) => {
                   if (event.data.type === 'update-participants') {
                     const { participants } = event.data;
                     
-                    // Update participant slots
                     participants.forEach(participant => {
-                      // If this participant is already in a slot, update it
                       if (participantSlots[participant.id]) {
                         const slotIndex = participantSlots[participant.id];
                         const slotElement = document.getElementById("participant-slot-" + slotIndex);
                         
-                        // Update content if needed
                         if (participant.stream) {
-                          // Ensure video element exists
                           let videoElement = slotElement.querySelector('video');
                           if (!videoElement) {
                             slotElement.innerHTML = '';
@@ -412,9 +403,7 @@ const LivePage = () => {
                             videoElement.srcObject = participant.stream;
                           }
                         }
-                      }
-                      // If this is a new selected participant, assign a slot
-                      else if (participant.selected && availableSlots.length > 0) {
+                      } else if (participant.selected && availableSlots.length > 0) {
                         const slotIndex = availableSlots.shift();
                         participantSlots[participant.id] = slotIndex;
                         
@@ -440,7 +429,6 @@ const LivePage = () => {
                       }
                     });
                     
-                    // Check for participants that were removed
                     Object.keys(participantSlots).forEach(participantId => {
                       const isStillSelected = participants.some(p => p.id === participantId && p.selected);
                       if (!isStillSelected) {
@@ -448,7 +436,6 @@ const LivePage = () => {
                         delete participantSlots[participantId];
                         availableSlots.push(slotIndex);
                         
-                        // Reset the slot
                         const slotElement = document.getElementById("participant-slot-" + slotIndex);
                         if (slotElement) {
                           slotElement.innerHTML = \`
@@ -463,19 +450,15 @@ const LivePage = () => {
                   }
                 });
                 
-                // Notify the main window that we're ready to receive participant data
                 window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
               }
               
-              // Initialize participant display
               updateParticipantDisplay();
               
-              // Listen for new participants joining
               channel.onmessage = (event) => {
                 const { type, id } = event.data;
                 if (type === 'participant-join') {
                   console.log('Participant joined:', id);
-                  // The main window handles participant management
                   window.opener.postMessage({ type: 'participant-joined', id, sessionId }, '*');
                 }
               };
@@ -492,16 +475,13 @@ const LivePage = () => {
       newWindow.document.close();
       setTransmissionOpen(true);
       
-      // Handle window closing
       newWindow.onbeforeunload = () => {
         setTransmissionOpen(false);
         transmissionWindowRef.current = null;
       };
       
-      // Set up message listener for the main window
       window.addEventListener('message', handleTransmissionMessage);
       
-      // Send initial participant data
       updateTransmissionParticipants();
     }
   };
@@ -575,12 +555,12 @@ const LivePage = () => {
         id: participantId,
         name: `Participante ${prev.length + 1}`,
         active: true,
-        selected: false // Important: participants are not selected by default
+        selected: true
       };
       
       toast({
         title: "Novo participante conectado",
-        description: `Um novo participante se conectou à sessão.`,
+        description: `Um novo participante se conectou à sessão e foi automaticamente selecionado.`,
       });
       
       return [...prev, newParticipant];

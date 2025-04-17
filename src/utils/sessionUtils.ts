@@ -1,3 +1,4 @@
+
 /**
  * Generates a random session ID for live streaming
  */
@@ -46,16 +47,22 @@ export const createSession = (sessionId: string): void => {
   try {
     const sessionData = {
       timestamp: Date.now(),
-      status: 'active'
+      status: 'active',
+      participants: []
     };
     localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(sessionData));
     
     // Also set a heartbeat to keep the session active
     setInterval(() => {
       try {
+        // Get existing data to preserve participants
+        const existingDataString = localStorage.getItem(`live-session-${sessionId}`);
+        const existingData = existingDataString ? JSON.parse(existingDataString) : { participants: [] };
+        
         const updatedData = {
           timestamp: Date.now(),
-          status: 'active'
+          status: 'active',
+          participants: existingData.participants || []
         };
         localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(updatedData));
         localStorage.setItem(`telao-heartbeat-${sessionId}`, Date.now().toString());
@@ -106,5 +113,115 @@ export const notifyParticipants = (sessionId: string, message: any): void => {
     setTimeout(() => channel.close(), 500);
   } catch (error) {
     console.warn("BroadcastChannel not supported for participant notification");
+  }
+};
+
+/**
+ * Add a new participant to the session
+ */
+export const addParticipantToSession = (sessionId: string, participantId: string, participantName: string = ''): boolean => {
+  try {
+    const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
+    if (!sessionDataString) {
+      return false;
+    }
+    
+    const sessionData = JSON.parse(sessionDataString);
+    if (!sessionData.participants) {
+      sessionData.participants = [];
+    }
+    
+    // Check if participant already exists
+    const existingParticipant = sessionData.participants.find((p: any) => p.id === participantId);
+    if (existingParticipant) {
+      // Update participation timestamp
+      existingParticipant.lastActive = Date.now();
+      existingParticipant.active = true;
+    } else {
+      // Add new participant
+      sessionData.participants.push({
+        id: participantId,
+        name: participantName || `Participante ${sessionData.participants.length + 1}`,
+        joinedAt: Date.now(),
+        lastActive: Date.now(),
+        active: true,
+        selected: true // Auto-select participants
+      });
+    }
+    
+    localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(sessionData));
+    
+    // Notify through broadcast channel
+    notifyParticipants(sessionId, {
+      type: 'participant-update',
+      participants: sessionData.participants,
+      timestamp: Date.now()
+    });
+    
+    return true;
+  } catch (e) {
+    console.error("Error adding participant to session:", e);
+    return false;
+  }
+};
+
+/**
+ * Get all participants in a session
+ */
+export const getSessionParticipants = (sessionId: string): any[] => {
+  try {
+    const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
+    if (!sessionDataString) {
+      return [];
+    }
+    
+    const sessionData = JSON.parse(sessionDataString);
+    return sessionData.participants || [];
+  } catch (e) {
+    console.error("Error getting session participants:", e);
+    return [];
+  }
+};
+
+/**
+ * Update participant status in a session
+ */
+export const updateParticipantStatus = (sessionId: string, participantId: string, updates: any): boolean => {
+  try {
+    const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
+    if (!sessionDataString) {
+      return false;
+    }
+    
+    const sessionData = JSON.parse(sessionDataString);
+    if (!sessionData.participants) {
+      return false;
+    }
+    
+    const participantIndex = sessionData.participants.findIndex((p: any) => p.id === participantId);
+    if (participantIndex === -1) {
+      return false;
+    }
+    
+    // Update the participant
+    sessionData.participants[participantIndex] = {
+      ...sessionData.participants[participantIndex],
+      ...updates,
+      lastActive: Date.now()
+    };
+    
+    localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(sessionData));
+    
+    // Notify through broadcast channel
+    notifyParticipants(sessionId, {
+      type: 'participant-update',
+      participants: sessionData.participants,
+      timestamp: Date.now()
+    });
+    
+    return true;
+  } catch (e) {
+    console.error("Error updating participant status:", e);
+    return false;
   }
 };

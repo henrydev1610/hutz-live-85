@@ -1,4 +1,5 @@
-import { createSession, endSession } from './sessionUtils';
+
+import { createSession, endSession, addParticipantToSession, updateParticipantStatus } from './sessionUtils';
 
 interface ParticipantCallbacks {
   onParticipantJoin: (id: string) => void;
@@ -34,6 +35,9 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
     if (data.type === 'participant-join') {
       console.log('Participant joined:', data.id);
       
+      // Add participant to session storage
+      addParticipantToSession(sessionId, data.id);
+      
       // Acknowledge the participant join
       channel.postMessage({
         type: 'host-acknowledge',
@@ -46,9 +50,12 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
     } 
     else if (data.type === 'participant-leave') {
       console.log('Participant left:', data.id);
+      // Update participant status
+      updateParticipantStatus(sessionId, data.id, { active: false });
       callbacks.onParticipantLeave(data.id);
     }
     else if (data.type === 'participant-heartbeat') {
+      updateParticipantStatus(sessionId, data.id, { active: true, lastActive: Date.now() });
       callbacks.onParticipantHeartbeat(data.id);
     }
   };
