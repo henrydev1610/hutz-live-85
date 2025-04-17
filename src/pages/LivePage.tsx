@@ -477,17 +477,17 @@ const LivePage = () => {
                     const { participants } = event.data;
                     console.log('Got participants update:', participants);
                     
-                    participants.forEach(participant => {
-                      if (participant.selected) {
-                        if (!participantSlots[participant.id] && availableSlots.length > 0) {
+                    participants.forEach(p => {
+                      if (p.selected) {
+                        if (!participantSlots[p.id] && availableSlots.length > 0) {
                           const slotIndex = availableSlots.shift();
-                          participantSlots[participant.id] = slotIndex;
+                          participantSlots[p.id] = slotIndex;
                           
-                          console.log('Assigned slot', slotIndex, 'to participant', participant.id);
+                          console.log('Assigned slot', slotIndex, 'to participant', p.id);
                           
                           const slotElement = document.getElementById("participant-slot-" + slotIndex);
                           if (slotElement) {
-                            if (participantStreams[participant.id]?.hasStream) {
+                            if (participantStreams[p.id]?.hasStream) {
                               console.log('Participant has stream info, creating video element');
                               
                               navigator.mediaDevices.getUserMedia({ video: true, audio: true })
@@ -513,16 +513,16 @@ const LivePage = () => {
                                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                                     <circle cx="12" cy="7" r="4"></circle>
                                   </svg>
-                                  <div style="margin-top: 5px; font-size: 12px;">${participant.name}</div>
+                                  <div style="margin-top: 5px; font-size: 12px;">\${p.name}</div>
                                 </div>
                               \`;
                             }
                           }
                         }
                       } else {
-                        if (participantSlots[participant.id] !== undefined) {
-                          const slotIndex = participantSlots[participant.id];
-                          delete participantSlots[participant.id];
+                        if (participantSlots[p.id] !== undefined) {
+                          const slotIndex = participantSlots[p.id];
+                          delete participantSlots[p.id];
                           availableSlots.push(slotIndex);
                           
                           const slotElement = document.getElementById("participant-slot-" + slotIndex);
@@ -602,8 +602,8 @@ const LivePage = () => {
   
   const updateTransmissionParticipants = () => {
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      const participantsWithStreams = [...participantList].map(participant => ({
-        ...participant,
+      const participantsWithStreams = [...participantList].map(p => ({
+        ...p,
         hasStream: true
       }));
       
