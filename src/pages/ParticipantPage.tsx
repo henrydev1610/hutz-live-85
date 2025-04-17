@@ -827,29 +827,57 @@ const ParticipantPage = () => {
       
       // Apply anti-flicker settings to tracks
       stream.getTracks().forEach(track => {
-        // Set higher priority for this track
-        if ('priority' in track) {
-          // @ts-ignore - TypeScript doesn't know about this property
-          track.priority = 'high';
-        }
-        
-        // Set contentHint for video tracks to improve performance
+        // Set higher priority for video tracks
         if (track.kind === 'video') {
-          track.contentHint = 'motion';
+          // Applying constraints to reduce flickering
+          const videoTrack = track as MediaStreamTrack;
+          if (videoTrack.getConstraints) {
+            try {
+              videoTrack.applyConstraints({
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                frameRate: { min: 24, ideal: 30 },
+              }).catch(e => console.warn('Could not apply additional constraints:', e));
+            } catch (e) {
+              console.warn('Error applying additional constraints:', e);
+            }
+          }
         }
       });
       
-      videoRef.current.srcObject = stream;
-      
-      // Apply anti-flicker styles to video element
       if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        
+        // Apply anti-flicker styles to video element
         videoRef.current.style.transform = 'translateZ(0)';
         videoRef.current.style.backfaceVisibility = 'hidden';
         videoRef.current.style.WebkitBackfaceVisibility = 'hidden';
         videoRef.current.style.WebkitTransform = 'translateZ(0)';
         videoRef.current.style.willChange = 'transform';
         videoRef.current.style.transformStyle = 'preserve-3d';
-        videoRef.current.style.webkitTransformStyle = 'preserve-3d';
+        
+        // Add oncanplay handler to ensure video starts correctly
+        videoRef.current.oncanplay = () => {
+          if (videoRef.current) {
+            videoRef.current.play()
+              .catch(err => console.warn('Error playing video:', err));
+          }
+        };
+        
+        // Force periodic refresh of video element to prevent freezing
+        const videoRefreshInterval = setInterval(() => {
+          if (videoRef.current && streamRef.current && streamRef.current.active) {
+            const videoTracks = streamRef.current.getVideoTracks();
+            if (videoTracks.length > 0 && videoTracks[0].readyState === 'live') {
+              // Small trick to refresh the video element without stopping the stream
+              const currentTime = videoRef.current.currentTime;
+              videoRef.current.currentTime = currentTime + 0.00001;
+            }
+          }
+        }, 2000);
+        
+        // Clean up interval on component unmount
+        return () => clearInterval(videoRefreshInterval);
       }
       
       streamRef.current = stream;
@@ -976,39 +1004,4 @@ const ParticipantPage = () => {
     
     // Also store in localStorage for maximum reliability
     try {
-      localStorage.setItem(`telao-stream-info-${sessionId}-${participantIdRef.current}`, JSON.stringify(streamInfo));
-    } catch (e) {
-      console.warn("Error storing stream info in localStorage:", e);
-    }
-  };
-
-  const stopCamera = () => {
-    if (!videoRef.current) return;
-    
-    stopTransmitting();
-    
-    const stream = videoRef.current.srcObject as MediaStream;
-    if (stream) {
-      const tracks = stream.getTracks();
-      tracks.forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-      streamRef.current = null;
-      setCameraActive(false);
-      
-      toast({
-        title: "Câmera desativada",
-        description: "A transmissão da sua imagem foi interrompida.",
-      });
-    }
-  };
-
-  const switchCamera = async () => {
-    if (availableDevices.length <= 1) return;
-    
-    stopCamera();
-    
-    const currentIndex = availableDevices.findIndex(device => device.deviceId === deviceId);
-    const nextIndex = (currentIndex + 1) % availableDevices.length;
-    const nextDeviceId = availableDevices[nextIndex].deviceId;
-    
-    setDeviceId(nextDeviceId);
+      localStorage.setItem(`tel
