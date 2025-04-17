@@ -138,14 +138,14 @@ export const addParticipantToSession = (sessionId: string, participantId: string
       existingParticipant.lastActive = Date.now();
       existingParticipant.active = true;
     } else {
-      // Add new participant
+      // Add new participant - not auto-selected by default
       sessionData.participants.push({
         id: participantId,
         name: participantName || `Participante ${sessionData.participants.length + 1}`,
         joinedAt: Date.now(),
         lastActive: Date.now(),
         active: true,
-        selected: true // Auto-select participants
+        selected: false // Don't auto-select participants
       });
     }
     

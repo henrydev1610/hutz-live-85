@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 
 interface WebRTCVideoProps {
@@ -214,8 +213,9 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         }
       }, 2000);
       
-      // Try to set the stream with updated error handling
-      try {
+      // Anti-flicker: Don't keep changing the video source
+      // Only set it if it's a different stream or no stream is set
+      if (!videoRef.current.srcObject || videoRef.current.srcObject !== stream) {
         // Set the new stream directly to avoid flickering
         videoRef.current.srcObject = stream;
         
@@ -239,38 +239,37 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         
         // Try to play immediately
         tryPlay();
-      } catch (err) {
-        console.error(`Error setting video source: ${err}`);
       }
       
-      // Set up more stable stream checking to prevent flickering
-      streamCheckRef.current = setInterval(() => {
-        if (stream && videoRef.current) {
-          const videoTracks = stream.getVideoTracks();
-          if (videoTracks.length > 0) {
-            const videoTrack = videoTracks[0];
-            
-            // Check if track is enabled but video isn't active
-            if (videoTrack.enabled && videoTrack.readyState === 'live' && !videoActive) {
-              console.log(`Re-activating video for ${participantId}`);
-              setVideoActive(true);
-              setConnectionStatus('connected');
+      // Set up stable stream checking with much less frequent updates to prevent flickering
+      if (!streamCheckRef.current) {
+        streamCheckRef.current = setInterval(() => {
+          if (stream && videoRef.current) {
+            const videoTracks = stream.getVideoTracks();
+            if (videoTracks.length > 0) {
+              const videoTrack = videoTracks[0];
               
-              if (videoRef.current.paused) {
-                videoRef.current.play().catch(err => 
-                  console.warn(`Play failed during check: ${err}`)
-                );
+              // Only update state if there's a significant change to reduce renders
+              const isTrackActive = videoTrack.enabled && videoTrack.readyState === 'live';
+              
+              if (isTrackActive && !videoActive) {
+                console.log(`Re-activating video for ${participantId}`);
+                setVideoActive(true);
+                setConnectionStatus('connected');
+                
+                if (videoRef.current.paused) {
+                  videoRef.current.play().catch(err => 
+                    console.warn(`Play failed during check: ${err}`)
+                  );
+                }
+              } else if (!isTrackActive && videoActive) {
+                console.log(`Deactivating stale video for ${participantId}`);
+                setVideoActive(false);
               }
             }
-            
-            // Check if track is disabled or ended but video is marked active
-            if ((videoTrack.readyState !== 'live' || !videoTrack.enabled) && videoActive) {
-              console.log(`Deactivating stale video for ${participantId}`);
-              setVideoActive(false);
-            }
           }
-        }
-      }, 2000); // Increased interval to reduce potential flickering
+        }, 5000); // Much less frequent checks to reduce flickering
+      }
       
       // Monitor track status
       const videoTracks = stream.getVideoTracks();
@@ -349,20 +348,21 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     };
   }, [stream, participantId, connectionStatus, videoActive]);
 
-  // Enhanced connection stability - less frequent checks to reduce render thrashing
+  // Enhanced connection stability - much less frequent checks to reduce render thrashing
   useEffect(() => {
-    // Less frequent connection monitoring to prevent flickering
+    // Very infrequent connection monitoring to prevent flickering
     const stabilityCheck = setInterval(() => {
-      // Check for stale connections
+      // Only check for stale connections periodically
       if (connectionStatus === 'connected' && videoActive) {
         const timeSinceLastUpdate = Date.now() - lastUpdateTimeRef.current;
+        
         // Check for heartbeat as a backup mechanism
         try {
           const heartbeatKey = `telao-heartbeat-${participantId}`;
           const heartbeat = window.localStorage.getItem(heartbeatKey);
           if (heartbeat) {
             const heartbeatTime = parseInt(heartbeat, 10);
-            if (Date.now() - heartbeatTime < 15000) { // Extended timeout
+            if (Date.now() - heartbeatTime < 30000) { // Extended timeout
               // Heartbeat is fresh, reset the timer
               lastUpdateTimeRef.current = Date.now();
             }
@@ -372,10 +372,10 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         }
         
         // If it's been too long since last update, try to recover
-        if (timeSinceLastUpdate > 15000) { // Extended to 15 seconds to reduce flickering
-          console.log(`No updates from participant ${participantId} for 15 seconds`);
+        if (timeSinceLastUpdate > 30000) { // Extended to 30 seconds to reduce flickering
+          console.log(`No updates from participant ${participantId} for 30 seconds`);
           
-          // Try to recover the connection by refreshing the video element
+          // Only try to recover after a long period
           if (reconnectAttemptRef.current < maxReconnectAttempts) {
             reconnectAttemptRef.current++;
             console.log(`Attempting to recover connection (${reconnectAttemptRef.current}/${maxReconnectAttempts})`);
@@ -398,12 +398,12 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       } else if (connectionStatus === 'connecting' && !videoActive) {
         // If still connecting after a while, consider disconnected
         const connectingTime = Date.now() - lastUpdateTimeRef.current;
-        if (connectingTime > 20000) { // Extended to 20 seconds for initial connection
-          console.log(`Participant ${participantId} failed to connect after 20 seconds`);
+        if (connectingTime > 30000) { // Extended to 30 seconds for initial connection
+          console.log(`Participant ${participantId} failed to connect after 30 seconds`);
           setConnectionStatus('disconnected');
         }
       }
-    }, 5000); // Reduced frequency to 5 seconds to prevent flickering
+    }, 10000); // Minimal frequency to 10 seconds to prevent flickering
     
     return () => clearInterval(stabilityCheck);
   }, [connectionStatus, videoActive, participantId]);
@@ -449,6 +449,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
   };
 
   // Periodically update the last update time while video is playing to prevent timing out
+  // Less frequent updates to prevent state flickering
   useEffect(() => {
     if (videoActive && connectionStatus === 'connected') {
       const updateTimer = setInterval(() => {
@@ -459,7 +460,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
             lastUpdateTimeRef.current = Date.now();
           }
         }
-      }, 5000); // Less frequent updates to prevent state thrashing
+      }, 10000); // Much less frequent updates to prevent state thrashing
       
       return () => clearInterval(updateTimer);
     }
@@ -482,13 +483,10 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         onError={handleVideoError}
         style={{ 
           objectFit: 'cover',
-          // Enhanced transform settings to fix mobile Safari flickering
-          WebkitTransform: 'translateZ(0)',
+          webkitTransform: 'translateZ(0)',
           transform: 'translateZ(0)',
-          // Force hardware acceleration
-          WebkitBackfaceVisibility: 'hidden',
+          webkitBackfaceVisibility: 'hidden',
           backfaceVisibility: 'hidden',
-          // Prevent scale transitions
           transition: 'none'
         }}
       />

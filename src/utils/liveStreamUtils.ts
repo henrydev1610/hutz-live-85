@@ -1,4 +1,3 @@
-
 import { createSession, endSession, addParticipantToSession, updateParticipantStatus, notifyParticipants } from './sessionUtils';
 
 interface ParticipantCallbacks {
@@ -86,6 +85,45 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
           localStorage.removeItem(key);
         }
       });
+      
+      // Also check for video stream info in localStorage
+      try {
+        const streamInfoKeys = Object.keys(localStorage).filter(key => 
+          key.startsWith(`telao-stream-info-${sessionId}`)
+        );
+        
+        streamInfoKeys.forEach(key => {
+          try {
+            const streamInfoStr = localStorage.getItem(key);
+            if (streamInfoStr) {
+              const streamInfo = JSON.parse(streamInfoStr);
+              if (streamInfo && streamInfo.id && streamInfo.type === 'video-stream-info') {
+                console.log('Found stream info via localStorage:', streamInfo.id);
+                
+                // Update participant status with video info
+                updateParticipantStatus(sessionId, streamInfo.id, { 
+                  active: true,
+                  lastActive: Date.now(),
+                  hasVideo: streamInfo.hasStream && streamInfo.videoTracks && streamInfo.videoTracks.length > 0
+                });
+                
+                // Acknowledge the stream info
+                localStorage.setItem(`telao-stream-ack-${sessionId}-${streamInfo.id}`, JSON.stringify({
+                  type: 'host-stream-acknowledge',
+                  participantId: streamInfo.id,
+                  timestamp: Date.now()
+                }));
+              }
+            }
+            
+            // Don't remove the stream info as it should persist
+          } catch (e) {
+            console.warn("Error processing localStorage stream info:", e);
+          }
+        });
+      } catch (e) {
+        console.warn("Error checking localStorage stream info:", e);
+      }
     } catch (e) {
       console.warn("Error checking localStorage joins:", e);
     }
@@ -154,6 +192,14 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
     // Handle video stream data for participants
     else if (data.type === 'video-stream-info') {
       console.log('Received video stream info from participant:', data.id);
+      
+      // Update participant with video information
+      updateParticipantStatus(sessionId, data.id, { 
+        active: true,
+        lastActive: Date.now(),
+        hasVideo: data.hasStream && data.videoTracks && data.videoTracks.length > 0
+      });
+      
       // Forward this information to all channels to ensure all components are updated
       channel.postMessage(data);
       backupChannel.postMessage(data);
@@ -215,6 +261,14 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
     // Handle video stream data for participants
     else if (data.type === 'video-stream-info') {
       console.log('Received video stream info from participant (backup):', data.id);
+      
+      // Update participant with video information
+      updateParticipantStatus(sessionId, data.id, { 
+        active: true,
+        lastActive: Date.now(),
+        hasVideo: data.hasStream && data.videoTracks && data.videoTracks.length > 0
+      });
+      
       // Forward this information to all channels to ensure all components are updated
       backupChannel.postMessage(data);
       channel.postMessage(data);
@@ -295,7 +349,7 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
       type: 'video-stream-info',
       id: participantId,
       timestamp: Date.now(),
-      hasStream: true,
+      hasStream: stream.getVideoTracks().length > 0 && stream.getVideoTracks().some(track => track.enabled && track.readyState === 'live'),
       videoTracks: videoTrackInfo,
       audioTrackCount: stream.getAudioTracks().length
     };
@@ -322,29 +376,68 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
     // Send initial stream info
     sendVideoStreamInfo(stream);
     
-    // Set up periodic stream info updates
+    // Set up periodic stream info updates - using a lower frequency to avoid flickering
     const streamInfoInterval = setInterval(() => {
       sendVideoStreamInfo(stream);
-    }, 5000);
+    }, 10000); // Reduced frequency to 10 seconds to avoid flickering
     
     // Clean up interval when window unloads
     window.addEventListener('beforeunload', () => {
       clearInterval(streamInfoInterval);
     });
+    
+    // Return cleanup function
+    return () => {
+      clearInterval(streamInfoInterval);
+    };
   };
   
   // Try to get user media for video and send stream info
-  navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-    .then(handleUserMedia)
-    .catch(err => {
-      console.error('Error getting user media:', err);
-      // Try with just video as fallback
-      navigator.mediaDevices.getUserMedia({ video: true })
-        .then(handleUserMedia)
-        .catch(videoErr => {
-          console.error('Error getting video-only media:', videoErr);
+  // Using a more stable approach that reduces flickering
+  const initializeCamera = async () => {
+    try {
+      // Try first with ideal settings
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        }, 
+        audio: true 
+      });
+      
+      // Wait a short moment to stabilize camera initialization
+      setTimeout(() => {
+        const cleanup = handleUserMedia(stream);
+        
+        // Save the cleanup function for later
+        window.addEventListener('beforeunload', cleanup);
+      }, 1000);
+    } catch (err) {
+      console.error('Error getting high-quality media:', err);
+      
+      // Try with just video as fallback, with minimal constraints to reduce flickering
+      try {
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({ 
+          video: true
         });
-    });
+        
+        // Wait a short moment to stabilize camera initialization
+        setTimeout(() => {
+          const cleanup = handleUserMedia(fallbackStream);
+          
+          // Save the cleanup function for later
+          window.addEventListener('beforeunload', cleanup);
+        }, 1000);
+      } catch (videoErr) {
+        console.error('Error getting video-only media:', videoErr);
+      }
+    }
+  };
+  
+  // Delay initializing camera until after connection is established
+  // This helps reduce flickering by not starting the camera until we're sure we need it
+  let cameraInitTimeout: NodeJS.Timeout | null = null;
   
   // Listen for acknowledgment
   const channelMessageHandler = (event: MessageEvent) => {
@@ -353,6 +446,15 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
       console.log("Join acknowledged by host");
       acknowledgedJoin = true;
       clearJoinInterval();
+      
+      // Start camera after a short delay to ensure the connection is stable
+      if (cameraInitTimeout) {
+        clearTimeout(cameraInitTimeout);
+      }
+      
+      cameraInitTimeout = setTimeout(() => {
+        initializeCamera();
+      }, 500) as unknown as NodeJS.Timeout;
     }
     
     // Also respond to pings
@@ -379,6 +481,15 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
           localStorage.removeItem(ackKey);
           acknowledgedJoin = true;
           clearJoinInterval();
+          
+          // Start camera after acknowledgment
+          if (cameraInitTimeout) {
+            clearTimeout(cameraInitTimeout);
+          }
+          
+          cameraInitTimeout = setTimeout(() => {
+            initializeCamera();
+          }, 500) as unknown as NodeJS.Timeout;
         } catch (e) {
           console.warn("Error processing localStorage ack:", e);
         }
@@ -483,6 +594,10 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
     clearInterval(heartbeatInterval);
     clearInterval(joinInterval);
     clearInterval(localStorageCheckInterval);
+    
+    if (cameraInitTimeout) {
+      clearTimeout(cameraInitTimeout);
+    }
     
     channel.removeEventListener('message', channelMessageHandler);
     backupChannel.removeEventListener('message', channelMessageHandler);
