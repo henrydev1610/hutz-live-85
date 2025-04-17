@@ -413,8 +413,15 @@ const LivePage = () => {
               let participantSlots = {};
               let availableSlots = Array.from({ length: ${participantCount} }, (_, i) => i);
               let participantStreams = {};
+              let activeVideoElements = {};
               
               function createVideoElement(slotElement, stream) {
+                const existingVideo = slotElement.querySelector('video');
+                if (existingVideo) {
+                  console.log('Video element already exists in slot, not creating a new one');
+                  return;
+                }
+                
                 slotElement.innerHTML = '';
                 const videoElement = document.createElement('video');
                 videoElement.autoplay = true;
@@ -423,16 +430,26 @@ const LivePage = () => {
                 
                 videoElement.style.transform = 'translateZ(0)';
                 videoElement.style.backfaceVisibility = 'hidden';
-                videoElement.style.WebkitBackfaceVisibility = 'hidden';
+                videoElement.style.webkitBackfaceVisibility = 'hidden';
                 videoElement.style.willChange = 'transform';
                 videoElement.style.transition = 'none';
                 
                 slotElement.appendChild(videoElement);
                 
+                let playAttempted = false;
+                
                 setTimeout(() => {
-                  videoElement.srcObject = stream;
-                  videoElement.play().catch(err => console.warn('Error playing video:', err));
-                }, 50);
+                  if (!playAttempted) {
+                    playAttempted = true;
+                    console.log('Setting video source and playing');
+                    videoElement.srcObject = stream;
+                    
+                    videoElement.play().catch(err => {
+                      console.warn('Error playing video:', err);
+                      // We won't auto-retry to avoid continuous retries
+                    });
+                  }
+                }, 100);
                 
                 videoElement.addEventListener('loadeddata', () => {
                   console.log('Video loaded successfully');
@@ -440,11 +457,17 @@ const LivePage = () => {
                 
                 videoElement.addEventListener('error', (err) => {
                   console.error('Video error:', err);
-                  setTimeout(() => {
-                    videoElement.srcObject = stream;
-                    videoElement.play().catch(err => console.warn('Error playing video after recovery:', err));
-                  }, 1000);
+                  // Only retry once
+                  if (!playAttempted) {
+                    playAttempted = true;
+                    setTimeout(() => {
+                      videoElement.srcObject = stream;
+                      videoElement.play().catch(err => console.warn('Error playing video after recovery:', err));
+                    }, 1000);
+                  }
                 });
+                
+                activeVideoElements[slotElement.id] = videoElement;
               }
               
               channel.addEventListener('message', (event) => {
@@ -490,22 +513,27 @@ const LivePage = () => {
                             if (participantStreams[p.id]?.hasStream) {
                               console.log('Participant has stream info, creating video element');
                               
-                              navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-                                .then(stream => {
-                                  createVideoElement(slotElement, stream);
-                                })
-                                .catch(err => {
-                                  console.error('Error accessing camera:', err);
-                                  slotElement.innerHTML = \`
-                                    <div style="text-align: center; padding: 10px;">
-                                      <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                        <circle cx="12" cy="7" r="4"></circle>
-                                      </svg>
-                                      <div style="margin-top: 5px; font-size: 12px;">Aguardando mídia...</div>
-                                    </div>
-                                  \`;
-                                });
+                              if (!window.localStream) {
+                                navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                                  .then(stream => {
+                                    window.localStream = stream;
+                                    createVideoElement(slotElement, stream);
+                                  })
+                                  .catch(err => {
+                                    console.error('Error accessing camera:', err);
+                                    slotElement.innerHTML = \`
+                                      <div style="text-align: center; padding: 10px;">
+                                        <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                          <circle cx="12" cy="7" r="4"></circle>
+                                        </svg>
+                                        <div style="margin-top: 5px; font-size: 12px;">Aguardando mídia...</div>
+                                      </div>
+                                    \`;
+                                  });
+                              } else {
+                                createVideoElement(slotElement, window.localStream);
+                              }
                             } else {
                               slotElement.innerHTML = \`
                                 <div style="text-align: center; padding: 10px;">
@@ -527,6 +555,16 @@ const LivePage = () => {
                           
                           const slotElement = document.getElementById("participant-slot-" + slotIndex);
                           if (slotElement) {
+                            if (activeVideoElements[slotElement.id]) {
+                              const videoElement = activeVideoElements[slotElement.id];
+                              if (videoElement.srcObject) {
+                                const tracks = videoElement.srcObject.getTracks();
+                                tracks.forEach(track => track.stop());
+                                videoElement.srcObject = null;
+                              }
+                              delete activeVideoElements[slotElement.id];
+                            }
+                            
                             slotElement.innerHTML = \`
                               <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -547,6 +585,16 @@ const LivePage = () => {
                         
                         const slotElement = document.getElementById("participant-slot-" + slotIndex);
                         if (slotElement) {
+                          if (activeVideoElements[slotElement.id]) {
+                            const videoElement = activeVideoElements[slotElement.id];
+                            if (videoElement.srcObject) {
+                              const tracks = videoElement.srcObject.getTracks();
+                              tracks.forEach(track => track.stop());
+                              videoElement.srcObject = null;
+                            }
+                            delete activeVideoElements[slotElement.id];
+                          }
+                          
                           slotElement.innerHTML = \`
                             <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -577,6 +625,20 @@ const LivePage = () => {
               };
               
               window.addEventListener('beforeunload', () => {
+                Object.values(activeVideoElements).forEach(videoElement => {
+                  if (videoElement.srcObject) {
+                    const tracks = videoElement.srcObject.getTracks();
+                    tracks.forEach(track => track.stop());
+                    videoElement.srcObject = null;
+                  }
+                });
+                
+                if (window.localStream) {
+                  const tracks = window.localStream.getTracks();
+                  tracks.forEach(track => track.stop());
+                  window.localStream = null;
+                }
+                
                 channel.close();
                 backupChannel.close();
               });

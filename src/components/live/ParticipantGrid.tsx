@@ -38,6 +38,11 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
                     <VideoOff className="h-3 w-3 text-orange-500" />
                   </div>
                 )}
+                {participant.selected && (
+                  <div className="absolute inset-0 bg-accent/10 flex items-center justify-center">
+                    <span className="text-xs bg-accent text-white px-2 py-1 rounded-full">Na tela</span>
+                  </div>
+                )}
               </div>
               <p className="text-sm font-medium truncate flex items-center justify-center gap-2">
                 {participant.name}

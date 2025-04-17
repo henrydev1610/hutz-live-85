@@ -1,4 +1,3 @@
-
 /**
  * Generates a random session ID for live streaming
  */
@@ -53,11 +52,17 @@ export const createSession = (sessionId: string): void => {
     localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(sessionData));
     
     // Also set a heartbeat to keep the session active
-    setInterval(() => {
+    const intervalId = setInterval(() => {
       try {
         // Get existing data to preserve participants
         const existingDataString = localStorage.getItem(`live-session-${sessionId}`);
-        const existingData = existingDataString ? JSON.parse(existingDataString) : { participants: [] };
+        if (!existingDataString) {
+          // Session was deleted, stop the heartbeat
+          clearInterval(intervalId);
+          return;
+        }
+        
+        const existingData = JSON.parse(existingDataString);
         
         const updatedData = {
           timestamp: Date.now(),
@@ -70,6 +75,10 @@ export const createSession = (sessionId: string): void => {
         console.error("Error updating heartbeat:", e);
       }
     }, 10000); // Update every 10 seconds
+    
+    // Store the interval ID to clean it up later
+    window._sessionIntervals = window._sessionIntervals || {};
+    window._sessionIntervals[sessionId] = intervalId;
   } catch (e) {
     console.error("Error creating session:", e);
   }
@@ -85,6 +94,12 @@ export const endSession = (sessionId: string): void => {
     
     // Also set an explicit leave marker to help clients detect disconnection
     localStorage.setItem(`telao-leave-*-${sessionId}`, Date.now().toString());
+    
+    // Clean up the heartbeat interval
+    if (window._sessionIntervals && window._sessionIntervals[sessionId]) {
+      clearInterval(window._sessionIntervals[sessionId]);
+      delete window._sessionIntervals[sessionId];
+    }
     
     // Try to notify through broadcast channel
     try {
@@ -137,6 +152,7 @@ export const addParticipantToSession = (sessionId: string, participantId: string
       // Update participation timestamp
       existingParticipant.lastActive = Date.now();
       existingParticipant.active = true;
+      existingParticipant.hasVideo = true; // Assume they have video for now
     } else {
       // Add new participant - not auto-selected by default
       sessionData.participants.push({
@@ -145,7 +161,8 @@ export const addParticipantToSession = (sessionId: string, participantId: string
         joinedAt: Date.now(),
         lastActive: Date.now(),
         active: true,
-        selected: false
+        selected: false,
+        hasVideo: true // Assume they have video for now
       });
     }
     
@@ -225,3 +242,12 @@ export const updateParticipantStatus = (sessionId: string, participantId: string
     return false;
   }
 };
+
+// Declare the window._sessionIntervals property for TypeScript
+declare global {
+  interface Window {
+    _sessionIntervals?: {
+      [key: string]: number;
+    };
+  }
+}

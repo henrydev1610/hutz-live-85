@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 interface WebRTCVideoProps {
   stream?: MediaStream;
@@ -22,6 +22,27 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
   const streamCheckRef = useRef<NodeJS.Timeout | null>(null);
   const disconnectListenerRef = useRef<((event: StorageEvent) => void) | null>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+  const playAttemptedRef = useRef<boolean>(false);
+  
+  const tryPlayVideo = useCallback(() => {
+    if (!videoRef.current || playAttemptedRef.current) return;
+    
+    playAttemptedRef.current = true;
+    
+    if (videoRef.current.paused) {
+      console.log(`Attempting to play video for participant ${participantId}`);
+      videoRef.current.play()
+        .then(() => {
+          console.log(`Successfully started playback for ${participantId}`);
+          setVideoActive(true);
+          setConnectionStatus('connected');
+          lastUpdateTimeRef.current = Date.now();
+        })
+        .catch(err => {
+          console.warn(`Auto-play failed: ${err}, will not retry automatically`);
+        });
+    }
+  }, [participantId]);
   
   useEffect(() => {
     console.log(`WebRTCVideo: New participant ${participantId}`);
@@ -29,6 +50,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     setVideoActive(false);
     lastUpdateTimeRef.current = Date.now();
     reconnectAttemptRef.current = 0;
+    playAttemptedRef.current = false;
     
     if (videoTimeoutRef.current) {
       clearTimeout(videoTimeoutRef.current);
@@ -177,45 +199,25 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         clearTimeout(videoTimeoutRef.current);
       }
       
-      videoTimeoutRef.current = setTimeout(() => {
-        if (!videoActive && connectionStatus === 'connecting') {
-          console.log(`Video timeout for participant ${participantId}, forcing play`);
-          if (videoRef.current && videoRef.current.readyState >= 2) {
-            try {
-              videoRef.current.play()
-                .then(() => {
-                  setVideoActive(true);
-                  setConnectionStatus('connected');
-                  lastUpdateTimeRef.current = Date.now();
-                })
-                .catch(err => console.error(`Could not force play: ${err}`));
-            } catch (err) {
-              console.error(`Error forcing play: ${err}`);
+      if (!playAttemptedRef.current) {
+        videoTimeoutRef.current = setTimeout(() => {
+          if (!videoActive && connectionStatus === 'connecting') {
+            console.log(`Video timeout for participant ${participantId}, attempting play once`);
+            if (videoRef.current && videoRef.current.readyState >= 2) {
+              tryPlayVideo();
             }
           }
-        }
-      }, 2000);
+        }, 2000);
+      }
       
       if (!videoRef.current.srcObject || videoRef.current.srcObject !== stream) {
+        console.log(`Setting new srcObject for ${participantId}`);
         videoRef.current.srcObject = stream;
+        playAttemptedRef.current = false;
         
-        const tryPlay = () => {
-          if (videoRef.current && videoRef.current.paused) {
-            videoRef.current.play()
-              .then(() => {
-                console.log(`Successfully started playback for ${participantId}`);
-                setVideoActive(true);
-                setConnectionStatus('connected');
-                lastUpdateTimeRef.current = Date.now();
-              })
-              .catch(err => {
-                console.warn(`Auto-play failed: ${err}, retrying...`);
-                setTimeout(tryPlay, 500);
-              });
-          }
-        };
-        
-        tryPlay();
+        setTimeout(() => {
+          tryPlayVideo();
+        }, 500);
       }
       
       if (!streamCheckRef.current) {
@@ -228,14 +230,12 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
               const isTrackActive = videoTrack.enabled && videoTrack.readyState === 'live';
               
               if (isTrackActive && !videoActive) {
-                console.log(`Re-activating video for ${participantId}`);
+                console.log(`Track is active but video isn't - updating state for ${participantId}`);
                 setVideoActive(true);
                 setConnectionStatus('connected');
                 
-                if (videoRef.current.paused) {
-                  videoRef.current.play().catch(err => 
-                    console.warn(`Play failed during check: ${err}`)
-                  );
+                if (videoRef.current.paused && !playAttemptedRef.current) {
+                  tryPlayVideo();
                 }
               } else if (!isTrackActive && videoActive) {
                 console.log(`Deactivating stale video for ${participantId}`);
@@ -314,7 +314,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     return () => {
       cleanupAllListeners();
     };
-  }, [stream, participantId, connectionStatus, videoActive]);
+  }, [stream, participantId, connectionStatus, videoActive, tryPlayVideo]);
 
   useEffect(() => {
     const stabilityCheck = setInterval(() => {
@@ -382,16 +382,13 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     
     if (videoRef.current && videoRef.current.srcObject && reconnectAttemptRef.current < maxReconnectAttempts) {
       reconnectAttemptRef.current++;
-      console.log(`Video error occurred, trying to recover (${reconnectAttemptRef.current}/${maxReconnectAttempts})`);
+      console.log(`Video error occurred, trying to recover once (${reconnectAttemptRef.current}/${maxReconnectAttempts})`);
       
       setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.play().catch(err => {
-            console.warn(`Recovery after error failed: ${err}`);
-            if (reconnectAttemptRef.current >= maxReconnectAttempts) {
-              setConnectionStatus('disconnected');
-            }
-          });
+        if (videoRef.current && !playAttemptedRef.current) {
+          tryPlayVideo();
+        } else if (reconnectAttemptRef.current >= maxReconnectAttempts) {
+          setConnectionStatus('disconnected');
         }
       }, 1000);
     } else {
