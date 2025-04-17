@@ -1,4 +1,3 @@
-
 /**
  * Generates a random session ID for live streaming
  */
@@ -72,13 +71,10 @@ export const createSession = (sessionId: string): void => {
         };
         localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(updatedData));
         localStorage.setItem(`telao-heartbeat-${sessionId}`, Date.now().toString());
-        
-        // Update connectivity status for each participant
-        checkParticipantsConnectivity(sessionId, updatedData.participants);
       } catch (e) {
         console.error("Error updating heartbeat:", e);
       }
-    }, 5000); // Update every 5 seconds
+    }, 10000); // Update every 10 seconds
     
     // Store the interval ID to clean it up later
     window._sessionIntervals = window._sessionIntervals || {};
@@ -89,119 +85,15 @@ export const createSession = (sessionId: string): void => {
 };
 
 /**
- * Check the connectivity status of each participant
- */
-const checkParticipantsConnectivity = (sessionId: string, participants: any[]): void => {
-  if (!participants || !Array.isArray(participants)) return;
-  
-  let changed = false;
-  
-  // Process each participant
-  participants.forEach(participant => {
-    if (!participant || !participant.id) return;
-    
-    // Check for recent heartbeats
-    try {
-      const heartbeatKey = `telao-heartbeat-${sessionId}-${participant.id}`;
-      const heartbeat = localStorage.getItem(heartbeatKey);
-      
-      const wasActive = participant.active;
-      
-      if (heartbeat) {
-        const heartbeatTime = parseInt(heartbeat, 10);
-        const timeSinceHeartbeat = Date.now() - heartbeatTime;
-        
-        // Consider the participant active if heartbeat is less than 30 seconds old
-        if (timeSinceHeartbeat < 30000) {
-          participant.active = true;
-          participant.lastActive = Date.now();
-          changed = changed || !wasActive;
-        } else if (timeSinceHeartbeat > 60000) {
-          // Mark as inactive after no heartbeat for 60 seconds
-          participant.active = false;
-          changed = changed || wasActive;
-        }
-      } else {
-        // Also check for WebRTC connection status
-        const peerConnections = (window as any)._peerConnections || {};
-        const pc = Object.values(peerConnections).find((connection: any) => 
-          connection && 
-          (connection._participantId === participant.id || 
-           connection.participantId === participant.id)
-        ) as RTCPeerConnection | undefined;
-        
-        if (pc && ['connected', 'completed'].includes(pc.iceConnectionState)) {
-          participant.active = true;
-          participant.lastActive = Date.now();
-          participant.hasVideo = true;
-          changed = changed || !wasActive;
-        } else if (!pc && (Date.now() - (participant.lastActive || 0) > 30000)) {
-          // No connection and no recent activity
-          participant.active = false;
-          changed = changed || wasActive;
-        }
-      }
-    } catch (e) {
-      console.warn(`Error checking participant ${participant.id} connectivity:`, e);
-    }
-  });
-  
-  // If there were changes, update the storage
-  if (changed) {
-    try {
-      const existingDataString = localStorage.getItem(`live-session-${sessionId}`);
-      if (existingDataString) {
-        const existingData = JSON.parse(existingDataString);
-        existingData.participants = participants;
-        localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(existingData));
-        
-        // Notify about participant updates
-        notifyParticipants(sessionId, {
-          type: 'participant-update',
-          participants: participants,
-          timestamp: Date.now()
-        });
-      }
-    } catch (e) {
-      console.error("Error updating participants after connectivity check:", e);
-    }
-  }
-};
-
-/**
  * Ends a live session
  */
 export const endSession = (sessionId: string): void => {
   try {
-    // Get the participants to notify them
-    const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
-    let participants: any[] = [];
-    
-    if (sessionDataString) {
-      try {
-        const sessionData = JSON.parse(sessionDataString);
-        participants = sessionData.participants || [];
-      } catch (e) {
-        console.warn("Error parsing session data:", e);
-      }
-    }
-    
     localStorage.removeItem(`live-session-${sessionId}`);
     localStorage.removeItem(`telao-heartbeat-${sessionId}`);
     
-    // Set an explicit leave marker to help clients detect disconnection
+    // Also set an explicit leave marker to help clients detect disconnection
     localStorage.setItem(`telao-leave-*-${sessionId}`, Date.now().toString());
-    
-    // Notify each participant individually
-    participants.forEach(participant => {
-      if (participant && participant.id) {
-        try {
-          localStorage.setItem(`telao-leave-${sessionId}-${participant.id}`, Date.now().toString());
-        } catch (e) {
-          // Ignore errors
-        }
-      }
-    });
     
     // Clean up the heartbeat interval
     if (window._sessionIntervals && window._sessionIntervals[sessionId]) {
@@ -213,7 +105,7 @@ export const endSession = (sessionId: string): void => {
     try {
       const channel = new BroadcastChannel(`telao-session-${sessionId}`);
       channel.postMessage({
-        type: 'session-end',
+        type: 'participant-leave',
         id: sessionId,
         timestamp: Date.now()
       });
@@ -244,11 +136,8 @@ export const notifyParticipants = (sessionId: string, message: any): void => {
  */
 export const addParticipantToSession = (sessionId: string, participantId: string, participantName: string = ''): boolean => {
   try {
-    console.log(`Adding participant ${participantId} to session ${sessionId}`);
-    
     const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
     if (!sessionDataString) {
-      console.warn(`Session ${sessionId} does not exist`);
       return false;
     }
     
@@ -264,11 +153,9 @@ export const addParticipantToSession = (sessionId: string, participantId: string
       existingParticipant.lastActive = Date.now();
       existingParticipant.active = true;
       existingParticipant.hasVideo = true; // Assume they have video for now
-      
-      console.log(`Updated existing participant ${participantId}`);
     } else {
       // Add new participant - not auto-selected by default
-      const newParticipant = {
+      sessionData.participants.push({
         id: participantId,
         name: participantName || `Participante ${sessionData.participants.length + 1}`,
         joinedAt: Date.now(),
@@ -276,45 +163,10 @@ export const addParticipantToSession = (sessionId: string, participantId: string
         active: true,
         selected: false,
         hasVideo: true // Assume they have video for now
-      };
-      
-      sessionData.participants.push(newParticipant);
-      console.log(`Added new participant ${participantId}`);
+      });
     }
     
     localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(sessionData));
-    
-    // Acknowledge the participant connection
-    try {
-      console.log(`Sending acknowledgment to participant ${participantId}`);
-      
-      // Via BroadcastChannel
-      const ackChannel = new BroadcastChannel(`telao-session-${sessionId}`);
-      ackChannel.postMessage({
-        type: 'host-acknowledge',
-        participantId: participantId,
-        timestamp: Date.now()
-      });
-      setTimeout(() => ackChannel.close(), 500);
-      
-      // Via localStorage as fallback
-      localStorage.setItem(`telao-ack-${sessionId}-${participantId}`, JSON.stringify({
-        type: 'host-acknowledge',
-        participantId: participantId,
-        timestamp: Date.now()
-      }));
-      
-      // Clean up after a short time
-      setTimeout(() => {
-        try {
-          localStorage.removeItem(`telao-ack-${sessionId}-${participantId}`);
-        } catch (e) {
-          // Ignore errors
-        }
-      }, 30000);
-    } catch (e) {
-      console.warn(`Error acknowledging participant ${participantId}:`, e);
-    }
     
     // Notify through broadcast channel
     notifyParticipants(sessionId, {
