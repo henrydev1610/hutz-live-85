@@ -1,8 +1,9 @@
 
-import { User, Check, Video, VideoOff } from 'lucide-react';
+import { User, Check, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useState, useEffect } from "react";
 
 interface Participant {
   id: string;
@@ -10,6 +11,7 @@ interface Participant {
   active: boolean;
   selected: boolean;
   hasVideo?: boolean;
+  lastActive?: number;
 }
 
 interface ParticipantGridProps {
@@ -19,8 +21,69 @@ interface ParticipantGridProps {
 }
 
 const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipant }: ParticipantGridProps) => {
-  const activeParticipants = participants.filter(p => p.active);
-  const inactiveParticipants = participants.filter(p => !p.active);
+  const [participantsWithStatus, setParticipantsWithStatus] = useState<(Participant & { connected: boolean })[]>([]);
+  
+  // Monitor participant connection status
+  useEffect(() => {
+    const enhancedParticipants = participants.map(participant => {
+      // Check if there's any WebRTC activity for this participant
+      const isConnected = checkParticipantConnection(participant.id);
+      
+      return {
+        ...participant,
+        connected: isConnected
+      };
+    });
+    
+    setParticipantsWithStatus(enhancedParticipants);
+    
+    // Update status every 5 seconds
+    const intervalId = setInterval(() => {
+      setParticipantsWithStatus(prevState => 
+        prevState.map(participant => ({
+          ...participant,
+          connected: checkParticipantConnection(participant.id)
+        }))
+      );
+    }, 5000);
+    
+    return () => clearInterval(intervalId);
+  }, [participants]);
+  
+  // Check if a participant has an active WebRTC connection
+  const checkParticipantConnection = (participantId: string): boolean => {
+    try {
+      // Check localStorage for recent heartbeats
+      const heartbeatKey = `telao-heartbeat-${participantId}`;
+      const heartbeat = localStorage.getItem(heartbeatKey);
+      
+      if (heartbeat) {
+        const heartbeatTime = parseInt(heartbeat, 10);
+        // Consider connected if heartbeat is less than 30 seconds old
+        return Date.now() - heartbeatTime < 30000;
+      }
+      
+      // Check for recent activity in WebRTC connections
+      const peerConnections = (window as any)._peerConnections || {};
+      const pc = Object.values(peerConnections).find((connection: any) => 
+        connection && 
+        (connection._participantId === participantId || 
+         connection.participantId === participantId)
+      ) as RTCPeerConnection | undefined;
+      
+      if (pc) {
+        return ['connected', 'completed'].includes(pc.iceConnectionState);
+      }
+      
+      return false;
+    } catch (e) {
+      console.warn("Error checking participant connection:", e);
+      return false;
+    }
+  };
+  
+  const activeParticipants = participantsWithStatus.filter(p => p.active);
+  const inactiveParticipants = participantsWithStatus.filter(p => !p.active);
   
   return (
     <div className="space-y-4">
@@ -29,7 +92,7 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
           <h3 className="text-sm font-medium text-white/70 mb-2">Participantes Ativos ({activeParticipants.length})</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {activeParticipants.map((participant) => (
-              <Card key={participant.id} className={`bg-secondary/60 border ${participant.selected ? 'border-accent' : 'border-white/10'}`}>
+              <Card key={participant.id} className={`bg-secondary/60 border ${participant.selected ? 'border-accent' : participant.connected ? 'border-green-500/30' : 'border-white/10'}`}>
                 <CardContent className="p-4 text-center">
                   <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2 relative">
                     <User className="h-8 w-8 text-white/30" />
@@ -47,14 +110,22 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
                         <span className="text-xs bg-accent text-white px-2 py-1 rounded-full">Na tela</span>
                       </div>
                     )}
+                    {/* WebRTC connection status indicator */}
+                    <div className="absolute top-2 left-2 bg-black/40 rounded-full p-1">
+                      {participant.connected ? (
+                        <Wifi className="h-3 w-3 text-green-500" />
+                      ) : (
+                        <WifiOff className="h-3 w-3 text-red-500" />
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center justify-center gap-2 mb-2">
                     <p className="text-sm font-medium truncate">
                       {participant.name || `Participante ${participant.id.slice(0, 4)}`}
                     </p>
-                    <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-400/20 text-xs">
-                      <span className="w-2 h-2 rounded-full bg-green-500 mr-1"></span>
-                      Online
+                    <Badge variant="outline" className={`${participant.connected ? 'bg-green-500/10 text-green-400 border-green-400/20' : 'bg-yellow-500/10 text-yellow-400 border-yellow-400/20'} text-xs`}>
+                      <span className={`w-2 h-2 rounded-full ${participant.connected ? 'bg-green-500' : 'bg-yellow-500'} mr-1`}></span>
+                      {participant.connected ? 'Conectado' : 'Reconectando'}
                     </Badge>
                   </div>
                   <div className="flex justify-center gap-2 mt-2">
