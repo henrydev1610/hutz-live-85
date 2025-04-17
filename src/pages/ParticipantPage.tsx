@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -203,6 +204,7 @@ const ParticipantPage = () => {
               try {
                 window.localStorage.removeItem(`telao-join-${sessionId}`);
               } catch (e) {
+                // Ignore errors
               }
             }, 5000);
           } catch (e) {
@@ -303,6 +305,7 @@ const ParticipantPage = () => {
               });
             }
           } catch (e) {
+            // Ignore errors
           }
         } else {
           clearInterval(checkLocalStorage);
@@ -581,7 +584,7 @@ const ParticipantPage = () => {
       }
     };
     
-    frameIntervalRef.current = window.setInterval(sendVideoFrame, 500);
+    frameIntervalRef.current = setInterval(sendVideoFrame, 500);
     sendVideoFrame();
   };
 
