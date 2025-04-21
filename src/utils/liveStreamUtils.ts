@@ -1,4 +1,6 @@
 import { createSession, endSession, addParticipantToSession, updateParticipantStatus, notifyParticipants } from './sessionUtils';
+import { ICE_SERVERS, createOfferWithPreferredCodecs } from './webrtc';
+import { createSignalingChannel, setupSignalingMessageHandler, sendOffer, sendAnswer, sendICECandidate, setupHeartbeat } from './signalingUtils';
 
 interface ParticipantCallbacks {
   onParticipantJoin: (id: string) => void;
