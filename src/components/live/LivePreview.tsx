@@ -1,5 +1,4 @@
-
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import { User } from 'lucide-react';
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 
@@ -61,15 +60,6 @@ const LivePreview = ({
   const [resizeHandleText, setResizeHandleText] = useState<string | null>(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
-  const [containerWidth, setContainerWidth] = useState(0);
-  const [containerHeight, setContainerHeight] = useState(0);
-  
-  useEffect(() => {
-    if (previewContainerRef.current) {
-      setContainerWidth(previewContainerRef.current.clientWidth);
-      setContainerHeight(previewContainerRef.current.clientHeight);
-    }
-  }, []);
   
   const startDraggingQR = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!qrCodeVisible) return;
@@ -188,12 +178,11 @@ const LivePreview = ({
     }
   };
 
-  // Calculate grid columns based on participant count
   const gridCols = Math.min(Math.ceil(Math.sqrt(participantCount)), 4);
 
   return (
-    <div className="w-full h-full flex items-center justify-center">
-      <AspectRatio ratio={16/9} className="relative bg-black rounded-lg overflow-hidden w-full max-h-full">
+    <div className="w-full h-full">
+      <AspectRatio ratio={16/9} className="relative bg-black rounded-lg overflow-hidden w-full">
         <div 
           className="absolute inset-0"
           onMouseMove={handleMouseMove} 
@@ -222,11 +211,12 @@ const LivePreview = ({
                 .filter(p => p.selected)
                 .slice(0, Math.min(participantCount, 100))
                 .map((participant) => (
-                  <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center relative">
+                  <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center">
                     {!participant.hasVideo && <User className="h-6 w-6 text-white/30" />}
                     <div 
                       id={`preview-participant-video-${participant.id}`} 
                       className="absolute inset-0 w-full h-full overflow-hidden"
+                      style={{ position: 'relative' }}
                     >
                       {/* Video will be inserted here dynamically */}
                     </div>
