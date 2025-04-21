@@ -1,5 +1,6 @@
 
-import { cleanupWebRTC, initHostWebRTC, activeParticipants, setLocalStream, startScreenShare, stopScreenShare } from './webrtc';
+import { cleanupWebRTC, initHostWebRTC, activeParticipants, setLocalStream, startScreenShare, stopScreenShare, initParticipantWebRTC } from './webrtc';
+import { addParticipantToSession } from './sessionUtils';
 
 // Define the callback types
 interface HostSessionCallbacks {
@@ -23,7 +24,7 @@ export const initializeHostSession = (sessionId: string, callbacks: HostSessionC
   // Set up a BroadcastChannel to receive events from the transmission window
   const channel = new BroadcastChannel(`live-session-${sessionId}`);
   
-  const handleChannelMessage = (event) => {
+  const handleChannelMessage = (event: MessageEvent) => {
     const { type, id } = event.data;
     
     if (type === 'participant-join') {
@@ -119,7 +120,7 @@ export const initializeParticipantSession = (
   }, 10000);
   
   // Listen for host messages
-  const handleHostMessage = (event) => {
+  const handleHostMessage = (event: MessageEvent) => {
     const { type } = event.data;
     
     if (type === 'host-heartbeat') {
@@ -177,4 +178,4 @@ export const cleanupSession = (sessionId: string) => {
   }
 };
 
-export { setLocalStream, startScreenShare, stopScreenShare };
+export { setLocalStream, startScreenShare, stopScreenShare, initParticipantWebRTC };
