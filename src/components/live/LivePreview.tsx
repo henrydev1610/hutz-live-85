@@ -60,9 +60,6 @@ const LivePreview = ({
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
   
-  // Calculate grid columns
-  const gridCols = Math.ceil(Math.sqrt(participantCount));
-  
   const startDraggingQR = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!qrCodeVisible) return;
     
@@ -205,13 +202,7 @@ const LivePreview = ({
       </div>
       
       <div className="absolute top-[5%] right-[5%] bottom-[5%] left-[30%]">
-        <div 
-          className="grid gap-2 h-full" 
-          style={{ 
-            gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-            gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`
-          }}
-        >
+        <div className={`grid grid-cols-${Math.ceil(Math.sqrt(participantCount))} gap-2 h-full`}>
           {participantList
             .filter(p => p.selected)
             .slice(0, participantCount)

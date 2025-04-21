@@ -1,337 +1,356 @@
-
-// Session storage and management utility functions
-
-// Define session interface
-export interface Session {
-  id: string;
-  name: string;
-  createdAt: number;
-  lastActive: number;
-  participantCount: number; // Added for Dashboard component
-  participants: {
-    [participantId: string]: {
-      name: string;
-      active: boolean;
-      lastActive: number;
-    }
-  }
-  settings?: {
-    finalAction?: {
-      type: 'none' | 'image' | 'coupon';
-      image?: string;
-      link?: string;
-      coupon?: string;
-    }
-  }
-}
-
-// Local storage keys
-const SESSIONS_STORAGE_KEY = 'hutz-live-sessions';
-const SESSION_ACTIVE_PREFIX = 'hutz-live-session-active-';
-
 /**
- * Generate a session ID
+ * Generates a random session ID for live streaming
  */
 export const generateSessionId = (): string => {
-  return `session-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  return Math.random().toString(36).substring(2, 15);
 };
 
 /**
- * Get all stored sessions
+ * Checks if a session is active by verifying local storage and broadcast channels
  */
-export const getStoredSessions = (): Session[] => {
+export const isSessionActive = (sessionId: string): boolean => {
   try {
-    const sessionsJson = localStorage.getItem(SESSIONS_STORAGE_KEY);
-    if (!sessionsJson) return [];
+    // First check the localStorage
+    const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
+    if (sessionDataString) {
+      try {
+        const sessionData = JSON.parse(sessionDataString);
+        // Check if session is still valid (not expired)
+        if (sessionData && sessionData.timestamp) {
+          const currentTime = Date.now();
+          const sessionTime = sessionData.timestamp;
+          // Session is valid for 24 hours
+          return (currentTime - sessionTime) < 24 * 60 * 60 * 1000;
+        }
+      } catch (e) {
+        console.error("Error parsing session data:", e);
+      }
+    }
+
+    // Also check for heartbeat which may be more recent
+    const heartbeatString = localStorage.getItem(`live-heartbeat-${sessionId}`);
+    if (heartbeatString) {
+      try {
+        const heartbeatTime = parseInt(heartbeatString);
+        if (!isNaN(heartbeatTime)) {
+          const currentTime = Date.now();
+          // Heartbeat is valid for 5 minutes
+          return (currentTime - heartbeatTime) < 5 * 60 * 1000;
+        }
+      } catch (e) {
+        console.error("Error parsing heartbeat data:", e);
+      }
+    }
     
-    const sessions = JSON.parse(sessionsJson);
+    // Final check - if the host has a newer browser with broadcast channel support
+    try {
+      // Create a temporary broadcast channel to check if anyone is listening
+      const tempChannel = new BroadcastChannel(`live-session-${sessionId}`);
+      
+      // We must use a promise to handle async nature of broadcast channels
+      return new Promise<boolean>((resolve) => {
+        // Set up a timeout to resolve as false if no response within 2 seconds
+        const timeout = setTimeout(() => {
+          tempChannel.close();
+          resolve(false);
+        }, 2000);
+        
+        // Send a ping message
+        tempChannel.postMessage({ type: 'ping', timestamp: Date.now() });
+        
+        // Listen for pong response
+        tempChannel.onmessage = (event) => {
+          if (event.data && event.data.type === 'pong') {
+            clearTimeout(timeout);
+            tempChannel.close();
+            resolve(true);
+          }
+        };
+      }) as unknown as boolean; // Type coercion needed due to sync function with async behavior
+    } catch (error) {
+      console.warn("BroadcastChannel not supported, falling back to localStorage only");
+    }
     
-    // Add participantCount property if it doesn't exist
-    const processedSessions = Array.isArray(sessions) ? sessions.map(session => {
-      if (!session.hasOwnProperty('participantCount')) {
-        const participantCount = session.participants ? Object.keys(session.participants).length : 0;
-        return {
-          ...session,
-          participantCount
+    return false;
+  } catch (e) {
+    console.error("Error checking session status:", e);
+    return false;
+  }
+};
+
+/**
+ * Creates a new live session and stores in localStorage
+ */
+export const createSession = (sessionId: string): void => {
+  try {
+    // Check if session already exists to prevent recreating it
+    const existingSession = localStorage.getItem(`live-session-${sessionId}`);
+    if (existingSession) {
+      console.log("Session already exists, not recreating:", sessionId);
+      return;
+    }
+    
+    const sessionData = {
+      timestamp: Date.now(),
+      status: 'active',
+      participants: []
+    };
+    localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(sessionData));
+    
+    // Also set a heartbeat to keep the session active
+    const intervalId = window.setInterval(() => {
+      try {
+        // Get existing data to preserve participants
+        const existingDataString = localStorage.getItem(`live-session-${sessionId}`);
+        if (!existingDataString) {
+          // Session was deleted, stop the heartbeat
+          clearInterval(intervalId);
+          return;
+        }
+        
+        const existingData = JSON.parse(existingDataString);
+        
+        const updatedData = {
+          timestamp: Date.now(),
+          status: 'active',
+          participants: existingData.participants || []
+        };
+        localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(updatedData));
+        localStorage.setItem(`live-heartbeat-${sessionId}`, Date.now().toString());
+      } catch (e) {
+        console.error("Error updating heartbeat:", e);
+      }
+    }, 10000); // Update every 10 seconds
+    
+    // Store the interval ID to clean it up later
+    window._sessionIntervals = window._sessionIntervals || {};
+    window._sessionIntervals[sessionId] = intervalId;
+  } catch (e) {
+    console.error("Error creating session:", e);
+  }
+};
+
+/**
+ * Ends a live session
+ */
+export const endSession = (sessionId: string): void => {
+  try {
+    localStorage.removeItem(`live-session-${sessionId}`);
+    localStorage.removeItem(`live-heartbeat-${sessionId}`);
+    
+    // Also set an explicit leave marker to help clients detect disconnection
+    localStorage.setItem(`live-leave-*-${sessionId}`, Date.now().toString());
+    
+    // Clean up the heartbeat interval
+    if (window._sessionIntervals && window._sessionIntervals[sessionId]) {
+      clearInterval(window._sessionIntervals[sessionId]);
+      delete window._sessionIntervals[sessionId];
+    }
+    
+    // Try to notify through broadcast channel
+    try {
+      const channel = new BroadcastChannel(`live-session-${sessionId}`);
+      channel.postMessage({
+        type: 'participant-leave',
+        id: sessionId,
+        timestamp: Date.now()
+      });
+      setTimeout(() => channel.close(), 1000);
+    } catch (error) {
+      console.warn("BroadcastChannel not supported for disconnect notification");
+    }
+  } catch (e) {
+    console.error("Error ending session:", e);
+  }
+};
+
+/**
+ * Helper function to notify connected participants
+ */
+export const notifyParticipants = (sessionId: string, message: any): void => {
+  try {
+    const channel = new BroadcastChannel(`live-session-${sessionId}`);
+    channel.postMessage(message);
+    setTimeout(() => channel.close(), 500);
+  } catch (error) {
+    console.warn("BroadcastChannel not supported for participant notification");
+  }
+};
+
+/**
+ * Add a new participant to the session
+ */
+export const addParticipantToSession = (sessionId: string, participantId: string, participantName: string = ''): boolean => {
+  try {
+    let sessionData;
+    const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
+    
+    if (sessionDataString) {
+      try {
+        sessionData = JSON.parse(sessionDataString);
+      } catch (e) {
+        console.error("Error parsing session data:", e);
+        sessionData = {
+          timestamp: Date.now(),
+          status: 'active',
+          participants: []
         };
       }
-      return session;
-    }) : [];
+    } else {
+      // If no session exists yet (possible race condition with host), create one
+      sessionData = {
+        timestamp: Date.now(),
+        status: 'active',
+        participants: []
+      };
+    }
     
-    return processedSessions;
-  } catch (error) {
-    console.error('Error getting stored sessions:', error);
+    if (!sessionData.participants) {
+      sessionData.participants = [];
+    }
+    
+    // Check if participant already exists
+    const existingParticipant = sessionData.participants.find((p: any) => p.id === participantId);
+    if (existingParticipant) {
+      // Update participation timestamp
+      existingParticipant.lastActive = Date.now();
+      existingParticipant.active = true;
+      existingParticipant.hasVideo = true; // Assume they have video for now
+      
+      // Send acknowledgement of existing participant
+      try {
+        const channel = new BroadcastChannel(`live-session-${sessionId}`);
+        channel.postMessage({
+          type: 'host-acknowledge',
+          participantId: participantId,
+          timestamp: Date.now()
+        });
+        setTimeout(() => channel.close(), 500);
+      } catch (e) {
+        console.warn("Error sending acknowledgement via broadcast channel:", e);
+      }
+    } else {
+      // Add new participant - not auto-selected by default
+      sessionData.participants.push({
+        id: participantId,
+        name: participantName || `Participante ${sessionData.participants.length + 1}`,
+        joinedAt: Date.now(),
+        lastActive: Date.now(),
+        connectedAt: Date.now(),
+        active: true,
+        selected: false,
+        hasVideo: true // Assume they have video for now
+      });
+    }
+    
+    localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(sessionData));
+    
+    // Notify through broadcast channel
+    notifyParticipants(sessionId, {
+      type: 'participant-update',
+      participants: sessionData.participants,
+      timestamp: Date.now()
+    });
+    
+    return true;
+  } catch (e) {
+    console.error("Error adding participant to session:", e);
+    return false;
+  }
+};
+
+/**
+ * Get all participants in a session
+ */
+export const getSessionParticipants = (sessionId: string): any[] => {
+  try {
+    const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
+    if (!sessionDataString) {
+      return [];
+    }
+    
+    const sessionData = JSON.parse(sessionDataString);
+    return sessionData.participants || [];
+  } catch (e) {
+    console.error("Error getting session participants:", e);
     return [];
   }
 };
 
 /**
- * Get a specific session by ID
+ * Update participant status in a session
  */
-export const getSessionById = (sessionId: string): Session | null => {
+export const updateParticipantStatus = (sessionId: string, participantId: string, updates: any): boolean => {
   try {
-    const sessions = getStoredSessions();
-    return sessions.find(session => session.id === sessionId) || null;
+    const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
+    if (!sessionDataString) {
+      return false;
+    }
+    
+    const sessionData = JSON.parse(sessionDataString);
+    if (!sessionData.participants) {
+      return false;
+    }
+    
+    const participantIndex = sessionData.participants.findIndex((p: any) => p.id === participantId);
+    if (participantIndex === -1) {
+      return false;
+    }
+    
+    // Update the participant
+    sessionData.participants[participantIndex] = {
+      ...sessionData.participants[participantIndex],
+      ...updates,
+      lastActive: Date.now()
+    };
+    
+    localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(sessionData));
+    
+    // Notify through broadcast channel
+    notifyParticipants(sessionId, {
+      type: 'participant-update',
+      participants: sessionData.participants,
+      timestamp: Date.now()
+    });
+    
+    return true;
+  } catch (e) {
+    console.error("Error updating participant status:", e);
+    return false;
+  }
+};
+
+/**
+ * Get the session final action
+ */
+export const getSessionFinalAction = (sessionId: string) => {
+  try {
+    const sessions = JSON.parse(localStorage.getItem('live-sessions') || '{}');
+    const session = sessions[sessionId];
+    
+    if (!session) return null;
+    
+    const { finalAction, finalActionImage, finalActionLink, finalActionCoupon } = session;
+    
+    if (!finalAction || finalAction === 'none') return null;
+    
+    return {
+      type: finalAction as 'none' | 'image' | 'coupon',
+      image: finalActionImage || null,
+      link: finalActionLink || null,
+      coupon: finalActionCoupon || null
+    };
   } catch (error) {
-    console.error('Error getting session by ID:', error);
+    console.error("Error getting session final action:", error);
     return null;
   }
 };
 
-/**
- * Create a new session
- */
-export const createSession = (name: string): string => {
-  try {
-    const sessionId = `session-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const newSession: Session = {
-      id: sessionId,
-      name,
-      createdAt: Date.now(),
-      lastActive: Date.now(),
-      participantCount: 0, // Add the missing participantCount property with initial value 0
-      participants: {}
+// Declare the window._sessionIntervals property for TypeScript
+declare global {
+  interface Window {
+    _sessionIntervals?: {
+      [key: string]: number;
     };
-    
-    const sessions = getStoredSessions();
-    sessions.push(newSession);
-    
-    localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
-    localStorage.setItem(`${SESSION_ACTIVE_PREFIX}${sessionId}`, JSON.stringify({
-      active: true,
-      timestamp: Date.now()
-    }));
-    
-    // Also store in sessionStorage as a backup
-    try {
-      sessionStorage.setItem(`${SESSION_ACTIVE_PREFIX}${sessionId}`, 'true');
-    } catch (e) {
-      console.warn('Error saving to sessionStorage:', e);
-    }
-    
-    return sessionId;
-  } catch (error) {
-    console.error('Error creating session:', error);
-    return '';
   }
-};
-
-/**
- * Check if a session is active
- */
-export const isSessionActive = (sessionId: string): boolean => {
-  try {
-    // First check localStorage
-    const sessionActiveJson = localStorage.getItem(`${SESSION_ACTIVE_PREFIX}${sessionId}`);
-    if (sessionActiveJson) {
-      try {
-        const sessionActive = JSON.parse(sessionActiveJson);
-        // Check if active within the last 3 hours
-        if (sessionActive.active && Date.now() - sessionActive.timestamp < 3 * 60 * 60 * 1000) {
-          return true;
-        }
-      } catch (e) {
-        console.warn('Error parsing session active JSON:', e);
-      }
-    }
-    
-    // If not found in localStorage, check sessionStorage as a backup
-    try {
-      const sessionActive = sessionStorage.getItem(`${SESSION_ACTIVE_PREFIX}${sessionId}`);
-      if (sessionActive === 'true') {
-        return true;
-      }
-    } catch (e) {
-      console.warn('Error checking sessionStorage:', e);
-    }
-    
-    // If not found in either storage, check if session exists and was active recently
-    const session = getSessionById(sessionId);
-    if (session && Date.now() - session.lastActive < 3 * 60 * 60 * 1000) {
-      return true;
-    }
-    
-    return false;
-  } catch (error) {
-    console.error('Error checking if session is active:', error);
-    return false;
-  }
-};
-
-/**
- * Remove a session
- */
-export const removeSession = (sessionId: string): boolean => {
-  try {
-    const sessions = getStoredSessions();
-    const updatedSessions = sessions.filter(session => session.id !== sessionId);
-    
-    localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(updatedSessions));
-    localStorage.removeItem(`${SESSION_ACTIVE_PREFIX}${sessionId}`);
-    
-    try {
-      sessionStorage.removeItem(`${SESSION_ACTIVE_PREFIX}${sessionId}`);
-    } catch (e) {
-      console.warn('Error removing from sessionStorage:', e);
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('Error removing session:', error);
-    return false;
-  }
-};
-
-/**
- * Add a participant to a session
- */
-export const addParticipantToSession = (sessionId: string, participantId: string, participantName: string): boolean => {
-  try {
-    const sessions = getStoredSessions();
-    const sessionIndex = sessions.findIndex(session => session.id === sessionId);
-    
-    if (sessionIndex === -1) return false;
-    
-    if (!sessions[sessionIndex].participants) {
-      sessions[sessionIndex].participants = {};
-    }
-    
-    sessions[sessionIndex].participants[participantId] = {
-      name: participantName,
-      active: true,
-      lastActive: Date.now()
-    };
-    
-    sessions[sessionIndex].lastActive = Date.now();
-    
-    // Update participant count
-    sessions[sessionIndex].participantCount = Object.keys(sessions[sessionIndex].participants).length;
-    
-    localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
-    return true;
-  } catch (error) {
-    console.error('Error adding participant to session:', error);
-    return false;
-  }
-};
-
-/**
- * Update a participant's status
- */
-export const updateParticipantStatus = (
-  sessionId: string, 
-  participantId: string, 
-  status: { active?: boolean; lastActive?: number }
-): boolean => {
-  try {
-    const sessions = getStoredSessions();
-    const sessionIndex = sessions.findIndex(session => session.id === sessionId);
-    
-    if (sessionIndex === -1) return false;
-    
-    if (!sessions[sessionIndex].participants || !sessions[sessionIndex].participants[participantId]) {
-      return false;
-    }
-    
-    if (status.active !== undefined) {
-      sessions[sessionIndex].participants[participantId].active = status.active;
-    }
-    
-    if (status.lastActive !== undefined) {
-      sessions[sessionIndex].participants[participantId].lastActive = status.lastActive;
-    } else {
-      sessions[sessionIndex].participants[participantId].lastActive = Date.now();
-    }
-    
-    localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
-    return true;
-  } catch (error) {
-    console.error('Error updating participant status:', error);
-    return false;
-  }
-};
-
-/**
- * Get participants for a session
- */
-export const getSessionParticipants = (sessionId: string): { [participantId: string]: { name: string; active: boolean; lastActive: number } } => {
-  try {
-    const session = getSessionById(sessionId);
-    if (!session || !session.participants) return {};
-    
-    // Clean up inactive participants (inactive for more than 2 minutes)
-    const currentTime = Date.now();
-    const activeParticipants: { [participantId: string]: { name: string; active: boolean; lastActive: number } } = {};
-    
-    Object.keys(session.participants).forEach(participantId => {
-      const participant = session.participants[participantId];
-      
-      // If participant was active in the last 2 minutes, consider them still active
-      const isStillActive = participant.active && (currentTime - participant.lastActive < 2 * 60 * 1000);
-      
-      activeParticipants[participantId] = {
-        ...participant,
-        active: isStillActive
-      };
-    });
-    
-    return activeParticipants;
-  } catch (error) {
-    console.error('Error getting session participants:', error);
-    return {};
-  }
-};
-
-/**
- * Set the final action for a session (what to show users when session ends)
- */
-export const setSessionFinalAction = (
-  sessionId: string,
-  finalAction: {
-    type: 'none' | 'image' | 'coupon';
-    image?: string;
-    link?: string;
-    coupon?: string;
-  }
-): boolean => {
-  try {
-    const sessions = getStoredSessions();
-    const sessionIndex = sessions.findIndex(session => session.id === sessionId);
-    
-    if (sessionIndex === -1) return false;
-    
-    if (!sessions[sessionIndex].settings) {
-      sessions[sessionIndex].settings = {};
-    }
-    
-    sessions[sessionIndex].settings.finalAction = finalAction;
-    
-    localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
-    return true;
-  } catch (error) {
-    console.error('Error setting session final action:', error);
-    return false;
-  }
-};
-
-/**
- * Get the final action for a session
- */
-export const getSessionFinalAction = (sessionId: string): {
-  type: 'none' | 'image' | 'coupon';
-  image?: string;
-  link?: string;
-  coupon?: string;
-} | null => {
-  try {
-    const session = getSessionById(sessionId);
-    if (!session || !session.settings || !session.settings.finalAction) {
-      return { type: 'none' };
-    }
-    
-    return session.settings.finalAction;
-  } catch (error) {
-    console.error('Error getting session final action:', error);
-    return { type: 'none' };
-  }
-};
+}

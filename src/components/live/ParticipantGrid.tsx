@@ -3,7 +3,6 @@ import { User, Check, Video, VideoOff } from 'lucide-react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useEffect, useRef } from 'react';
 
 interface Participant {
   id: string;
@@ -38,97 +37,6 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
     if (participant.name) return participant.name;
     return `Participante ${participant.id.substring(participant.id.lastIndexOf('-') + 1)}`;
   };
-
-  // Refs for video elements
-  const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
-
-  // Setup video elements when participant list changes
-  useEffect(() => {
-    // Connect video elements to their container divs
-    displayParticipants.forEach(participant => {
-      const videoContainer = document.getElementById(`participant-video-${participant.id}`);
-      if (!videoContainer) return;
-
-      // Check if we already have a video element for this participant
-      if (!videoRefs.current[participant.id]) {
-        // Try to find any existing video element in the container
-        let videoElement = videoContainer.querySelector('video');
-        
-        if (!videoElement) {
-          // Create new video element if none exists
-          videoElement = document.createElement('video');
-          videoElement.autoplay = true;
-          videoElement.playsInline = true;
-          videoElement.muted = true;
-          videoElement.style.width = '100%';
-          videoElement.style.height = '100%';
-          videoElement.style.objectFit = 'cover';
-          videoElement.style.borderRadius = '4px';
-          
-          // Clear the container and add the video element
-          videoContainer.innerHTML = '';
-          videoContainer.appendChild(videoElement);
-        }
-        
-        // Store reference to video element
-        videoRefs.current[participant.id] = videoElement;
-      }
-    });
-
-    // Attempt to show participant streams
-    const attemptToShowParticipantStreams = () => {
-      displayParticipants.forEach(participant => {
-        // Get video container by ID
-        const videoContainer = document.getElementById(`participant-video-${participant.id}`);
-        if (!videoContainer) return;
-        
-        // Try to find any existing video element in the container
-        const videoElement = videoRefs.current[participant.id];
-        if (!videoElement) return;
-        
-        // Check if video element already has a stream
-        if (!videoElement.srcObject) {
-          // Dispatch a custom event to request the participant's stream
-          window.dispatchEvent(new CustomEvent('request-participant-stream', {
-            detail: { participantId: participant.id }
-          }));
-        }
-      });
-    };
-
-    // Try immediately and then retry after a delay
-    attemptToShowParticipantStreams();
-    const timeout = setTimeout(attemptToShowParticipantStreams, 1000);
-    
-    return () => {
-      clearTimeout(timeout);
-    };
-  }, [displayParticipants]);
-
-  // Listen for stream available events
-  useEffect(() => {
-    const handleStreamAvailable = (event: CustomEvent) => {
-      const { participantId, stream } = event.detail;
-      const videoElement = videoRefs.current[participantId];
-      
-      if (videoElement && stream) {
-        console.log(`Setting stream for participant ${participantId}`);
-        videoElement.srcObject = stream;
-        
-        // Play the video with error handling
-        videoElement.play().catch(err => {
-          console.warn(`Error playing video for participant ${participantId}:`, err);
-        });
-      }
-    };
-
-    // Add event listener
-    window.addEventListener('participant-stream-available', handleStreamAvailable as EventListener);
-    
-    return () => {
-      window.removeEventListener('participant-stream-available', handleStreamAvailable as EventListener);
-    };
-  }, []);
   
   return (
     <div className="space-y-4">
@@ -153,8 +61,8 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
                         <span className="text-xs bg-accent text-white px-2 py-1 rounded-full">Na tela</span>
                       </div>
                     )}
-                    <div id={`participant-video-${participant.id}`} className="absolute inset-0 overflow-hidden rounded-md">
-                      {/* Video element will be dynamically created and inserted here */}
+                    <div id={`participant-video-${participant.id}`} className="absolute inset-0 overflow-hidden">
+                      {/* Video element will be inserted here dynamically */}
                     </div>
                   </div>
                   <div className="flex items-center justify-center gap-2 mb-2">
