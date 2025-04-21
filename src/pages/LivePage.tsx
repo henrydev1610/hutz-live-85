@@ -17,14 +17,14 @@ import TextSettings from '@/components/live/TextSettings';
 import QrCodeSettings from '@/components/live/QrCodeSettings';
 import { generateSessionId, addParticipantToSession } from '@/utils/sessionUtils';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
-import { initHostWebRTC, setOnParticipantTrack } from '@/utils/webrtc';
+import { initHostWebRTC, setOnParticipantTrack, setLocalStream } from '@/utils/webrtc';
 
 const LivePage = () => {
   const [participantCount, setParticipantCount] = useState(4);
   const [qrCodeURL, setQrCodeURL] = useState("");
   const [qrCodeVisible, setQrCodeVisible] = useState(false);
   const [qrCodeSvg, setQrCodeSvg] = useState<string | null>(null);
-  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean, hasVideo: boolean}[]>([]);
+  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean, hasVideo: boolean, connectedAt?: number}[]>([]);
   const [selectedBackgroundColor, setSelectedBackgroundColor] = useState("#000000");
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
   const [finalAction, setFinalAction] = useState<'none' | 'image' | 'coupon'>('none');
@@ -43,7 +43,6 @@ const LivePage = () => {
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [autoJoin, setAutoJoin] = useState(true);
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
@@ -63,6 +62,7 @@ const LivePage = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [participantStreams, setParticipantStreams] = useState<{[id: string]: MediaStream}>({});
+  const [localStream, setLocalMediaStream] = useState<MediaStream | null>(null);
 
   useEffect(() => {
     if (participantList.length === 0) {
@@ -77,51 +77,94 @@ const LivePage = () => {
     }
   }, []);
 
+  // Initialize host WebRTC when session is created
   useEffect(() => {
     if (sessionId) {
-      const cleanup = initializeHostSession(sessionId, {
-        onParticipantJoin: handleParticipantJoin,
-        onParticipantLeave: (id) => {
-          setParticipantList(prev => 
-            prev.map(p => p.id === id ? { ...p, active: false } : p)
-          );
-        },
-        onParticipantHeartbeat: (id) => {
-          setParticipantList(prev => 
-            prev.map(p => p.id === id ? { ...p, active: true } : p)
-          );
-        }
-      });
-
-      initHostWebRTC(sessionId, (participantId, track) => {
-        console.log(`Received track from participant ${participantId}:`, track);
-        
-        if (!participantStreams[participantId]) {
-          const newStream = new MediaStream();
-          newStream.addTrack(track);
-          setParticipantStreams(prev => ({
-            ...prev,
-            [participantId]: newStream
-          }));
+      // Create a dummy stream for the host to initialize WebRTC properly
+      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        .then(stream => {
+          console.log("Created host media stream for WebRTC initialization");
+          setLocalMediaStream(stream);
+          setLocalStream(stream);
           
-          setParticipantList(prev => 
-            prev.map(p => p.id === participantId ? { ...p, hasVideo: true } : p)
-          );
-        } else {
-          const existingStream = participantStreams[participantId];
-          if (!existingStream.getTracks().some(t => t.id === track.id)) {
-            existingStream.addTrack(track);
-            
-            setParticipantStreams(prev => ({...prev}));
-          }
-        }
-      });
+          const cleanup = initializeHostSession(sessionId, {
+            onParticipantJoin: handleParticipantJoin,
+            onParticipantLeave: (id) => {
+              setParticipantList(prev => 
+                prev.map(p => p.id === id ? { ...p, active: false } : p)
+              );
+            },
+            onParticipantHeartbeat: (id) => {
+              setParticipantList(prev => 
+                prev.map(p => p.id === id ? { ...p, active: true } : p)
+              );
+            }
+          });
 
-      return () => {
-        cleanup();
-      };
+          initHostWebRTC(sessionId, (participantId, track) => {
+            console.log(`Received track from participant ${participantId}:`, track);
+            handleParticipantTrack(participantId, track);
+          });
+
+          return () => {
+            cleanup();
+            if (stream) {
+              stream.getTracks().forEach(track => track.stop());
+            }
+          };
+        })
+        .catch(err => {
+          console.error("Error creating host media stream:", err);
+          toast({
+            title: "Erro ao inicializar câmera",
+            description: "Não foi possível acessar a câmera para inicializar a transmissão.",
+            variant: "destructive"
+          });
+        });
     }
   }, [sessionId]);
+
+  const handleParticipantTrack = (participantId: string, track: MediaStreamTrack) => {
+    console.log(`Processing track from participant ${participantId}:`, track);
+    
+    const newStream = new MediaStream([track]);
+    
+    setParticipantStreams(prev => {
+      // If we already have a stream for this participant
+      if (prev[participantId]) {
+        const existingStream = prev[participantId];
+        // Check if this track is already in the stream
+        const trackExists = existingStream.getTracks().some(t => t.id === track.id);
+        
+        if (!trackExists) {
+          existingStream.addTrack(track);
+          // Return a new object to trigger re-render
+          return { ...prev };
+        }
+        return prev;
+      }
+      
+      // Otherwise create a new stream entry
+      return {
+        ...prev,
+        [participantId]: newStream
+      };
+    });
+    
+    setParticipantList(prev => 
+      prev.map(p => p.id === participantId ? { ...p, hasVideo: true } : p)
+    );
+    
+    // Send the stream to the transmission window if it's open
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      const channel = new BroadcastChannel(`live-session-${sessionId}`);
+      channel.postMessage({
+        type: 'video-stream',
+        participantId,
+        stream: { hasStream: true }
+      });
+    }
+  };
 
   useEffect(() => {
     if (qrCodeURL) {
@@ -153,53 +196,49 @@ const LivePage = () => {
       if (sessionId) {
         cleanupSession(sessionId);
       }
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
     };
-  }, [sessionId]);
+  }, [sessionId, localStream]);
 
+  // Update video elements when participant list or streams change
   useEffect(() => {
     Object.entries(participantStreams).forEach(([participantId, stream]) => {
       const participant = participantList.find(p => p.id === participantId);
-      if (participant && participant.selected) {
-        const previewContainer = document.getElementById(`preview-participant-video-${participantId}`);
-        if (previewContainer) {
-          let videoElement = previewContainer.querySelector('video');
-          
-          if (!videoElement) {
-            videoElement = document.createElement('video');
-            videoElement.autoplay = true;
-            videoElement.playsInline = true;
-            videoElement.muted = true;
-            videoElement.className = 'w-full h-full object-cover';
-            previewContainer.appendChild(videoElement);
-          }
-          
-          if (videoElement.srcObject !== stream) {
-            videoElement.srcObject = stream;
-            videoElement.play().catch(err => console.error('Error playing video in preview:', err));
-          }
+      if (participant) {
+        // Update the preview container video
+        if (participant.selected) {
+          const previewContainer = document.getElementById(`preview-participant-video-${participantId}`);
+          updateVideoElement(previewContainer, stream);
         }
         
+        // Always update the grid container video
         const gridContainer = document.getElementById(`participant-video-${participantId}`);
-        if (gridContainer) {
-          let videoElement = gridContainer.querySelector('video');
-          
-          if (!videoElement) {
-            videoElement = document.createElement('video');
-            videoElement.autoplay = true;
-            videoElement.playsInline = true;
-            videoElement.muted = true;
-            videoElement.className = 'w-full h-full object-cover';
-            gridContainer.appendChild(videoElement);
-          }
-          
-          if (videoElement.srcObject !== stream) {
-            videoElement.srcObject = stream;
-            videoElement.play().catch(err => console.error('Error playing video in grid:', err));
-          }
-        }
+        updateVideoElement(gridContainer, stream);
       }
     });
   }, [participantList, participantStreams]);
+
+  const updateVideoElement = (container: HTMLElement | null, stream: MediaStream) => {
+    if (!container) return;
+    
+    let videoElement = container.querySelector('video');
+    
+    if (!videoElement) {
+      videoElement = document.createElement('video');
+      videoElement.autoplay = true;
+      videoElement.playsInline = true;
+      videoElement.muted = true;
+      videoElement.className = 'w-full h-full object-cover';
+      container.appendChild(videoElement);
+    }
+    
+    if (videoElement.srcObject !== stream) {
+      videoElement.srcObject = stream;
+      videoElement.play().catch(err => console.error('Error playing video:', err));
+    }
+  };
 
   const generateQRCode = async (url: string) => {
     try {
@@ -372,6 +411,7 @@ const LivePage = () => {
                 align-items: center;
                 justify-content: center;
                 overflow: hidden;
+                position: relative;
               }
               .participant video {
                 width: 100%;
@@ -490,142 +530,127 @@ const LivePage = () => {
               let participantStreams = {};
               let activeVideoElements = {};
             
-            function createVideoElement(slotElement, stream) {
-              const existingVideo = slotElement.querySelector('video');
-              if (existingVideo) {
-                if (existingVideo.srcObject !== stream) {
-                  existingVideo.srcObject = stream;
+              function createVideoElement(slotElement, stream) {
+                if (!slotElement) return;
+                
+                const existingVideo = slotElement.querySelector('video');
+                if (existingVideo) {
+                  if (existingVideo.srcObject !== stream) {
+                    existingVideo.srcObject = stream;
+                  }
+                  return existingVideo;
                 }
-                return;
+                
+                slotElement.innerHTML = '';
+                const videoElement = document.createElement('video');
+                videoElement.autoplay = true;
+                videoElement.playsInline = true;
+                videoElement.muted = true;
+                
+                videoElement.style.width = '100%';
+                videoElement.style.height = '100%';
+                videoElement.style.objectFit = 'cover';
+                videoElement.style.transform = 'translateZ(0)';
+                videoElement.style.backfaceVisibility = 'hidden';
+                videoElement.style.webkitBackfaceVisibility = 'hidden';
+                videoElement.style.willChange = 'transform';
+                videoElement.style.transition = 'none';
+                
+                slotElement.appendChild(videoElement);
+                videoElement.srcObject = stream;
+                
+                videoElement.play().catch(err => {
+                  console.warn('Error playing video:', err);
+                });
+                
+                activeVideoElements[slotElement.id] = videoElement;
+                return videoElement;
+              }
+            
+              // Capture browser camera as a placeholder for remote stream
+              async function getLocalStreamForDisplay() {
+                try {
+                  const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: false 
+                  });
+                  
+                  console.log("Got local stream for display with tracks:", stream.getTracks().length);
+                  return stream;
+                } catch (e) {
+                  console.error("Failed to get local stream:", e);
+                  return null;
+                }
               }
               
-              slotElement.innerHTML = '';
-              const videoElement = document.createElement('video');
-              videoElement.autoplay = true;
-              videoElement.playsInline = true;
-              videoElement.muted = true;
-              
-              videoElement.style.transform = 'translateZ(0)';
-              videoElement.style.backfaceVisibility = 'hidden';
-              videoElement.style.webkitBackfaceVisibility = 'hidden';
-              videoElement.style.willChange = 'transform';
-              videoElement.style.transition = 'none';
-              
-              slotElement.appendChild(videoElement);
-              videoElement.srcObject = stream;
-              
-              videoElement.play().catch(err => {
-                console.warn('Error playing video:', err);
-              });
-              
-              activeVideoElements[slotElement.id] = videoElement;
-            }
-            
-            channel.addEventListener('message', (event) => {
-              const data = event.data;
-              if (data.type === 'video-stream' && data.stream) {
-                console.log('Received video stream from participant:', data.participantId);
-                participantStreams[data.participantId] = data.stream;
+              // Listen for video streams from participants
+              channel.addEventListener('message', async (event) => {
+                const data = event.data;
                 
-                if (!participantSlots[data.participantId] && availableSlots.length > 0) {
-                  const slotIndex = availableSlots.shift();
-                  participantSlots[data.participantId] = slotIndex;
+                if (data.type === 'video-stream' && data.participantId) {
+                  console.log('Received video stream notification for participant:', data.participantId);
                   
-                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                  if (slotElement) {
-                    createVideoElement(slotElement, data.stream);
+                  // Find out if this participant has a slot already
+                  if (!participantSlots[data.participantId] && availableSlots.length > 0) {
+                    const slotIndex = availableSlots.shift();
+                    participantSlots[data.participantId] = slotIndex;
+                    
+                    const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                    if (slotElement) {
+                      // Set a placeholder stream until the real one arrives
+                      if (!window.localPlaceholderStream) {
+                        window.localPlaceholderStream = await getLocalStreamForDisplay();
+                      }
+                      
+                      if (window.localPlaceholderStream) {
+                        const videoEl = createVideoElement(slotElement, window.localPlaceholderStream);
+                        
+                        // Add participant ID as data attribute
+                        if (videoEl) {
+                          videoEl.dataset.participantId = data.participantId;
+                        }
+                      }
+                    }
                   }
                 }
-              }
-            });
+              });
             
-              function updateParticipantDisplay() {
-                window.addEventListener('message', (event) => {
-                  if (event.data.type === 'update-participants') {
-                    const { participants } = event.data;
-                    console.log('Got participants update:', participants);
-                    
-                    participants.forEach(p => {
-                      if (p.selected) {
-                        if (!participantSlots[p.id] && availableSlots.length > 0) {
-                          const slotIndex = availableSlots.shift();
-                          participantSlots[p.id] = slotIndex;
-                          
-                          console.log('Assigned slot', slotIndex, 'to participant', p.id);
-                          
-                          const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                          if (slotElement) {
-                            if (participantStreams[p.id]?.hasStream) {
-                              console.log('Participant has stream info, creating video element');
-                              
-                              if (!window.localStream) {
-                                navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-                                  .then(stream => {
-                                    window.localStream = stream;
-                                    createVideoElement(slotElement, stream);
-                                  })
-                                  .catch(err => {
-                                    console.error('Error accessing camera:', err);
-                                    slotElement.innerHTML = \`
-                                      <div style="text-align: center; padding: 10px;">
-                                        <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                          <circle cx="12" cy="7" r="4"></circle>
-                                        </svg>
-                                        <div style="margin-top: 5px; font-size: 12px;">Aguardando mídia...</div>
-                                      </div>
-                                    \`;
-                                  });
-                              } else {
-                                createVideoElement(slotElement, window.localStream);
-                              }
-                            } else {
-                              slotElement.innerHTML = \`
-                                <div style="text-align: center; padding: 10px;">
-                                  <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                    <circle cx="12" cy="7" r="4"></circle>
-                                  </svg>
-                                  <div style="margin-top: 5px; font-size: 12px;">\${p.name}</div>
-                                </div>
-                              \`;
-                            }
-                          }
-                        }
-                      } else {
-                        if (participantSlots[p.id] !== undefined) {
-                          const slotIndex = participantSlots[p.id];
-                          delete participantSlots[p.id];
-                          availableSlots.push(slotIndex);
-                          
-                          const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                          if (slotElement) {
-                            if (activeVideoElements[slotElement.id]) {
-                              const videoElement = activeVideoElements[slotElement.id];
-                              if (videoElement.srcObject) {
-                                const tracks = videoElement.srcObject.getTracks();
-                                tracks.forEach(track => track.stop());
-                                videoElement.srcObject = null;
-                              }
-                              delete activeVideoElements[slotElement.id];
-                            }
-                            
-                            slotElement.innerHTML = \`
+              // Handle participant updates from parent window
+              window.addEventListener('message', (event) => {
+                if (event.data.type === 'update-participants') {
+                  const { participants } = event.data;
+                  console.log('Got participants update:', participants);
+                  
+                  // Process selected participants
+                  participants.forEach(p => {
+                    if (p.selected) {
+                      if (!participantSlots[p.id] && availableSlots.length > 0) {
+                        const slotIndex = availableSlots.shift();
+                        participantSlots[p.id] = slotIndex;
+                        
+                        console.log('Assigned slot', slotIndex, 'to participant', p.id);
+                        
+                        const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                        if (slotElement) {
+                          slotElement.innerHTML = \`
+                            <div style="text-align: center; padding: 10px;">
                               <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                                 <circle cx="12" cy="7" r="4"></circle>
                               </svg>
-                            \`;
-                          }
+                              <div style="margin-top: 5px; font-size: 12px;">\${p.name}</div>
+                            </div>
+                          \`;
+                          
+                          // Tag the slot with participant ID
+                          slotElement.dataset.participantId = p.id;
                         }
                       }
-                    });
-                    
-                    Object.keys(participantSlots).forEach(participantId => {
-                      const isStillSelected = participants.some(p => p.id === participantId && p.selected);
-                      if (!isStillSelected) {
-                        const slotIndex = participantSlots[participantId];
-                        delete participantSlots[participantId];
+                    } else {
+                      // Handle unselected participants
+                      if (participantSlots[p.id] !== undefined) {
+                        const slotIndex = participantSlots[p.id];
+                        delete participantSlots[p.id];
                         availableSlots.push(slotIndex);
                         
                         const slotElement = document.getElementById("participant-slot-" + slotIndex);
@@ -646,21 +671,58 @@ const LivePage = () => {
                               <circle cx="12" cy="7" r="4"></circle>
                             </svg>
                           \`;
+                          
+                          // Remove participant ID
+                          delete slotElement.dataset.participantId;
                         }
                       }
-                    });
-                  }
-                });
-                
-                window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
-              }
+                    }
+                  });
+                  
+                  // Clean up any participants that are no longer in the list
+                  Object.keys(participantSlots).forEach(participantId => {
+                    const isStillSelected = participants.some(p => p.id === participantId && p.selected);
+                    if (!isStillSelected) {
+                      const slotIndex = participantSlots[participantId];
+                      delete participantSlots[participantId];
+                      availableSlots.push(slotIndex);
+                      
+                      const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                      if (slotElement) {
+                        if (activeVideoElements[slotElement.id]) {
+                          const videoElement = activeVideoElements[slotElement.id];
+                          if (videoElement.srcObject) {
+                            const tracks = videoElement.srcObject.getTracks();
+                            tracks.forEach(track => track.stop());
+                            videoElement.srcObject = null;
+                          }
+                          delete activeVideoElements[slotElement.id];
+                        }
+                        
+                        slotElement.innerHTML = \`
+                          <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                          </svg>
+                        \`;
+                        
+                        // Remove participant ID
+                        delete slotElement.dataset.participantId;
+                      }
+                    }
+                  });
+                }
+              });
               
-              updateParticipantDisplay();
+              // Tell the parent window we're ready to receive updates
+              window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
               
+              // Periodically ask for updates
               setInterval(() => {
                 window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
               }, 5000);
               
+              // Notify the parent window when participants join
               channel.onmessage = (event) => {
                 const { type, id } = event.data;
                 if (type === 'participant-join') {
@@ -669,6 +731,7 @@ const LivePage = () => {
                 }
               };
               
+              // Clean up resources when the window is closed
               window.addEventListener('beforeunload', () => {
                 Object.values(activeVideoElements).forEach(videoElement => {
                   if (videoElement.srcObject) {
@@ -678,10 +741,10 @@ const LivePage = () => {
                   }
                 });
                 
-                if (window.localStream) {
-                  const tracks = window.localStream.getTracks();
+                if (window.localPlaceholderStream) {
+                  const tracks = window.localPlaceholderStream.getTracks();
                   tracks.forEach(track => track.stop());
-                  window.localStream = null;
+                  window.localPlaceholderStream = null;
                 }
                 
                 channel.close();
@@ -786,6 +849,7 @@ const LivePage = () => {
 
   const handleParticipantJoin = (participantId: string) => {
     console.log("Participant joined:", participantId);
+    
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === participantId);
       if (exists) {
@@ -797,7 +861,7 @@ const LivePage = () => {
         id: participantId,
         name: participantName,
         active: true,
-        selected: autoJoin,
+        selected: false, // No longer auto-joining
         hasVideo: true,
         connectedAt: Date.now()
       };
@@ -822,8 +886,8 @@ const LivePage = () => {
     <div className="container mx-auto py-8 px-4 max-w-6xl">
       <h1 className="text-3xl font-bold mb-8 hutz-gradient-text text-center">Momento Live</h1>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div>
           <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 h-full">
             <CardHeader className="flex flex-row justify-between items-center">
               <div className="flex items-center gap-4 w-full">
@@ -925,8 +989,8 @@ const LivePage = () => {
                     setFinalActionCoupon={setFinalActionCouponCode}
                     onGenerateQRCode={handleGenerateQRCode}
                     onQRCodeToTransmission={handleQRCodeToTransmission}
-                    autoJoin={autoJoin}
-                    setAutoJoin={setAutoJoin}
+                    autoJoin={false}
+                    setAutoJoin={() => {}} // Removed auto-join functionality
                   />
                 </TabsContent>
               </Tabs>
@@ -935,7 +999,7 @@ const LivePage = () => {
         </div>
         
         <div>
-          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10">
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 h-full">
             <CardHeader>
               <CardTitle>
                 Pré-visualização
@@ -945,7 +1009,7 @@ const LivePage = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4">
-              <div className="h-[500px]">
+              <div className="h-[600px]">
                 <LivePreview 
                   qrCodeVisible={qrCodeVisible}
                   qrCodeSvg={qrCodeSvg}

@@ -178,6 +178,9 @@ const LivePreview = ({
     }
   };
 
+  // Calculate grid columns based on participant count
+  const gridCols = Math.min(Math.ceil(Math.sqrt(participantCount)), 4);
+
   return (
     <div className="w-full h-full">
       <AspectRatio ratio={16/9} className="relative bg-black rounded-lg overflow-hidden w-full">
@@ -204,7 +207,7 @@ const LivePreview = ({
           </div>
           
           <div className="absolute top-[5%] right-[5%] bottom-[5%] left-[30%]">
-            <div className={`grid grid-cols-${Math.min(Math.ceil(Math.sqrt(participantCount)), 10)} gap-2 h-full`}>
+            <div className={`grid grid-cols-${gridCols} gap-2 h-full`}>
               {participantList
                 .filter(p => p.selected)
                 .slice(0, Math.min(participantCount, 100))
