@@ -1,3 +1,4 @@
+
 import { io, Socket } from 'socket.io-client';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -266,7 +267,7 @@ export const initHostWebRTC = async (sessionId: string, participantId: string) =
 
     socket.on('offer', async (data: { sdp: string; origin: string }) => {
       if (id === data.origin) {
-        const offer = {
+        const offer: RTCSessionDescriptionInit = {
           type: 'offer',
           sdp: data.sdp,
         };
@@ -321,7 +322,7 @@ export const initParticipantWebRTC = async (sessionId: string, participantId: st
   });
 
   socket.on('answer', async (data: { sdp: string }) => {
-    const answer = {
+    const answer: RTCSessionDescriptionInit = {
       type: 'answer',
       sdp: data.sdp,
     };
