@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -26,7 +25,7 @@ const ParticipantPage = () => {
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
-  const [autoJoin, setAutoJoin] = useState(false);
+  const [autoJoin, setAutoJoin] = useState(true); // Always set to true by default
   const [finalAction, setFinalAction] = useState<{
     type: 'none' | 'image' | 'coupon';
     image?: string;
@@ -38,6 +37,7 @@ const ParticipantPage = () => {
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const cleanupFunctionRef = useRef<(() => void) | null>(null);
   const autoJoinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const cameraStartAttempts = useRef<number>(0);
 
   // Generate a unique participant ID on component mount
   useEffect(() => {
@@ -51,10 +51,8 @@ const ParticipantPage = () => {
     // Check for camera availability
     checkCameraAvailability();
 
-    // Parse URL parameters for auto-join
-    const urlParams = new URLSearchParams(window.location.search);
-    const autoJoinParam = urlParams.get('autoJoin');
-    setAutoJoin(autoJoinParam === 'true');
+    // Always set autoJoin to true, ignoring URL parameters
+    setAutoJoin(true);
 
     return () => {
       cleanupResources();
@@ -68,7 +66,7 @@ const ParticipantPage = () => {
       autoJoinTimeoutRef.current = setTimeout(() => {
         console.log("Auto-joining session...");
         joinSession(false); // Don't show toast on auto-join
-      }, 1000);
+      }, 500); // Reduced timeout to join faster
     }
     
     return () => {
@@ -107,6 +105,19 @@ const ParticipantPage = () => {
       retrySessionCheck();
     }
   }, [sessionFound]);
+
+  // Attempt to restart camera if it fails initially
+  useEffect(() => {
+    if (isJoined && isCameraActive && !videoStream && cameraStartAttempts.current < 3) {
+      console.log("Camera should be active but no stream, attempting restart...");
+      const restartTimeout = setTimeout(() => {
+        cameraStartAttempts.current += 1;
+        startCamera(true); // Force restart
+      }, 1000);
+      
+      return () => clearTimeout(restartTimeout);
+    }
+  }, [isJoined, isCameraActive, videoStream]);
 
   const checkSession = async (showToast = true) => {
     setIsLoading(true);
@@ -231,11 +242,22 @@ const ParticipantPage = () => {
 
       if (hasVideoDevices) {
         try {
-          // Just check for permission without actually starting the camera
+          // We actually need to start the camera to properly check permission
+          // and to ensure it's ready for the auto-join
           const testStream = await navigator.mediaDevices.getUserMedia({ video: true });
-          // Stop the test stream immediately
-          testStream.getTracks().forEach(track => track.stop());
           setCameraPermission(true);
+          
+          // Keep this stream for later use
+          setVideoStream(testStream);
+          setIsCameraActive(true);
+          
+          // Set video element source
+          if (videoRef.current) {
+            videoRef.current.srcObject = testStream;
+            console.log("Preview camera stream set successfully");
+          } else {
+            console.warn("Video element ref not available yet");
+          }
         } catch (error) {
           console.error("Camera permission denied:", error);
           setCameraPermission(false);
@@ -250,11 +272,22 @@ const ParticipantPage = () => {
     }
   };
 
-  const startCamera = async () => {
+  const startCamera = async (forceRestart = false) => {
     try {
-      // Stop any existing stream
-      if (videoStream) {
+      // Stop any existing stream if force restarting
+      if (forceRestart && videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
+        if (videoRef.current) {
+          videoRef.current.srcObject = null;
+        }
+        setVideoStream(null);
+      }
+
+      // Don't start if we already have a stream
+      if (videoStream && !forceRestart) {
+        console.log("Camera already running, using existing stream");
+        setIsCameraActive(true);
+        return videoStream;
       }
 
       console.log("Starting camera...");
@@ -273,6 +306,17 @@ const ParticipantPage = () => {
       // Set stream to video element
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        console.log("Set video element source object successfully");
+        
+        // Force video element to play
+        try {
+          await videoRef.current.play();
+          console.log("Video playback started successfully");
+        } catch (playError) {
+          console.error("Error playing video:", playError);
+        }
+      } else {
+        console.warn("Video element ref not available");
       }
 
       setVideoStream(stream);
@@ -316,6 +360,8 @@ const ParticipantPage = () => {
           // If camera fails, still try to join without camera
           console.log("Failed to start camera, joining without video");
         }
+      } else {
+        console.log("Using existing camera stream for WebRTC");
       }
 
       console.log("Adding participant to session:", {
@@ -333,11 +379,12 @@ const ParticipantPage = () => {
 
       // Set up WebRTC if we have a stream
       if (stream) {
-        console.log("Setting up WebRTC...");
+        console.log("Setting up WebRTC with stream...");
         setLocalStream(stream);
         
         try {
           await initParticipantWebRTC(sessionId, participantId, stream);
+          console.log("WebRTC initialized successfully");
         } catch (e) {
           console.error("WebRTC initialization error:", e);
           // Continue despite WebRTC errors - we'll still try to join via broadcast channel
@@ -393,13 +440,12 @@ const ParticipantPage = () => {
     if (finalAction && finalAction.type !== 'none') {
       // Final action will be shown
     } else {
-      navigate('/');
+      // Do not navigate to home page
+      toast({
+        title: "Desconectado",
+        description: "Você saiu da sessão.",
+      });
     }
-    
-    toast({
-      title: "Desconectado",
-      description: "Você saiu da sessão.",
-    });
   };
 
   const cleanupResources = () => {
@@ -530,6 +576,7 @@ const ParticipantPage = () => {
     );
   }
 
+  // This is now automatically skipped - we never show this screen
   if (isJoined) {
     return (
       <div className="container max-w-md mx-auto py-8 px-4 flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
@@ -602,6 +649,7 @@ const ParticipantPage = () => {
     );
   }
 
+  // We never show this screen - it's skipped by autoJoin
   return (
     <div className="container max-w-md mx-auto py-8 px-4 flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
       <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 w-full">
