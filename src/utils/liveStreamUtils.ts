@@ -19,7 +19,7 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
   const channel = new BroadcastChannel(`live-session-${sessionId}`);
   
   // Also listen on a secondary channel for connection issues
-  const backupChannel = new BroadcastChannel(`telao-session-${sessionId}`);
+  const backupChannel = new BroadcastChannel(`live-session-${sessionId}-backup`);
   
   // Set up heartbeat to keep session alive
   const heartbeatInterval = setInterval(() => {
@@ -40,7 +40,7 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
     
     // Update localStorage heartbeat for even more reliability
     try {
-      localStorage.setItem(`telao-heartbeat-${sessionId}`, Date.now().toString());
+      localStorage.setItem(`live-heartbeat-${sessionId}`, Date.now().toString());
     } catch (e) {
       console.warn("Error updating localStorage heartbeat:", e);
     }
@@ -51,7 +51,7 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
     try {
       // Check for join requests in localStorage
       const joinKeys = Object.keys(localStorage).filter(key => 
-        key.startsWith(`telao-join-${sessionId}`) || 
+        key.startsWith(`live-join-${sessionId}`) || 
         key.startsWith(`join-${sessionId}`)
       );
       
@@ -64,14 +64,14 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
               console.log('Found participant join via localStorage:', joinData.id);
               
               // Acknowledge the join via localStorage
-              localStorage.setItem(`telao-ack-${sessionId}-${joinData.id}`, JSON.stringify({
+              localStorage.setItem(`live-ack-${sessionId}-${joinData.id}`, JSON.stringify({
                 type: 'host-acknowledge',
                 participantId: joinData.id,
                 timestamp: Date.now()
               }));
               
               // Add participant to session storage
-              addParticipantToSession(sessionId, joinData.id);
+              addParticipantToSession(sessionId, joinData.id, joinData.name || '');
               
               // Notify the callback
               callbacks.onParticipantJoin(joinData.id);
@@ -89,7 +89,7 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
       // Also check for video stream info in localStorage
       try {
         const streamInfoKeys = Object.keys(localStorage).filter(key => 
-          key.startsWith(`telao-stream-info-${sessionId}`)
+          key.startsWith(`live-stream-info-${sessionId}`)
         );
         
         streamInfoKeys.forEach(key => {
@@ -108,7 +108,7 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
                 });
                 
                 // Acknowledge the stream info
-                localStorage.setItem(`telao-stream-ack-${sessionId}-${streamInfo.id}`, JSON.stringify({
+                localStorage.setItem(`live-stream-ack-${sessionId}-${streamInfo.id}`, JSON.stringify({
                   type: 'host-stream-acknowledge',
                   participantId: streamInfo.id,
                   timestamp: Date.now()
@@ -138,7 +138,7 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
       console.log('Participant joined:', data.id);
       
       // Add participant to session storage
-      addParticipantToSession(sessionId, data.id);
+      addParticipantToSession(sessionId, data.id, data.name || '');
       
       // Acknowledge the participant join
       channel.postMessage({
@@ -160,7 +160,7 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
       
       // Also acknowledge via localStorage for maximum reliability
       try {
-        localStorage.setItem(`telao-ack-${sessionId}-${data.id}`, JSON.stringify({
+        localStorage.setItem(`live-ack-${sessionId}-${data.id}`, JSON.stringify({
           type: 'host-acknowledge',
           participantId: data.id,
           timestamp: Date.now()
@@ -214,7 +214,7 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
       console.log('Participant joined via backup channel:', data.id);
       
       // Add participant to session storage
-      addParticipantToSession(sessionId, data.id);
+      addParticipantToSession(sessionId, data.id, data.name || '');
       
       // Acknowledge the participant join on both channels
       backupChannel.postMessage({
@@ -231,7 +231,7 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
       
       // Also acknowledge via localStorage
       try {
-        localStorage.setItem(`telao-ack-${sessionId}-${data.id}`, JSON.stringify({
+        localStorage.setItem(`live-ack-${sessionId}-${data.id}`, JSON.stringify({
           type: 'host-acknowledge',
           participantId: data.id,
           timestamp: Date.now()
@@ -288,20 +288,21 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
 /**
  * Initialize a participant session for live streaming
  */
-export const initializeParticipantSession = (sessionId: string, participantId: string) => {
+export const initializeParticipantSession = (sessionId: string, participantId: string, participantName: string = '') => {
   console.log("Initializing participant session:", sessionId, "participant:", participantId);
   
   // Set up broadcast channel for this session
   const channel = new BroadcastChannel(`live-session-${sessionId}`);
   
-  // Also set up a backup channel for cross-compatibility
-  const backupChannel = new BroadcastChannel(`telao-session-${sessionId}`);
+  // Also set up a backup channel for reliability
+  const backupChannel = new BroadcastChannel(`live-session-${sessionId}-backup`);
   
   // Use localStorage as well for maximum reliability
   try {
-    localStorage.setItem(`telao-join-${sessionId}-${Date.now()}`, JSON.stringify({
+    localStorage.setItem(`live-join-${sessionId}-${Date.now()}`, JSON.stringify({
       type: 'participant-join',
       id: participantId,
+      name: participantName,
       timestamp: Date.now()
     }));
   } catch (e) {
@@ -312,6 +313,7 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
   channel.postMessage({
     type: 'participant-join',
     id: participantId,
+    name: participantName,
     timestamp: Date.now()
   });
   
@@ -319,6 +321,7 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
   backupChannel.postMessage({
     type: 'participant-join',
     id: participantId,
+    name: participantName,
     timestamp: Date.now()
   });
   
@@ -362,7 +365,7 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
     
     // Also store in localStorage for maximum reliability
     try {
-      localStorage.setItem(`telao-stream-info-${sessionId}-${participantId}`, JSON.stringify(streamInfo));
+      localStorage.setItem(`live-stream-info-${sessionId}-${participantId}`, JSON.stringify(streamInfo));
     } catch (e) {
       console.warn("Error storing stream info in localStorage:", e);
     }
@@ -473,7 +476,7 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
   // Check localStorage for acknowledgment as well
   const checkLocalStorageAck = () => {
     try {
-      const ackKey = `telao-ack-${sessionId}-${participantId}`;
+      const ackKey = `live-ack-${sessionId}-${participantId}`;
       const ackData = localStorage.getItem(ackKey);
       if (ackData) {
         try {
@@ -511,6 +514,7 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
       channel.postMessage({
         type: 'participant-join',
         id: participantId,
+        name: participantName,
         timestamp: Date.now()
       });
       
@@ -518,14 +522,16 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
       backupChannel.postMessage({
         type: 'participant-join',
         id: participantId,
+        name: participantName,
         timestamp: Date.now()
       });
       
       // Also try localStorage
       try {
-        localStorage.setItem(`telao-join-${sessionId}-${Date.now()}`, JSON.stringify({
+        localStorage.setItem(`live-join-${sessionId}-${Date.now()}`, JSON.stringify({
           type: 'participant-join',
           id: participantId,
+          name: participantName,
           timestamp: Date.now()
         }));
       } catch (e) {
@@ -559,7 +565,7 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
     
     // Also use localStorage for heartbeat
     try {
-      localStorage.setItem(`telao-heartbeat-${sessionId}-${participantId}`, Date.now().toString());
+      localStorage.setItem(`live-heartbeat-${sessionId}-${participantId}`, Date.now().toString());
     } catch (e) {
       // Ignore localStorage errors
     }
@@ -582,7 +588,7 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
     
     // Set leave marker in localStorage
     try {
-      localStorage.setItem(`telao-leave-${sessionId}-${participantId}`, JSON.stringify({
+      localStorage.setItem(`live-leave-${sessionId}-${participantId}`, JSON.stringify({
         type: 'participant-leave',
         id: participantId,
         timestamp: Date.now()
@@ -622,7 +628,7 @@ export const cleanupSession = (sessionId: string) => {
   try {
     // Use both channels to ensure all participants get the message
     const primaryChannel = new BroadcastChannel(`live-session-${sessionId}`);
-    const backupChannel = new BroadcastChannel(`telao-session-${sessionId}`);
+    const backupChannel = new BroadcastChannel(`live-session-${sessionId}-backup`);
     
     const endMessage = {
       type: 'session-end',
@@ -634,7 +640,7 @@ export const cleanupSession = (sessionId: string) => {
     
     // Also set session end in localStorage
     try {
-      localStorage.setItem(`telao-session-end-${sessionId}`, Date.now().toString());
+      localStorage.setItem(`live-session-end-${sessionId}`, Date.now().toString());
     } catch (e) {
       console.warn("Error setting session end in localStorage:", e);
     }

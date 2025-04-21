@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Camera, User, VideoOff, Loader2, X, ChevronRight, CheckSquare, Tv2 } from "lucide-react";
 import { isSessionActive, addParticipantToSession } from '@/utils/sessionUtils';
 import { initParticipantWebRTC, setLocalStream } from '@/utils/webrtc';
+import { initializeParticipantSession } from '@/utils/liveStreamUtils';
 
 const ParticipantPage = () => {
   const navigate = useNavigate();
@@ -27,6 +28,7 @@ const ParticipantPage = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const cleanupFunctionRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     // Generate a unique participant ID
@@ -178,30 +180,9 @@ const ParticipantPage = () => {
       setLocalStream(stream);
       await initParticipantWebRTC(sessionId, participantId, stream);
 
-      // Set up broadcast channel for heartbeats
-      const channel = new BroadcastChannel(`telao-session-${sessionId}`);
-      broadcastChannelRef.current = channel;
-
-      // Send initial join message
-      channel.postMessage({
-        type: 'participant-join',
-        id: participantId,
-        name: participantName,
-        timestamp: Date.now()
-      });
-
-      // Set up heartbeat
-      const heartbeatInterval = setInterval(() => {
-        if (channel) {
-          channel.postMessage({
-            type: 'participant-heartbeat',
-            id: participantId,
-            timestamp: Date.now()
-          });
-        }
-      }, 5000);
-
-      heartbeatIntervalRef.current = heartbeatInterval;
+      // Set up live stream session
+      const cleanup = initializeParticipantSession(sessionId, participantId, participantName);
+      cleanupFunctionRef.current = cleanup;
 
       // Update state
       setIsJoined(true);
@@ -214,18 +195,7 @@ const ParticipantPage = () => {
         });
       }
 
-      return () => {
-        // Cleanup function
-        if (channel) {
-          channel.close();
-        }
-        if (heartbeatInterval) {
-          clearInterval(heartbeatInterval);
-        }
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-        }
-      };
+      return true;
     } catch (error) {
       console.error("Error joining session:", error);
       setIsJoining(false);
@@ -237,7 +207,7 @@ const ParticipantPage = () => {
           variant: "destructive",
         });
       }
-      return () => {}; // Return empty cleanup function on error
+      return false;
     }
   };
 
@@ -262,6 +232,12 @@ const ParticipantPage = () => {
       }
       setVideoStream(null);
       setIsCameraActive(false);
+    }
+
+    // Call the cleanup function from liveStreamUtils
+    if (cleanupFunctionRef.current) {
+      cleanupFunctionRef.current();
+      cleanupFunctionRef.current = null;
     }
 
     // Close broadcast channel

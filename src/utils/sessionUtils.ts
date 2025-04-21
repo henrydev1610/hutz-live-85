@@ -25,7 +25,7 @@ export const isSessionActive = (sessionId: string): boolean => {
 
     // Also check for active broadcast channel
     try {
-      const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+      const channel = new BroadcastChannel(`live-session-${sessionId}`);
       const isActive = true;
       channel.close();
       return isActive;
@@ -78,7 +78,7 @@ export const createSession = (sessionId: string): void => {
           participants: existingData.participants || []
         };
         localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(updatedData));
-        localStorage.setItem(`telao-heartbeat-${sessionId}`, Date.now().toString());
+        localStorage.setItem(`live-heartbeat-${sessionId}`, Date.now().toString());
       } catch (e) {
         console.error("Error updating heartbeat:", e);
       }
@@ -98,10 +98,10 @@ export const createSession = (sessionId: string): void => {
 export const endSession = (sessionId: string): void => {
   try {
     localStorage.removeItem(`live-session-${sessionId}`);
-    localStorage.removeItem(`telao-heartbeat-${sessionId}`);
+    localStorage.removeItem(`live-heartbeat-${sessionId}`);
     
     // Also set an explicit leave marker to help clients detect disconnection
-    localStorage.setItem(`telao-leave-*-${sessionId}`, Date.now().toString());
+    localStorage.setItem(`live-leave-*-${sessionId}`, Date.now().toString());
     
     // Clean up the heartbeat interval
     if (window._sessionIntervals && window._sessionIntervals[sessionId]) {
@@ -111,7 +111,7 @@ export const endSession = (sessionId: string): void => {
     
     // Try to notify through broadcast channel
     try {
-      const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+      const channel = new BroadcastChannel(`live-session-${sessionId}`);
       channel.postMessage({
         type: 'participant-leave',
         id: sessionId,
@@ -131,7 +131,7 @@ export const endSession = (sessionId: string): void => {
  */
 export const notifyParticipants = (sessionId: string, message: any): void => {
   try {
-    const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+    const channel = new BroadcastChannel(`live-session-${sessionId}`);
     channel.postMessage(message);
     setTimeout(() => channel.close(), 500);
   } catch (error) {
@@ -164,7 +164,7 @@ export const addParticipantToSession = (sessionId: string, participantId: string
       
       // Send acknowledgement of existing participant
       try {
-        const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+        const channel = new BroadcastChannel(`live-session-${sessionId}`);
         channel.postMessage({
           type: 'host-acknowledge',
           participantId: participantId,
