@@ -28,6 +28,11 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
     (b.connectedAt || 0) - (a.connectedAt || 0)
   );
   
+  // Remove duplicates in the display
+  const displayParticipants = sortedActiveParticipants.filter((participant, index, self) =>
+    index === self.findIndex((p) => p.id === participant.id)
+  );
+  
   const getShortName = (participant: Participant) => {
     if (participant.name) return participant.name;
     return `Participante ${participant.id.substring(participant.id.lastIndexOf('-') + 1)}`;
@@ -35,29 +40,30 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
   
   return (
     <div className="space-y-4">
-      {sortedActiveParticipants.length > 0 && (
+      {displayParticipants.length > 0 && (
         <div className="mb-4">
-          <h3 className="text-sm font-medium text-white/70 mb-2">Participantes Ativos ({sortedActiveParticipants.length})</h3>
+          <h3 className="text-sm font-medium text-white/70 mb-2">Participantes Ativos ({displayParticipants.length})</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {sortedActiveParticipants.map((participant) => (
+            {displayParticipants.map((participant) => (
               <Card key={participant.id} className={`bg-secondary/60 border ${participant.selected ? 'border-accent' : 'border-white/10'}`}>
                 <CardContent className="p-4 text-center">
                   <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2 relative">
-                    <User className="h-8 w-8 text-white/30" />
-                    {participant.hasVideo ? (
-                      <div className="absolute top-2 right-2 bg-green-500/20 p-1 rounded-full">
+                    {!participant.hasVideo && <User className="h-8 w-8 text-white/30" />}
+                    <div className="absolute top-2 right-2 bg-green-500/20 p-1 rounded-full">
+                      {participant.hasVideo ? (
                         <Video className="h-3 w-3 text-green-500" />
-                      </div>
-                    ) : (
-                      <div className="absolute top-2 right-2 bg-orange-500/20 p-1 rounded-full">
+                      ) : (
                         <VideoOff className="h-3 w-3 text-orange-500" />
-                      </div>
-                    )}
+                      )}
+                    </div>
                     {participant.selected && (
                       <div className="absolute inset-0 bg-accent/10 flex items-center justify-center">
                         <span className="text-xs bg-accent text-white px-2 py-1 rounded-full">Na tela</span>
                       </div>
                     )}
+                    <div id={`participant-video-${participant.id}`} className="absolute inset-0 overflow-hidden">
+                      {/* Video element will be inserted here dynamically */}
+                    </div>
                   </div>
                   <div className="flex items-center justify-center gap-2 mb-2">
                     <p className="text-sm font-medium truncate">

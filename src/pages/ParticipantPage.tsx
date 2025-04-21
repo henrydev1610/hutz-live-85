@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
@@ -9,11 +9,9 @@ import { initParticipantWebRTC, setLocalStream, cleanupWebRTC } from '@/utils/we
 import { initializeParticipantSession } from '@/utils/liveStreamUtils';
 
 const ParticipantPage = () => {
-  const navigate = useNavigate();
   const { toast } = useToast();
   const { sessionId } = useParams<{ sessionId: string }>();
   const [participantId, setParticipantId] = useState<string>('');
-  const [participantName, setParticipantName] = useState<string>('');
   const [isJoining, setIsJoining] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
   const [sessionFound, setSessionFound] = useState<boolean | null>(null);
@@ -23,7 +21,6 @@ const ParticipantPage = () => {
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
-  const [autoJoin, setAutoJoin] = useState(true); // Always set to true by default
   const [finalAction, setFinalAction] = useState<{
     type: 'none' | 'image' | 'coupon';
     image?: string;
@@ -49,17 +46,14 @@ const ParticipantPage = () => {
     // Check for camera availability
     checkCameraAvailability();
 
-    // Always set autoJoin to true, ignoring URL parameters
-    setAutoJoin(true);
-
     return () => {
       cleanupResources();
     };
   }, []);
 
-  // Auto-join if enabled
+  // Auto-join when session is found and camera permission is determined
   useEffect(() => {
-    if (sessionFound && autoJoin && !isJoined && !isJoining && cameraPermission !== null) {
+    if (sessionFound && !isJoined && !isJoining && cameraPermission !== null) {
       // Use a short timeout to ensure everything is initialized
       autoJoinTimeoutRef.current = setTimeout(() => {
         console.log("Auto-joining session...");
@@ -72,7 +66,7 @@ const ParticipantPage = () => {
         clearTimeout(autoJoinTimeoutRef.current);
       }
     };
-  }, [sessionFound, autoJoin, isJoined, isJoining, cameraPermission]);
+  }, [sessionFound, isJoined, isJoining, cameraPermission]);
 
   // When joined, get session final action
   useEffect(() => {
@@ -150,6 +144,7 @@ const ParticipantPage = () => {
             type: 'video-stream-info',
             id: participantId,
             hasStream: true,
+            hasVideo: true,
             trackIds: videoStream.getTracks().map(track => track.id),
             timestamp: Date.now()
           };
@@ -170,7 +165,7 @@ const ParticipantPage = () => {
       sendVideoStreamInfo();
       
       // Set up interval to keep sending stream info
-      const streamInfoInterval = setInterval(sendVideoStreamInfo, 5000);
+      const streamInfoInterval = setInterval(sendVideoStreamInfo, 3000);
       
       return () => clearInterval(streamInfoInterval);
     }
@@ -442,12 +437,11 @@ const ParticipantPage = () => {
 
       console.log("Adding participant to session:", {
         sessionId,
-        participantId,
-        participantName
+        participantId
       });
       
-      // Add participant to session
-      const success = addParticipantToSession(sessionId, participantId, participantName);
+      // Add participant to session - using empty string for name since we removed the field
+      const success = addParticipantToSession(sessionId, participantId, "");
       
       if (!success) {
         throw new Error("Failed to add participant to session");
@@ -471,7 +465,7 @@ const ParticipantPage = () => {
 
       // Set up live stream session
       console.log("Initializing participant session...");
-      const cleanup = initializeParticipantSession(sessionId, participantId, participantName);
+      const cleanup = initializeParticipantSession(sessionId, participantId, "");
       cleanupFunctionRef.current = cleanup;
 
       // Update state
@@ -512,15 +506,12 @@ const ParticipantPage = () => {
     cleanupResources();
     setIsJoined(false);
     
-    // Don't navigate to home, show final action if available
+    // Show final action if available, otherwise close the window
     if (finalAction && finalAction.type !== 'none') {
       // Final action will be shown
     } else {
-      // Do not navigate to home page
-      toast({
-        title: "Desconectado",
-        description: "Você saiu da sessão.",
-      });
+      // Close the window
+      window.close();
     }
   };
 
@@ -699,25 +690,13 @@ const ParticipantPage = () => {
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="bg-secondary/20 border border-white/10 rounded-lg p-4">
-              <div className="flex items-center">
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium">Nome do participante</h3>
-                  <p className="text-sm text-white/70">{participantName || 'Anônimo'}</p>
-                </div>
-                <Tv2 className="h-5 w-5 text-white/40" />
-              </div>
-            </div>
-
-            <Button 
-              variant="destructive" 
-              className="w-full" 
-              onClick={leaveSession}
-            >
-              Sair da sessão
-            </Button>
-          </div>
+          <Button 
+            variant="destructive" 
+            className="w-full" 
+            onClick={leaveSession}
+          >
+            Sair da sessão
+          </Button>
         </CardContent>
       </Card>
     </div>
