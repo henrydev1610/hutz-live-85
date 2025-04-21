@@ -44,6 +44,7 @@ let signalingSessions: { [sessionId: string]: boolean } = {};
 let currentSessionId: string | null = null;
 let localStream: MediaStream | null = null;
 let fallbackModeEnabled = false;
+let participantStreams: { [participantId: string]: MediaStream } = {};
 
 // Define the enableFallbackMode function that was missing
 const enableFallbackMode = (): void => {
@@ -152,6 +153,42 @@ const initSocket = (sessionId: string): Promise<void> => {
       resolve();
     }
   });
+};
+
+/**
+ * Make a participant stream available for display
+ */
+export const shareParticipantStream = (participantId: string, stream: MediaStream): void => {
+  participantStreams[participantId] = stream;
+  
+  // Dispatch an event to notify components that a participant stream is available
+  window.dispatchEvent(new CustomEvent('participant-stream-available', {
+    detail: { participantId, stream }
+  }));
+  
+  console.log(`Stream for participant ${participantId} is now available`);
+};
+
+/**
+ * Listen for requests for participant streams
+ */
+export const listenForStreamRequests = (): () => void => {
+  const handleStreamRequest = (event: CustomEvent) => {
+    const { participantId } = event.detail;
+    const stream = participantStreams[participantId];
+    
+    if (stream) {
+      window.dispatchEvent(new CustomEvent('participant-stream-available', {
+        detail: { participantId, stream }
+      }));
+    }
+  };
+  
+  window.addEventListener('request-participant-stream', handleStreamRequest as EventListener);
+  
+  return () => {
+    window.removeEventListener('request-participant-stream', handleStreamRequest as EventListener);
+  };
 };
 
 /**
@@ -278,6 +315,13 @@ export const initHostWebRTC = async (
 
   const createPeerConnection = async (participantId: string, isInitiator: boolean) => {
     console.log(`Creating peer connection for ${participantId}, isInitiator: ${isInitiator}`);
+    
+    // Check if we already have a connection for this participant
+    if (activePeerConnections[participantId]) {
+      console.log(`Peer connection for ${participantId} already exists, not creating a new one`);
+      return;
+    }
+    
     activePeerConnections[participantId] = new RTCPeerConnection(PEER_CONNECTION_CONFIG);
 
     activePeerConnections[participantId].onicecandidate = (event) => {
@@ -335,6 +379,16 @@ export const initHostWebRTC = async (
 
     activePeerConnections[participantId].ontrack = (event: RTCTrackEvent) => {
       console.log(`Received track for participant ${participantId}`);
+      
+      if (event.streams && event.streams.length > 0) {
+        const stream = event.streams[0];
+        // Store the stream
+        participantStreams[participantId] = stream;
+        
+        // Share the stream with UI components
+        shareParticipantStream(participantId, stream);
+      }
+      
       if (onParticipantTrackCallback) {
         onParticipantTrackCallback(participantId, event.track);
       }
@@ -385,8 +439,15 @@ export const initHostWebRTC = async (
       activePeerConnections[participantId].close();
       delete activePeerConnections[participantId];
     }
+    // Remove the participant's stream
+    if (participantStreams[participantId]) {
+      delete participantStreams[participantId];
+    }
     delete activeParticipants[participantId];
   };
+  
+  // Start listening for stream requests
+  listenForStreamRequests();
 
   signalingSessions[sessionId] = true;
 };
@@ -424,6 +485,11 @@ export const initParticipantWebRTC = async (
   }
 
   await initSocket(sessionId);
+
+  // Store participant's stream
+  participantStreams[participantId] = stream;
+  // Make it available to UI components
+  shareParticipantStream(participantId, stream);
 
   // Set up broadcast channel fallback for signaling
   if (fallbackModeEnabled) {
@@ -548,6 +614,9 @@ export const initParticipantWebRTC = async (
 
     createHostPeerConnection(sessionId, participantId);
   }
+  
+  // Start listening for stream requests
+  listenForStreamRequests();
 };
 
 // Initialize WebRTC connection for a telao session
@@ -564,8 +633,12 @@ export const initTelaoWebRTC = async (
   
   await initSocket(sessionId);
   
+  // Start listening for stream requests
+  const cleanupStreamListener = listenForStreamRequests();
+  
   // Return cleanup function
   return () => {
+    cleanupStreamListener();
     endWebRTC(sessionId);
   };
 };
@@ -634,6 +707,12 @@ export const setLocalStream = (stream: MediaStream): void => {
 // Create host peer connection
 const createHostPeerConnection = async (sessionId: string, participantId: string) => {
   console.log(`Creating participant->host peer connection`);
+  
+  // Check if connection already exists
+  if (activePeerConnections['host']) {
+    console.log('Host peer connection already exists, not creating a new one');
+    return;
+  }
   
   activePeerConnections['host'] = new RTCPeerConnection(PEER_CONNECTION_CONFIG);
 
@@ -797,6 +876,11 @@ export const cleanupWebRTC = (participantId?: string): void => {
       activePeerConnections[participantId].close();
       delete activePeerConnections[participantId];
       
+      // Remove the participant stream
+      if (participantStreams[participantId]) {
+        delete participantStreams[participantId];
+      }
+      
       // Remove the participant from active participants
       if (activeParticipants[participantId]) {
         delete activeParticipants[participantId];
@@ -821,6 +905,7 @@ export const cleanupWebRTC = (participantId?: string): void => {
     // Reset all state variables
     activePeerConnections = {};
     activeParticipants = {};
+    participantStreams = {};
     signalingSessions = {};
     currentSessionId = null;
     localStream = null;
@@ -836,6 +921,12 @@ const closePeerConnection = (participantId: string) => {
     activePeerConnections[participantId].close();
     delete activePeerConnections[participantId];
   }
+  
+  // Remove the participant's stream
+  if (participantStreams[participantId]) {
+    delete participantStreams[participantId];
+  }
+  
   delete activeParticipants[participantId];
 };
 
@@ -844,5 +935,10 @@ export const setOnParticipantTrack = (callback: (participantId: string, track: M
   onParticipantTrackCallback = callback;
 };
 
+// Get a participant's stream
+export const getParticipantStream = (participantId: string): MediaStream | null => {
+  return participantStreams[participantId] || null;
+};
+
 // Export activeParticipants for external use
-export { activeParticipants, mediaStreamEstablished };
+export { activeParticipants, mediaStreamEstablished, participantStreams };
