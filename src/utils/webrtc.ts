@@ -231,9 +231,9 @@ export async function attemptICERestart(pc: RTCPeerConnection): Promise<RTCSessi
   }
 }
 
-// Add the exported functions needed by TelaoPage.tsx and ParticipantPage.tsx
+// Add the missing exported functions to fix the import errors
 let participantConnections: Record<string, RTCPeerConnection> = {};
-let onParticipantTrackCallback: ((participantId: string, event: RTCTrackEvent) => void) | null = null;
+let onParticipantTrackCallback: ((stream: MediaStream, participantId: string) => void) | null = null;
 let localStreamCache: MediaStream | null = null;
 
 export function setLocalStream(stream: MediaStream): void {
@@ -294,7 +294,7 @@ export function initHostWebRTC(sessionId: string): void {
   participantConnections = {};
 }
 
-export function setOnParticipantTrackCallback(callback: (participantId: string, event: RTCTrackEvent) => void): void {
+export function setOnParticipantTrackCallback(callback: (stream: MediaStream, participantId: string) => void): void {
   onParticipantTrackCallback = callback;
 }
 
@@ -302,33 +302,20 @@ export function getParticipantConnection(participantId: string): RTCPeerConnecti
   return participantConnections[participantId] || null;
 }
 
-export function cleanupWebRTC(participantId?: string): void {
-  if (participantId) {
-    // Close specific connection
-    const pc = participantConnections[participantId];
-    if (pc) {
-      try {
-        pc.close();
-      } catch (e) {
-        console.warn(`Error closing peer connection for participant ${participantId}:`, e);
-      }
-      delete participantConnections[participantId];
+export function cleanupWebRTC(): void {
+  // Close all connections
+  Object.values(participantConnections).forEach(pc => {
+    try {
+      pc.close();
+    } catch (e) {
+      console.warn('Error closing peer connection:', e);
     }
-  } else {
-    // Close all connections
-    Object.values(participantConnections).forEach(pc => {
-      try {
-        pc.close();
-      } catch (e) {
-        console.warn('Error closing peer connection:', e);
-      }
-    });
-    
-    participantConnections = {};
-    onParticipantTrackCallback = null;
-  }
+  });
   
-  if (localStreamCache && !participantId) {
+  participantConnections = {};
+  onParticipantTrackCallback = null;
+  
+  if (localStreamCache) {
     localStreamCache.getTracks().forEach(track => track.stop());
     localStreamCache = null;
   }
