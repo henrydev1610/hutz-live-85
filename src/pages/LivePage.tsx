@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -78,17 +77,14 @@ const LivePage = () => {
     }
   }, []);
 
-  // Initialize host WebRTC when session is created
   useEffect(() => {
     if (sessionId) {
-      // Create a dummy stream for the host to initialize WebRTC properly
       navigator.mediaDevices.getUserMedia({ video: true, audio: false })
         .then(stream => {
           console.log("Created host media stream for WebRTC initialization", stream);
           setLocalMediaStream(stream);
           setLocalStream(stream);
           
-          // Initialize host session with callbacks for participant events
           const cleanup = initializeHostSession(sessionId, {
             onParticipantJoin: handleParticipantJoin,
             onParticipantLeave: (id) => {
@@ -104,7 +100,6 @@ const LivePage = () => {
             }
           });
 
-          // Set up WebRTC track handler
           initHostWebRTC(sessionId, (participantId, track) => {
             console.log(`Received track from participant ${participantId}:`, track);
             handleParticipantTrack(participantId, track);
@@ -131,35 +126,28 @@ const LivePage = () => {
   const handleParticipantTrack = (participantId: string, track: MediaStreamTrack) => {
     console.log(`Processing track from participant ${participantId}:`, track);
     
-    // Create or update the stream for this participant
     setParticipantStreams(prev => {
-      // If we already have a stream for this participant
       if (prev[participantId]) {
         const existingStream = prev[participantId];
-        // Check if this track is already in the stream
         const trackExists = existingStream.getTracks().some(t => t.id === track.id);
         
         if (!trackExists) {
           existingStream.addTrack(track);
-          // Return a new object to trigger re-render
           return { ...prev };
         }
         return prev;
       }
       
-      // Otherwise create a new stream entry
       return {
         ...prev,
         [participantId]: new MediaStream([track])
       };
     });
     
-    // Update participant status to indicate they have video
     setParticipantList(prev => 
       prev.map(p => p.id === participantId ? { ...p, hasVideo: true } : p)
     );
     
-    // Send the stream to the transmission window if it's open
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
       const channel = new BroadcastChannel(`live-session-${sessionId}`);
       channel.postMessage({
@@ -206,18 +194,15 @@ const LivePage = () => {
     };
   }, [sessionId, localStream]);
 
-  // Update video elements when participant list or streams change
   useEffect(() => {
     Object.entries(participantStreams).forEach(([participantId, stream]) => {
       const participant = participantList.find(p => p.id === participantId);
       if (participant) {
-        // Update the preview container video if the participant is selected
         if (participant.selected) {
           const previewContainer = document.getElementById(`preview-participant-video-${participantId}`);
           updateVideoElement(previewContainer, stream);
         }
         
-        // Always update the grid container video
         const gridContainer = document.getElementById(`participant-video-${participantId}`);
         updateVideoElement(gridContainer, stream);
       }
@@ -577,7 +562,6 @@ const LivePage = () => {
                 return videoElement;
               }
             
-              // Capture browser camera as a placeholder for remote stream
               async function getLocalStreamForDisplay() {
                 try {
                   const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -593,21 +577,18 @@ const LivePage = () => {
                 }
               }
               
-              // Listen for video streams from participants
               channel.addEventListener('message', async (event) => {
                 const data = event.data;
                 
                 if (data.type === 'video-stream' && data.participantId) {
                   console.log('Received video stream notification for participant:', data.participantId);
                   
-                  // Find out if this participant has a slot already
                   if (!participantSlots[data.participantId] && availableSlots.length > 0) {
                     const slotIndex = availableSlots.shift();
                     participantSlots[data.participantId] = slotIndex;
                     
                     const slotElement = document.getElementById("participant-slot-" + slotIndex);
                     if (slotElement) {
-                      // Set a placeholder stream until the real one arrives
                       if (!window.localPlaceholderStream) {
                         window.localPlaceholderStream = await getLocalStreamForDisplay();
                       }
@@ -615,7 +596,6 @@ const LivePage = () => {
                       if (window.localPlaceholderStream) {
                         const videoEl = createVideoElement(slotElement, window.localPlaceholderStream);
                         
-                        // Add participant ID as data attribute
                         if (videoEl) {
                           videoEl.dataset.participantId = data.participantId;
                         }
@@ -625,13 +605,11 @@ const LivePage = () => {
                 }
               });
             
-              // Handle participant updates from parent window
               window.addEventListener('message', (event) => {
                 if (event.data.type === 'update-participants') {
                   const { participants } = event.data;
                   console.log('Got participants update:', participants);
                   
-                  // Process selected participants
                   participants.forEach(p => {
                     if (p.selected) {
                       if (!participantSlots[p.id] && availableSlots.length > 0) {
@@ -652,12 +630,10 @@ const LivePage = () => {
                             </div>
                           \`;
                           
-                          // Tag the slot with participant ID
                           slotElement.dataset.participantId = p.id;
                         }
                       }
                     } else {
-                      // Handle unselected participants
                       if (participantSlots[p.id] !== undefined) {
                         const slotIndex = participantSlots[p.id];
                         delete participantSlots[p.id];
@@ -682,14 +658,12 @@ const LivePage = () => {
                             </svg>
                           \`;
                           
-                          // Remove participant ID
                           delete slotElement.dataset.participantId;
                         }
                       }
                     }
                   });
                   
-                  // Clean up any participants that are no longer in the list
                   Object.keys(participantSlots).forEach(participantId => {
                     const isStillSelected = participants.some(p => p.id === participantId && p.selected);
                     if (!isStillSelected) {
@@ -716,7 +690,6 @@ const LivePage = () => {
                           </svg>
                         \`;
                         
-                        // Remove participant ID
                         delete slotElement.dataset.participantId;
                       }
                     }
@@ -724,15 +697,12 @@ const LivePage = () => {
                 }
               });
               
-              // Tell the parent window we're ready to receive updates
               window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
               
-              // Periodically ask for updates
               setInterval(() => {
                 window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
               }, 5000);
               
-              // Notify the parent window when participants join
               channel.onmessage = (event) => {
                 const { type, id } = event.data;
                 if (type === 'participant-join') {
@@ -741,7 +711,6 @@ const LivePage = () => {
                 }
               };
               
-              // Clean up resources when the window is closed
               window.addEventListener('beforeunload', () => {
                 Object.values(activeVideoElements).forEach(videoElement => {
                   if (videoElement.srcObject) {
@@ -871,7 +840,7 @@ const LivePage = () => {
         id: participantId,
         name: participantName,
         active: true,
-        selected: false, // No longer auto-joining
+        selected: false,
         hasVideo: true,
         connectedAt: Date.now()
       };
@@ -1000,8 +969,6 @@ const LivePage = () => {
                     setFinalActionCoupon={setFinalActionCouponCode}
                     onGenerateQRCode={handleGenerateQRCode}
                     onQRCodeToTransmission={handleQRCodeToTransmission}
-                    autoJoin={false}
-                    setAutoJoin={() => {}} // Removed auto-join functionality
                   />
                 </TabsContent>
               </Tabs>
