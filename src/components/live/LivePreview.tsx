@@ -1,5 +1,7 @@
+
 import { useRef, useState } from 'react';
 import { User } from 'lucide-react';
+import { AspectRatio } from "@/components/ui/aspect-ratio";
 
 interface Participant {
   id: string;
@@ -177,114 +179,121 @@ const LivePreview = ({
   };
 
   return (
-    <div 
-      className="relative bg-black rounded-lg overflow-hidden w-full"
-      style={{ aspectRatio: '16/9', maxHeight: '100%', height: 'auto' }}
-      onMouseMove={handleMouseMove} 
-      onMouseUp={stopDragging}
-      onMouseLeave={stopDragging}
-      ref={previewContainerRef}
-    >
-      <div 
-        className="absolute inset-0" 
-        style={{
-          backgroundColor: backgroundImage ? 'transparent' : selectedBackgroundColor,
-        }}
-      >
-        {backgroundImage && (
-          <img 
-            src={backgroundImage} 
-            alt="Background" 
-            className="w-full h-full object-cover"
-          />
-        )}
-      </div>
-      
-      <div className="absolute top-[5%] right-[5%] bottom-[5%] left-[30%]">
-        <div className={`grid grid-cols-${Math.min(Math.ceil(Math.sqrt(participantCount)), 10)} gap-2 h-full`}>
-          {participantList
-            .filter(p => p.selected)
-            .slice(0, Math.min(participantCount, 100))
-            .map((participant) => (
-              <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center">
-                <User className="h-8 w-8 text-white/30" />
-              </div>
-            ))}
-          
-          {Array(Math.max(0, Math.min(participantCount, 100) - participantList.filter(p => p.selected).length)).fill(0).map((_, i) => (
-            <div key={`empty-preview-${i}`} className="bg-black/20 rounded overflow-hidden flex items-center justify-center">
-              <User className="h-8 w-8 text-white/30" />
-            </div>
-          ))}
-        </div>
-      </div>
-      
-      {qrCodeVisible && (
-        <>
+    <div className="w-full h-full">
+      <AspectRatio ratio={16/9} className="relative bg-black rounded-lg overflow-hidden w-full">
+        <div 
+          className="absolute inset-0"
+          onMouseMove={handleMouseMove} 
+          onMouseUp={stopDragging}
+          onMouseLeave={stopDragging}
+          ref={previewContainerRef}
+        >
           <div 
-            className="absolute cursor-move"
+            className="absolute inset-0" 
             style={{
-              left: `${qrCodePosition.x}px`,
-              top: `${qrCodePosition.y}px`,
-              width: `${qrCodePosition.width}px`,
+              backgroundColor: backgroundImage ? 'transparent' : selectedBackgroundColor,
             }}
-            onMouseDown={startDraggingQR}
-            ref={qrCodeRef}
           >
-            <div 
-              className="w-full bg-white p-1 rounded-lg"
-              style={{
-                height: `${qrCodePosition.height}px`,
-              }}
-            >
-              <div className="w-full h-full bg-white flex items-center justify-center overflow-hidden">
-                {qrCodeSvg ? (
-                  <img src={qrCodeSvg} alt="QR Code" className="w-full h-full" />
-                ) : (
-                  <div className="w-8 h-8 bg-black/20 rounded" />
-                )}
+            {backgroundImage && (
+              <img 
+                src={backgroundImage} 
+                alt="Background" 
+                className="w-full h-full object-cover"
+              />
+            )}
+          </div>
+          
+          <div className="absolute top-[5%] right-[5%] bottom-[5%] left-[30%]">
+            <div className={`grid grid-cols-${Math.min(Math.ceil(Math.sqrt(participantCount)), 10)} gap-2 h-full`}>
+              {participantList
+                .filter(p => p.selected)
+                .slice(0, Math.min(participantCount, 100))
+                .map((participant) => (
+                  <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center">
+                    <User className="h-8 w-8 text-white/30" />
+                    {/* Video element container for participant preview */}
+                    <div id={`preview-participant-video-${participant.id}`} className="absolute inset-0 overflow-hidden">
+                      {/* Video will be inserted here dynamically */}
+                    </div>
+                  </div>
+                ))}
+              
+              {Array(Math.max(0, Math.min(participantCount, 100) - participantList.filter(p => p.selected).length)).fill(0).map((_, i) => (
+                <div key={`empty-preview-${i}`} className="bg-black/20 rounded overflow-hidden flex items-center justify-center">
+                  <User className="h-8 w-8 text-white/30" />
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {qrCodeVisible && (
+            <>
+              <div 
+                className="absolute cursor-move"
+                style={{
+                  left: `${qrCodePosition.x}px`,
+                  top: `${qrCodePosition.y}px`,
+                  width: `${qrCodePosition.width}px`,
+                }}
+                onMouseDown={startDraggingQR}
+                ref={qrCodeRef}
+              >
+                <div 
+                  className="w-full bg-white p-1 rounded-lg"
+                  style={{
+                    height: `${qrCodePosition.height}px`,
+                  }}
+                >
+                  <div className="w-full h-full bg-white flex items-center justify-center overflow-hidden">
+                    {qrCodeSvg ? (
+                      <img src={qrCodeSvg} alt="QR Code" className="w-full h-full" />
+                    ) : (
+                      <div className="w-8 h-8 bg-black/20 rounded" />
+                    )}
+                  </div>
+                  
+                  <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
+                  <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
+                  <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
+                  <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
+                </div>
               </div>
               
-              <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
-              <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
-              <div className="absolute left-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
-              <div className="absolute left-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
-            </div>
-          </div>
-          
-          <div 
-            className="absolute cursor-move"
-            style={{
-              left: `${qrDescriptionPosition.x}px`,
-              top: `${qrDescriptionPosition.y}px`,
-              width: `${qrDescriptionPosition.width}px`,
-              height: `${qrDescriptionPosition.height}px`,
-              color: selectedTextColor,
-              fontFamily: selectedFont,
-              fontSize: `${qrDescriptionFontSize}px`,
-              fontWeight: 'bold',
-              textAlign: 'center',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: '1px dashed rgba(255,255,255,0.3)',
-              borderRadius: '4px',
-              padding: '4px',
-              boxSizing: 'border-box',
-              overflow: 'hidden'
-            }}
-            onMouseDown={startDraggingText}
-            ref={textRef}
-          >
-            {qrCodeDescription}
-            
-            <div className="absolute right-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
-            <div className="absolute right-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
-            <div className="absolute left-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
-            <div className="absolute left-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
-          </div>
-        </>
-      )}
+              <div 
+                className="absolute cursor-move"
+                style={{
+                  left: `${qrDescriptionPosition.x}px`,
+                  top: `${qrDescriptionPosition.y}px`,
+                  width: `${qrDescriptionPosition.width}px`,
+                  height: `${qrDescriptionPosition.height}px`,
+                  color: selectedTextColor,
+                  fontFamily: selectedFont,
+                  fontSize: `${qrDescriptionFontSize}px`,
+                  fontWeight: 'bold',
+                  textAlign: 'center',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '1px dashed rgba(255,255,255,0.3)',
+                  borderRadius: '4px',
+                  padding: '4px',
+                  boxSizing: 'border-box',
+                  overflow: 'hidden'
+                }}
+                onMouseDown={startDraggingText}
+                ref={textRef}
+              >
+                {qrCodeDescription}
+                
+                <div className="absolute right-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
+                <div className="absolute right-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
+                <div className="absolute left-0 bottom-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-sw-resize resize-handle" data-handle="bl"></div>
+                <div className="absolute left-0 top-0 w-3 h-3 bg-white/40 border border-white/60 rounded-full cursor-nw-resize resize-handle" data-handle="tl"></div>
+              </div>
+            </>
+          )}
+        </div>
+      </AspectRatio>
     </div>
   );
 };

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,6 +17,7 @@ import TextSettings from '@/components/live/TextSettings';
 import QrCodeSettings from '@/components/live/QrCodeSettings';
 import { generateSessionId, addParticipantToSession } from '@/utils/sessionUtils';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
+import { initHostWebRTC, setOnParticipantTrack } from '@/utils/webrtc';
 
 const LivePage = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -62,6 +62,8 @@ const LivePage = () => {
   const transmissionWindowRef = useRef<Window | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  const [participantStreams, setParticipantStreams] = useState<{[id: string]: MediaStream}>({});
+
   useEffect(() => {
     if (participantList.length === 0) {
       const initialParticipants = Array(4).fill(0).map((_, i) => ({
@@ -88,6 +90,30 @@ const LivePage = () => {
           setParticipantList(prev => 
             prev.map(p => p.id === id ? { ...p, active: true } : p)
           );
+        }
+      });
+
+      initHostWebRTC(sessionId, (participantId, track) => {
+        console.log(`Received track from participant ${participantId}:`, track);
+        
+        if (!participantStreams[participantId]) {
+          const newStream = new MediaStream();
+          newStream.addTrack(track);
+          setParticipantStreams(prev => ({
+            ...prev,
+            [participantId]: newStream
+          }));
+          
+          setParticipantList(prev => 
+            prev.map(p => p.id === participantId ? { ...p, hasVideo: true } : p)
+          );
+        } else {
+          const existingStream = participantStreams[participantId];
+          if (!existingStream.getTracks().some(t => t.id === track.id)) {
+            existingStream.addTrack(track);
+            
+            setParticipantStreams(prev => ({...prev}));
+          }
         }
       });
 
@@ -129,6 +155,51 @@ const LivePage = () => {
       }
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    Object.entries(participantStreams).forEach(([participantId, stream]) => {
+      const participant = participantList.find(p => p.id === participantId);
+      if (participant && participant.selected) {
+        const previewContainer = document.getElementById(`preview-participant-video-${participantId}`);
+        if (previewContainer) {
+          let videoElement = previewContainer.querySelector('video');
+          
+          if (!videoElement) {
+            videoElement = document.createElement('video');
+            videoElement.autoplay = true;
+            videoElement.playsInline = true;
+            videoElement.muted = true;
+            videoElement.className = 'w-full h-full object-cover';
+            previewContainer.appendChild(videoElement);
+          }
+          
+          if (videoElement.srcObject !== stream) {
+            videoElement.srcObject = stream;
+            videoElement.play().catch(err => console.error('Error playing video in preview:', err));
+          }
+        }
+        
+        const gridContainer = document.getElementById(`participant-video-${participantId}`);
+        if (gridContainer) {
+          let videoElement = gridContainer.querySelector('video');
+          
+          if (!videoElement) {
+            videoElement = document.createElement('video');
+            videoElement.autoplay = true;
+            videoElement.playsInline = true;
+            videoElement.muted = true;
+            videoElement.className = 'w-full h-full object-cover';
+            gridContainer.appendChild(videoElement);
+          }
+          
+          if (videoElement.srcObject !== stream) {
+            videoElement.srcObject = stream;
+            videoElement.play().catch(err => console.error('Error playing video in grid:', err));
+          }
+        }
+      }
+    });
+  }, [participantList, participantStreams]);
 
   const generateQRCode = async (url: string) => {
     try {
@@ -456,7 +527,6 @@ const LivePage = () => {
                 console.log('Received video stream from participant:', data.participantId);
                 participantStreams[data.participantId] = data.stream;
                 
-                // Find or assign a slot for this participant
                 if (!participantSlots[data.participantId] && availableSlots.length > 0) {
                   const slotIndex = availableSlots.shift();
                   participantSlots[data.participantId] = slotIndex;
@@ -469,7 +539,6 @@ const LivePage = () => {
               }
             });
             
-              
               function updateParticipantDisplay() {
                 window.addEventListener('message', (event) => {
                   if (event.data.type === 'update-participants') {
@@ -655,6 +724,20 @@ const LivePage = () => {
   const handleTransmissionMessage = (event: MessageEvent) => {
     if (event.data.type === 'transmission-ready' && event.data.sessionId === sessionId) {
       updateTransmissionParticipants();
+      
+      Object.entries(participantStreams).forEach(([participantId, stream]) => {
+        const participant = participantList.find(p => p.id === participantId);
+        if (participant && participant.selected) {
+          const channel = new BroadcastChannel(`live-session-${sessionId}`);
+          channel.postMessage({
+            type: 'video-stream',
+            participantId,
+            stream: {
+              hasStream: true
+            }
+          });
+        }
+      });
     }
     else if (event.data.type === 'participant-joined' && event.data.sessionId === sessionId) {
       handleParticipantJoin(event.data.id);
@@ -706,7 +789,7 @@ const LivePage = () => {
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === participantId);
       if (exists) {
-        return prev.map(p => p.id === participantId ? { ...p, active: true, hasVideo: true } : p);
+        return prev.map(p => p.id === participantId ? { ...p, active: true, hasVideo: true, connectedAt: Date.now() } : p);
       }
       
       const participantName = `Participante ${prev.filter(p => !p.id.startsWith('placeholder-')).length + 1}`;
@@ -714,8 +797,9 @@ const LivePage = () => {
         id: participantId,
         name: participantName,
         active: true,
-        selected: false,
-        hasVideo: true
+        selected: autoJoin,
+        hasVideo: true,
+        connectedAt: Date.now()
       };
       
       if (sessionId) {
@@ -860,23 +944,25 @@ const LivePage = () => {
                 Veja como sua transmissão será exibida
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <LivePreview 
-                qrCodeVisible={qrCodeVisible}
-                qrCodeSvg={qrCodeSvg}
-                qrCodePosition={qrCodePosition}
-                setQrCodePosition={setQrCodePosition}
-                qrDescriptionPosition={qrDescriptionPosition}
-                setQrDescriptionPosition={setQrDescriptionPosition}
-                qrCodeDescription={qrCodeDescription}
-                selectedFont={selectedFont}
-                selectedTextColor={selectedTextColor}
-                qrDescriptionFontSize={qrDescriptionFontSize}
-                backgroundImage={backgroundImage}
-                selectedBackgroundColor={selectedBackgroundColor}
-                participantList={participantList}
-                participantCount={participantCount}
-              />
+            <CardContent className="p-4">
+              <div className="h-[500px]">
+                <LivePreview 
+                  qrCodeVisible={qrCodeVisible}
+                  qrCodeSvg={qrCodeSvg}
+                  qrCodePosition={qrCodePosition}
+                  setQrCodePosition={setQrCodePosition}
+                  qrDescriptionPosition={qrDescriptionPosition}
+                  setQrDescriptionPosition={setQrDescriptionPosition}
+                  qrCodeDescription={qrCodeDescription}
+                  selectedFont={selectedFont}
+                  selectedTextColor={selectedTextColor}
+                  qrDescriptionFontSize={qrDescriptionFontSize}
+                  backgroundImage={backgroundImage}
+                  selectedBackgroundColor={selectedBackgroundColor}
+                  participantList={participantList}
+                  participantCount={participantCount}
+                />
+              </div>
             </CardContent>
           </Card>
         </div>
