@@ -89,6 +89,7 @@ export const createSession = (name: string): string => {
       name,
       createdAt: Date.now(),
       lastActive: Date.now(),
+      participantCount: 0, // Add the missing participantCount property with initial value 0
       participants: {}
     };
     
