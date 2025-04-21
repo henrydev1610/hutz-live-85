@@ -1,4 +1,3 @@
-
 import { useRef, useState } from 'react';
 import { User } from 'lucide-react';
 
@@ -180,7 +179,7 @@ const LivePreview = ({
   return (
     <div 
       className="relative bg-black rounded-lg overflow-hidden w-full"
-      style={{ aspectRatio: '16/9', maxHeight: 'calc(100vh - 200px)' }}
+      style={{ aspectRatio: '16/9', maxHeight: '100%', height: 'auto' }}
       onMouseMove={handleMouseMove} 
       onMouseUp={stopDragging}
       onMouseLeave={stopDragging}

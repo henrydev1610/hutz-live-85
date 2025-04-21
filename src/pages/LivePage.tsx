@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -873,4 +874,36 @@ const LivePage = () => {
                 qrDescriptionFontSize={qrDescriptionFontSize}
                 backgroundImage={backgroundImage}
                 selectedBackgroundColor={selectedBackgroundColor}
-                participantList={
+                participantList={participantList}
+                participantCount={participantCount}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+      
+      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ação final enviada!</DialogTitle>
+            <DialogDescription>
+              O conteúdo foi exibido para os participantes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center space-x-2">
+            <div className="grid flex-1 gap-2">
+              <p className="text-sm text-muted-foreground">
+                Esta tela será fechada automaticamente em {finalActionTimeLeft} segundos.
+              </p>
+            </div>
+            <Button variant="outline" onClick={closeFinalAction}>
+              Fechar agora
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default LivePage;
