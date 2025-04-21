@@ -42,6 +42,7 @@ const LivePage = () => {
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [autoJoin, setAutoJoin] = useState(true);
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
@@ -867,6 +868,8 @@ const LivePage = () => {
                     setFinalActionCoupon={setFinalActionCouponCode}
                     onGenerateQRCode={handleGenerateQRCode}
                     onQRCodeToTransmission={handleQRCodeToTransmission}
+                    autoJoin={autoJoin}
+                    setAutoJoin={setAutoJoin}
                   />
                 </TabsContent>
               </Tabs>
