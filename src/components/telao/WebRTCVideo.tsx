@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 const ICE_SERVERS = {
@@ -10,7 +9,7 @@ const ICE_SERVERS = {
     { urls: 'stun:stun4.l.google.com:19302' }
   ],
   iceCandidatePoolSize: 10,
-  iceTransportPolicy: 'all' as RTCIceTransportPolicy
+  iceTransportPolicy: 'all'
 };
 
 interface WebRTCVideoProps {
@@ -365,78 +364,6 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     }
   }, [participantId, updateConnectionStatus]);
 
-  // Declare setupDisconnectDetection before it's used
-  const setupDisconnectDetection = useCallback(() => {
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key && 
-         (event.key.startsWith('telao-leave-') && event.key.includes(participantId)) ||
-         (event.key === `telao-leave-*-${participantId}`)) {
-        console.log(`Participant ${participantId} disconnected (via localStorage)`);
-        updateConnectionStatus('disconnected');
-        setVideoActive(false);
-        if (videoRef.current) {
-          videoRef.current.srcObject = null;
-        }
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    disconnectListenerRef.current = handleStorageChange;
-    
-    try {
-      const channel = new BroadcastChannel(`telao-session-${participantId}`);
-      broadcastChannelRef.current = channel;
-      
-      channel.postMessage({
-        type: 'ping',
-        id: participantId,
-        timestamp: Date.now()
-      });
-      
-      channel.onmessage = (event) => {
-        if (event.data.type === 'participant-leave' && event.data.id === participantId) {
-          console.log(`Participant ${participantId} disconnected (via BroadcastChannel)`);
-          updateConnectionStatus('disconnected');
-          setVideoActive(false);
-          if (videoRef.current) {
-            videoRef.current.srcObject = null;
-          }
-        }
-        
-        if (event.data.type === 'pong') {
-          console.log(`Received pong from ${participantId}`);
-          lastUpdateTimeRef.current = Date.now();
-          updateConnectionStatus('connected');
-        }
-      };
-    } catch (err) {
-      console.warn('BroadcastChannel not supported for disconnect detection:', err);
-    }
-    
-    const checkDisconnect = setInterval(() => {
-      try {
-        const keys = Object.keys(localStorage).filter(key => 
-          (key.startsWith(`telao-leave-`) && key.includes(participantId)) ||
-          key === `telao-leave-*-${participantId}`
-        );
-        
-        if (keys.length > 0) {
-          console.log(`Participant ${participantId} disconnected via localStorage marker`);
-          updateConnectionStatus('disconnected');
-          setVideoActive(false);
-          if (videoRef.current) {
-            videoRef.current.srcObject = null;
-          }
-          clearInterval(checkDisconnect);
-        }
-      } catch (e) {
-        // Ignore storage errors
-      }
-    }, 2000);
-    
-    return () => clearInterval(checkDisconnect);
-  }, [participantId, updateConnectionStatus]);
-
   const initializeWebRTC = useCallback(() => {
     if (!window.RTCPeerConnection) {
       console.error('WebRTC is not supported in this browser');
@@ -569,6 +496,129 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     }
   }, [participantId, connectionStatus, getOrCreatePeerConnection, updateConnectionStatus]);
 
+  useEffect(() => {
+    console.log(`WebRTCVideo: New participant ${participantId}`);
+    updateConnectionStatus('connecting');
+    setVideoActive(false);
+    lastUpdateTimeRef.current = Date.now();
+    reconnectAttemptRef.current = 0;
+    playAttemptedRef.current = false;
+    videoStartedRef.current = false;
+    hasSetSrcObjectRef.current = false;
+    
+    if (videoTimeoutRef.current) {
+      clearTimeout(videoTimeoutRef.current);
+      videoTimeoutRef.current = null;
+    }
+    
+    if (inactivityTimeoutRef.current) {
+      clearTimeout(inactivityTimeoutRef.current);
+      inactivityTimeoutRef.current = null;
+    }
+    
+    if (streamCheckRef.current) {
+      clearInterval(streamCheckRef.current);
+      streamCheckRef.current = null;
+    }
+    
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
+    }
+    
+    setupDisconnectDetection();
+    initializeWebRTC();
+    detectSupportedCodecs();
+    
+    inactivityTimeoutRef.current = setTimeout(() => {
+      if (connectionStatus === 'connecting') {
+        console.log(`Participant ${participantId} connection timed out`);
+        updateConnectionStatus('disconnected');
+      }
+    }, 15000);
+    
+    try {
+      connectionStatusChannelRef.current = new BroadcastChannel(`telao-connection-status`);
+    } catch (err) {
+      console.warn('Error creating connection status channel:', err);
+    }
+    
+    return () => {
+      cleanupAllListeners();
+    };
+  }, [participantId, updateConnectionStatus, connectionStatus, setupDisconnectDetection, initializeWebRTC, detectSupportedCodecs]);
+  
+  const setupDisconnectDetection = useCallback(() => {
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key && 
+         (event.key.startsWith('telao-leave-') && event.key.includes(participantId)) ||
+         (event.key === `telao-leave-*-${participantId}`)) {
+        console.log(`Participant ${participantId} disconnected (via localStorage)`);
+        updateConnectionStatus('disconnected');
+        setVideoActive(false);
+        if (videoRef.current) {
+          videoRef.current.srcObject = null;
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    disconnectListenerRef.current = handleStorageChange;
+    
+    try {
+      const channel = new BroadcastChannel(`telao-session-${participantId}`);
+      broadcastChannelRef.current = channel;
+      
+      channel.postMessage({
+        type: 'ping',
+        id: participantId,
+        timestamp: Date.now()
+      });
+      
+      channel.onmessage = (event) => {
+        if (event.data.type === 'participant-leave' && event.data.id === participantId) {
+          console.log(`Participant ${participantId} disconnected (via BroadcastChannel)`);
+          updateConnectionStatus('disconnected');
+          setVideoActive(false);
+          if (videoRef.current) {
+            videoRef.current.srcObject = null;
+          }
+        }
+        
+        if (event.data.type === 'pong') {
+          console.log(`Received pong from ${participantId}`);
+          lastUpdateTimeRef.current = Date.now();
+          updateConnectionStatus('connected');
+        }
+      };
+    } catch (err) {
+      console.warn('BroadcastChannel not supported for disconnect detection:', err);
+    }
+    
+    const checkDisconnect = setInterval(() => {
+      try {
+        const keys = Object.keys(localStorage).filter(key => 
+          (key.startsWith(`telao-leave-`) && key.includes(participantId)) ||
+          key === `telao-leave-*-${participantId}`
+        );
+        
+        if (keys.length > 0) {
+          console.log(`Participant ${participantId} disconnected via localStorage marker`);
+          updateConnectionStatus('disconnected');
+          setVideoActive(false);
+          if (videoRef.current) {
+            videoRef.current.srcObject = null;
+          }
+          clearInterval(checkDisconnect);
+        }
+      } catch (e) {
+        // Ignore storage errors
+      }
+    }, 2000);
+    
+    return () => clearInterval(checkDisconnect);
+  }, [participantId, updateConnectionStatus]);
+  
   const cleanupAllListeners = useCallback(() => {
     if (videoTimeoutRef.current) {
       clearTimeout(videoTimeoutRef.current);
@@ -635,58 +685,6 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       videoRef.current.srcObject = null;
     }
   }, []);
-
-  useEffect(() => {
-    console.log(`WebRTCVideo: New participant ${participantId}`);
-    updateConnectionStatus('connecting');
-    setVideoActive(false);
-    lastUpdateTimeRef.current = Date.now();
-    reconnectAttemptRef.current = 0;
-    playAttemptedRef.current = false;
-    videoStartedRef.current = false;
-    hasSetSrcObjectRef.current = false;
-    
-    if (videoTimeoutRef.current) {
-      clearTimeout(videoTimeoutRef.current);
-      videoTimeoutRef.current = null;
-    }
-    
-    if (inactivityTimeoutRef.current) {
-      clearTimeout(inactivityTimeoutRef.current);
-      inactivityTimeoutRef.current = null;
-    }
-    
-    if (streamCheckRef.current) {
-      clearInterval(streamCheckRef.current);
-      streamCheckRef.current = null;
-    }
-    
-    if (statsIntervalRef.current) {
-      clearInterval(statsIntervalRef.current);
-      statsIntervalRef.current = null;
-    }
-    
-    setupDisconnectDetection();
-    initializeWebRTC();
-    detectSupportedCodecs();
-    
-    inactivityTimeoutRef.current = setTimeout(() => {
-      if (connectionStatus === 'connecting') {
-        console.log(`Participant ${participantId} connection timed out`);
-        updateConnectionStatus('disconnected');
-      }
-    }, 15000);
-    
-    try {
-      connectionStatusChannelRef.current = new BroadcastChannel(`telao-connection-status`);
-    } catch (err) {
-      console.warn('Error creating connection status channel:', err);
-    }
-    
-    return () => {
-      cleanupAllListeners();
-    };
-  }, [participantId, updateConnectionStatus, connectionStatus, setupDisconnectDetection, initializeWebRTC, detectSupportedCodecs, cleanupAllListeners]);
   
   useEffect(() => {
     if (stream && videoRef.current) {

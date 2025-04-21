@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,7 @@ const ParticipantPage = () => {
   const toastShownRef = useRef<boolean>(false);
   const autoStartTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Setup visibility change detection to better handle mobile browser behavior
   useEffect(() => {
     const handleVisibilityChange = () => {
       const isVisible = !document.hidden;
@@ -41,6 +43,7 @@ const ParticipantPage = () => {
       
       console.log(`Page visibility changed to ${isVisible ? 'visible' : 'hidden'}`);
       
+      // If coming back to visible and we're connected but not transmitting, restart
       if (isVisible && connected && !transmitting && cameraActive && streamRef.current) {
         console.log("Page became visible again, restarting transmission if needed");
         if (!transmitting && sessionId) {
@@ -48,6 +51,7 @@ const ParticipantPage = () => {
         }
       }
       
+      // If going to hidden state, send heartbeat to maintain connection
       if (!isVisible && connected) {
         console.log("Page hidden, sending keep-alive heartbeat");
         sendHeartbeat();
@@ -61,8 +65,10 @@ const ParticipantPage = () => {
     };
   }, [connected, transmitting, cameraActive, sessionId]);
 
+  // Check for mobile low-power mode issues
   useEffect(() => {
     if (isMobileDevice) {
+      // On mobile, periodically check if the video track is still active
       const checkInterval = setInterval(() => {
         if (cameraActive && streamRef.current) {
           const videoTracks = streamRef.current.getVideoTracks();
@@ -70,6 +76,7 @@ const ParticipantPage = () => {
             const track = videoTracks[0];
             if (!track.enabled || track.readyState !== 'live') {
               console.log("Video track is disabled or not live, attempting to restart camera");
+              // Only restart if we were previously active
               if (cameraStartedRef.current) {
                 stopCamera();
                 setTimeout(() => startCamera(false), 500);
@@ -83,6 +90,7 @@ const ParticipantPage = () => {
     }
   }, [cameraActive, isMobileDevice]);
 
+  // Handle session connection and cleanup
   useEffect(() => {
     console.log(`Session ID: ${sessionId}, Participant ID: ${participantIdRef.current}`);
     
@@ -96,6 +104,7 @@ const ParticipantPage = () => {
         const videoDevices = devices.filter(device => device.kind === 'videoinput');
         setAvailableDevices(videoDevices);
         
+        // On mobile, prefer back camera by default
         if (isMobileDevice) {
           const backCamera = videoDevices.find(device => 
             device.label.toLowerCase().includes('back') || 
@@ -108,6 +117,7 @@ const ParticipantPage = () => {
             device.label.toLowerCase().includes('frente')
           );
           
+          // If we have a back camera, use it (better quality usually)
           if (backCamera) {
             setDeviceId(backCamera.deviceId);
           } else if (frontCamera) {
@@ -116,6 +126,7 @@ const ParticipantPage = () => {
             setDeviceId(videoDevices[0].deviceId);
           }
         } else {
+          // Desktop usually uses webcam (front facing)
           if (videoDevices.length > 0) {
             setDeviceId(videoDevices[0].deviceId);
           }
@@ -138,6 +149,7 @@ const ParticipantPage = () => {
     if (sessionId) {
       connectToSession();
       
+      // Bail-out timer in case connection takes too long
       const fallbackTimer = setTimeout(() => {
         if (!connected) {
           console.log("Connection not established, retrying...");
@@ -148,11 +160,14 @@ const ParticipantPage = () => {
       joinTimeoutRef.current = fallbackTimer;
     }
     
+    // On mobile, automatically start camera after permissions but with a delay
     if (isMobileDevice && !cameraStartedRef.current) {
+      // Clear any existing timer
       if (autoStartTimerRef.current) {
         clearTimeout(autoStartTimerRef.current);
       }
       
+      // Set new timer with increased delay
       autoStartTimerRef.current = setTimeout(() => {
         if (!cameraStartedRef.current) {
           startCamera(true);
@@ -160,7 +175,9 @@ const ParticipantPage = () => {
       }, 2000) as unknown as NodeJS.Timeout;
     }
     
+    // Add proper cleanup
     return () => {
+      // Send explicit disconnect message
       if (connected && sessionId) {
         sendDisconnectMessage();
       }
@@ -169,6 +186,7 @@ const ParticipantPage = () => {
         stopCamera();
       }
       
+      // Full connection cleanup
       disconnectFromSession();
       
       if (joinTimeoutRef.current) {
@@ -201,13 +219,16 @@ const ParticipantPage = () => {
     };
   }, [sessionId, toast, isMobileDevice]);
 
+  // Ensure camera permissions are granted
   const ensureMediaPermissions = async () => {
     try {
+      // Request minimal permissions to trigger the permission dialog
       const tempStream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: false
       });
       
+      // Immediately stop all tracks to free up the camera
       tempStream.getTracks().forEach(track => track.stop());
       return true;
     } catch (error) {
@@ -245,6 +266,7 @@ const ParticipantPage = () => {
       if (!cameraActive && !cameraStartedRef.current) {
         startCamera(true);
       } else if (streamRef.current && sessionId && !transmitting) {
+        // Initialize WebRTC if we already have camera active
         initWebRTC(streamRef.current);
       }
       
@@ -376,6 +398,7 @@ const ParticipantPage = () => {
             if (!cameraActive) {
               startCamera();
             } else if (streamRef.current && sessionId) {
+              // Initialize WebRTC if we already have camera active
               initWebRTC(streamRef.current);
             }
             
@@ -434,6 +457,7 @@ const ParticipantPage = () => {
               if (!cameraActive) {
                 startCamera();
               } else if (streamRef.current && sessionId) {
+                // Initialize WebRTC if we already have camera active
                 initWebRTC(streamRef.current);
               }
               
@@ -457,6 +481,7 @@ const ParticipantPage = () => {
       console.warn("LocalStorage checking failed", e);
     }
     
+    // Connection timeout timer
     connectionTimerRef.current = setTimeout(() => {
       if (!connected) {
         console.log(`Connection attempt ${connectionRetryCountRef.current + 1} timed out`);
@@ -548,9 +573,11 @@ const ParticipantPage = () => {
     }
   };
 
+  // Send explicit disconnect message
   const sendDisconnectMessage = () => {
     console.log(`Sending explicit disconnect message for ${participantIdRef.current}`);
     
+    // Via BroadcastChannel
     if (broadcastChannelRef.current) {
       try {
         broadcastChannelRef.current.postMessage({
@@ -563,6 +590,7 @@ const ParticipantPage = () => {
       }
     }
     
+    // Via LocalStorage
     if (localStorageChannelRef.current) {
       try {
         localStorageChannelRef.current.postMessage({
@@ -575,6 +603,7 @@ const ParticipantPage = () => {
       }
     }
     
+    // Via Supabase
     if (supabaseChannelRef.current) {
       try {
         supabaseChannelRef.current.send({
@@ -591,6 +620,7 @@ const ParticipantPage = () => {
       }
     }
     
+    // Via localStorage
     try {
       window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, JSON.stringify({
         type: 'participant-leave',
@@ -598,6 +628,7 @@ const ParticipantPage = () => {
         timestamp: Date.now()
       }));
       
+      // Correção do tipo para NodeJS.Timeout
       setTimeout(() => {
         try {
           window.localStorage.removeItem(`telao-leave-${sessionId}-${participantIdRef.current}`);
@@ -715,6 +746,7 @@ const ParticipantPage = () => {
         }
       }
       
+      // Make sure disconnect is persisted in localStorage
       try {
         window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, JSON.stringify({
           type: 'participant-leave',
@@ -722,6 +754,7 @@ const ParticipantPage = () => {
           timestamp: Date.now()
         }));
         
+        // Clear heartbeat
         window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
       } catch (e) {
         // Ignore errors
@@ -744,6 +777,8 @@ const ParticipantPage = () => {
     setTransmitting(true);
     console.log(`Started transmitting video to session: ${sessionId}`);
 
+    // With WebRTC transmission is handled by the connection itself
+    // The stream is already being sent after initWebRTC is called
     if (!toastShownRef.current) {
       toast({
         title: "Transmissão iniciada",
@@ -767,18 +802,22 @@ const ParticipantPage = () => {
     }
   };
 
-  const startCamera = async (showToast: boolean = true) => {
+  const startCamera = async (showToast: boolean) => {
     try {
+      // Don't start camera if it's already active or in the process of starting
       if (cameraActive || cameraStartedRef.current || !videoRef.current) return;
       
+      // Set flag to prevent duplicate starts
       cameraStartedRef.current = true;
       
+      // Request high-quality video with preference for H.264 and support for mobile
       const constraints: MediaStreamConstraints = {
         video: {
           deviceId: deviceId ? { exact: deviceId } : undefined,
           width: { ideal: 1280 },
           height: { ideal: 720 },
           frameRate: { ideal: 30 },
+          // For mobile devices, facingMode helps select the right camera
           facingMode: isMobileDevice ? "environment" : "user" 
         },
         audio: false
@@ -799,10 +838,12 @@ const ParticipantPage = () => {
         toastShownRef.current = true;
       }
       
+      // Initialize WebRTC if connected to a session
       if (connected && sessionId && !transmitting) {
         await initWebRTC(stream);
       }
       
+      // Ensure we're sending a join message when camera is ready
       setTimeout(() => {
         if (connected && !transmitting) {
           startTransmitting();
@@ -813,13 +854,17 @@ const ParticipantPage = () => {
         }
       }, 500);
       
+      // On mobile, add wake lock to prevent screen from turning off
       try {
         if (isMobileDevice && 'wakeLock' in navigator) {
+          // @ts-ignore - TypeScript doesn't know about wakeLock API yet
           const wakeLock = await navigator.wakeLock.request('screen');
           console.log("Wake Lock acquired to keep screen on");
           
+          // Release it when component unmounts or user navigates away
           const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
+              // @ts-ignore
               navigator.wakeLock.request('screen')
                 .then(() => console.log("Wake Lock re-acquired"))
                 .catch(err => console.warn("Failed to re-acquire Wake Lock:", err));
@@ -896,13 +941,12 @@ const ParticipantPage = () => {
     }, 300);
   };
 
-  const handleStartCamera = () => {
-    startCamera(true);
-  };
-
+  // Handle page unload/navigation to ensure disconnect
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (connected && sessionId) {
+        // Send disconnect message before user navigates away
+        console.log("User navigating away, sending disconnect");
         sendDisconnectMessage();
       }
     };
@@ -951,7 +995,7 @@ const ParticipantPage = () => {
           {!cameraActive ? (
             <Button 
               className="bg-accent hover:bg-accent/90 text-white"
-              onClick={handleStartCamera}
+              onClick={startCamera}
             >
               <Video className="h-4 w-4 mr-2" />
               Iniciar Câmera
