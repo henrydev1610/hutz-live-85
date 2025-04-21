@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,7 +23,7 @@ const LivePage = () => {
   const [qrCodeURL, setQrCodeURL] = useState("");
   const [qrCodeVisible, setQrCodeVisible] = useState(false);
   const [qrCodeSvg, setQrCodeSvg] = useState<string | null>(null);
-  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean, hasVideo: boolean, connectedAt?: number}[]>([]);
+  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean, hasVideo: boolean}[]>([]);
   const [selectedBackgroundColor, setSelectedBackgroundColor] = useState("#000000");
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
   const [finalAction, setFinalAction] = useState<'none' | 'image' | 'coupon'>('none');
@@ -386,7 +385,7 @@ const LivePage = () => {
                 
                 <div class="participants-grid" id="participants-container">
                   ${Array.from({ length: participantCount }, (_, i) => `
-                    <div class="participant" id="participant-slot-${i}" data-participant-index="${i}">
+                    <div class="participant" id="participant-slot-${i}">
                       <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                         <circle cx="12" cy="7" r="4"></circle>
@@ -418,7 +417,6 @@ const LivePage = () => {
               let availableSlots = Array.from({ length: ${participantCount} }, (_, i) => i);
               let participantStreams = {};
               let activeVideoElements = {};
-              let assignedParticipants = new Set();
               
               function createVideoElement(slotElement, stream) {
                 const existingVideo = slotElement.querySelector('video');
@@ -505,54 +503,11 @@ const LivePage = () => {
                     const { participants } = event.data;
                     console.log('Got participants update:', participants);
                     
-                    const currentParticipantIds = new Set(participants.map(p => p.id));
-                    
-                    // First, handle removed participants
-                    [...assignedParticipants].forEach(id => {
-                      if (!currentParticipantIds.has(id)) {
-                        const slotIndex = participantSlots[id];
-                        if (slotIndex !== undefined) {
-                          console.log('Removing participant', id, 'from slot', slotIndex);
-                          
-                          // Clean up the slot
-                          const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                          if (slotElement) {
-                            if (activeVideoElements[slotElement.id]) {
-                              const videoElement = activeVideoElements[slotElement.id];
-                              if (videoElement.srcObject) {
-                                const tracks = videoElement.srcObject.getTracks();
-                                tracks.forEach(track => track.stop());
-                                videoElement.srcObject = null;
-                              }
-                              delete activeVideoElements[slotElement.id];
-                            }
-                            
-                            slotElement.innerHTML = \`
-                              <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                <circle cx="12" cy="7" r="4"></circle>
-                              </svg>
-                            \`;
-                          }
-                          
-                          // Free up the slot
-                          delete participantSlots[id];
-                          availableSlots.push(slotIndex);
-                          assignedParticipants.delete(id);
-                        }
-                      }
-                    });
-                    
-                    // Find participants that are selected
-                    const selectedParticipants = participants.filter(p => p.selected);
-                    
-                    // Then assign slots to new selected participants
-                    selectedParticipants.forEach(p => {
-                      if (!assignedParticipants.has(p.id)) {
-                        if (availableSlots.length > 0) {
+                    participants.forEach(p => {
+                      if (p.selected) {
+                        if (!participantSlots[p.id] && availableSlots.length > 0) {
                           const slotIndex = availableSlots.shift();
                           participantSlots[p.id] = slotIndex;
-                          assignedParticipants.add(p.id);
                           
                           console.log('Assigned slot', slotIndex, 'to participant', p.id);
                           
@@ -594,18 +549,43 @@ const LivePage = () => {
                               \`;
                             }
                           }
-                        } else {
-                          console.warn('No available slots for participant', p.id);
+                        }
+                      } else {
+                        if (participantSlots[p.id] !== undefined) {
+                          const slotIndex = participantSlots[p.id];
+                          delete participantSlots[p.id];
+                          availableSlots.push(slotIndex);
+                          
+                          const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                          if (slotElement) {
+                            if (activeVideoElements[slotElement.id]) {
+                              const videoElement = activeVideoElements[slotElement.id];
+                              if (videoElement.srcObject) {
+                                const tracks = videoElement.srcObject.getTracks();
+                                tracks.forEach(track => track.stop());
+                                videoElement.srcObject = null;
+                              }
+                              delete activeVideoElements[slotElement.id];
+                            }
+                            
+                            slotElement.innerHTML = \`
+                              <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                              </svg>
+                            \`;
+                          }
                         }
                       }
                     });
                     
-                    // Handle de-selected participants
-                    participants.forEach(p => {
-                      if (!p.selected && assignedParticipants.has(p.id)) {
-                        const slotIndex = participantSlots[p.id];
+                    Object.keys(participantSlots).forEach(participantId => {
+                      const isStillSelected = participants.some(p => p.id === participantId && p.selected);
+                      if (!isStillSelected) {
+                        const slotIndex = participantSlots[participantId];
+                        delete participantSlots[participantId];
+                        availableSlots.push(slotIndex);
                         
-                        // Clean up the slot
                         const slotElement = document.getElementById("participant-slot-" + slotIndex);
                         if (slotElement) {
                           if (activeVideoElements[slotElement.id]) {
@@ -625,11 +605,6 @@ const LivePage = () => {
                             </svg>
                           \`;
                         }
-                        
-                        // Free up the slot
-                        delete participantSlots[p.id];
-                        availableSlots.push(slotIndex);
-                        assignedParticipants.delete(p.id);
                       }
                     });
                   }
@@ -692,11 +667,7 @@ const LivePage = () => {
   
   const updateTransmissionParticipants = () => {
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      const uniqueParticipants = [...new Map(
-        participantList.map(p => [p.id, p])
-      ).values()];
-      
-      const participantsWithStreams = uniqueParticipants.map(p => ({
+      const participantsWithStreams = participantList.map(p => ({
         ...p,
         hasStream: p.active
       }));
@@ -761,14 +732,8 @@ const LivePage = () => {
     console.log("Participant joined:", participantId);
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === participantId);
-      
       if (exists) {
-        return prev.map(p => p.id === participantId ? { 
-          ...p, 
-          active: true, 
-          hasVideo: true,
-          connectedAt: p.connectedAt || Date.now() 
-        } : p);
+        return prev.map(p => p.id === participantId ? { ...p, active: true, hasVideo: true } : p);
       }
       
       const participantName = `Participante ${prev.filter(p => !p.id.startsWith('placeholder-')).length + 1}`;
@@ -777,8 +742,7 @@ const LivePage = () => {
         name: participantName,
         active: true,
         selected: false,
-        hasVideo: true,
-        connectedAt: Date.now()
+        hasVideo: true
       };
       
       if (sessionId) {
