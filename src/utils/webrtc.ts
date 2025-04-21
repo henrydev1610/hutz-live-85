@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 
 export type WebRTCMessage = {
@@ -85,6 +84,16 @@ const peerConnectionConfig = {
 // Track disconnection events for cleanup
 const disconnectionEventHandlers: Record<string, () => void> = {};
 
+// Track signaling message statistics for debugging
+const signalingStats = {
+  sent: 0,
+  received: 0,
+  failed: 0,
+  lastSentTimestamp: 0,
+  lastReceivedTimestamp: 0,
+  messageTypes: {} as Record<string, number>
+};
+
 // Initialize WebRTC for a participant with a more robust approach
 export const initParticipantWebRTC = async (
   sessionId: string, 
@@ -92,6 +101,16 @@ export const initParticipantWebRTC = async (
   localStream: MediaStream
 ): Promise<void> => {
   console.log(`Initializing WebRTC for participant ${participantId} in session ${sessionId}`);
+  
+  // Reset signaling stats
+  Object.assign(signalingStats, {
+    sent: 0,
+    received: 0,
+    failed: 0,
+    lastSentTimestamp: 0,
+    lastReceivedTimestamp: 0,
+    messageTypes: {}
+  });
   
   // Setup multiple signaling channels for redundancy
   setupSignalingChannel(sessionId, participantId, 'participant');
@@ -151,6 +170,16 @@ export const initParticipantWebRTC = async (
 
   // Setup disconnect handling for proper cleanup
   setupDisconnectHandling(sessionId, participantId);
+  
+  // Verify signaling connectivity after a delay
+  setTimeout(() => {
+    if (signalingStats.sent > 0 && signalingStats.received === 0) {
+      console.warn("Signaling appears to be one-way only - messages sent but none received");
+      // Try alternative signaling method as fallback
+      console.log("Attempting signaling via alternative methods");
+      sendReadyMessage(); // Resend one more time
+    }
+  }, 10000);
 };
 
 // Setup reliable disconnect handling across multiple mechanisms
@@ -222,18 +251,51 @@ const setupDisconnectHandling = (sessionId: string, participantId: string) => {
   };
 };
 
-// Initialize WebRTC for a host
+// Initialize WebRTC for a host with enhanced monitoring
 export const initHostWebRTC = (
   sessionId: string,
   hostId: string = 'host'
 ): void => {
   console.log(`Initializing WebRTC for host in session ${sessionId}`);
   
+  // Reset signaling stats for host
+  Object.assign(signalingStats, {
+    sent: 0,
+    received: 0,
+    failed: 0,
+    lastSentTimestamp: 0,
+    lastReceivedTimestamp: 0,
+    messageTypes: {}
+  });
+  
   // Create WebRTC channel for signaling using multiple mechanisms
   setupSignalingChannel(sessionId, hostId, 'host');
   
   // Also check localStorage for any waiting participants
   checkLocalStorageForParticipants(sessionId);
+  
+  // Set up periodic checks for signaling health
+  const signalingHealthCheck = setInterval(() => {
+    const now = Date.now();
+    const timeSinceLastReceived = signalingStats.lastReceivedTimestamp > 0 ? 
+      now - signalingStats.lastReceivedTimestamp : Infinity;
+    
+    console.log(`Signaling health: sent=${signalingStats.sent}, received=${signalingStats.received}, failed=${signalingStats.failed}`);
+    console.log(`Message types:`, signalingStats.messageTypes);
+    
+    if (signalingStats.sent > 10 && signalingStats.received === 0) {
+      console.warn("Potential signaling issue: Many messages sent but none received");
+    }
+    
+    if (timeSinceLastReceived > 60000 && signalingStats.lastReceivedTimestamp > 0) {
+      console.warn("No signaling messages received in over a minute");
+    }
+  }, 30000);
+  
+  // Cleanup function for the health check
+  return () => {
+    clearInterval(signalingHealthCheck);
+  };
 };
 
 // Check localStorage for any participants waiting to connect
@@ -347,6 +409,11 @@ export const createPeerConnection = async (
         event.candidate.type, 
         event.candidate.address);
       
+      // Track when the first ICE candidate is generated
+      if (!pc.localDescription) {
+        console.warn(`ICE candidate generated before setting local description for ${remoteId}`);
+      }
+      
       sendSignalingMessage({
         type: 'ice-candidate',
         sender: 'host',
@@ -359,7 +426,8 @@ export const createPeerConnection = async (
       // Also store in localStorage as backup if it's a relay candidate (most reliable)
       if (event.candidate.type === 'relay') {
         try {
-          window.localStorage.setItem(`telao-ice-host-${remoteId}-${Date.now()}`, JSON.stringify({
+          const key = `telao-ice-host-${remoteId}-${Date.now()}`;
+          window.localStorage.setItem(key, JSON.stringify({
             type: 'ice-candidate',
             sender: 'host',
             receiver: remoteId,
@@ -370,7 +438,7 @@ export const createPeerConnection = async (
           // Clean up after a while
           setTimeout(() => {
             try {
-              window.localStorage.removeItem(`telao-ice-host-${remoteId}-${Date.now()}`);
+              window.localStorage.removeItem(key);
             } catch (e) {
               // Ignore errors
             }
@@ -379,6 +447,8 @@ export const createPeerConnection = async (
           // Ignore localStorage errors
         }
       }
+    } else {
+      console.log(`ICE candidate gathering complete for ${remoteId}`);
     }
   };
   
@@ -551,15 +621,26 @@ const setupSignalingChannel = (
   peerId: string,
   role: 'host' | 'participant'
 ) => {
+  console.log(`Setting up signaling channels for ${role} with ID ${peerId} in session ${sessionId}`);
+  const channels: { type: string, close?: () => void }[] = [];
+  
   // 1. Use BroadcastChannel for same-origin communication (most reliable when available)
   try {
     const channel = new BroadcastChannel(`telao-webrtc-${sessionId}`);
     
     channel.onmessage = async (event) => {
       const message: WebRTCMessage = event.data;
+      
+      // Update stats for received message
+      signalingStats.received++;
+      signalingStats.lastReceivedTimestamp = Date.now();
+      signalingStats.messageTypes[message.type] = (signalingStats.messageTypes[message.type] || 0) + 1;
+      
+      console.log(`[BroadcastChannel] Received ${message.type} message from ${message.sender}`);
       await handleSignalingMessage(message, role, peerId, sessionId);
     };
     
+    channels.push({ type: 'BroadcastChannel', close: () => channel.close() });
     console.log("BroadcastChannel signaling established");
   } catch (error) {
     console.warn('BroadcastChannel not supported, falling back to alternatives:', error);
@@ -570,13 +651,27 @@ const setupSignalingChannel = (
     const supabaseChannel = supabase.channel(`webrtc-${sessionId}`)
       .on('broadcast', { event: 'message' }, async (payload) => {
         const message: WebRTCMessage = payload.payload;
+        
+        // Update stats for received message
+        signalingStats.received++;
+        signalingStats.lastReceivedTimestamp = Date.now();
+        signalingStats.messageTypes[message.type] = (signalingStats.messageTypes[message.type] || 0) + 1;
+        
+        console.log(`[Supabase] Received ${message.type} message from ${message.sender}`);
         await handleSignalingMessage(message, role, peerId, sessionId);
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`Supabase channel status for ${sessionId}:`, status);
+      });
     
+    channels.push({ 
+      type: 'Supabase', 
+      close: () => supabaseChannel.unsubscribe() 
+    });
     console.log("Supabase Realtime signaling established");
   } catch (error) {
     console.warn('Supabase Realtime setup failed:', error);
+    signalingStats.failed++;
   }
   
   // 3. Set up localStorage polling as final fallback (especially for mobile)
@@ -588,18 +683,29 @@ const setupSignalingChannel = (
         (role === 'host' ? key.includes(peerId) : key.includes('host'))
       );
       
+      let processed = 0;
       for (const key of keys) {
         try {
           const data = JSON.parse(localStorage.getItem(key) || '{}');
           if (data.type === 'ice-candidate') {
+            // Update stats for received message via localStorage
+            signalingStats.received++;
+            signalingStats.lastReceivedTimestamp = Date.now();
+            signalingStats.messageTypes[data.type] = (signalingStats.messageTypes[data.type] || 0) + 1;
+            
             // Process message
             handleSignalingMessage(data, role, peerId, sessionId);
             // Remove processed message
             localStorage.removeItem(key);
+            processed++;
           }
         } catch (e) {
           // Ignore parsing errors
         }
+      }
+      
+      if (processed > 0) {
+        console.log(`[LocalStorage] Processed ${processed} messages from localStorage`);
       }
       
       // For host, also check for participant connections
@@ -611,9 +717,27 @@ const setupSignalingChannel = (
     }
   }, 1000);
   
+  channels.push({ 
+    type: 'LocalStorage', 
+    close: () => clearInterval(localStorageCheckInterval) 
+  });
+  
+  // Log channel configuration
+  console.log(`Established ${channels.length} signaling channels for ${role} ${peerId}:`, 
+    channels.map(c => c.type).join(', '));
+  
   // Return cleanup function
   return () => {
-    clearInterval(localStorageCheckInterval);
+    console.log(`Cleaning up signaling channels for ${role} ${peerId}`);
+    channels.forEach(channel => {
+      if (channel.close) {
+        try {
+          channel.close();
+        } catch (e) {
+          console.warn(`Error closing ${channel.type} channel:`, e);
+        }
+      }
+    });
   };
 };
 
@@ -627,412 +751,430 @@ const handleSignalingMessage = async (
   const { type, sender, receiver, payload } = message;
   
   // Filter messages not intended for this peer
-  if (receiver && receiver !== peerId && receiver !== '*') return;
+  if (receiver && receiver !== peerId && receiver !== '*') {
+    return;
+  }
   
-  console.log(`Received ${type} from ${sender} for ${receiver || 'broadcast'}`);
+  console.log(`Processing ${type} from ${sender} for ${receiver || 'broadcast'}`);
   
-  if (role === 'host') {
-    // Host-specific handling
-    if (type === 'offer' && payload?.type === 'ready-to-connect') {
-      // Participant is ready to connect
-      console.log(`Creating connection for participant ${sender}`);
-      
-      // Check if we already have a connected peer
-      const existingConnection = peerConnections[sender]?.connection;
-      if (existingConnection && existingConnection.connectionState === 'connected') {
-        console.log(`Already have a connected peer for ${sender}, ignoring duplicate ready message`);
-        return;
-      }
-      
-      // Notify about the connection request (e.g., to update UI)
-      if (onParticipantConnectRequest) {
-        onParticipantConnectRequest(sender);
-      }
-      
-      const pc = await createPeerConnection(sender, undefined, (event) => {
-        // When we receive tracks from the participant
-        console.log('Received track from participant:', event.track.kind);
-        // Forward this to the display/UI
-        if (onParticipantTrack) {
-          onParticipantTrack(sender, event);
-        }
-      });
-      
-      // Create and send an offer
-      try {
-        // Create offer with options for reliability and quality
-        const offerOptions = {
-          offerToReceiveAudio: false,
-          offerToReceiveVideo: true,
-          iceRestart: true,
-          voiceActivityDetection: false
-        };
+  // Add message processing metrics
+  const processingStart = performance.now();
+  
+  try {
+    if (role === 'host') {
+      // Host-specific handling
+      if (type === 'offer' && payload?.type === 'ready-to-connect') {
+        // Participant is ready to connect
+        console.log(`Creating connection for participant ${sender}`);
         
-        const offer = await pc.createOffer(offerOptions);
-        
-        // Optimize for mobile - use lower bitrate and H.264 preference
-        if (offer.sdp) {
-          // Use lower bitrate for mobile compatibility (800kbps)
-          offer.sdp = setSdpBitrateAndParams(offer.sdp, 800, true);
+        // Check if we already have a connected peer
+        const existingConnection = peerConnections[sender]?.connection;
+        if (existingConnection && existingConnection.connectionState === 'connected') {
+          console.log(`Already have a connected peer for ${sender}, ignoring duplicate ready message`);
+          return;
         }
         
-        await pc.setLocalDescription(offer);
+        // Notify about the connection request (e.g., to update UI)
+        if (onParticipantConnectRequest) {
+          onParticipantConnectRequest(sender);
+        }
         
-        // Send offer through all available channels
-        sendSignalingMessage({
-          type: 'offer',
-          sender: peerId,
-          receiver: sender,
-          payload: pc.localDescription,
-          sessionId,
-          timestamp: Date.now(),
+        const pc = await createPeerConnection(sender, undefined, (event) => {
+          // When we receive tracks from the participant
+          console.log('Received track from participant:', event.track.kind);
+          // Forward this to the display/UI
+          if (onParticipantTrack) {
+            onParticipantTrack(sender, event);
+          }
         });
         
-        // Also send via localStorage for reliability
+        // Create and send an offer
         try {
-          window.localStorage.setItem(`telao-offer-${sessionId}-${sender}`, JSON.stringify({
+          // Create offer with options for reliability and quality
+          const offerOptions = {
+            offerToReceiveAudio: false,
+            offerToReceiveVideo: true,
+            iceRestart: true,
+            voiceActivityDetection: false
+          };
+          
+          const offer = await pc.createOffer(offerOptions);
+          
+          // Optimize for mobile - use lower bitrate and H.264 preference
+          if (offer.sdp) {
+            // Use lower bitrate for mobile compatibility (800kbps)
+            offer.sdp = setSdpBitrateAndParams(offer.sdp, 800, true);
+          }
+          
+          await pc.setLocalDescription(offer);
+          
+          sendSignalingMessage({
             type: 'offer',
             sender: peerId,
             receiver: sender,
             payload: pc.localDescription,
             sessionId,
             timestamp: Date.now(),
-          }));
+          });
           
-          setTimeout(() => {
-            try {
-              window.localStorage.removeItem(`telao-offer-${sessionId}-${sender}`);
-            } catch (e) {
-              // Ignore errors
-            }
-          }, 30000);
-        } catch (e) {
-          console.warn("localStorage backup failed for offer:", e);
-        }
-        
-      } catch (error) {
-        console.error("Error creating offer:", error);
-      }
-    } 
-    else if (type === 'offer' && payload?.type === 'participant-leave') {
-      // Participant has left, clean up their connection
-      console.log(`Participant ${sender} has left, cleaning up their connection`);
-      if (peerConnections[sender]) {
-        peerConnections[sender].connection.close();
-        delete peerConnections[sender];
-      }
-      
-      // Notify any subscribers about this disconnection
-      if (onParticipantDisconnected) {
-        onParticipantDisconnected(sender);
-      }
-      
-      // Mark as disconnected in localStorage to ensure all components know
-      try {
-        window.localStorage.setItem(`telao-leave-*-${sender}`, JSON.stringify({
-          type: 'participant-leave',
-          id: sender,
-          timestamp: Date.now()
-        }));
-      } catch (e) {
-        // Ignore localStorage errors
-      }
-    }
-    else if (type === 'answer') {
-      // Handle answer from participant
-      const pc = peerConnections[sender]?.connection;
-      if (pc) {
-        try {
-          await pc.setRemoteDescription(new RTCSessionDescription(payload));
-          console.log(`Successfully set remote description for ${sender}`);
-          
-          // If it's been more than 5 seconds since we created this connection
-          // and we don't have a track yet, request a new one
-          setTimeout(() => {
-            if (pc.connectionState === 'connected' && 
-                pc.getReceivers().some(r => !r.track || r.track.readyState !== 'live')) {
-              console.log(`Connection with ${sender} established but no active track, requesting track`);
-              
-              sendSignalingMessage({
-                type: 'offer',
-                sender: peerId,
-                receiver: sender,
-                payload: { type: 'request-track-renewal' },
-                sessionId,
-                timestamp: Date.now(),
-              });
-            }
-          }, 5000);
-          
-        } catch (error) {
-          console.error(`Error setting remote description for ${sender}:`, error);
-        }
-      }
-    }
-    else if (type === 'ice-candidate') {
-      // Add ICE candidate from participant
-      const pc = peerConnections[sender]?.connection;
-      if (pc) {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(payload));
-          console.log(`Added ICE candidate for ${sender}`);
-        } catch (error) {
-          console.error(`Error adding ICE candidate for ${sender}:`, error);
-        }
-      }
-    }
-  } 
-  else if (role === 'participant') {
-    // Participant-specific handling
-    if (type === 'offer' && payload?.type !== 'ready-to-connect') {
-      if (payload?.type === 'request-track-renewal' || payload?.type === 'request-new-track') {
-        // Host is requesting a track renewal
-        console.log("Host requested track renewal");
-        
-        // If we have a connection and local stream, try to replace the track
-        if (peerConnections['host'] && localStream) {
-          const pc = peerConnections['host'].connection;
+          // Also send via localStorage for reliability
           try {
-            const senders = pc.getSenders();
-            const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-            
-            if (videoSender) {
-              // Get a fresh video track
-              if (localStream.getVideoTracks().length > 0) {
-                const videoTrack = localStream.getVideoTracks()[0];
-                if (videoTrack.readyState === 'live') {
-                  console.log("Replacing video track with fresh one");
-                  await videoSender.replaceTrack(videoTrack);
-                } else {
-                  console.log("Video track not live, requesting new stream");
-                  // Full reconnect might be needed
-                  cleanupWebRTC();
-                  
-                  // Wait for next message to reinitialize
-                }
-              }
-            } else {
-              console.log("No video sender found, adding track");
-              // Try to add the track if it's not there
-              if (localStream.getVideoTracks().length > 0) {
-                const videoTrack = localStream.getVideoTracks()[0];
-                if (videoTrack.readyState === 'live') {
-                  pc.addTrack(videoTrack, localStream);
-                }
-              }
-            }
-          } catch (err) {
-            console.error("Error replacing/adding track:", err);
-          }
-        }
-        
-        return;
-      }
-      
-      // Regular offer - setup a new connection
-      console.log("Received full offer from host");
-      try {
-        // Clean up any existing connection first
-        cleanupWebRTC();
-        
-        const pc = new RTCPeerConnection(peerConnectionConfig as RTCConfiguration);
-        
-        // Optimize for mobile with H.264 preference
-        try {
-          const transceiver = pc.addTransceiver('video', {
-            direction: 'sendrecv'
-          });
-          
-          // Set codec preferences with mobile-optimized approach
-          const codecs = RTCRtpSender.getCapabilities?.('video')?.codecs;
-          if (codecs && transceiver.setCodecPreferences) {
-            // Get H.264 codecs first, then VP8, then others
-            const h264Codecs = codecs.filter(codec => 
-              codec.mimeType.toLowerCase() === 'video/h264'
-            );
-            
-            const vp8Codecs = codecs.filter(codec => 
-              codec.mimeType.toLowerCase() === 'video/vp8'
-            );
-            
-            const otherCodecs = codecs.filter(codec => 
-              codec.mimeType.toLowerCase() !== 'video/h264' && 
-              codec.mimeType.toLowerCase() !== 'video/vp8'
-            );
-            
-            // Prioritize for mobile
-            if (h264Codecs.length > 0) {
-              transceiver.setCodecPreferences([...h264Codecs, ...vp8Codecs, ...otherCodecs]);
-              console.log("Successfully prioritized H.264 codec on participant side");
-            } else if (vp8Codecs.length > 0) {
-              transceiver.setCodecPreferences([...vp8Codecs, ...otherCodecs]);
-              console.log("H.264 not available, using VP8 on participant side");
-            }
-          }
-        } catch (error) {
-          console.warn("Could not set codec preferences:", error);
-        }
-        
-        // Add local tracks
-        if (localStream) {
-          console.log("Adding local stream tracks to peer connection");
-          localStream.getTracks().forEach(track => {
-            try {
-              console.log(`Adding ${track.kind} track to participant connection, state: ${track.readyState}`);
-              pc.addTrack(track, localStream);
-            } catch (err) {
-              console.error(`Error adding track:`, err);
-            }
-          });
-        } else {
-          console.warn("No local stream available for participant connection");
-        }
-        
-        // Handle ICE candidates
-        pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            console.log("Participant generated ICE candidate:", 
-              event.candidate.protocol, 
-              event.candidate.type, 
-              event.candidate.address);
-            
-            sendSignalingMessage({
-              type: 'ice-candidate',
+            window.localStorage.setItem(`telao-offer-${sessionId}-${sender}`, JSON.stringify({
+              type: 'offer',
               sender: peerId,
               receiver: sender,
-              payload: event.candidate,
+              payload: pc.localDescription,
               sessionId,
               timestamp: Date.now(),
-            });
+            }));
             
-            // Store relay candidates in localStorage as backup
-            if (event.candidate.type === 'relay') {
-              try {
-                window.localStorage.setItem(`telao-ice-${peerId}-${sender}-${Date.now()}`, JSON.stringify({
-                  type: 'ice-candidate',
-                  sender: peerId,
-                  receiver: sender,
-                  payload: event.candidate,
-                  sessionId,
-                  timestamp: Date.now(),
-                }));
-                
-                setTimeout(() => {
-                  try {
-                    window.localStorage.removeItem(`telao-ice-${peerId}-${sender}-${Date.now()}`);
-                  } catch (e) {
-                    // Ignore errors
-                  }
-                }, 30000);
-              } catch (e) {
-                // Ignore localStorage errors
-              }
-            }
-          }
-        };
-        
-        // Monitor ICE connection state with better mobile recovery
-        pc.oniceconnectionstatechange = () => {
-          console.log(`Participant ICE state: ${pc.iceConnectionState}`);
-          
-          if (pc.iceConnectionState === 'failed') {
-            console.error("Participant ICE connection failed, attempting recovery");
-            
-            // Try to restart ICE if supported
-            if (pc.restartIce) {
-              pc.restartIce();
-            }
-            
-            // Also try full reconnect if it stays failed
             setTimeout(() => {
-              if (pc.iceConnectionState === 'failed') {
-                console.log("ICE still failed after restart attempt, signaling reconnect");
+              try {
+                window.localStorage.removeItem(`telao-offer-${sessionId}-${sender}`);
+              } catch (e) {
+                // Ignore errors
+              }
+            }, 30000);
+          } catch (e) {
+            console.warn("localStorage backup failed for offer:", e);
+          }
+          
+        } catch (error) {
+          console.error("Error creating offer:", error);
+        }
+      } 
+      else if (type === 'offer' && payload?.type === 'participant-leave') {
+        // Participant has left, clean up their connection
+        console.log(`Participant ${sender} has left, cleaning up their connection`);
+        if (peerConnections[sender]) {
+          peerConnections[sender].connection.close();
+          delete peerConnections[sender];
+        }
+        
+        // Notify any subscribers about this disconnection
+        if (onParticipantDisconnected) {
+          onParticipantDisconnected(sender);
+        }
+        
+        // Mark as disconnected in localStorage to ensure all components know
+        try {
+          window.localStorage.setItem(`telao-leave-*-${sender}`, JSON.stringify({
+            type: 'participant-leave',
+            id: sender,
+            timestamp: Date.now()
+          }));
+        } catch (e) {
+          // Ignore localStorage errors
+        }
+      }
+      else if (type === 'answer') {
+        // Handle answer from participant
+        const pc = peerConnections[sender]?.connection;
+        if (pc) {
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(payload));
+            console.log(`Successfully set remote description for ${sender}`);
+            
+            // If it's been more than 5 seconds since we created this connection
+            // and we don't have a track yet, request a new one
+            setTimeout(() => {
+              if (pc.connectionState === 'connected' && 
+                  pc.getReceivers().some(r => !r.track || r.track.readyState !== 'live')) {
+                console.log(`Connection with ${sender} established but no active track, requesting track`);
                 
-                // Signal readiness again to trigger a new offer
                 sendSignalingMessage({
                   type: 'offer',
                   sender: peerId,
-                  payload: { type: 'ready-to-connect' },
+                  receiver: sender,
+                  payload: { type: 'request-track-renewal' },
                   sessionId,
                   timestamp: Date.now(),
                 });
               }
-            }, 2000);
+            }, 5000);
+            
+          } catch (error) {
+            console.error(`Error setting remote description for ${sender}:`, error);
           }
-        };
-        
-        // Set remote description (the offer)
-        await pc.setRemoteDescription(new RTCSessionDescription(payload));
-        
-        // Create and send answer with mobile optimization
-        const answer = await pc.createAnswer();
-        
-        // Set specific video bandwidth and parameters in SDP
-        if (answer.sdp) {
-          // Lower bitrate for mobile (800kbps)
-          answer.sdp = setSdpBitrateAndParams(answer.sdp, 800, true);
         }
-        
-        await pc.setLocalDescription(answer);
-        
-        sendSignalingMessage({
-          type: 'answer',
-          sender: peerId,
-          receiver: sender,
-          payload: pc.localDescription,
-          sessionId,
-          timestamp: Date.now(),
-        });
-        
-        // Store the connection
-        peerConnections[sender] = { 
-          connection: pc,
-          stream: localStream
-        };
-        
-        console.log("Successfully created and sent answer");
-        
-        // Monitor connection status for mobile devices
-        const connectionMonitor = setInterval(() => {
-          if (pc.connectionState === 'connected' && localStream) {
-            // Ensure video tracks are still active (mobile may suspend them)
-            const videoTracks = localStream.getVideoTracks();
-            if (videoTracks.length > 0) {
-              const videoTrack = videoTracks[0];
-              if (!videoTrack.enabled || videoTrack.readyState !== 'live') {
-                console.log("Video track is not active, requesting camera restart");
-                
-                // Signal this to the application level
-                const event = new CustomEvent('video-track-inactive', { 
-                  detail: { participantId: peerId } 
-                });
-                window.dispatchEvent(event);
+      }
+      else if (type === 'ice-candidate') {
+        // Add ICE candidate from participant
+        const pc = peerConnections[sender]?.connection;
+        if (pc) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(payload));
+            console.log(`Added ICE candidate for ${sender}`);
+          } catch (error) {
+            console.error(`Error adding ICE candidate for ${sender}:`, error);
+          }
+        }
+      }
+    } 
+    else if (role === 'participant') {
+      // Participant-specific handling
+      if (type === 'offer' && payload?.type !== 'ready-to-connect') {
+        if (payload?.type === 'request-track-renewal' || payload?.type === 'request-new-track') {
+          // Host is requesting a track renewal
+          console.log("Host requested track renewal");
+          
+          // If we have a connection and local stream, try to replace the track
+          if (peerConnections['host'] && localStream) {
+            const pc = peerConnections['host'].connection;
+            try {
+              const senders = pc.getSenders();
+              const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+              
+              if (videoSender) {
+                // Get a fresh video track
+                if (localStream.getVideoTracks().length > 0) {
+                  const videoTrack = localStream.getVideoTracks()[0];
+                  if (videoTrack.readyState === 'live') {
+                    console.log("Replacing video track with fresh one");
+                    await videoSender.replaceTrack(videoTrack);
+                  } else {
+                    console.log("Video track not live, requesting new stream");
+                    // Full reconnect might be needed
+                    cleanupWebRTC();
+                    
+                    // Wait for next message to reinitialize
+                  }
+                }
+              } else {
+                console.log("No video sender found, adding track");
+                // Try to add the track if it's not there
+                if (localStream.getVideoTracks().length > 0) {
+                  const videoTrack = localStream.getVideoTracks()[0];
+                  if (videoTrack.readyState === 'live') {
+                    pc.addTrack(videoTrack, localStream);
+                  }
+                }
               }
+            } catch (err) {
+              console.error("Error replacing/adding track:", err);
             }
           }
           
-          // Clean up if disconnected
-          if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-            clearInterval(connectionMonitor);
-          }
-        }, 2000);
+          return;
+        }
         
-      } catch (error) {
-        console.error("Error handling offer:", error);
-      }
-    }
-    else if (type === 'ice-candidate') {
-      // Add ICE candidate from host
-      const pc = peerConnections[sender]?.connection;
-      if (pc) {
+        // Regular offer - setup a new connection
+        console.log("Received full offer from host");
         try {
-          await pc.addIceCandidate(new RTCIceCandidate(payload));
-          console.log("Added host ICE candidate");
+          // Clean up any existing connection first
+          cleanupWebRTC();
+          
+          const pc = new RTCPeerConnection(peerConnectionConfig as RTCConfiguration);
+          
+          // Optimize for mobile with H.264 preference
+          try {
+            const transceiver = pc.addTransceiver('video', {
+              direction: 'sendrecv'
+            });
+            
+            // Set codec preferences with mobile-optimized approach
+            const codecs = RTCRtpSender.getCapabilities?.('video')?.codecs;
+            if (codecs && transceiver.setCodecPreferences) {
+              // Get H.264 codecs first, then VP8, then others
+              const h264Codecs = codecs.filter(codec => 
+                codec.mimeType.toLowerCase() === 'video/h264'
+              );
+              
+              const vp8Codecs = codecs.filter(codec => 
+                codec.mimeType.toLowerCase() === 'video/vp8'
+              );
+              
+              const otherCodecs = codecs.filter(codec => 
+                codec.mimeType.toLowerCase() !== 'video/h264' && 
+                codec.mimeType.toLowerCase() !== 'video/vp8'
+              );
+              
+              // Prioritize for mobile
+              if (h264Codecs.length > 0) {
+                transceiver.setCodecPreferences([...h264Codecs, ...vp8Codecs, ...otherCodecs]);
+                console.log("Successfully prioritized H.264 codec on participant side");
+              } else if (vp8Codecs.length > 0) {
+                transceiver.setCodecPreferences([...vp8Codecs, ...otherCodecs]);
+                console.log("H.264 not available, using VP8 on participant side");
+              }
+            }
+          } catch (error) {
+            console.warn("Could not set codec preferences:", error);
+          }
+          
+          // Add local tracks
+          if (localStream) {
+            console.log("Adding local stream tracks to peer connection");
+            localStream.getTracks().forEach(track => {
+              try {
+                console.log(`Adding ${track.kind} track to participant connection, state: ${track.readyState}`);
+                pc.addTrack(track, localStream);
+              } catch (err) {
+                console.error(`Error adding track:`, err);
+              }
+            });
+          } else {
+            console.warn("No local stream available for participant connection");
+          }
+          
+          // Handle ICE candidates
+          pc.onicecandidate = (event) => {
+            if (event.candidate) {
+              console.log("Participant generated ICE candidate:", 
+                event.candidate.protocol, 
+                event.candidate.type, 
+                event.candidate.address);
+              
+              sendSignalingMessage({
+                type: 'ice-candidate',
+                sender: peerId,
+                receiver: sender,
+                payload: event.candidate,
+                sessionId,
+                timestamp: Date.now(),
+              });
+              
+              // Store relay candidates in localStorage as backup
+              if (event.candidate.type === 'relay') {
+                try {
+                  const key = `telao-ice-${peerId}-${sender}-${Date.now()}`;
+                  window.localStorage.setItem(key, JSON.stringify({
+                    type: 'ice-candidate',
+                    sender: peerId,
+                    receiver: sender,
+                    payload: event.candidate,
+                    sessionId,
+                    timestamp: Date.now(),
+                  }));
+                  
+                  // Clean up after a while
+                  setTimeout(() => {
+                    try {
+                      window.localStorage.removeItem(key);
+                    } catch (e) {
+                      // Ignore errors
+                    }
+                  }, 30000);
+                } catch (e) {
+                  // Ignore localStorage errors
+                }
+              }
+            } else {
+              console.log(`ICE candidate gathering complete for ${remoteId}`);
+            }
+          };
+          
+          // Monitor ICE connection state with better mobile recovery
+          pc.oniceconnectionstatechange = () => {
+            console.log(`Participant ICE state: ${pc.iceConnectionState}`);
+            
+            if (pc.iceConnectionState === 'failed') {
+              console.error("Participant ICE connection failed, attempting recovery");
+              
+              // Try to restart ICE if supported
+              if (pc.restartIce) {
+                pc.restartIce();
+              }
+              
+              // Also try full reconnect if it stays failed
+              setTimeout(() => {
+                if (pc.iceConnectionState === 'failed') {
+                  console.log("ICE still failed after restart attempt, signaling reconnect");
+                  
+                  // Signal readiness again to trigger a new offer
+                  sendSignalingMessage({
+                    type: 'offer',
+                    sender: peerId,
+                    payload: { type: 'ready-to-connect' },
+                    sessionId,
+                    timestamp: Date.now(),
+                  });
+                }
+              }, 2000);
+            }
+          };
+          
+          // Set remote description (the offer)
+          await pc.setRemoteDescription(new RTCSessionDescription(payload));
+          
+          // Create and send answer with mobile optimization
+          const answer = await pc.createAnswer();
+          
+          // Set specific video bandwidth and parameters in SDP
+          if (answer.sdp) {
+            // Lower bitrate for mobile (800kbps)
+            answer.sdp = setSdpBitrateAndParams(answer.sdp, 800, true);
+          }
+          
+          await pc.setLocalDescription(answer);
+          
+          sendSignalingMessage({
+            type: 'answer',
+            sender: peerId,
+            receiver: sender,
+            payload: pc.localDescription,
+            sessionId,
+            timestamp: Date.now(),
+          });
+          
+          // Store the connection
+          peerConnections[sender] = { 
+            connection: pc,
+            stream: localStream
+          };
+          
+          console.log("Successfully created and sent answer");
+          
+          // Monitor connection status for mobile devices
+          const connectionMonitor = setInterval(() => {
+            if (pc.connectionState === 'connected' && localStream) {
+              // Ensure video tracks are still active (mobile may suspend them)
+              const videoTracks = localStream.getVideoTracks();
+              if (videoTracks.length > 0) {
+                const videoTrack = videoTracks[0];
+                if (!videoTrack.enabled || videoTrack.readyState !== 'live') {
+                  console.log("Video track is not active, requesting camera restart");
+                  
+                  // Signal this to the application level
+                  const event = new CustomEvent('video-track-inactive', { 
+                    detail: { participantId: peerId } 
+                  });
+                  window.dispatchEvent(event);
+                }
+              }
+            }
+            
+            // Clean up if disconnected
+            if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+              clearInterval(connectionMonitor);
+            }
+          }, 2000);
+          
         } catch (error) {
-          console.error("Error adding ICE candidate:", error);
+          console.error("Error handling offer:", error);
+        }
+      }
+      else if (type === 'ice-candidate') {
+        // Add ICE candidate from host
+        const pc = peerConnections[sender]?.connection;
+        if (pc) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(payload));
+            console.log("Added host ICE candidate");
+          } catch (error) {
+            console.error("Error adding ICE candidate:", error);
+          }
         }
       }
     }
+    
+    // Log processing time for performance monitoring
+    const processingTime = performance.now() - processingStart;
+    if (processingTime > 100) {
+      console.warn(`Signaling message processing took ${processingTime.toFixed(2)}ms, which is slow`);
+    }
+  } catch (error) {
+    console.error(`Error processing signaling message (${type} from ${sender}):`, error);
   }
 };
 
@@ -1109,9 +1251,17 @@ const setSdpBitrateAndParams = (sdp: string, bitrate: number, preferH264: boolea
 
 // Send a signaling message through available channels with better reliability
 export const sendSignalingMessage = (message: WebRTCMessage) => {
+  console.log(`Sending ${message.type} message to ${message.receiver || 'broadcast'}`);
+  
+  // Update stats for sent message
+  signalingStats.sent++;
+  signalingStats.lastSentTimestamp = Date.now();
+  signalingStats.messageTypes[message.type] = (signalingStats.messageTypes[message.type] || 0) + 1;
+  
   // Track success of each method
   let broadcastSuccess = false;
   let supabaseSuccess = false;
+  let localStorageSuccess = false;
   
   try {
     // Try BroadcastChannel first (most reliable when available)
@@ -1119,6 +1269,7 @@ export const sendSignalingMessage = (message: WebRTCMessage) => {
     channel.postMessage(message);
     setTimeout(() => channel.close(), 100);
     broadcastSuccess = true;
+    console.log(`Sent ${message.type} via BroadcastChannel`);
   } catch (error) {
     console.warn('Error sending via BroadcastChannel:', error);
   }
@@ -1131,27 +1282,43 @@ export const sendSignalingMessage = (message: WebRTCMessage) => {
       payload: message
     });
     supabaseSuccess = true;
+    console.log(`Sent ${message.type} via Supabase Realtime`);
   } catch (error) {
     console.warn('Error sending via Supabase:', error);
+    signalingStats.failed++;
   }
   
-  // If both methods failed, try localStorage as last resort
-  if (!broadcastSuccess && !supabaseSuccess && message.receiver) {
+  // If both methods failed or has receiver, also try localStorage as last resort
+  if ((!broadcastSuccess && !supabaseSuccess) || message.receiver) {
     try {
-      window.localStorage.setItem(`telao-webrtc-${message.sessionId}-${message.receiver}-${Date.now()}`, JSON.stringify(message));
+      const key = `telao-webrtc-${message.sessionId}-${message.receiver || 'broadcast'}-${Date.now()}`;
+      window.localStorage.setItem(key, JSON.stringify(message));
+      localStorageSuccess = true;
+      console.log(`Sent ${message.type} via localStorage (key: ${key})`);
       
       // Clean up after a while
       setTimeout(() => {
         try {
-          window.localStorage.removeItem(`telao-webrtc-${message.sessionId}-${message.receiver}-${Date.now()}`);
+          window.localStorage.removeItem(key);
         } catch (e) {
           // Ignore errors
         }
       }, 30000);
     } catch (error) {
       console.error('All signaling methods failed:', error);
+      signalingStats.failed++;
     }
   }
+  
+  // Log success status
+  console.log(`Message delivery status [${message.type}]: BroadcastChannel=${broadcastSuccess}, Supabase=${supabaseSuccess}, localStorage=${localStorageSuccess}`);
+  
+  return { broadcastSuccess, supabaseSuccess, localStorageSuccess };
+};
+
+// Get signaling statistics for debugging
+export const getSignalingStats = () => {
+  return { ...signalingStats };
 };
 
 // Callback for when a participant's track is received
