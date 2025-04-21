@@ -1,3 +1,4 @@
+
 /**
  * Generates a random session ID for live streaming
  */
@@ -44,6 +45,13 @@ export const isSessionActive = (sessionId: string): boolean => {
  */
 export const createSession = (sessionId: string): void => {
   try {
+    // Check if session already exists to prevent recreating it
+    const existingSession = localStorage.getItem(`live-session-${sessionId}`);
+    if (existingSession) {
+      console.log("Session already exists, not recreating:", sessionId);
+      return;
+    }
+    
     const sessionData = {
       timestamp: Date.now(),
       status: 'active',
@@ -153,6 +161,19 @@ export const addParticipantToSession = (sessionId: string, participantId: string
       existingParticipant.lastActive = Date.now();
       existingParticipant.active = true;
       existingParticipant.hasVideo = true; // Assume they have video for now
+      
+      // Send acknowledgement of existing participant
+      try {
+        const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+        channel.postMessage({
+          type: 'host-acknowledge',
+          participantId: participantId,
+          timestamp: Date.now()
+        });
+        setTimeout(() => channel.close(), 500);
+      } catch (e) {
+        console.warn("Error sending acknowledgement via broadcast channel:", e);
+      }
     } else {
       // Add new participant - not auto-selected by default
       sessionData.participants.push({
@@ -160,6 +181,7 @@ export const addParticipantToSession = (sessionId: string, participantId: string
         name: participantName || `Participante ${sessionData.participants.length + 1}`,
         joinedAt: Date.now(),
         lastActive: Date.now(),
+        connectedAt: Date.now(),
         active: true,
         selected: false,
         hasVideo: true // Assume they have video for now

@@ -10,6 +10,7 @@ interface Participant {
   active: boolean;
   selected: boolean;
   hasVideo?: boolean;
+  connectedAt?: number;
 }
 
 interface ParticipantGridProps {
@@ -22,13 +23,18 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
   const activeParticipants = participants.filter(p => p.active);
   const inactiveParticipants = participants.filter(p => !p.active);
   
+  // Sort participants by connection time (most recent first)
+  const sortedActiveParticipants = [...activeParticipants].sort((a, b) => 
+    (b.connectedAt || 0) - (a.connectedAt || 0)
+  );
+  
   return (
     <div className="space-y-4">
-      {activeParticipants.length > 0 && (
+      {sortedActiveParticipants.length > 0 && (
         <div className="mb-4">
-          <h3 className="text-sm font-medium text-white/70 mb-2">Participantes Ativos ({activeParticipants.length})</h3>
+          <h3 className="text-sm font-medium text-white/70 mb-2">Participantes Ativos ({sortedActiveParticipants.length})</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {activeParticipants.map((participant) => (
+            {sortedActiveParticipants.map((participant) => (
               <Card key={participant.id} className={`bg-secondary/60 border ${participant.selected ? 'border-accent' : 'border-white/10'}`}>
                 <CardContent className="p-4 text-center">
                   <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2 relative">

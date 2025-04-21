@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 interface WebRTCVideoProps {
@@ -150,6 +151,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
           clearInterval(checkDisconnect);
         }
       } catch (e) {
+        // Ignore errors when checking localStorage
       }
     }, 2000);
     
@@ -332,6 +334,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
             }
           }
         } catch (e) {
+          // Ignore errors when checking localStorage
         }
         
         if (timeSinceLastUpdate > 30000) {
