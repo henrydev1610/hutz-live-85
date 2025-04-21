@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -83,13 +84,15 @@ const LivePage = () => {
       // Create a dummy stream for the host to initialize WebRTC properly
       navigator.mediaDevices.getUserMedia({ video: true, audio: false })
         .then(stream => {
-          console.log("Created host media stream for WebRTC initialization");
+          console.log("Created host media stream for WebRTC initialization", stream);
           setLocalMediaStream(stream);
           setLocalStream(stream);
           
+          // Initialize host session with callbacks for participant events
           const cleanup = initializeHostSession(sessionId, {
             onParticipantJoin: handleParticipantJoin,
             onParticipantLeave: (id) => {
+              console.log(`Participant left: ${id}`);
               setParticipantList(prev => 
                 prev.map(p => p.id === id ? { ...p, active: false } : p)
               );
@@ -101,6 +104,7 @@ const LivePage = () => {
             }
           });
 
+          // Set up WebRTC track handler
           initHostWebRTC(sessionId, (participantId, track) => {
             console.log(`Received track from participant ${participantId}:`, track);
             handleParticipantTrack(participantId, track);
@@ -127,8 +131,7 @@ const LivePage = () => {
   const handleParticipantTrack = (participantId: string, track: MediaStreamTrack) => {
     console.log(`Processing track from participant ${participantId}:`, track);
     
-    const newStream = new MediaStream([track]);
-    
+    // Create or update the stream for this participant
     setParticipantStreams(prev => {
       // If we already have a stream for this participant
       if (prev[participantId]) {
@@ -147,10 +150,11 @@ const LivePage = () => {
       // Otherwise create a new stream entry
       return {
         ...prev,
-        [participantId]: newStream
+        [participantId]: new MediaStream([track])
       };
     });
     
+    // Update participant status to indicate they have video
     setParticipantList(prev => 
       prev.map(p => p.id === participantId ? { ...p, hasVideo: true } : p)
     );
@@ -207,7 +211,7 @@ const LivePage = () => {
     Object.entries(participantStreams).forEach(([participantId, stream]) => {
       const participant = participantList.find(p => p.id === participantId);
       if (participant) {
-        // Update the preview container video
+        // Update the preview container video if the participant is selected
         if (participant.selected) {
           const previewContainer = document.getElementById(`preview-participant-video-${participantId}`);
           updateVideoElement(previewContainer, stream);
@@ -221,7 +225,10 @@ const LivePage = () => {
   }, [participantList, participantStreams]);
 
   const updateVideoElement = (container: HTMLElement | null, stream: MediaStream) => {
-    if (!container) return;
+    if (!container) {
+      console.warn("Video container not found");
+      return;
+    }
     
     let videoElement = container.querySelector('video');
     
@@ -231,11 +238,14 @@ const LivePage = () => {
       videoElement.playsInline = true;
       videoElement.muted = true;
       videoElement.className = 'w-full h-full object-cover';
+      container.innerHTML = ''; // Clear any placeholder content
       container.appendChild(videoElement);
+      console.log("Created new video element in container:", container.id);
     }
     
     if (videoElement.srcObject !== stream) {
       videoElement.srcObject = stream;
+      console.log(`Set video source for ${container.id} to stream with ${stream.getTracks().length} tracks`);
       videoElement.play().catch(err => console.error('Error playing video:', err));
     }
   };
@@ -883,12 +893,12 @@ const LivePage = () => {
   };
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-6xl">
+    <div className="container mx-auto py-8 px-4 max-w-[calc(100vw-100px)]">
       <h1 className="text-3xl font-bold mb-8 hutz-gradient-text text-center">Momento Live</h1>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div>
-          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 h-full">
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 min-h-[700px]">
             <CardHeader className="flex flex-row justify-between items-center">
               <div className="flex items-center gap-4 w-full">
                 <CardTitle className="flex items-center gap-2">
@@ -945,6 +955,7 @@ const LivePage = () => {
                     participants={participantList}
                     onSelectParticipant={handleParticipantSelect}
                     onRemoveParticipant={handleParticipantRemove}
+                    participantStreams={participantStreams}
                   />
                 </TabsContent>
                 
@@ -999,7 +1010,7 @@ const LivePage = () => {
         </div>
         
         <div>
-          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 h-full">
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 min-h-[700px]">
             <CardHeader>
               <CardTitle>
                 Pré-visualização
@@ -1009,7 +1020,7 @@ const LivePage = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4">
-              <div className="h-[600px]">
+              <div className="h-[650px] flex items-center justify-center">
                 <LivePreview 
                   qrCodeVisible={qrCodeVisible}
                   qrCodeSvg={qrCodeSvg}

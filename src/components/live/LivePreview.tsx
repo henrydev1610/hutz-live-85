@@ -1,4 +1,3 @@
-
 import { useRef, useState } from 'react';
 import { User } from 'lucide-react';
 import { AspectRatio } from "@/components/ui/aspect-ratio";
@@ -8,6 +7,7 @@ interface Participant {
   name: string;
   active: boolean;
   selected: boolean;
+  hasVideo?: boolean;
 }
 
 interface QrCodePosition {
@@ -178,7 +178,6 @@ const LivePreview = ({
     }
   };
 
-  // Calculate grid columns based on participant count
   const gridCols = Math.min(Math.ceil(Math.sqrt(participantCount)), 4);
 
   return (
@@ -207,15 +206,18 @@ const LivePreview = ({
           </div>
           
           <div className="absolute top-[5%] right-[5%] bottom-[5%] left-[30%]">
-            <div className={`grid grid-cols-${gridCols} gap-2 h-full`}>
+            <div className={`grid grid-cols-${gridCols} gap-1 w-full h-full`}>
               {participantList
                 .filter(p => p.selected)
                 .slice(0, Math.min(participantCount, 100))
                 .map((participant) => (
                   <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center">
-                    <User className="h-8 w-8 text-white/30" />
-                    {/* Video element container for participant preview */}
-                    <div id={`preview-participant-video-${participant.id}`} className="absolute inset-0 overflow-hidden">
+                    {!participant.hasVideo && <User className="h-6 w-6 text-white/30" />}
+                    <div 
+                      id={`preview-participant-video-${participant.id}`} 
+                      className="absolute inset-0 w-full h-full overflow-hidden"
+                      style={{ position: 'relative' }}
+                    >
                       {/* Video will be inserted here dynamically */}
                     </div>
                   </div>
@@ -223,7 +225,7 @@ const LivePreview = ({
               
               {Array(Math.max(0, Math.min(participantCount, 100) - participantList.filter(p => p.selected).length)).fill(0).map((_, i) => (
                 <div key={`empty-preview-${i}`} className="bg-black/20 rounded overflow-hidden flex items-center justify-center">
-                  <User className="h-8 w-8 text-white/30" />
+                  <User className="h-6 w-6 text-white/30" />
                 </div>
               ))}
             </div>

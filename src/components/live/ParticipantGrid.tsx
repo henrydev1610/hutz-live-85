@@ -3,6 +3,7 @@ import { User, Check, Video, VideoOff } from 'lucide-react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useEffect, useRef } from 'react';
 
 interface Participant {
   id: string;
@@ -17,9 +18,17 @@ interface ParticipantGridProps {
   participants: Participant[];
   onSelectParticipant: (id: string) => void;
   onRemoveParticipant: (id: string) => void;
+  participantStreams?: {[id: string]: MediaStream};
 }
 
-const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipant }: ParticipantGridProps) => {
+const ParticipantGrid = ({ 
+  participants, 
+  onSelectParticipant, 
+  onRemoveParticipant,
+  participantStreams = {}
+}: ParticipantGridProps) => {
+  const videoRefs = useRef<{[id: string]: HTMLDivElement | null}>({});
+  
   const activeParticipants = participants.filter(p => p.active);
   const inactiveParticipants = participants.filter(p => !p.active);
   
@@ -32,6 +41,35 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
   const displayParticipants = sortedActiveParticipants.filter((participant, index, self) =>
     index === self.findIndex((p) => p.id === participant.id)
   );
+  
+  // Effect to update video elements when streams change
+  useEffect(() => {
+    Object.entries(participantStreams).forEach(([participantId, stream]) => {
+      const container = videoRefs.current[participantId];
+      if (container) {
+        updateVideoElement(container, stream);
+      }
+    });
+  }, [participantStreams, displayParticipants]);
+  
+  // Function to add video element to container
+  const updateVideoElement = (container: HTMLDivElement, stream: MediaStream) => {
+    let videoElement = container.querySelector('video');
+    
+    if (!videoElement) {
+      videoElement = document.createElement('video');
+      videoElement.autoplay = true;
+      videoElement.playsInline = true;
+      videoElement.muted = true;
+      videoElement.className = 'w-full h-full object-cover';
+      container.appendChild(videoElement);
+    }
+    
+    if (videoElement.srcObject !== stream) {
+      videoElement.srcObject = stream;
+      videoElement.play().catch(err => console.error('Error playing video:', err));
+    }
+  };
   
   const getShortName = (participant: Participant) => {
     if (participant.name) return participant.name;
@@ -61,7 +99,11 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
                         <span className="text-xs bg-accent text-white px-2 py-1 rounded-full">Na tela</span>
                       </div>
                     )}
-                    <div id={`participant-video-${participant.id}`} className="absolute inset-0 overflow-hidden">
+                    <div 
+                      id={`participant-video-${participant.id}`}
+                      className="absolute inset-0 overflow-hidden"
+                      ref={el => videoRefs.current[participant.id] = el}
+                    >
                       {/* Video element will be inserted here dynamically */}
                     </div>
                   </div>
