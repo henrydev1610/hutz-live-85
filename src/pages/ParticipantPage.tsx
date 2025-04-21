@@ -396,7 +396,7 @@ const ParticipantPage = () => {
             startHeartbeat();
             
             if (!cameraActive) {
-              startCamera();
+              startCamera(true);
             } else if (streamRef.current && sessionId) {
               // Initialize WebRTC if we already have camera active
               initWebRTC(streamRef.current);
@@ -455,7 +455,7 @@ const ParticipantPage = () => {
               startHeartbeat();
               
               if (!cameraActive) {
-                startCamera();
+                startCamera(true);
               } else if (streamRef.current && sessionId) {
                 // Initialize WebRTC if we already have camera active
                 initWebRTC(streamRef.current);
@@ -802,7 +802,8 @@ const ParticipantPage = () => {
     }
   };
 
-  const startCamera = async (showToast: boolean) => {
+  // Fix for startCamera - add proper type handling for button click events
+  const startCamera = async (showToast: boolean = true) => {
     try {
       // Don't start camera if it's already active or in the process of starting
       if (cameraActive || cameraStartedRef.current || !videoRef.current) return;
@@ -958,6 +959,11 @@ const ParticipantPage = () => {
     };
   }, [connected, sessionId]);
 
+  // Button click handler that adapts the startCamera function
+  const handleStartCameraClick = () => {
+    startCamera(true);
+  };
+
   return (
     <div className="min-h-screen bg-black flex flex-col">
       <div className="flex flex-col items-center justify-center flex-1 p-4">
@@ -995,7 +1001,7 @@ const ParticipantPage = () => {
           {!cameraActive ? (
             <Button 
               className="bg-accent hover:bg-accent/90 text-white"
-              onClick={startCamera}
+              onClick={handleStartCameraClick}
             >
               <Video className="h-4 w-4 mr-2" />
               Iniciar Câmera
@@ -1069,3 +1075,4 @@ const ParticipantPage = () => {
 };
 
 export default ParticipantPage;
+
