@@ -1,5 +1,5 @@
 
-import { Bell, Tv, BrainCircuit, Video } from 'lucide-react';
+import { Bell, BrainCircuit, Video } from 'lucide-react';
 import WelcomeSection from '@/components/dashboard/WelcomeSection';
 import ModuleCard from '@/components/common/ModuleCard';
 
@@ -15,14 +15,8 @@ const Dashboard = () => {
           icon={<Bell className="h-8 w-8" />} 
           path="/lightshow" 
         />
-        
-        <ModuleCard 
-          title="Momento Telão" 
-          description="Transmita a câmera dos participantes para um telão em tempo real, com controle completo sobre o layout."
-          icon={<Tv className="h-8 w-8" />} 
-          path="/telao" 
-        />
-        
+        {/* Removed the Momento Telão ModuleCard */}
+
         <ModuleCard 
           title="Momento Live" 
           description="Crie sessões de video streaming com QR Code, gerenciando participantes em tempo real para transmissões ao vivo."
@@ -42,3 +36,4 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+
