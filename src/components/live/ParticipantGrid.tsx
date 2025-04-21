@@ -77,7 +77,7 @@ const ParticipantGrid = ({
     });
   }, [participantStreams, displayParticipants]);
   
-  // Function to add or update video element in container
+  // Function to add video element to container
   const updateVideoElement = (container: HTMLDivElement, stream: MediaStream) => {
     let videoElement = container.querySelector('video');
     
@@ -115,7 +115,7 @@ const ParticipantGrid = ({
   };
   
   return (
-    <div className="space-y-4 w-full max-w-[1200px]">
+    <div className="space-y-4 w-full max-w-[1100px]">
       {displayParticipants.length > 0 && (
         <div className="mb-4">
           <h3 className="text-sm font-medium text-white/70 mb-2">Participantes Ativos ({displayParticipants.length})</h3>

@@ -111,8 +111,7 @@ const initSocket = (sessionId: string): Promise<void> => {
 
     // Try to connect to the signaling server
     try {
-      // Fix for "process is not defined" error - use import.meta.env instead
-      const serverUrl = import.meta.env.VITE_SIGNALING_SERVER_URL || 'https://signaling.hutz.co';
+      const serverUrl = process.env.NEXT_PUBLIC_SIGNALING_SERVER_URL || 'https://signaling.hutz.co';
       console.log(`Connecting to signaling server at ${serverUrl}...`);
       
       socket = io(serverUrl);

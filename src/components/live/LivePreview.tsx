@@ -231,8 +231,7 @@ const LivePreview = ({
               }}
             >
               {Array.from({ length: Math.min(participantCount, cols * rows) }).map((_, i) => {
-                const selectedParticipants = participantList.filter(p => p.selected);
-                const participant = selectedParticipants[i];
+                const participant = participantList.filter(p => p.selected)[i];
                 
                 return (
                   <div key={`preview-cell-${i}`} className="bg-black/40 rounded overflow-hidden flex items-center justify-center relative">
@@ -259,17 +258,23 @@ const LivePreview = ({
                   left: `${qrCodePosition.x}px`,
                   top: `${qrCodePosition.y}px`,
                   width: `${qrCodePosition.width}px`,
-                  height: `${qrCodePosition.height}px`,
                 }}
                 onMouseDown={startDraggingQR}
                 ref={qrCodeRef}
               >
-                <div className="w-full h-full bg-white p-1 rounded-lg flex items-center justify-center overflow-hidden">
-                  {qrCodeSvg ? (
-                    <img src={qrCodeSvg} alt="QR Code" className="w-full h-full" />
-                  ) : (
-                    <div className="w-8 h-8 bg-black/20 rounded" />
-                  )}
+                <div 
+                  className="w-full bg-white p-1 rounded-lg"
+                  style={{
+                    height: `${qrCodePosition.height}px`,
+                  }}
+                >
+                  <div className="w-full h-full bg-white flex items-center justify-center overflow-hidden">
+                    {qrCodeSvg ? (
+                      <img src={qrCodeSvg} alt="QR Code" className="w-full h-full" />
+                    ) : (
+                      <div className="w-8 h-8 bg-black/20 rounded" />
+                    )}
+                  </div>
                   
                   <div className="absolute right-0 top-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-ne-resize resize-handle" data-handle="tr"></div>
                   <div className="absolute right-0 bottom-0 w-4 h-4 bg-white border border-gray-300 rounded-full cursor-se-resize resize-handle" data-handle="br"></div>
@@ -311,12 +316,6 @@ const LivePreview = ({
               </div>
             </>
           )}
-          
-          {/* Live indicator */}
-          <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded flex items-center">
-            <div className="w-2 h-2 bg-red-500 rounded-full mr-1 animate-pulse"></div>
-            AO VIVO
-          </div>
         </div>
       </AspectRatio>
     </div>

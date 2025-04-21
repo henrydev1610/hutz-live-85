@@ -79,51 +79,49 @@ const LivePage = () => {
 
   useEffect(() => {
     if (sessionId) {
-      if (transmissionOpen) {
-        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-          .then(stream => {
-            console.log("Created host media stream for WebRTC initialization", stream);
-            setLocalMediaStream(stream);
-            setLocalStream(stream);
-          })
-          .catch(err => {
-            console.error("Error creating host media stream:", err);
-            toast({
-              title: "Erro ao inicializar câmera",
-              description: "Não foi possível acessar a câmera para inicializar a transmissão.",
-              variant: "destructive"
-            });
+      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        .then(stream => {
+          console.log("Created host media stream for WebRTC initialization", stream);
+          setLocalMediaStream(stream);
+          setLocalStream(stream);
+          
+          const cleanup = initializeHostSession(sessionId, {
+            onParticipantJoin: handleParticipantJoin,
+            onParticipantLeave: (id) => {
+              console.log(`Participant left: ${id}`);
+              setParticipantList(prev => 
+                prev.map(p => p.id === id ? { ...p, active: false } : p)
+              );
+            },
+            onParticipantHeartbeat: (id) => {
+              setParticipantList(prev => 
+                prev.map(p => p.id === id ? { ...p, active: true } : p)
+              );
+            }
           });
-      }
-      
-      const cleanup = initializeHostSession(sessionId, {
-        onParticipantJoin: handleParticipantJoin,
-        onParticipantLeave: (id) => {
-          console.log(`Participant left: ${id}`);
-          setParticipantList(prev => 
-            prev.map(p => p.id === id ? { ...p, active: false } : p)
-          );
-        },
-        onParticipantHeartbeat: (id) => {
-          setParticipantList(prev => 
-            prev.map(p => p.id === id ? { ...p, active: true } : p)
-          );
-        }
-      });
 
-      initHostWebRTC(sessionId, (participantId, track) => {
-        console.log(`Received track from participant ${participantId}:`, track);
-        handleParticipantTrack(participantId, track);
-      });
+          initHostWebRTC(sessionId, (participantId, track) => {
+            console.log(`Received track from participant ${participantId}:`, track);
+            handleParticipantTrack(participantId, track);
+          });
 
-      return () => {
-        cleanup();
-        if (localStream) {
-          localStream.getTracks().forEach(track => track.stop());
-        }
-      };
+          return () => {
+            cleanup();
+            if (stream) {
+              stream.getTracks().forEach(track => track.stop());
+            }
+          };
+        })
+        .catch(err => {
+          console.error("Error creating host media stream:", err);
+          toast({
+            title: "Erro ao inicializar câmera",
+            description: "Não foi possível acessar a câmera para inicializar a transmissão.",
+            variant: "destructive"
+          });
+        });
     }
-  }, [sessionId, transmissionOpen]);
+  }, [sessionId]);
 
   const handleParticipantTrack = (participantId: string, track: MediaStreamTrack) => {
     console.log(`Processing track from participant ${participantId}:`, track);
@@ -331,23 +329,6 @@ const LivePage = () => {
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
       transmissionWindowRef.current.focus();
       return;
-    }
-    
-    if (sessionId && !localStream) {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-        .then(stream => {
-          console.log("Created host media stream for transmission", stream);
-          setLocalMediaStream(stream);
-          setLocalStream(stream);
-        })
-        .catch(err => {
-          console.error("Error creating host media stream:", err);
-          toast({
-            title: "Erro ao inicializar câmera",
-            description: "Não foi possível acessar a câmera para inicializar a transmissão.",
-            variant: "destructive"
-          });
-        });
     }
     
     const width = window.innerWidth * 0.9;
