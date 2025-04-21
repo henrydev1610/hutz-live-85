@@ -2,11 +2,12 @@
 // Session storage and management utility functions
 
 // Define session interface
-interface Session {
+export interface Session {
   id: string;
   name: string;
   createdAt: number;
   lastActive: number;
+  participantCount: number; // Added for Dashboard component
   participants: {
     [participantId: string]: {
       name: string;
@@ -29,6 +30,13 @@ const SESSIONS_STORAGE_KEY = 'hutz-live-sessions';
 const SESSION_ACTIVE_PREFIX = 'hutz-live-session-active-';
 
 /**
+ * Generate a session ID
+ */
+export const generateSessionId = (): string => {
+  return `session-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+};
+
+/**
  * Get all stored sessions
  */
 export const getStoredSessions = (): Session[] => {
@@ -37,7 +45,20 @@ export const getStoredSessions = (): Session[] => {
     if (!sessionsJson) return [];
     
     const sessions = JSON.parse(sessionsJson);
-    return Array.isArray(sessions) ? sessions : [];
+    
+    // Add participantCount property if it doesn't exist
+    const processedSessions = Array.isArray(sessions) ? sessions.map(session => {
+      if (!session.hasOwnProperty('participantCount')) {
+        const participantCount = session.participants ? Object.keys(session.participants).length : 0;
+        return {
+          ...session,
+          participantCount
+        };
+      }
+      return session;
+    }) : [];
+    
+    return processedSessions;
   } catch (error) {
     console.error('Error getting stored sessions:', error);
     return [];
@@ -181,6 +202,9 @@ export const addParticipantToSession = (sessionId: string, participantId: string
     };
     
     sessions[sessionIndex].lastActive = Date.now();
+    
+    // Update participant count
+    sessions[sessionIndex].participantCount = Object.keys(sessions[sessionIndex].participants).length;
     
     localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
     return true;

@@ -1,11 +1,10 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Smartphone, Tv2, Users, Video, Plus, Search, MoreVertical, Trash2, Type, Zap } from "lucide-react";
-import { getStoredSessions, removeSession } from "@/utils/sessionUtils";
+import { getStoredSessions, removeSession, Session } from "@/utils/sessionUtils";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -14,14 +13,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
-
-interface Session {
-  id: string;
-  name: string;
-  createdAt: number;
-  lastActive: number;
-  participantCount: number;
-}
 
 export default function Dashboard() {
   const navigate = useNavigate();
