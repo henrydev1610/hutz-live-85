@@ -44,19 +44,29 @@ const ParticipantGrid = ({
   
   // Effect to update video elements when streams change
   useEffect(() => {
+    console.log("ParticipantGrid: participantStreams updated:", Object.keys(participantStreams));
+    
     Object.entries(participantStreams).forEach(([participantId, stream]) => {
+      console.log(`Processing stream for participant ${participantId}:`, stream.getTracks().length, "tracks");
       const container = videoRefs.current[participantId];
       if (container) {
+        console.log(`Found container for participant ${participantId}, updating video element`);
         updateVideoElement(container, stream);
+      } else {
+        console.log(`No container found for participant ${participantId}`);
       }
     });
   }, [participantStreams, displayParticipants]);
   
   // Function to add video element to container
   const updateVideoElement = (container: HTMLDivElement, stream: MediaStream) => {
+    console.log("Updating video element in container:", container.id);
+    console.log("Stream has", stream.getTracks().length, "tracks");
+    
     let videoElement = container.querySelector('video');
     
     if (!videoElement) {
+      console.log("Creating new video element");
       videoElement = document.createElement('video');
       videoElement.autoplay = true;
       videoElement.playsInline = true;
@@ -66,6 +76,7 @@ const ParticipantGrid = ({
     }
     
     if (videoElement.srcObject !== stream) {
+      console.log("Setting stream to video element");
       videoElement.srcObject = stream;
       videoElement.play().catch(err => console.error('Error playing video:', err));
     }
@@ -102,7 +113,13 @@ const ParticipantGrid = ({
                     <div 
                       id={`participant-video-${participant.id}`}
                       className="absolute inset-0 overflow-hidden"
-                      ref={el => videoRefs.current[participant.id] = el}
+                      ref={el => {
+                        videoRefs.current[participant.id] = el;
+                        // If we already have a stream for this participant, update the video element immediately
+                        if (el && participantStreams[participant.id]) {
+                          updateVideoElement(el, participantStreams[participant.id]);
+                        }
+                      }}
                     >
                       {/* Video element will be inserted here dynamically */}
                     </div>

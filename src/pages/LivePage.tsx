@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -77,10 +76,11 @@ const LivePage = () => {
       setParticipantList(initialParticipants);
     }
   }, []);
-
+  
   // Initialize host WebRTC when session is created
   useEffect(() => {
     if (sessionId) {
+      console.log("Setting up WebRTC for session:", sessionId);
       // Create a dummy stream for the host to initialize WebRTC properly
       navigator.mediaDevices.getUserMedia({ video: true, audio: false })
         .then(stream => {
@@ -136,11 +136,14 @@ const LivePage = () => {
       // If we already have a stream for this participant
       if (prev[participantId]) {
         const existingStream = prev[participantId];
+        console.log(`Adding track to existing stream for ${participantId}`);
+        
         // Check if this track is already in the stream
         const trackExists = existingStream.getTracks().some(t => t.id === track.id);
         
         if (!trackExists) {
           existingStream.addTrack(track);
+          console.log(`Added track to existing stream for ${participantId}, now has ${existingStream.getTracks().length} tracks`);
           // Return a new object to trigger re-render
           return { ...prev };
         }
@@ -148,16 +151,19 @@ const LivePage = () => {
       }
       
       // Otherwise create a new stream entry
+      console.log(`Creating new stream for ${participantId}`);
+      const newStream = new MediaStream([track]);
+      
+      // Update participant status to indicate they have video
+      setParticipantList(prev => 
+        prev.map(p => p.id === participantId ? { ...p, hasVideo: true } : p)
+      );
+      
       return {
         ...prev,
-        [participantId]: new MediaStream([track])
+        [participantId]: newStream
       };
     });
-    
-    // Update participant status to indicate they have video
-    setParticipantList(prev => 
-      prev.map(p => p.id === participantId ? { ...p, hasVideo: true } : p)
-    );
     
     // Send the stream to the transmission window if it's open
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
@@ -208,16 +214,24 @@ const LivePage = () => {
 
   // Update video elements when participant list or streams change
   useEffect(() => {
+    console.log("LivePage: Updating video elements with streams:", Object.keys(participantStreams));
+    
     Object.entries(participantStreams).forEach(([participantId, stream]) => {
+      console.log(`LivePage: Processing stream for participant ${participantId}:`, stream.getTracks().length, "tracks");
+      
       const participant = participantList.find(p => p.id === participantId);
       if (participant) {
+        console.log(`LivePage: Found participant ${participantId} in list`);
+        
         // Update the preview container video if the participant is selected
         if (participant.selected) {
+          console.log(`LivePage: Participant ${participantId} is selected, updating preview`);
           const previewContainer = document.getElementById(`preview-participant-video-${participantId}`);
           updateVideoElement(previewContainer, stream);
         }
         
         // Always update the grid container video
+        console.log(`LivePage: Updating grid container for participant ${participantId}`);
         const gridContainer = document.getElementById(`participant-video-${participantId}`);
         updateVideoElement(gridContainer, stream);
       }
@@ -230,9 +244,13 @@ const LivePage = () => {
       return;
     }
     
+    console.log("Updating video element in container:", container.id);
+    console.log("Stream has", stream.getTracks().length, "tracks");
+    
     let videoElement = container.querySelector('video');
     
     if (!videoElement) {
+      console.log("Creating new video element");
       videoElement = document.createElement('video');
       videoElement.autoplay = true;
       videoElement.playsInline = true;
@@ -244,8 +262,8 @@ const LivePage = () => {
     }
     
     if (videoElement.srcObject !== stream) {
+      console.log(`Setting video source for ${container.id} to stream with ${stream.getTracks().length} tracks`);
       videoElement.srcObject = stream;
-      console.log(`Set video source for ${container.id} to stream with ${stream.getTracks().length} tracks`);
       videoElement.play().catch(err => console.error('Error playing video:', err));
     }
   };
@@ -852,219 +870,3 @@ const LivePage = () => {
   };
 
   const handleFinalActionClick = () => {
-    if (finalActionLink) {
-      window.open(finalActionLink, '_blank');
-    }
-  };
-
-  const handleParticipantJoin = (participantId: string) => {
-    console.log("Participant joined:", participantId);
-    
-    setParticipantList(prev => {
-      const exists = prev.some(p => p.id === participantId);
-      if (exists) {
-        return prev.map(p => p.id === participantId ? { ...p, active: true, hasVideo: true, connectedAt: Date.now() } : p);
-      }
-      
-      const participantName = `Participante ${prev.filter(p => !p.id.startsWith('placeholder-')).length + 1}`;
-      const newParticipant = {
-        id: participantId,
-        name: participantName,
-        active: true,
-        selected: false, // No longer auto-joining
-        hasVideo: true,
-        connectedAt: Date.now()
-      };
-      
-      if (sessionId) {
-        addParticipantToSession(sessionId, participantId, participantName);
-      }
-      
-      toast({
-        title: "Novo participante conectado",
-        description: `${participantName} se conectou à sessão.`,
-      });
-      
-      const filteredList = prev.filter(p => !p.id.startsWith('placeholder-') || p.active);
-      return [...filteredList, newParticipant];
-    });
-    
-    setTimeout(updateTransmissionParticipants, 500);
-  };
-
-  return (
-    <div className="container mx-auto py-8 px-4 max-w-[calc(100vw-100px)]">
-      <h1 className="text-3xl font-bold mb-8 hutz-gradient-text text-center">Momento Live</h1>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div>
-          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 min-h-[700px]">
-            <CardHeader className="flex flex-row justify-between items-center">
-              <div className="flex items-center gap-4 w-full">
-                <CardTitle className="flex items-center gap-2">
-                  Controle de Transmissão
-                </CardTitle>
-                <div className="flex gap-2">
-                  <Button 
-                    className="hutz-button-accent"
-                    onClick={openTransmissionWindow}
-                    disabled={transmissionOpen || !sessionId}
-                  >
-                    <MonitorPlay className="h-4 w-4 mr-2" />
-                    Iniciar Transmissão
-                  </Button>
-                  
-                  <Button 
-                    variant="destructive"
-                    onClick={finishTransmission}
-                    disabled={!transmissionOpen}
-                  >
-                    <StopCircle className="h-4 w-4 mr-2" />
-                    Finalizar Transmissão
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <CardDescription className="mb-4">
-                Gerencie participantes, layout e aparência da sua transmissão ao vivo
-              </CardDescription>
-              
-              <Tabs defaultValue="participants" className="w-full">
-                <TabsList className="grid grid-cols-4 mb-6">
-                  <TabsTrigger value="participants">
-                    <Users className="h-4 w-4 mr-2" />
-                    Participantes
-                  </TabsTrigger>
-                  <TabsTrigger value="layout">
-                    <MonitorPlay className="h-4 w-4 mr-2" />
-                    Layout
-                  </TabsTrigger>
-                  <TabsTrigger value="appearance">
-                    <Palette className="h-4 w-4 mr-2" />
-                    Aparência
-                  </TabsTrigger>
-                  <TabsTrigger value="qrcode">
-                    <QrCode className="h-4 w-4 mr-2" />
-                    QR Code
-                  </TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="participants">
-                  <ParticipantGrid 
-                    participants={participantList}
-                    onSelectParticipant={handleParticipantSelect}
-                    onRemoveParticipant={handleParticipantRemove}
-                    participantStreams={participantStreams}
-                  />
-                </TabsContent>
-                
-                <TabsContent value="layout">
-                  <TextSettings 
-                    participantCount={participantCount}
-                    setParticipantCount={setParticipantCount}
-                    qrCodeDescription={qrCodeDescription}
-                    setQrCodeDescription={setQrCodeDescription}
-                    selectedFont={selectedFont}
-                    setSelectedFont={setSelectedFont}
-                    selectedTextColor={selectedTextColor}
-                    setSelectedTextColor={setSelectedTextColor}
-                    qrDescriptionFontSize={qrDescriptionFontSize}
-                    setQrDescriptionFontSize={setQrDescriptionFontSize}
-                  />
-                </TabsContent>
-                
-                <TabsContent value="appearance">
-                  <AppearanceSettings 
-                    selectedBackgroundColor={selectedBackgroundColor}
-                    setSelectedBackgroundColor={setSelectedBackgroundColor}
-                    backgroundImage={backgroundImage}
-                    onFileSelect={handleFileSelect}
-                    onRemoveImage={removeBackgroundImage}
-                    fileInputRef={fileInputRef}
-                  />
-                </TabsContent>
-                
-                <TabsContent value="qrcode">
-                  <QrCodeSettings 
-                    qrCodeGenerated={!!sessionId}
-                    qrCodeVisible={qrCodeVisible}
-                    qrCodeURL={qrCodeURL}
-                    finalAction={finalAction}
-                    setFinalAction={setFinalAction}
-                    finalActionImage={finalActionImage}
-                    setFinalActionImage={setFinalActionImage}
-                    finalActionLink={finalActionLink}
-                    setFinalActionLink={setFinalActionLink}
-                    finalActionCoupon={finalActionCoupon}
-                    setFinalActionCoupon={setFinalActionCouponCode}
-                    onGenerateQRCode={handleGenerateQRCode}
-                    onQRCodeToTransmission={handleQRCodeToTransmission}
-                    autoJoin={false}
-                    setAutoJoin={() => {}} // Removed auto-join functionality
-                  />
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-        
-        <div>
-          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 min-h-[700px]">
-            <CardHeader>
-              <CardTitle>
-                Pré-visualização
-              </CardTitle>
-              <CardDescription>
-                Veja como sua transmissão será exibida
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4">
-              <div className="h-[650px] flex items-center justify-center">
-                <LivePreview 
-                  qrCodeVisible={qrCodeVisible}
-                  qrCodeSvg={qrCodeSvg}
-                  qrCodePosition={qrCodePosition}
-                  setQrCodePosition={setQrCodePosition}
-                  qrDescriptionPosition={qrDescriptionPosition}
-                  setQrDescriptionPosition={setQrDescriptionPosition}
-                  qrCodeDescription={qrCodeDescription}
-                  selectedFont={selectedFont}
-                  selectedTextColor={selectedTextColor}
-                  qrDescriptionFontSize={qrDescriptionFontSize}
-                  backgroundImage={backgroundImage}
-                  selectedBackgroundColor={selectedBackgroundColor}
-                  participantList={participantList}
-                  participantCount={participantCount}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-      
-      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Ação final enviada!</DialogTitle>
-            <DialogDescription>
-              O conteúdo foi exibido para os participantes.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center space-x-2">
-            <div className="grid flex-1 gap-2">
-              <p className="text-sm text-muted-foreground">
-                Esta tela será fechada automaticamente em {finalActionTimeLeft} segundos.
-              </p>
-            </div>
-            <Button variant="outline" onClick={closeFinalAction}>
-              Fechar agora
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-};
-
-export default LivePage;
