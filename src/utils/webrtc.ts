@@ -244,7 +244,9 @@ export const initTelaoWebRTC = async (
 export const startScreenShare = async (): Promise<MediaStream> => {
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
+      video: {
+        displaySurface: 'monitor',
+      },
       audio: false,
     });
     

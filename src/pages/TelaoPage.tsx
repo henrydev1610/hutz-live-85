@@ -616,7 +616,9 @@ const TelaoPage = () => {
                       } else {
                         try {
                           const stream = await navigator.mediaDevices.getDisplayMedia({
-                            video: true,
+                            video: {
+                              displaySurface: 'monitor',
+                            },
                             audio: false,
                           });
                           
