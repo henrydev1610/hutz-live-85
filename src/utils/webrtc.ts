@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { supabase } from '@/integrations/supabase/client';
+import { announceParticipantVideoReady } from './sessionUtils';
 
 let socket: Socket | null = null;
 let peerConnection: RTCPeerConnection | null = null;
@@ -250,16 +251,52 @@ export const hangUp = async (participantId: string) => {
 
 export const initHostWebRTC = async (sessionId: string, participantId?: string) => {
   if (!socket) {
-    throw new Error('Socket is not initialized.');
+    try {
+      const socketUrl = process.env.REACT_APP_SIGNALING_SERVER_URL || 'https://lovable-signal.herokuapp.com';
+      socket = io(socketUrl, {
+        query: {
+          sessionId,
+          role: 'host',
+          participantId: participantId || 'host'
+        },
+        transports: ['websocket', 'polling']
+      });
+      
+      console.log('Socket initialized in host mode for session', sessionId);
+    } catch (error) {
+      console.error('Failed to initialize socket:', error);
+      
+      console.log('Using broadcast channel as fallback for signaling');
+      
+      try {
+        const channel = new BroadcastChannel(`live-session-${sessionId}`);
+        
+        channel.onmessage = (event) => {
+          const { type, id } = event.data;
+          if (type === 'participant-join-request') {
+            console.log(`Participant ${id} requested to join the session`);
+            
+            channel.postMessage({
+              type: 'host-acknowledge',
+              target: id,
+              participantId: participantId || 'host',
+              timestamp: Date.now()
+            });
+          }
+        };
+      } catch (err) {
+        console.error('Failed to create broadcast channel:', err);
+      }
+    }
   }
 
-  socket.on('join', async (data: { origin: string; id: string }) => {
+  socket?.on('join', async (data: { origin: string; id: string }) => {
     const { origin, id } = data;
     console.log(`Participant ${id} joined the session from ${origin}`);
 
     createPeerConnection(id);
 
-    socket.on('ice-candidate', async (data: { participantId: string; iceCandidates: RTCIceCandidate[] }) => {
+    socket?.on('ice-candidate', async (data: { participantId: string; iceCandidates: RTCIceCandidate[] }) => {
       if (id === data.participantId) {
         data.iceCandidates.forEach(async (candidate) => {
           try {
@@ -272,7 +309,7 @@ export const initHostWebRTC = async (sessionId: string, participantId?: string) 
       }
     });
 
-    socket.on('offer', async (data: { sdp: string; origin: string }) => {
+    socket?.on('offer', async (data: { sdp: string; origin: string }) => {
       if (id === data.origin) {
         const offer: RTCSessionDescriptionInit = {
           type: 'offer',
@@ -282,40 +319,94 @@ export const initHostWebRTC = async (sessionId: string, participantId?: string) 
       }
     });
 
-    socket.on('hangup', async (data: { origin: string }) => {
+    socket?.on('hangup', async (data: { origin: string }) => {
       if (id === data.origin) {
         console.log(`Participant ${id} hung up`);
         hangUp(id);
       }
     });
 
-    socket.emit('host-acknowledge', {
+    socket?.emit('host-acknowledge', {
       target: id,
       participantId: participantId || 'host',
     });
   });
 
-  socket.on('leave', (data: { id: string }) => {
+  socket?.on('leave', (data: { id: string }) => {
     console.log(`Participant ${data.id} left the session`);
     hangUp(data.id);
   });
 
-  socket.on('disconnect', () => {
+  socket?.on('disconnect', () => {
     console.log('Socket disconnected, cleaning up');
     closeMediaStream();
   });
+  
+  try {
+    const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+    channel.onmessage = (event) => {
+      const data = event.data;
+      if (data.type === 'participant-join-request' || data.type === 'qr-code-scan') {
+        console.log(`QR Code scan detected for participant ${data.id}`);
+        
+        channel.postMessage({
+          type: 'host-acknowledge',
+          target: data.id,
+          participantId: participantId || 'host',
+          timestamp: Date.now()
+        });
+      }
+    };
+  } catch (error) {
+    console.warn('BroadcastChannel not supported for QR code events');
+  }
 };
 
 export const initParticipantWebRTC = async (sessionId: string, participantId: string, stream: MediaStream) => {
   if (!socket) {
-    throw new Error('Socket is not initialized.');
+    try {
+      const socketUrl = process.env.REACT_APP_SIGNALING_SERVER_URL || 'https://lovable-signal.herokuapp.com';
+      socket = io(socketUrl, {
+        query: {
+          sessionId,
+          role: 'participant',
+          participantId
+        },
+        transports: ['websocket', 'polling']
+      });
+      
+      console.log('Socket initialized in participant mode for session', sessionId);
+    } catch (error) {
+      console.error('Failed to initialize socket:', error);
+      
+      console.log('Using broadcast channel as fallback for signaling');
+      
+      try {
+        const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+        channel.postMessage({
+          type: 'participant-join-request',
+          id: participantId,
+          timestamp: Date.now()
+        });
+        
+        channel.postMessage({
+          type: 'qr-code-scan',
+          id: participantId,
+          timestamp: Date.now()
+        });
+      } catch (err) {
+        console.error('Failed to create broadcast channel:', err);
+      }
+    }
   }
 
   localStream = stream;
+  
+  announceParticipantVideoReady(sessionId, participantId);
 
   createPeerConnection(participantId);
 
-  socket.on('ice-candidate', async (data: { participantId: string; iceCandidates: RTCIceCandidate[] }) => {
+  socket?.on('ice-candidate', async (data: { participantId: string; iceCandidates: RTCIceCandidate[] }) => {
     if (participantId === data.participantId) {
       data.iceCandidates.forEach(async (candidate) => {
         try {
@@ -328,7 +419,7 @@ export const initParticipantWebRTC = async (sessionId: string, participantId: st
     }
   });
 
-  socket.on('answer', async (data: { sdp: string }) => {
+  socket?.on('answer', async (data: { sdp: string }) => {
     const answer: RTCSessionDescriptionInit = {
       type: 'answer',
       sdp: data.sdp,
@@ -336,12 +427,12 @@ export const initParticipantWebRTC = async (sessionId: string, participantId: st
     await setRemoteAnswer(answer);
   });
 
-  socket.on('hangup', () => {
+  socket?.on('hangup', () => {
     console.log('Host hung up');
     hangUp(participantId);
   });
 
-  socket.on('host-leave', () => {
+  socket?.on('host-leave', () => {
     console.log('Host left the session');
     closeMediaStream();
   });
@@ -401,4 +492,32 @@ export const initParticipantWebRTC = async (sessionId: string, participantId: st
       console.error('Erro ao obter estatísticas:', error);
     }
   }, 5000);
+};
+
+export const handleQRCodeScan = (sessionId: string, userId: string) => {
+  console.log('Handling QR code scan for session', sessionId, 'with user ID', userId);
+  
+  try {
+    const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+    channel.postMessage({
+      type: 'qr-code-scan',
+      id: userId,
+      deviceType: 'mobile',
+      timestamp: Date.now()
+    });
+    
+    if (socket && socket.connected) {
+      socket.emit('join-session', {
+        sessionId: sessionId,
+        userId: userId,
+        deviceType: 'mobile'
+      });
+      console.log('Enviando solicitação para entrar na sessão:', sessionId);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error handling QR code scan:', error);
+    return false;
+  }
 };

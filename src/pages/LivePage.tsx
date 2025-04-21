@@ -867,6 +867,7 @@ const LivePage = () => {
                     setFinalActionCoupon={setFinalActionCouponCode}
                     onGenerateQRCode={handleGenerateQRCode}
                     onQRCodeToTransmission={handleQRCodeToTransmission}
+                    sessionId={sessionId}
                   />
                 </TabsContent>
               </Tabs>

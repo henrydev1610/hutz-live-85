@@ -79,6 +79,19 @@ export const createSession = (sessionId: string): void => {
     // Store the interval ID to clean it up later
     window._sessionIntervals = window._sessionIntervals || {};
     window._sessionIntervals[sessionId] = intervalId;
+    
+    // Broadcast session creation to help with QR code connectivity
+    try {
+      const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+      channel.postMessage({
+        type: 'session-created',
+        id: sessionId,
+        timestamp: Date.now()
+      });
+      setTimeout(() => channel.close(), 1000);
+    } catch (error) {
+      console.warn("BroadcastChannel not supported for session creation notification");
+    }
   } catch (e) {
     console.error("Error creating session:", e);
   }
@@ -138,6 +151,7 @@ export const addParticipantToSession = (sessionId: string, participantId: string
   try {
     const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
     if (!sessionDataString) {
+      console.error('No session data found for session', sessionId);
       return false;
     }
     
@@ -153,6 +167,7 @@ export const addParticipantToSession = (sessionId: string, participantId: string
       existingParticipant.lastActive = Date.now();
       existingParticipant.active = true;
       existingParticipant.hasVideo = true; // Assume they have video for now
+      console.log('Updated existing participant:', participantId);
     } else {
       // Add new participant - not auto-selected by default
       sessionData.participants.push({
@@ -164,6 +179,7 @@ export const addParticipantToSession = (sessionId: string, participantId: string
         selected: false,
         hasVideo: true // Assume they have video for now
       });
+      console.log('Added new participant:', participantId);
     }
     
     localStorage.setItem(`live-session-${sessionId}`, JSON.stringify(sessionData));
@@ -172,6 +188,14 @@ export const addParticipantToSession = (sessionId: string, participantId: string
     notifyParticipants(sessionId, {
       type: 'participant-update',
       participants: sessionData.participants,
+      timestamp: Date.now()
+    });
+    
+    // Also emit a specific join event to make integration with QR code easier
+    notifyParticipants(sessionId, {
+      type: 'participant-join',
+      id: participantId,
+      name: participantName || `Participante ${sessionData.participants.length}`,
       timestamp: Date.now()
     });
     
@@ -240,6 +264,30 @@ export const updateParticipantStatus = (sessionId: string, participantId: string
   } catch (e) {
     console.error("Error updating participant status:", e);
     return false;
+  }
+};
+
+/**
+ * Announce participant ready for video
+ */
+export const announceParticipantVideoReady = (sessionId: string, participantId: string): void => {
+  try {
+    console.log(`Announcing participant ${participantId} is ready with video in session ${sessionId}`);
+    
+    notifyParticipants(sessionId, {
+      type: 'video-stream-info',
+      id: participantId,
+      hasStream: true,
+      timestamp: Date.now()
+    });
+    
+    // Also update the participant status in the session data
+    updateParticipantStatus(sessionId, participantId, {
+      hasVideo: true,
+      lastVideoUpdate: Date.now()
+    });
+  } catch (e) {
+    console.error("Error announcing participant video ready:", e);
   }
 };
 
