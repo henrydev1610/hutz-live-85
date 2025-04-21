@@ -1,4 +1,3 @@
-
 import { addParticipantToSession, updateParticipantStatus } from './sessionUtils';
 
 // Define SocketType interface
@@ -16,7 +15,6 @@ const PEER_CONNECTION_CONFIG = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun.stunprotocol.org:3478' },
     { urls: 'stun:stun.services.mozilla.com:3478' },
-    // Additional TURN servers to help with difficult NAT situations
     {
       urls: 'turn:openrelay.metered.ca:80',
       username: 'openrelayproject',
@@ -30,12 +28,8 @@ const PEER_CONNECTION_CONFIG = {
   ]
 };
 
-let io: any;
-import('socket.io-client').then(module => {
-  io = module.io;
-}).catch(err => {
-  console.error("Error loading socket.io-client:", err);
-});
+// Import socket.io-client properly with TypeScript support
+import { io } from 'socket.io-client';
 
 let socket: SocketType | null = null;
 let activePeerConnections: { [participantId: string]: RTCPeerConnection } = {};
@@ -548,7 +542,7 @@ export const initParticipantWebRTC = async (
           console.log(`Received ICE candidate from host via broadcast channel`);
           try {
             if (data.candidate) {
-              await activePeerConnections['host'].addIceCandidate(new RTCIceCandidate(data.candidate));
+              await activePeerConnections['host'].addIceCandidate(data.candidate);
             }
           } catch (e) {
             console.error('Error handling ICE candidate via broadcast channel:', e);
