@@ -149,10 +149,6 @@ const ParticipantPage = () => {
     }
     
     if (isMobileDevice && !cameraStartedRef.current) {
-      if (autoStartTimerRef.current) {
-        clearTimeout(autoStartTimerRef.current);
-      }
-      
       autoStartTimerRef.current = setTimeout(() => {
         if (!cameraStartedRef.current) {
           startCamera(true);
@@ -374,7 +370,7 @@ const ParticipantPage = () => {
             startHeartbeat();
             
             if (!cameraActive) {
-              startCamera();
+              startCamera(true);
             } else if (streamRef.current && sessionId) {
               initWebRTC(streamRef.current);
             }
@@ -432,7 +428,7 @@ const ParticipantPage = () => {
               startHeartbeat();
               
               if (!cameraActive) {
-                startCamera();
+                startCamera(true);
               } else if (streamRef.current && sessionId) {
                 initWebRTC(streamRef.current);
               }
@@ -598,15 +594,9 @@ const ParticipantPage = () => {
         timestamp: Date.now()
       }));
       
-      setTimeout(() => {
-        try {
-          window.localStorage.removeItem(`telao-leave-${sessionId}-${participantIdRef.current}`);
-        } catch (e) {
-          // Ignore errors
-        }
-      }, 10000);
+      window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
     } catch (e) {
-      console.warn("Error using localStorage for disconnect:", e);
+      // Ignore errors
     }
   };
 
@@ -713,18 +703,6 @@ const ParticipantPage = () => {
         } catch (e) {
           console.warn("Error disconnecting via Supabase Realtime:", e);
         }
-      }
-      
-      try {
-        window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, JSON.stringify({
-          type: 'participant-leave',
-          id: participantIdRef.current,
-          timestamp: Date.now()
-        }));
-        
-        window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
-      } catch (e) {
-        // Ignore errors
       }
       
       if (heartbeatIntervalRef.current) {
@@ -896,10 +874,6 @@ const ParticipantPage = () => {
     }, 300);
   };
 
-  const handleStartCamera = () => {
-    startCamera(true);
-  };
-
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (connected && sessionId) {
@@ -951,7 +925,7 @@ const ParticipantPage = () => {
           {!cameraActive ? (
             <Button 
               className="bg-accent hover:bg-accent/90 text-white"
-              onClick={handleStartCamera}
+              onClick={() => startCamera()}
             >
               <Video className="h-4 w-4 mr-2" />
               Iniciar Câmera
