@@ -28,6 +28,11 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
     (b.connectedAt || 0) - (a.connectedAt || 0)
   );
   
+  const getShortName = (participant: Participant) => {
+    if (participant.name) return participant.name;
+    return `Participante ${participant.id.substring(participant.id.lastIndexOf('-') + 1)}`;
+  };
+  
   return (
     <div className="space-y-4">
       {sortedActiveParticipants.length > 0 && (
@@ -56,7 +61,7 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
                   </div>
                   <div className="flex items-center justify-center gap-2 mb-2">
                     <p className="text-sm font-medium truncate">
-                      {participant.name || `Participante ${participant.id.slice(0, 4)}`}
+                      {getShortName(participant)}
                     </p>
                     <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-400/20 text-xs">
                       <span className="w-2 h-2 rounded-full bg-green-500 mr-1"></span>
@@ -105,7 +110,7 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
                   </div>
                   <div className="flex items-center justify-center gap-2 mb-2">
                     <p className="text-sm font-medium truncate">
-                      {participant.name || `Participante ${participant.id.slice(0, 4)}`}
+                      {getShortName(participant)}
                     </p>
                     <Badge variant="outline" className="bg-gray-500/10 text-gray-400 border-gray-400/20 text-xs">
                       <span className="w-2 h-2 rounded-full bg-gray-500 mr-1"></span>

@@ -13,12 +13,16 @@ const PEER_CONNECTION_CONFIG = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.stunprotocol.org:3478' },
+    { urls: 'stun:stun.services.mozilla.com:3478' }
   ]
 };
 
 let io: any;
 import('socket.io-client').then(module => {
   io = module.io;
+}).catch(err => {
+  console.error("Error loading socket.io-client:", err);
 });
 
 let socket: SocketType | null = null;
@@ -28,6 +32,13 @@ let signalingSessions: { [sessionId: string]: boolean } = {};
 let currentSessionId: string | null = null;
 let localStream: MediaStream | null = null;
 let onParticipantTrackCallback: ((participantId: string, track: MediaStreamTrack) => void) | null = null;
+let fallbackModeEnabled = false;
+
+// Use a fallback mode when signaling server is unavailable
+const enableFallbackMode = () => {
+  console.log("Enabling WebRTC fallback mode with direct connections");
+  fallbackModeEnabled = true;
+};
 
 /**
  * Sets codec preference to H.264 if available
@@ -63,34 +74,62 @@ export const setH264CodecPreference = (pc: RTCPeerConnection): void => {
  */
 const initSocket = (sessionId: string): Promise<void> => {
   return new Promise((resolve, reject) => {
+    // Try to use the signaling server if available
     if (!io) {
-      reject(new Error('Socket.io client not loaded yet. Please try again.'));
+      console.warn("Socket.io client not loaded, switching to fallback mode");
+      enableFallbackMode();
+      resolve();
       return;
     }
 
+    // Skip if we already have a socket for this session
     if (socket && socket.connected && currentSessionId === sessionId) {
       console.log('Socket already initialized for this session.');
       resolve();
       return;
     }
 
-    socket = io(process.env.NEXT_PUBLIC_SIGNALING_SERVER_URL as string);
+    // Try to connect to the signaling server
+    try {
+      const serverUrl = process.env.NEXT_PUBLIC_SIGNALING_SERVER_URL || 'https://signaling.hutz.co';
+      console.log(`Connecting to signaling server at ${serverUrl}...`);
+      
+      socket = io(serverUrl);
 
-    socket.on('connect', () => {
-      console.log('Socket connected:', socket?.id);
-      currentSessionId = sessionId;
-      socket?.emit('joinSession', sessionId);
+      // Set a timeout for connection
+      const connectionTimeout = setTimeout(() => {
+        console.warn("Socket connection timeout, switching to fallback mode");
+        enableFallbackMode();
+        resolve();
+      }, 5000);
+
+      socket.on('connect', () => {
+        clearTimeout(connectionTimeout);
+        console.log('Socket connected:', socket?.id);
+        currentSessionId = sessionId;
+        socket?.emit('joinSession', sessionId);
+        resolve();
+      });
+
+      socket.on('connect_error', (error: any) => {
+        clearTimeout(connectionTimeout);
+        console.error('Socket connection error, switching to fallback mode:', error);
+        enableFallbackMode();
+        resolve();
+      });
+
+      socket.on('disconnect', (reason: string) => {
+        console.log('Socket disconnected:', reason);
+        if (reason === 'io server disconnect' || reason === 'transport close') {
+          console.warn("Permanent disconnection, switching to fallback mode");
+          enableFallbackMode();
+        }
+      });
+    } catch (error) {
+      console.error("Error initializing socket:", error);
+      enableFallbackMode();
       resolve();
-    });
-
-    socket.on('connect_error', (error: any) => {
-      console.error('Socket connection error:', error);
-      reject(error);
-    });
-
-    socket.on('disconnect', (reason: string) => {
-      console.log('Socket disconnected:', reason);
-    });
+    }
   });
 };
 
@@ -104,47 +143,117 @@ export const initHostWebRTC = async (
   onParticipantTrackCallback = onTrack;
 
   if (!localStream) {
-    throw new Error('Local stream is not available. Call setLocalStream first.');
+    console.warn('Local stream is not available. Call setLocalStream first.');
+    return;
   }
 
   await initSocket(sessionId);
 
-  socket?.on('userJoined', async (participantId: string) => {
-    console.log(`User joined: ${participantId}`);
-    activeParticipants[participantId] = true;
-    createPeerConnection(participantId, true);
-  });
-
-  socket?.on('offer', async (participantId: string, description: RTCSessionDescription) => {
-    console.log(`Received offer from: ${participantId}`);
+  // Set up broadcast channel fallback for signaling
+  if (fallbackModeEnabled) {
+    console.log("Using broadcast channel for signaling instead of socket.io");
     try {
-      if (!activePeerConnections[participantId]) {
-        createPeerConnection(participantId, false);
-      }
-      await activePeerConnections[participantId].setRemoteDescription(description);
-      const answer = await activePeerConnections[participantId].createAnswer();
-      await activePeerConnections[participantId].setLocalDescription(answer);
-      socket?.emit('answer', participantId, activePeerConnections[participantId].localDescription);
+      const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
+      
+      channel.onmessage = async (event) => {
+        const { data } = event;
+        
+        if (data.type === 'participant-join') {
+          console.log(`Participant joined via broadcast channel: ${data.participantId}`);
+          activeParticipants[data.participantId] = true;
+          createPeerConnection(data.participantId, true);
+        }
+        else if (data.type === 'offer' && data.targetId === 'host') {
+          console.log(`Received offer from participant: ${data.senderId}`);
+          try {
+            if (!activePeerConnections[data.senderId]) {
+              createPeerConnection(data.senderId, false);
+            }
+            await activePeerConnections[data.senderId].setRemoteDescription(new RTCSessionDescription(data.description));
+            const answer = await activePeerConnections[data.senderId].createAnswer();
+            await activePeerConnections[data.senderId].setLocalDescription(answer);
+            
+            // Send answer back via broadcast channel
+            channel.postMessage({
+              type: 'answer',
+              senderId: 'host',
+              targetId: data.senderId,
+              description: activePeerConnections[data.senderId].localDescription
+            });
+          } catch (e) {
+            console.error('Error handling offer via broadcast channel:', e);
+          }
+        }
+        else if (data.type === 'candidate' && data.targetId === 'host') {
+          console.log(`Received ICE candidate from participant: ${data.senderId}`);
+          try {
+            if (activePeerConnections[data.senderId] && data.candidate) {
+              await activePeerConnections[data.senderId].addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
+          } catch (e) {
+            console.error('Error handling ICE candidate via broadcast channel:', e);
+          }
+        }
+        else if (data.type === 'participant-leave') {
+          console.log(`Participant left via broadcast channel: ${data.participantId}`);
+          closePeerConnection(data.participantId);
+        }
+      };
+      
+      // Keep the channel open
+      setInterval(() => {
+        channel.postMessage({ type: 'host-heartbeat', timestamp: Date.now() });
+      }, 10000);
+      
+      // Clean up on window unload
+      window.addEventListener('beforeunload', () => {
+        channel.postMessage({ type: 'host-leave', sessionId });
+        channel.close();
+      });
     } catch (e) {
-      console.error('Error handling offer:', e);
+      console.error("Error setting up broadcast channel for signaling:", e);
     }
-  });
+  }
 
-  socket?.on('candidate', async (participantId: string, candidate: RTCIceCandidate) => {
-    console.log(`Received candidate from: ${participantId}`);
-    try {
-      if (candidate) {
-        await activePeerConnections[participantId].addIceCandidate(candidate);
+  // Handle socket events if not in fallback mode
+  if (!fallbackModeEnabled && socket) {
+    socket.on('userJoined', async (participantId: string) => {
+      console.log(`User joined via signaling server: ${participantId}`);
+      activeParticipants[participantId] = true;
+      createPeerConnection(participantId, true);
+    });
+
+    socket.on('offer', async (participantId: string, description: RTCSessionDescription) => {
+      console.log(`Received offer from: ${participantId}`);
+      try {
+        if (!activePeerConnections[participantId]) {
+          createPeerConnection(participantId, false);
+        }
+        await activePeerConnections[participantId].setRemoteDescription(description);
+        const answer = await activePeerConnections[participantId].createAnswer();
+        await activePeerConnections[participantId].setLocalDescription(answer);
+        socket?.emit('answer', participantId, activePeerConnections[participantId].localDescription);
+      } catch (e) {
+        console.error('Error handling offer:', e);
       }
-    } catch (e) {
-      console.error('Error handling candidate:', e);
-    }
-  });
+    });
 
-  socket?.on('userLeft', (participantId: string) => {
-    console.log(`User ${participantId} left`);
-    closePeerConnection(participantId);
-  });
+    socket.on('candidate', async (participantId: string, candidate: RTCIceCandidate) => {
+      console.log(`Received candidate from: ${participantId}`);
+      try {
+        if (candidate) {
+          await activePeerConnections[participantId].addIceCandidate(candidate);
+        }
+      } catch (e) {
+        console.error('Error handling candidate:', e);
+      }
+    });
+
+    socket.on('userLeft', (participantId: string) => {
+      console.log(`User ${participantId} left`);
+      closePeerConnection(participantId);
+    });
+  }
 
   const createPeerConnection = async (participantId: string, isInitiator: boolean) => {
     console.log(`Creating peer connection for ${participantId}, isInitiator: ${isInitiator}`);
@@ -152,14 +261,54 @@ export const initHostWebRTC = async (
 
     activePeerConnections[participantId].onicecandidate = (event) => {
       if (event.candidate) {
-        socket?.emit('candidate', participantId, event.candidate);
+        if (fallbackModeEnabled) {
+          try {
+            const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
+            channel.postMessage({
+              type: 'candidate',
+              senderId: 'host',
+              targetId: participantId,
+              candidate: event.candidate
+            });
+          } catch (e) {
+            console.error("Error sending ICE candidate via broadcast channel:", e);
+          }
+        } else {
+          socket?.emit('candidate', participantId, event.candidate);
+        }
       }
     };
 
     activePeerConnections[participantId].oniceconnectionstatechange = () => {
       console.log(`ICE Connection State Change for ${participantId}:`, activePeerConnections[participantId].iceConnectionState);
-      if (activePeerConnections[participantId].iceConnectionState === 'disconnected') {
-        closePeerConnection(participantId);
+      
+      // Update participant status based on connection state
+      if (activePeerConnections[participantId].iceConnectionState === 'connected' || 
+          activePeerConnections[participantId].iceConnectionState === 'completed') {
+        updateParticipantStatus(sessionId, participantId, { active: true, lastActive: Date.now() });
+      }
+      else if (activePeerConnections[participantId].iceConnectionState === 'disconnected' || 
+               activePeerConnections[participantId].iceConnectionState === 'failed' ||
+               activePeerConnections[participantId].iceConnectionState === 'closed') {
+        if (activePeerConnections[participantId].iceConnectionState === 'failed') {
+          // Try to restart ICE if it failed
+          try {
+            activePeerConnections[participantId].restartIce();
+          } catch (e) {
+            console.error("Error restarting ICE:", e);
+          }
+        }
+        
+        if (activePeerConnections[participantId].iceConnectionState === 'disconnected') {
+          // Give some time for reconnection before closing
+          setTimeout(() => {
+            if (activePeerConnections[participantId]?.iceConnectionState === 'disconnected') {
+              closePeerConnection(participantId);
+            }
+          }, 5000);
+        } else if (activePeerConnections[participantId].iceConnectionState === 'closed') {
+          closePeerConnection(participantId);
+        }
       }
     };
 
@@ -182,8 +331,27 @@ export const initHostWebRTC = async (
           offerToReceiveAudio: false,
           offerToReceiveVideo: true
         });
+        
+        // Set H.264 codec if available
+        setH264CodecPreference(activePeerConnections[participantId]);
+        
         await activePeerConnections[participantId].setLocalDescription(offer);
-        socket?.emit('offer', participantId, activePeerConnections[participantId].localDescription);
+        
+        if (fallbackModeEnabled) {
+          try {
+            const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
+            channel.postMessage({
+              type: 'offer',
+              senderId: 'host',
+              targetId: participantId,
+              description: activePeerConnections[participantId].localDescription
+            });
+          } catch (e) {
+            console.error("Error sending offer via broadcast channel:", e);
+          }
+        } else {
+          socket?.emit('offer', participantId, activePeerConnections[participantId].localDescription);
+        }
       } catch (e) {
         console.error('Error creating offer:', e);
       }
@@ -214,27 +382,104 @@ export const initParticipantWebRTC = async (
 
   await initSocket(sessionId);
 
-  socket?.on('answer', async (hostId: string, description: RTCSessionDescription) => {
-    console.log(`Received answer from host: ${hostId}`);
+  // Set up broadcast channel fallback for signaling
+  if (fallbackModeEnabled) {
+    console.log("Participant using broadcast channel for signaling");
     try {
-      await activePeerConnections[hostId].setRemoteDescription(description);
+      const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
+      
+      // Announce our joining
+      channel.postMessage({
+        type: 'participant-join',
+        participantId: participantId
+      });
+      
+      // Listen for messages
+      channel.onmessage = async (event) => {
+        const { data } = event;
+        
+        if (data.type === 'offer' && data.targetId === participantId) {
+          console.log(`Received offer from host via broadcast channel`);
+          try {
+            if (!activePeerConnections['host']) {
+              createHostPeerConnection(sessionId, participantId);
+            }
+            await activePeerConnections['host'].setRemoteDescription(new RTCSessionDescription(data.description));
+            const answer = await activePeerConnections['host'].createAnswer();
+            await activePeerConnections['host'].setLocalDescription(answer);
+            
+            // Send answer back via broadcast channel
+            channel.postMessage({
+              type: 'answer',
+              senderId: participantId,
+              targetId: 'host',
+              description: activePeerConnections['host'].localDescription
+            });
+          } catch (e) {
+            console.error('Error handling offer via broadcast channel:', e);
+          }
+        }
+        else if (data.type === 'answer' && data.targetId === participantId) {
+          console.log(`Received answer from host via broadcast channel`);
+          try {
+            await activePeerConnections['host'].setRemoteDescription(new RTCSessionDescription(data.description));
+          } catch (e) {
+            console.error('Error handling answer via broadcast channel:', e);
+          }
+        }
+        else if (data.type === 'candidate' && data.targetId === participantId) {
+          console.log(`Received ICE candidate from host via broadcast channel`);
+          try {
+            if (data.candidate) {
+              await activePeerConnections['host'].addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
+          } catch (e) {
+            console.error('Error handling ICE candidate via broadcast channel:', e);
+          }
+        }
+        else if (data.type === 'host-leave') {
+          console.log(`Host left via broadcast channel`);
+          closePeerConnection('host');
+        }
+      };
+      
+      // Create the peer connection
+      createHostPeerConnection(sessionId, participantId);
+      
+      // Clean up on window unload
+      window.addEventListener('beforeunload', () => {
+        channel.postMessage({ type: 'participant-leave', participantId });
+        channel.close();
+      });
     } catch (e) {
-      console.error('Error handling answer:', e);
+      console.error("Error setting up broadcast channel for signaling:", e);
     }
-  });
+  }
 
-  socket?.on('candidate', async (hostId: string, candidate: RTCIceCandidate) => {
-    console.log(`Received candidate from host: ${hostId}`);
-    try {
-      if (candidate) {
-        await activePeerConnections[hostId].addIceCandidate(candidate);
+  // Handle socket events if not in fallback mode
+  if (!fallbackModeEnabled && socket) {
+    socket.on('answer', async (hostId: string, description: RTCSessionDescription) => {
+      console.log(`Received answer from host: ${hostId}`);
+      try {
+        await activePeerConnections[hostId].setRemoteDescription(description);
+      } catch (e) {
+        console.error('Error handling answer:', e);
       }
-    } catch (e) {
-      console.error('Error handling candidate:', e);
-    }
-  });
+    });
 
-  createPeerConnection(sessionId, participantId);
+    socket.on('candidate', async (hostId: string, candidate: RTCIceCandidate) => {
+      console.log(`Received candidate from host: ${hostId}`);
+      try {
+        if (candidate) {
+          await activePeerConnections[hostId].addIceCandidate(candidate);
+        }
+      } catch (e) {
+        console.error('Error handling candidate:', e);
+      }
+    });
+
+    createHostPeerConnection(sessionId, participantId);
+  }
 };
 
 // Initialize WebRTC connection for a telao session
@@ -283,54 +528,97 @@ export const stopScreenShare = (): void => {
   }
 };
 
-// Set callback for participant track event
-export const setOnParticipantTrack = (callback: (participantId: string, track: MediaStreamTrack) => void): void => {
-  onParticipantTrackCallback = callback;
+// Sets the local stream
+export const setLocalStream = (stream: MediaStream): void => {
+  localStream = stream;
 };
 
-// Export activeParticipants for external use
-export { activeParticipants };
+// Create host peer connection
+const createHostPeerConnection = async (sessionId: string, participantId: string) => {
+  console.log(`Creating participant->host peer connection`);
+  
+  activePeerConnections['host'] = new RTCPeerConnection(PEER_CONNECTION_CONFIG);
 
-const createPeerConnection = async (sessionId: string, participantId: string) => {
-  console.log(`Creating peer connection for participant ${participantId} to session ${sessionId}`);
-  activePeerConnections[sessionId] = new RTCPeerConnection(PEER_CONNECTION_CONFIG);
-
-  activePeerConnections[sessionId].onicecandidate = (event) => {
+  activePeerConnections['host'].onicecandidate = (event) => {
     if (event.candidate) {
-      socket?.emit('candidate', sessionId, event.candidate);
+      if (fallbackModeEnabled) {
+        try {
+          const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
+          channel.postMessage({
+            type: 'candidate',
+            senderId: participantId,
+            targetId: 'host',
+            candidate: event.candidate
+          });
+        } catch (e) {
+          console.error("Error sending ICE candidate via broadcast channel:", e);
+        }
+      } else if (socket) {
+        socket.emit('candidate', sessionId, event.candidate);
+      }
     }
   };
 
-  activePeerConnections[sessionId].oniceconnectionstatechange = () => {
-    console.log(`ICE Connection State Change for Host:`, activePeerConnections[sessionId].iceConnectionState);
-    if (activePeerConnections[sessionId].iceConnectionState === 'disconnected') {
-      closePeerConnection(sessionId);
+  activePeerConnections['host'].oniceconnectionstatechange = () => {
+    console.log(`ICE Connection State Change for Host:`, activePeerConnections['host'].iceConnectionState);
+    
+    // Attempt to restart ICE if the connection fails
+    if (activePeerConnections['host'].iceConnectionState === 'failed') {
+      console.log("ICE connection failed, attempting to restart");
+      try {
+        activePeerConnections['host'].restartIce();
+      } catch (e) {
+        console.error("Error restarting ICE:", e);
+      }
+    }
+    // Close the connection if it's been disconnected for too long
+    else if (activePeerConnections['host'].iceConnectionState === 'disconnected') {
+      setTimeout(() => {
+        if (activePeerConnections['host']?.iceConnectionState === 'disconnected') {
+          closePeerConnection('host');
+        }
+      }, 5000);
+    }
+    else if (activePeerConnections['host'].iceConnectionState === 'closed') {
+      closePeerConnection('host');
     }
   };
 
   if (localStream) {
     localStream.getTracks().forEach(track => {
-      activePeerConnections[sessionId].addTrack(track, localStream!);
+      activePeerConnections['host'].addTrack(track, localStream!);
     });
   }
 
   try {
-    const offer = await activePeerConnections[sessionId].createOffer({
+    const offer = await activePeerConnections['host'].createOffer({
       offerToReceiveAudio: false,
       offerToReceiveVideo: true
     });
-    await activePeerConnections[sessionId].setLocalDescription(offer);
-    socket?.emit('offer', sessionId, activePeerConnections[sessionId].localDescription);
+    
+    // Set H.264 codec if available
+    setH264CodecPreference(activePeerConnections['host']);
+    
+    await activePeerConnections['host'].setLocalDescription(offer);
+    
+    if (fallbackModeEnabled) {
+      try {
+        const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
+        channel.postMessage({
+          type: 'offer',
+          senderId: participantId,
+          targetId: 'host',
+          description: activePeerConnections['host'].localDescription
+        });
+      } catch (e) {
+        console.error("Error sending offer via broadcast channel:", e);
+      }
+    } else if (socket) {
+      socket.emit('offer', sessionId, activePeerConnections['host'].localDescription);
+    }
   } catch (e) {
     console.error('Error creating offer:', e);
   }
-};
-
-/**
- * Sets the local stream
- */
-export const setLocalStream = (stream: MediaStream): void => {
-  localStream = stream;
 };
 
 /**
@@ -344,18 +632,23 @@ export const endWebRTC = (sessionId: string): void => {
       closePeerConnection(participantId);
     });
 
-    socket?.emit('leaveSession', sessionId);
+    if (!fallbackModeEnabled && socket) {
+      socket.emit('leaveSession', sessionId);
+    }
+    
+    // Also notify through broadcast channel if in fallback mode
+    if (fallbackModeEnabled) {
+      try {
+        const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
+        channel.postMessage({ type: 'host-leave', sessionId });
+        setTimeout(() => channel.close(), 1000);
+      } catch (e) {
+        console.error("Error sending leave message via broadcast channel:", e);
+      }
+    }
+    
     delete signalingSessions[sessionId];
   }
-};
-
-const closePeerConnection = (participantId: string) => {
-  console.log(`Closing peer connection for ${participantId}`);
-  if (activePeerConnections[participantId]) {
-    activePeerConnections[participantId].close();
-    delete activePeerConnections[participantId];
-  }
-  delete activeParticipants[participantId];
 };
 
 /**
@@ -400,5 +693,24 @@ export const cleanupWebRTC = (participantId?: string): void => {
     currentSessionId = null;
     localStream = null;
     onParticipantTrackCallback = null;
+    fallbackModeEnabled = false;
   }
 };
+
+// Close a specific peer connection
+const closePeerConnection = (participantId: string) => {
+  console.log(`Closing peer connection for ${participantId}`);
+  if (activePeerConnections[participantId]) {
+    activePeerConnections[participantId].close();
+    delete activePeerConnections[participantId];
+  }
+  delete activeParticipants[participantId];
+};
+
+// Set callback for participant track event
+export const setOnParticipantTrack = (callback: (participantId: string, track: MediaStreamTrack) => void): void => {
+  onParticipantTrackCallback = callback;
+};
+
+// Export activeParticipants for external use
+export { activeParticipants };

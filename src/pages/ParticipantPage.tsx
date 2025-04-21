@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { Camera, User, VideoOff, Loader2, X, ChevronRight, CheckSquare, Tv2 } from "lucide-react";
 import { isSessionActive, addParticipantToSession } from '@/utils/sessionUtils';
-import { initParticipantWebRTC, setLocalStream } from '@/utils/webrtc';
+import { initParticipantWebRTC, setLocalStream, cleanupWebRTC } from '@/utils/webrtc';
 import { initializeParticipantSession } from '@/utils/liveStreamUtils';
 
 const ParticipantPage = () => {
@@ -25,16 +25,18 @@ const ParticipantPage = () => {
   const [hasWebcam, setHasWebcam] = useState(true);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const cleanupFunctionRef = useRef<(() => void) | null>(null);
 
+  // Generate a unique participant ID on component mount
   useEffect(() => {
-    // Generate a unique participant ID
     const newParticipantId = `participant-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     setParticipantId(newParticipantId);
-
+    console.log("Generated participant ID:", newParticipantId);
+    
     // Check if session exists
     checkSession();
 
@@ -46,23 +48,47 @@ const ParticipantPage = () => {
     };
   }, []);
 
-  const checkSession = async () => {
+  // Retry checking session a few times in case of race conditions
+  useEffect(() => {
+    let checkCount = 0;
+    const maxChecks = 3;
+    
+    const retrySessionCheck = () => {
+      if (sessionFound === false && checkCount < maxChecks) {
+        checkCount++;
+        console.log(`Retrying session check (${checkCount}/${maxChecks})...`);
+        setTimeout(() => {
+          checkSession(false); // Don't show toast on retries
+        }, 1000 * checkCount); // Increasing delay between retries
+      }
+    };
+    
+    if (sessionFound === false) {
+      retrySessionCheck();
+    }
+  }, [sessionFound]);
+
+  const checkSession = async (showToast = true) => {
     setIsLoading(true);
     try {
       if (!sessionId) {
         setSessionFound(false);
-        toast({
-          title: "Sessão não encontrada",
-          description: "O ID da sessão não foi fornecido.",
-          variant: "destructive",
-        });
+        if (showToast) {
+          toast({
+            title: "Sessão não encontrada",
+            description: "O ID da sessão não foi fornecido.",
+            variant: "destructive",
+          });
+        }
         return;
       }
 
-      const isActive = isSessionActive(sessionId);
+      console.log("Checking if session is active:", sessionId);
+      const isActive = await isSessionActive(sessionId);
+      console.log("Session active:", isActive);
       setSessionFound(isActive);
 
-      if (!isActive) {
+      if (!isActive && showToast) {
         toast({
           title: "Sessão não encontrada",
           description: "A sessão não existe ou expirou.",
@@ -72,11 +98,13 @@ const ParticipantPage = () => {
     } catch (error) {
       console.error("Error checking session:", error);
       setSessionFound(false);
-      toast({
-        title: "Erro ao verificar sessão",
-        description: "Não foi possível verificar se a sessão existe.",
-        variant: "destructive",
-      });
+      if (showToast) {
+        toast({
+          title: "Erro ao verificar sessão",
+          description: "Não foi possível verificar se a sessão existe.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -87,12 +115,14 @@ const ParticipantPage = () => {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const hasVideoDevices = devices.some(device => device.kind === 'videoinput');
       setHasWebcam(hasVideoDevices);
+      console.log("Camera availability:", hasVideoDevices);
 
       if (hasVideoDevices) {
         try {
           await navigator.mediaDevices.getUserMedia({ video: true });
           setCameraPermission(true);
         } catch (error) {
+          console.error("Camera permission denied:", error);
           setCameraPermission(false);
         }
       } else {
@@ -112,6 +142,7 @@ const ParticipantPage = () => {
         videoStream.getTracks().forEach(track => track.stop());
       }
 
+      console.log("Starting camera...");
       // Get new video stream
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -122,6 +153,8 @@ const ParticipantPage = () => {
         audio: false
       });
 
+      console.log("Camera started successfully with tracks:", stream.getTracks().length);
+      
       // Set stream to video element
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -157,6 +190,7 @@ const ParticipantPage = () => {
     if (!sessionId || !participantId) return;
 
     setIsJoining(true);
+    setConnectionAttempts(prev => prev + 1);
     
     try {
       // Start camera if not already started
@@ -169,6 +203,12 @@ const ParticipantPage = () => {
         }
       }
 
+      console.log("Adding participant to session:", {
+        sessionId,
+        participantId,
+        participantName
+      });
+      
       // Add participant to session
       const success = addParticipantToSession(sessionId, participantId, participantName);
       
@@ -177,10 +217,18 @@ const ParticipantPage = () => {
       }
 
       // Set up WebRTC
+      console.log("Setting up WebRTC...");
       setLocalStream(stream);
-      await initParticipantWebRTC(sessionId, participantId, stream);
+      
+      try {
+        await initParticipantWebRTC(sessionId, participantId, stream);
+      } catch (e) {
+        console.error("WebRTC initialization error:", e);
+        // Continue despite WebRTC errors - we'll still try to join via broadcast channel
+      }
 
       // Set up live stream session
+      console.log("Initializing participant session...");
       const cleanup = initializeParticipantSession(sessionId, participantId, participantName);
       cleanupFunctionRef.current = cleanup;
 
@@ -201,11 +249,18 @@ const ParticipantPage = () => {
       setIsJoining(false);
       
       if (showToast) {
-        toast({
-          title: "Erro ao conectar",
-          description: "Não foi possível conectar à sessão.",
-          variant: "destructive",
-        });
+        // Only show error toast after multiple attempts
+        if (connectionAttempts >= 2) {
+          toast({
+            title: "Erro ao conectar",
+            description: "Não foi possível conectar à sessão. Tente novamente.",
+            variant: "destructive",
+          });
+        } else {
+          // Try again automatically on first failure
+          console.log("Retrying connection automatically...");
+          setTimeout(() => joinSession(showToast), 1500);
+        }
       }
       return false;
     }
@@ -232,6 +287,11 @@ const ParticipantPage = () => {
       }
       setVideoStream(null);
       setIsCameraActive(false);
+    }
+
+    // Clean up WebRTC connections
+    if (sessionId) {
+      cleanupWebRTC();
     }
 
     // Call the cleanup function from liveStreamUtils

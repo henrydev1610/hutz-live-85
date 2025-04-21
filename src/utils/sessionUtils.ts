@@ -11,24 +11,63 @@ export const generateSessionId = (): string => {
  */
 export const isSessionActive = (sessionId: string): boolean => {
   try {
+    // First check the localStorage
     const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
     if (sessionDataString) {
-      const sessionData = JSON.parse(sessionDataString);
-      // Check if session is still valid (not expired)
-      if (sessionData && sessionData.timestamp) {
-        const currentTime = Date.now();
-        const sessionTime = sessionData.timestamp;
-        // Session is valid for 24 hours
-        return (currentTime - sessionTime) < 24 * 60 * 60 * 1000;
+      try {
+        const sessionData = JSON.parse(sessionDataString);
+        // Check if session is still valid (not expired)
+        if (sessionData && sessionData.timestamp) {
+          const currentTime = Date.now();
+          const sessionTime = sessionData.timestamp;
+          // Session is valid for 24 hours
+          return (currentTime - sessionTime) < 24 * 60 * 60 * 1000;
+        }
+      } catch (e) {
+        console.error("Error parsing session data:", e);
       }
     }
 
-    // Also check for active broadcast channel
+    // Also check for heartbeat which may be more recent
+    const heartbeatString = localStorage.getItem(`live-heartbeat-${sessionId}`);
+    if (heartbeatString) {
+      try {
+        const heartbeatTime = parseInt(heartbeatString);
+        if (!isNaN(heartbeatTime)) {
+          const currentTime = Date.now();
+          // Heartbeat is valid for 5 minutes
+          return (currentTime - heartbeatTime) < 5 * 60 * 1000;
+        }
+      } catch (e) {
+        console.error("Error parsing heartbeat data:", e);
+      }
+    }
+    
+    // Final check - if the host has a newer browser with broadcast channel support
     try {
-      const channel = new BroadcastChannel(`live-session-${sessionId}`);
-      const isActive = true;
-      channel.close();
-      return isActive;
+      // Create a temporary broadcast channel to check if anyone is listening
+      const tempChannel = new BroadcastChannel(`live-session-${sessionId}`);
+      
+      // We must use a promise to handle async nature of broadcast channels
+      return new Promise<boolean>((resolve) => {
+        // Set up a timeout to resolve as false if no response within 2 seconds
+        const timeout = setTimeout(() => {
+          tempChannel.close();
+          resolve(false);
+        }, 2000);
+        
+        // Send a ping message
+        tempChannel.postMessage({ type: 'ping', timestamp: Date.now() });
+        
+        // Listen for pong response
+        tempChannel.onmessage = (event) => {
+          if (event.data && event.data.type === 'pong') {
+            clearTimeout(timeout);
+            tempChannel.close();
+            resolve(true);
+          }
+        };
+      }) as unknown as boolean; // Type coercion needed due to sync function with async behavior
     } catch (error) {
       console.warn("BroadcastChannel not supported, falling back to localStorage only");
     }
@@ -144,12 +183,29 @@ export const notifyParticipants = (sessionId: string, message: any): void => {
  */
 export const addParticipantToSession = (sessionId: string, participantId: string, participantName: string = ''): boolean => {
   try {
+    let sessionData;
     const sessionDataString = localStorage.getItem(`live-session-${sessionId}`);
-    if (!sessionDataString) {
-      return false;
+    
+    if (sessionDataString) {
+      try {
+        sessionData = JSON.parse(sessionDataString);
+      } catch (e) {
+        console.error("Error parsing session data:", e);
+        sessionData = {
+          timestamp: Date.now(),
+          status: 'active',
+          participants: []
+        };
+      }
+    } else {
+      // If no session exists yet (possible race condition with host), create one
+      sessionData = {
+        timestamp: Date.now(),
+        status: 'active',
+        participants: []
+      };
     }
     
-    const sessionData = JSON.parse(sessionDataString);
     if (!sessionData.participants) {
       sessionData.participants = [];
     }

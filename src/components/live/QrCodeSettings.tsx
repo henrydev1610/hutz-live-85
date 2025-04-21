@@ -1,9 +1,10 @@
 
-import { QrCode, ExternalLink, Check } from 'lucide-react';
+import { QrCode, ExternalLink, Check, Copy } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/components/ui/use-toast";
 
 interface QrCodeSettingsProps {
   qrCodeGenerated: boolean;
@@ -36,6 +37,16 @@ const QrCodeSettings = ({
   onGenerateQRCode,
   onQRCodeToTransmission
 }: QrCodeSettingsProps) => {
+  const { toast } = useToast();
+
+  const copyQrCodeUrl = () => {
+    navigator.clipboard.writeText(qrCodeURL);
+    toast({
+      title: "Link copiado",
+      description: "URL do QR Code copiado para a área de transferência."
+    });
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
       <div>
@@ -71,11 +82,25 @@ const QrCodeSettings = ({
         
         {qrCodeGenerated && (
           <div className="mt-2">
-            <Label className="block mb-1 text-xs">
-              Link do QR Code:
-            </Label>
-            <div className="text-xs break-all bg-secondary/40 p-2 rounded">
+            <div className="flex items-center justify-between mb-1">
+              <Label className="text-xs">
+                Link do QR Code:
+              </Label>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 px-2 text-xs"
+                onClick={copyQrCodeUrl}
+              >
+                <Copy className="h-3 w-3 mr-1" />
+                Copiar
+              </Button>
+            </div>
+            <div className="text-xs break-all bg-secondary/40 p-2 rounded relative group">
               {qrCodeURL}
+              <div className="absolute inset-0 bg-transparent group-hover:bg-secondary/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={copyQrCodeUrl}>
+                <span className="bg-secondary px-2 py-1 rounded text-xs">Clique para copiar</span>
+              </div>
             </div>
             
             <div className="mt-4">
