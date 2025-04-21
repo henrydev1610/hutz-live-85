@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { Camera, User, VideoOff, Loader2, X, ChevronRight, CheckSquare, Tv2 } from "lucide-react";
-import { isSessionActive, addParticipantToSession } from '@/utils/sessionUtils';
+import { isSessionActive, addParticipantToSession, getSessionFinalAction } from '@/utils/sessionUtils';
 import { initParticipantWebRTC, setLocalStream, cleanupWebRTC } from '@/utils/webrtc';
 import { initializeParticipantSession } from '@/utils/liveStreamUtils';
 
@@ -26,10 +26,18 @@ const ParticipantPage = () => {
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [autoJoin, setAutoJoin] = useState(false);
+  const [finalAction, setFinalAction] = useState<{
+    type: 'none' | 'image' | 'coupon';
+    image?: string;
+    link?: string;
+    coupon?: string;
+  } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const cleanupFunctionRef = useRef<(() => void) | null>(null);
+  const autoJoinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Generate a unique participant ID on component mount
   useEffect(() => {
@@ -43,15 +51,47 @@ const ParticipantPage = () => {
     // Check for camera availability
     checkCameraAvailability();
 
+    // Parse URL parameters for auto-join
+    const urlParams = new URLSearchParams(window.location.search);
+    const autoJoinParam = urlParams.get('autoJoin');
+    setAutoJoin(autoJoinParam === 'true');
+
     return () => {
       cleanupResources();
     };
   }, []);
 
+  // Auto-join if enabled
+  useEffect(() => {
+    if (sessionFound && autoJoin && !isJoined && !isJoining && cameraPermission !== null) {
+      // Use a short timeout to ensure everything is initialized
+      autoJoinTimeoutRef.current = setTimeout(() => {
+        console.log("Auto-joining session...");
+        joinSession(false); // Don't show toast on auto-join
+      }, 1000);
+    }
+    
+    return () => {
+      if (autoJoinTimeoutRef.current) {
+        clearTimeout(autoJoinTimeoutRef.current);
+      }
+    };
+  }, [sessionFound, autoJoin, isJoined, isJoining, cameraPermission]);
+
+  // When joined, get session final action
+  useEffect(() => {
+    if (isJoined && sessionId) {
+      const sessionFinalAction = getSessionFinalAction(sessionId);
+      if (sessionFinalAction) {
+        setFinalAction(sessionFinalAction);
+      }
+    }
+  }, [isJoined, sessionId]);
+
   // Retry checking session a few times in case of race conditions
   useEffect(() => {
     let checkCount = 0;
-    const maxChecks = 3;
+    const maxChecks = 5; // Increased max checks for better reliability
     
     const retrySessionCheck = () => {
       if (sessionFound === false && checkCount < maxChecks) {
@@ -84,16 +124,89 @@ const ParticipantPage = () => {
       }
 
       console.log("Checking if session is active:", sessionId);
-      const isActive = await isSessionActive(sessionId);
-      console.log("Session active:", isActive);
-      setSessionFound(isActive);
-
-      if (!isActive && showToast) {
-        toast({
-          title: "Sessão não encontrada",
-          description: "A sessão não existe ou expirou.",
-          variant: "destructive",
-        });
+      
+      // First try BroadcastChannel to check for host heartbeat
+      try {
+        const channel = new BroadcastChannel(`live-session-${sessionId}`);
+        const backupChannel = new BroadcastChannel(`live-session-${sessionId}-backup`);
+        
+        // Listen for host heartbeat
+        let heartbeatReceived = false;
+        const heartbeatHandler = () => {
+          heartbeatReceived = true;
+          channel.close();
+          backupChannel.close();
+          setSessionFound(true);
+          setIsLoading(false);
+        };
+        
+        channel.onmessage = (event) => {
+          if (event.data.type === 'host-heartbeat') {
+            heartbeatHandler();
+          }
+        };
+        
+        backupChannel.onmessage = (event) => {
+          if (event.data.type === 'host-heartbeat') {
+            heartbeatHandler();
+          }
+        };
+        
+        // Send ping to request an immediate response
+        channel.postMessage({ type: 'ping', timestamp: Date.now() });
+        backupChannel.postMessage({ type: 'ping', timestamp: Date.now() });
+        
+        // Check localStorage for heartbeat too
+        try {
+          const localStorageHeartbeat = localStorage.getItem(`live-heartbeat-${sessionId}`);
+          if (localStorageHeartbeat) {
+            const timestamp = parseInt(localStorageHeartbeat);
+            // If heartbeat is less than 30 seconds old, consider session active
+            if (Date.now() - timestamp < 30000) {
+              heartbeatHandler();
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("Error checking localStorage heartbeat:", e);
+        }
+        
+        // If no immediate response, wait a short time
+        setTimeout(() => {
+          if (!heartbeatReceived) {
+            // Fall back to checking via sessionUtils
+            const isActive = isSessionActive(sessionId);
+            console.log("Session active from storage check:", isActive);
+            setSessionFound(isActive);
+            
+            if (!isActive && showToast) {
+              toast({
+                title: "Sessão não encontrada",
+                description: "A sessão não existe ou expirou.",
+                variant: "destructive",
+              });
+            }
+            setIsLoading(false);
+            
+            channel.close();
+            backupChannel.close();
+          }
+        }, 2000);
+      } catch (broadcastError) {
+        console.error("BroadcastChannel error:", broadcastError);
+        // Fall back to storage check
+        const isActive = isSessionActive(sessionId);
+        console.log("Session active from storage check:", isActive);
+        setSessionFound(isActive);
+        
+        if (!isActive && showToast) {
+          toast({
+            title: "Sessão não encontrada",
+            description: "A sessão não existe ou expirou.",
+            variant: "destructive",
+          });
+        }
+        setIsLoading(false);
       }
     } catch (error) {
       console.error("Error checking session:", error);
@@ -105,7 +218,6 @@ const ParticipantPage = () => {
           variant: "destructive",
         });
       }
-    } finally {
       setIsLoading(false);
     }
   };
@@ -119,7 +231,10 @@ const ParticipantPage = () => {
 
       if (hasVideoDevices) {
         try {
-          await navigator.mediaDevices.getUserMedia({ video: true });
+          // Just check for permission without actually starting the camera
+          const testStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          // Stop the test stream immediately
+          testStream.getTracks().forEach(track => track.stop());
           setCameraPermission(true);
         } catch (error) {
           console.error("Camera permission denied:", error);
@@ -198,8 +313,8 @@ const ParticipantPage = () => {
       if (!stream) {
         stream = await startCamera();
         if (!stream) {
-          setIsJoining(false);
-          return;
+          // If camera fails, still try to join without camera
+          console.log("Failed to start camera, joining without video");
         }
       }
 
@@ -216,15 +331,19 @@ const ParticipantPage = () => {
         throw new Error("Failed to add participant to session");
       }
 
-      // Set up WebRTC
-      console.log("Setting up WebRTC...");
-      setLocalStream(stream);
-      
-      try {
-        await initParticipantWebRTC(sessionId, participantId, stream);
-      } catch (e) {
-        console.error("WebRTC initialization error:", e);
-        // Continue despite WebRTC errors - we'll still try to join via broadcast channel
+      // Set up WebRTC if we have a stream
+      if (stream) {
+        console.log("Setting up WebRTC...");
+        setLocalStream(stream);
+        
+        try {
+          await initParticipantWebRTC(sessionId, participantId, stream);
+        } catch (e) {
+          console.error("WebRTC initialization error:", e);
+          // Continue despite WebRTC errors - we'll still try to join via broadcast channel
+        }
+      } else {
+        console.log("No stream available, skipping WebRTC setup");
       }
 
       // Set up live stream session
@@ -270,7 +389,12 @@ const ParticipantPage = () => {
     cleanupResources();
     setIsJoined(false);
     
-    navigate('/');
+    // Don't navigate to home, show final action if available
+    if (finalAction && finalAction.type !== 'none') {
+      // Final action will be shown
+    } else {
+      navigate('/');
+    }
     
     toast({
       title: "Desconectado",
@@ -313,6 +437,59 @@ const ParticipantPage = () => {
     }
   };
 
+  // Handle final action
+  const handleFinalActionClick = () => {
+    if (finalAction && finalAction.link) {
+      window.location.href = finalAction.link;
+    }
+  };
+
+  // Render call to action after leaving
+  if (!isJoined && !isLoading && sessionFound && finalAction && finalAction.type !== 'none') {
+    if (finalAction.type === 'image' && finalAction.image) {
+      return (
+        <div className="container max-w-md mx-auto py-8 px-4 flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 w-full">
+            <CardContent className="pt-6 px-6 pb-8 flex flex-col items-center">
+              <h2 className="text-xl font-semibold mb-4 text-center">Obrigado por participar!</h2>
+              <div 
+                className="w-full aspect-square bg-center bg-contain bg-no-repeat cursor-pointer rounded-lg mb-4" 
+                style={{ backgroundImage: `url(${finalAction.image})` }}
+                onClick={handleFinalActionClick}
+              ></div>
+              {finalAction.link && (
+                <Button className="w-full" onClick={handleFinalActionClick}>
+                  Acessar
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    if (finalAction.type === 'coupon' && finalAction.coupon) {
+      return (
+        <div className="container max-w-md mx-auto py-8 px-4 flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 w-full">
+            <CardContent className="pt-6 px-6 pb-8 flex flex-col items-center">
+              <h2 className="text-xl font-semibold mb-4 text-center">Obrigado por participar!</h2>
+              <div className="w-full p-6 bg-secondary/30 rounded-lg mb-6 text-center">
+                <p className="text-sm text-white/70 mb-2">Seu cupom:</p>
+                <p className="text-2xl font-bold tracking-wider">{finalAction.coupon}</p>
+              </div>
+              {finalAction.link && (
+                <Button className="w-full" onClick={handleFinalActionClick}>
+                  Usar cupom
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="container max-w-md mx-auto py-16 px-4 flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
@@ -341,9 +518,11 @@ const ParticipantPage = () => {
             </p>
             <Button 
               className="w-full"
-              onClick={() => navigate('/')}
+              onClick={() => {
+                checkSession(); // Try checking again
+              }}
             >
-              Voltar para a página inicial
+              Tentar novamente
             </Button>
           </CardContent>
         </Card>

@@ -1,4 +1,3 @@
-
 /**
  * Generates a random session ID for live streaming
  */
@@ -318,6 +317,32 @@ export const updateParticipantStatus = (sessionId: string, participantId: string
   } catch (e) {
     console.error("Error updating participant status:", e);
     return false;
+  }
+};
+
+/**
+ * Get the session final action
+ */
+export const getSessionFinalAction = (sessionId: string) => {
+  try {
+    const sessions = JSON.parse(localStorage.getItem('live-sessions') || '{}');
+    const session = sessions[sessionId];
+    
+    if (!session) return null;
+    
+    const { finalAction, finalActionImage, finalActionLink, finalActionCoupon } = session;
+    
+    if (!finalAction || finalAction === 'none') return null;
+    
+    return {
+      type: finalAction as 'none' | 'image' | 'coupon',
+      image: finalActionImage || null,
+      link: finalActionLink || null,
+      coupon: finalActionCoupon || null
+    };
+  } catch (error) {
+    console.error("Error getting session final action:", error);
+    return null;
   }
 };
 

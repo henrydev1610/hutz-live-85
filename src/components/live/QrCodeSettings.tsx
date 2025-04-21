@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
+import { Switch } from "@/components/ui/switch";
 
 interface QrCodeSettingsProps {
   qrCodeGenerated: boolean;
@@ -20,6 +21,8 @@ interface QrCodeSettingsProps {
   setFinalActionCoupon: (code: string) => void;
   onGenerateQRCode: () => void;
   onQRCodeToTransmission: () => void;
+  autoJoin: boolean;
+  setAutoJoin: (autoJoin: boolean) => void;
 }
 
 const QrCodeSettings = ({
@@ -35,7 +38,9 @@ const QrCodeSettings = ({
   finalActionCoupon,
   setFinalActionCoupon,
   onGenerateQRCode,
-  onQRCodeToTransmission
+  onQRCodeToTransmission,
+  autoJoin,
+  setAutoJoin
 }: QrCodeSettingsProps) => {
   const { toast } = useToast();
 
@@ -103,54 +108,65 @@ const QrCodeSettings = ({
               </div>
             </div>
             
-            <div className="mt-4">
-              <Label className="block mb-2">
-                Ação ao Finalizar Transmissão
-              </Label>
-              <Select value={finalAction} onValueChange={(value: 'none' | 'image' | 'coupon') => setFinalAction(value)}>
-                <SelectTrigger className="hutz-input">
-                  <SelectValue placeholder="Escolher ação" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhuma ação</SelectItem>
-                  <SelectItem value="image">Mostrar Imagem Clicável</SelectItem>
-                  <SelectItem value="coupon">Mostrar Cupom</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="mt-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="auto-join" className="text-sm">Entrar automaticamente na sessão</Label>
+                <Switch 
+                  id="auto-join" 
+                  checked={autoJoin} 
+                  onCheckedChange={setAutoJoin}
+                />
+              </div>
               
-              {finalAction === 'image' && (
-                <div className="mt-2">
-                  <Input
-                    placeholder="Link da imagem (URL)"
-                    value={finalActionImage || ''}
-                    onChange={(e) => setFinalActionImage(e.target.value)}
-                    className="mb-2 hutz-input"
-                  />
-                  <Input
-                    placeholder="Link para redirecionamento"
-                    value={finalActionLink}
-                    onChange={(e) => setFinalActionLink(e.target.value)}
-                    className="hutz-input"
-                  />
-                </div>
-              )}
-              
-              {finalAction === 'coupon' && (
-                <div className="mt-2">
-                  <Input
-                    placeholder="Código do cupom"
-                    value={finalActionCoupon}
-                    onChange={(e) => setFinalActionCoupon(e.target.value)}
-                    className="mb-2 hutz-input"
-                  />
-                  <Input
-                    placeholder="Link para redirecionamento (opcional)"
-                    value={finalActionLink}
-                    onChange={(e) => setFinalActionLink(e.target.value)}
-                    className="hutz-input"
-                  />
-                </div>
-              )}
+              <div>
+                <Label className="block mb-2">
+                  Ação ao Finalizar Transmissão
+                </Label>
+                <Select value={finalAction} onValueChange={(value: 'none' | 'image' | 'coupon') => setFinalAction(value)}>
+                  <SelectTrigger className="hutz-input">
+                    <SelectValue placeholder="Escolher ação" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhuma ação</SelectItem>
+                    <SelectItem value="image">Mostrar Imagem Clicável</SelectItem>
+                    <SelectItem value="coupon">Mostrar Cupom</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {finalAction === 'image' && (
+                  <div className="mt-2">
+                    <Input
+                      placeholder="Link da imagem (URL)"
+                      value={finalActionImage || ''}
+                      onChange={(e) => setFinalActionImage(e.target.value)}
+                      className="mb-2 hutz-input"
+                    />
+                    <Input
+                      placeholder="Link para redirecionamento"
+                      value={finalActionLink}
+                      onChange={(e) => setFinalActionLink(e.target.value)}
+                      className="hutz-input"
+                    />
+                  </div>
+                )}
+                
+                {finalAction === 'coupon' && (
+                  <div className="mt-2">
+                    <Input
+                      placeholder="Código do cupom"
+                      value={finalActionCoupon}
+                      onChange={(e) => setFinalActionCoupon(e.target.value)}
+                      className="mb-2 hutz-input"
+                    />
+                    <Input
+                      placeholder="Link para redirecionamento (opcional)"
+                      value={finalActionLink}
+                      onChange={(e) => setFinalActionLink(e.target.value)}
+                      className="hutz-input"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
