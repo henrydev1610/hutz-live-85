@@ -1,3 +1,4 @@
+
 import { addParticipantToSession, updateParticipantStatus } from './sessionUtils';
 
 // Define SocketType interface
@@ -42,6 +43,23 @@ let activeParticipants: { [participantId: string]: boolean } = {};
 let signalingSessions: { [sessionId: string]: boolean } = {};
 let currentSessionId: string | null = null;
 let localStream: MediaStream | null = null;
+let fallbackModeEnabled = false;
+
+// Define the enableFallbackMode function that was missing
+const enableFallbackMode = (): void => {
+  console.log("Enabling fallback mode for signaling");
+  fallbackModeEnabled = true;
+  
+  // Close socket if it exists
+  if (socket) {
+    try {
+      socket.emit('disconnect');
+    } catch (e) {
+      console.error("Error disconnecting socket:", e);
+    }
+    socket = null;
+  }
+};
 
 /**
  * Sets codec preference to H.264 if available
@@ -374,7 +392,6 @@ export const initHostWebRTC = async (
 };
 
 let onParticipantTrackCallback: ((participantId: string, track: MediaStreamTrack) => void) | null = null;
-let fallbackModeEnabled = false;
 let mediaStreamEstablished = false;
 
 /**
