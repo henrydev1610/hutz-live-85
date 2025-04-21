@@ -17,10 +17,10 @@ const Navbar = () => {
     return location.pathname === path ? 'border-b-2 border-accent' : '';
   };
 
+  // Removi o item "Momento Telão"
   const navItems = [
     { path: '/dashboard', label: 'Início' },
     { path: '/lightshow', label: 'Momento Light Show' },
-    { path: '/telao', label: 'Momento Telão' },
     { path: '/quiz', label: 'Momento Quiz' },
   ];
 
@@ -51,7 +51,6 @@ const Navbar = () => {
                 HUTZ LIVE
               </Link>
             </div>
-            
             {/* Desktop menu */}
             <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
               {navItems.map((item) => (
@@ -65,7 +64,6 @@ const Navbar = () => {
               ))}
             </div>
           </div>
-          
           {/* Logout button */}
           <div className="hidden sm:ml-6 sm:flex sm:items-center">
             <Button 
@@ -77,7 +75,6 @@ const Navbar = () => {
               Sair
             </Button>
           </div>
-          
           {/* Mobile menu button */}
           <div className="flex items-center sm:hidden">
             <Button
