@@ -1,4 +1,3 @@
-
 import { io, Socket } from 'socket.io-client';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -9,6 +8,7 @@ let remoteStream: MediaStream | null = null;
 let remoteStreams: { [participantId: string]: MediaStream } = {};
 const iceCandidateBuffer: { [participantId: string]: RTCIceCandidate[] } = {};
 const MAX_ICE_CANDIDATES = 50;
+let participantTrackCallback: ((participantId: string, event: RTCTrackEvent) => void) | null = null;
 
 const servers = {
   iceServers: [
@@ -29,6 +29,10 @@ export const getRemoteStream = (): MediaStream | null => remoteStream;
 
 export const getRemoteStreams = (): { [participantId: string]: MediaStream } => remoteStreams;
 
+export const getParticipantConnection = (participantId: string): RTCPeerConnection | null => {
+  return peerConnection;
+};
+
 export const setLocalStream = (stream: MediaStream | null) => {
   localStream = stream;
 };
@@ -39,34 +43,31 @@ export const removeRemoteStream = (participantId: string) => {
   }
 };
 
-export const initSocket = (sessionId: string, participantId: string): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    if (socket && socket.connected) {
-      console.log('Socket already initialized');
-      resolve(socket.id);
-      return;
+export const setOnParticipantTrackCallback = (callback: (participantId: string, event: RTCTrackEvent) => void) => {
+  participantTrackCallback = callback;
+};
+
+export const cleanupWebRTC = (participantId?: string) => {
+  if (participantId) {
+    removeRemoteStream(participantId);
+  } else {
+    if (peerConnection) {
+      peerConnection.close();
+      peerConnection = null;
     }
-
-    socket = io(process.env.NEXT_PUBLIC_SIGNALING_SERVER_URL as string, {
-      query: { sessionId, participantId },
-      transports: ['websocket', 'polling'],
+    
+    stopAllTracks(localStream);
+    stopAllTracks(remoteStream);
+    
+    Object.keys(remoteStreams).forEach(id => {
+      const stream = remoteStreams[id];
+      stopAllTracks(stream);
     });
-
-    socket.on('connect', () => {
-      console.log('Socket connected', socket?.id);
-      resolve(socket?.id || '');
-    });
-
-    socket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error);
-      reject(error);
-    });
-
-    socket.on('disconnect', (reason) => {
-      console.log(`Socket disconnected: ${reason}`);
-      socket = null;
-    });
-  });
+    
+    localStream = null;
+    remoteStream = null;
+    remoteStreams = {};
+  }
 };
 
 export const stopAllTracks = (stream: MediaStream | null) => {
@@ -108,11 +109,17 @@ export const createPeerConnection = (participantId: string): RTCPeerConnection =
     console.log(`Signaling state change: ${peerConnection?.signalingState}`);
   };
 
-  peerConnection.ontrack = (event) => {
+  peerConnection.ontrack = (event: RTCTrackEvent) => {
     console.log('Track event:', event);
+    
+    if (participantTrackCallback) {
+      participantTrackCallback(participantId, event);
+    }
+    
     if (!remoteStreams[participantId]) {
       remoteStreams[participantId] = new MediaStream();
     }
+    
     event.streams[0].getTracks().forEach((track) => {
       remoteStreams[participantId]?.addTrack(track);
     });
@@ -241,7 +248,7 @@ export const hangUp = async (participantId: string) => {
   }
 };
 
-export const initHostWebRTC = async (sessionId: string, participantId: string) => {
+export const initHostWebRTC = async (sessionId: string, participantId?: string) => {
   if (!socket) {
     throw new Error('Socket is not initialized.');
   }
@@ -284,7 +291,7 @@ export const initHostWebRTC = async (sessionId: string, participantId: string) =
 
     socket.emit('host-acknowledge', {
       target: id,
-      participantId,
+      participantId: participantId || 'host',
     });
   });
 
@@ -341,7 +348,6 @@ export const initParticipantWebRTC = async (sessionId: string, participantId: st
 
   await createOffer(participantId);
 
-  // Monitor WebRTC stats
   const statsInterval = setInterval(async () => {
     if (peerConnection?.connectionState === 'closed') {
       clearInterval(statsInterval);
@@ -384,7 +390,6 @@ export const initParticipantWebRTC = async (sessionId: string, participantId: st
         }
       });
 
-      // Verificar se estamos recebendo mídia
       if (!videoReceived) {
         console.warn('Não estamos recebendo vídeo');
       }
@@ -395,5 +400,5 @@ export const initParticipantWebRTC = async (sessionId: string, participantId: st
     } catch (error) {
       console.error('Erro ao obter estatísticas:', error);
     }
-  }, 5000); // Verificar a cada 5 segundos
+  }, 5000);
 };
