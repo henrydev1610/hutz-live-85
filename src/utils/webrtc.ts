@@ -14,7 +14,18 @@ const PEER_CONNECTION_CONFIG = {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun.stunprotocol.org:3478' },
-    { urls: 'stun:stun.services.mozilla.com:3478' }
+    { urls: 'stun:stun.services.mozilla.com:3478' },
+    // Additional TURN servers to help with difficult NAT situations
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ]
 };
 
@@ -31,14 +42,6 @@ let activeParticipants: { [participantId: string]: boolean } = {};
 let signalingSessions: { [sessionId: string]: boolean } = {};
 let currentSessionId: string | null = null;
 let localStream: MediaStream | null = null;
-let onParticipantTrackCallback: ((participantId: string, track: MediaStreamTrack) => void) | null = null;
-let fallbackModeEnabled = false;
-
-// Use a fallback mode when signaling server is unavailable
-const enableFallbackMode = () => {
-  console.log("Enabling WebRTC fallback mode with direct connections");
-  fallbackModeEnabled = true;
-};
 
 /**
  * Sets codec preference to H.264 if available
@@ -370,6 +373,10 @@ export const initHostWebRTC = async (
   signalingSessions[sessionId] = true;
 };
 
+let onParticipantTrackCallback: ((participantId: string, track: MediaStreamTrack) => void) | null = null;
+let fallbackModeEnabled = false;
+let mediaStreamEstablished = false;
+
 /**
  * Initializes the WebRTC connection for a participant
  */
@@ -379,6 +386,25 @@ export const initParticipantWebRTC = async (
   stream: MediaStream
 ): Promise<void> => {
   localStream = stream;
+  console.log(`Initializing participant WebRTC with stream:`, stream);
+  console.log(`Stream has ${stream.getTracks().length} tracks:`, stream.getTracks().map(t => t.kind));
+
+  // Make sure the stream is active and has tracks
+  if (!stream.active || stream.getTracks().length === 0) {
+    console.warn("Stream provided to initParticipantWebRTC is not active or has no tracks");
+    // Try to recover by refreshing the stream
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false
+      });
+      localStream = newStream;
+      stream = newStream;
+      console.log("Created new stream with", stream.getTracks().length, "tracks");
+    } catch (e) {
+      console.error("Failed to create recovery stream:", e);
+    }
+  }
 
   await initSocket(sessionId);
 
@@ -392,6 +418,14 @@ export const initParticipantWebRTC = async (
       channel.postMessage({
         type: 'participant-join',
         participantId: participantId
+      });
+      
+      // Send stream information
+      channel.postMessage({
+        type: 'stream-info',
+        senderId: participantId,
+        hasStream: true,
+        trackCount: stream.getTracks().length
       });
       
       // Listen for messages
@@ -446,8 +480,19 @@ export const initParticipantWebRTC = async (
       // Create the peer connection
       createHostPeerConnection(sessionId, participantId);
       
+      // Keep sending stream info in case host missed it
+      const infoInterval = setInterval(() => {
+        channel.postMessage({
+          type: 'stream-info',
+          senderId: participantId,
+          hasStream: true,
+          trackCount: stream.getTracks().length
+        });
+      }, 5000);
+      
       // Clean up on window unload
       window.addEventListener('beforeunload', () => {
+        clearInterval(infoInterval);
         channel.postMessage({ type: 'participant-leave', participantId });
         channel.close();
       });
@@ -476,6 +521,12 @@ export const initParticipantWebRTC = async (
       } catch (e) {
         console.error('Error handling candidate:', e);
       }
+    });
+
+    // Send stream info via socket
+    socket.emit('stream-info', participantId, {
+      hasStream: true,
+      trackCount: stream.getTracks().length
     });
 
     createHostPeerConnection(sessionId, participantId);
@@ -528,9 +579,39 @@ export const stopScreenShare = (): void => {
   }
 };
 
-// Sets the local stream
+// Sets the local stream with additional checks
 export const setLocalStream = (stream: MediaStream): void => {
+  console.log(`Setting local stream with ${stream.getTracks().length} tracks`);
+  
+  // Check if stream is active
+  if (!stream.active) {
+    console.warn("Stream is not active when setting as local stream");
+  }
+  
+  // Log track details
+  stream.getTracks().forEach(track => {
+    console.log(`Track: ${track.kind}, ID: ${track.id}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
+  });
+  
   localStream = stream;
+  
+  // Update existing peer connections with the new stream
+  Object.keys(activePeerConnections).forEach(peerId => {
+    const pc = activePeerConnections[peerId];
+    
+    // Remove any existing tracks
+    const senders = pc.getSenders();
+    senders.forEach(sender => {
+      if (sender.track) {
+        pc.removeTrack(sender);
+      }
+    });
+    
+    // Add the new tracks
+    stream.getTracks().forEach(track => {
+      pc.addTrack(track, stream);
+    });
+  });
 };
 
 // Create host peer connection
@@ -562,6 +643,13 @@ const createHostPeerConnection = async (sessionId: string, participantId: string
   activePeerConnections['host'].oniceconnectionstatechange = () => {
     console.log(`ICE Connection State Change for Host:`, activePeerConnections['host'].iceConnectionState);
     
+    // Verify media is flowing when connected
+    if (activePeerConnections['host'].iceConnectionState === 'connected' || 
+        activePeerConnections['host'].iceConnectionState === 'completed') {
+      mediaStreamEstablished = true;
+      console.log("WebRTC peer connection successfully established");
+    }
+    
     // Attempt to restart ICE if the connection fails
     if (activePeerConnections['host'].iceConnectionState === 'failed') {
       console.log("ICE connection failed, attempting to restart");
@@ -570,6 +658,15 @@ const createHostPeerConnection = async (sessionId: string, participantId: string
       } catch (e) {
         console.error("Error restarting ICE:", e);
       }
+      
+      // Try recreating the peer connection if restart doesn't work
+      setTimeout(() => {
+        if (activePeerConnections['host']?.iceConnectionState === 'failed') {
+          console.log("ICE restart didn't help, recreating connection");
+          closePeerConnection('host');
+          createHostPeerConnection(sessionId, participantId);
+        }
+      }, 5000);
     }
     // Close the connection if it's been disconnected for too long
     else if (activePeerConnections['host'].iceConnectionState === 'disconnected') {
@@ -583,11 +680,29 @@ const createHostPeerConnection = async (sessionId: string, participantId: string
       closePeerConnection('host');
     }
   };
+  
+  // Add logging for connection state changes
+  activePeerConnections['host'].onconnectionstatechange = () => {
+    console.log(`Connection State Change for Host:`, activePeerConnections['host'].connectionState);
+  };
+
+  // Log when negotiation is needed
+  activePeerConnections['host'].onnegotiationneeded = () => {
+    console.log("Negotiation needed for host connection");
+  };
 
   if (localStream) {
-    localStream.getTracks().forEach(track => {
-      activePeerConnections['host'].addTrack(track, localStream!);
-    });
+    console.log(`Adding ${localStream.getTracks().length} tracks to peer connection`);
+    try {
+      localStream.getTracks().forEach(track => {
+        console.log(`Adding track to peer connection: ${track.kind}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
+        activePeerConnections['host'].addTrack(track, localStream!);
+      });
+    } catch (e) {
+      console.error("Error adding tracks to peer connection:", e);
+    }
+  } else {
+    console.warn("No local stream available when creating peer connection");
   }
 
   try {
@@ -713,4 +828,4 @@ export const setOnParticipantTrack = (callback: (participantId: string, track: M
 };
 
 // Export activeParticipants for external use
-export { activeParticipants };
+export { activeParticipants, mediaStreamEstablished };

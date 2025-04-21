@@ -2,8 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { Camera, User, VideoOff, Loader2, X, ChevronRight, CheckSquare, Tv2 } from "lucide-react";
 import { isSessionActive, addParticipantToSession, getSessionFinalAction } from '@/utils/sessionUtils';
@@ -118,6 +116,65 @@ const ParticipantPage = () => {
       return () => clearTimeout(restartTimeout);
     }
   }, [isJoined, isCameraActive, videoStream]);
+
+  // Force camera restart if video element is not displaying properly
+  useEffect(() => {
+    if (videoStream && videoRef.current) {
+      // Check if video is actually playing
+      const checkVideoPlaying = () => {
+        if (videoRef.current && 
+            (videoRef.current.readyState < 2 || 
+             videoRef.current.paused || 
+             videoRef.current.videoWidth === 0)) {
+          console.log("Video not playing properly, restarting camera");
+          startCamera(true); // Force restart
+        }
+      };
+      
+      // Check video playing status after a short delay
+      const videoCheckTimeout = setTimeout(checkVideoPlaying, 2000);
+      return () => clearTimeout(videoCheckTimeout);
+    }
+  }, [videoStream]);
+
+  // Send video stream info to broadcast channels
+  useEffect(() => {
+    if (isJoined && sessionId && videoStream) {
+      const sendVideoStreamInfo = () => {
+        try {
+          // Send stream information through broadcast channels
+          const channel = new BroadcastChannel(`live-session-${sessionId}`);
+          const backupChannel = new BroadcastChannel(`telao-session-${sessionId}`);
+          
+          const streamInfo = {
+            type: 'video-stream-info',
+            id: participantId,
+            hasStream: true,
+            trackIds: videoStream.getTracks().map(track => track.id),
+            timestamp: Date.now()
+          };
+          
+          channel.postMessage(streamInfo);
+          backupChannel.postMessage(streamInfo);
+          
+          setTimeout(() => {
+            channel.close();
+            backupChannel.close();
+          }, 500);
+        } catch (e) {
+          console.error("Error sending stream info:", e);
+        }
+      };
+      
+      // Send initial stream info
+      sendVideoStreamInfo();
+      
+      // Set up interval to keep sending stream info
+      const streamInfoInterval = setInterval(sendVideoStreamInfo, 5000);
+      
+      return () => clearInterval(streamInfoInterval);
+    }
+  }, [isJoined, sessionId, videoStream, participantId]);
 
   const checkSession = async (showToast = true) => {
     setIsLoading(true);
@@ -244,7 +301,14 @@ const ParticipantPage = () => {
         try {
           // We actually need to start the camera to properly check permission
           // and to ensure it's ready for the auto-join
-          const testStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const testStream = await navigator.mediaDevices.getUserMedia({ 
+            video: {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              facingMode: "user"
+            },
+            audio: false 
+          });
           setCameraPermission(true);
           
           // Keep this stream for later use
@@ -254,6 +318,9 @@ const ParticipantPage = () => {
           // Set video element source
           if (videoRef.current) {
             videoRef.current.srcObject = testStream;
+            videoRef.current.play().catch(err => {
+              console.error("Error playing initial video:", err);
+            });
             console.log("Preview camera stream set successfully");
           } else {
             console.warn("Video element ref not available yet");
@@ -314,6 +381,15 @@ const ParticipantPage = () => {
           console.log("Video playback started successfully");
         } catch (playError) {
           console.error("Error playing video:", playError);
+          // Try again after a short delay
+          setTimeout(async () => {
+            try {
+              await videoRef.current?.play();
+              console.log("Video playback started on retry");
+            } catch (retryError) {
+              console.error("Error playing video on retry:", retryError);
+            }
+          }, 1000);
         }
       } else {
         console.warn("Video element ref not available");
@@ -576,161 +652,72 @@ const ParticipantPage = () => {
     );
   }
 
-  // This is now automatically skipped - we never show this screen
-  if (isJoined) {
-    return (
-      <div className="container max-w-md mx-auto py-8 px-4 flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
-        <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 w-full">
-          <CardContent className="pt-6 px-6 pb-8">
-            <div className="mb-6 text-center">
-              <div className="inline-flex items-center justify-center bg-green-500/20 text-green-500 h-12 w-12 rounded-full mb-4">
-                <CheckSquare className="h-6 w-6" />
-              </div>
-              <h2 className="text-xl font-semibold mb-2">Conectado à sessão</h2>
-              <p className="text-muted-foreground">
-                Você está conectado e sua câmera está sendo transmitida.
-              </p>
-            </div>
-
-            <div className="relative mb-6 bg-black rounded-lg overflow-hidden">
-              <div className="aspect-video flex items-center justify-center">
-                {isCameraActive ? (
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  ></video>
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-8">
-                    <VideoOff className="h-10 w-10 text-white/30 mb-2" />
-                    <p className="text-white/50 text-sm text-center">
-                      Câmera desativada
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="absolute bottom-2 right-2">
-                <Button 
-                  size="sm" 
-                  variant={isCameraActive ? "destructive" : "default"}
-                  className="rounded-full h-10 w-10 p-0"
-                  onClick={() => isCameraActive ? stopCamera() : startCamera()}
-                >
-                  {isCameraActive ? <VideoOff className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
-                </Button>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="bg-secondary/20 border border-white/10 rounded-lg p-4">
-                <div className="flex items-center">
-                  <div className="flex-1">
-                    <h3 className="text-sm font-medium">Nome do participante</h3>
-                    <p className="text-sm text-white/70">{participantName || 'Anônimo'}</p>
-                  </div>
-                  <Tv2 className="h-5 w-5 text-white/40" />
-                </div>
-              </div>
-
-              <Button 
-                variant="destructive" 
-                className="w-full" 
-                onClick={leaveSession}
-              >
-                Sair da sessão
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // We never show this screen - it's skipped by autoJoin
+  // Main view when connected to the session
   return (
     <div className="container max-w-md mx-auto py-8 px-4 flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
       <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 w-full">
         <CardContent className="pt-6 px-6 pb-8">
-          <h2 className="text-xl font-semibold mb-6 text-center">Entrar na sessão</h2>
-          
-          <div className="space-y-4 mb-6">
-            <div>
-              <Label htmlFor="participantName">Seu nome (opcional)</Label>
-              <Input
-                id="participantName"
-                placeholder="Digite seu nome"
-                value={participantName}
-                onChange={(e) => setParticipantName(e.target.value)}
-                className="w-full"
-              />
+          <div className="mb-6 text-center">
+            <div className="inline-flex items-center justify-center bg-green-500/20 text-green-500 h-12 w-12 rounded-full mb-4">
+              <CheckSquare className="h-6 w-6" />
             </div>
-            
-            <div className="relative mb-6 bg-black rounded-lg overflow-hidden">
-              <div className="aspect-video flex items-center justify-center">
-                {isCameraActive ? (
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  ></video>
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-8">
-                    {hasWebcam ? (
-                      <>
-                        <Camera className="h-10 w-10 text-white/30 mb-2" />
-                        <p className="text-white/50 text-sm text-center">
-                          Clique para ativar sua câmera
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <VideoOff className="h-10 w-10 text-white/30 mb-2" />
-                        <p className="text-white/50 text-sm text-center">
-                          Nenhuma câmera detectada
-                        </p>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+            <h2 className="text-xl font-semibold mb-2">Conectado à sessão</h2>
+            <p className="text-muted-foreground">
+              Você está conectado e sua câmera está sendo transmitida.
+            </p>
+          </div>
 
-              {hasWebcam && (
-                <div className="absolute bottom-2 right-2">
-                  <Button 
-                    size="sm" 
-                    variant={isCameraActive ? "destructive" : "default"}
-                    className="rounded-full h-10 w-10 p-0"
-                    onClick={() => isCameraActive ? stopCamera() : startCamera()}
-                  >
-                    {isCameraActive ? <VideoOff className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
-                  </Button>
+          <div className="relative mb-6 bg-black rounded-lg overflow-hidden">
+            <div className="aspect-video flex items-center justify-center">
+              {isCameraActive ? (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                ></video>
+              ) : (
+                <div className="flex flex-col items-center justify-center p-8">
+                  <VideoOff className="h-10 w-10 text-white/30 mb-2" />
+                  <p className="text-white/50 text-sm text-center">
+                    Câmera desativada
+                  </p>
                 </div>
               )}
             </div>
+
+            <div className="absolute bottom-2 right-2">
+              <Button 
+                size="sm" 
+                variant={isCameraActive ? "destructive" : "default"}
+                className="rounded-full h-10 w-10 p-0"
+                onClick={() => isCameraActive ? stopCamera() : startCamera()}
+              >
+                {isCameraActive ? <VideoOff className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
-          
-          <Button 
-            className="w-full hutz-button-accent" 
-            onClick={() => joinSession()}
-            disabled={isJoining}
-          >
-            {isJoining ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Conectando...
-              </>
-            ) : (
-              <>
-                Entrar na sessão 
-                <ChevronRight className="ml-2 h-4 w-4" />
-              </>
-            )}
-          </Button>
+
+          <div className="space-y-4">
+            <div className="bg-secondary/20 border border-white/10 rounded-lg p-4">
+              <div className="flex items-center">
+                <div className="flex-1">
+                  <h3 className="text-sm font-medium">Nome do participante</h3>
+                  <p className="text-sm text-white/70">{participantName || 'Anônimo'}</p>
+                </div>
+                <Tv2 className="h-5 w-5 text-white/40" />
+              </div>
+            </div>
+
+            <Button 
+              variant="destructive" 
+              className="w-full" 
+              onClick={leaveSession}
+            >
+              Sair da sessão
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
