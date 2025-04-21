@@ -1,3 +1,4 @@
+
 import { useRef, useState } from 'react';
 import { User } from 'lucide-react';
 import { AspectRatio } from "@/components/ui/aspect-ratio";
@@ -178,7 +179,22 @@ const LivePreview = ({
     }
   };
 
-  const gridCols = Math.min(Math.ceil(Math.sqrt(participantCount)), 4);
+  // Calculate grid columns and rows based on participant count
+  const calculateGrid = () => {
+    // Get selected participants
+    const selectedParticipants = participantList.filter(p => p.selected);
+    const count = selectedParticipants.length > 0 ? selectedParticipants.length : participantCount;
+    
+    if (count <= 1) return { cols: 1, rows: 1 };
+    if (count <= 2) return { cols: 2, rows: 1 };
+    if (count <= 4) return { cols: 2, rows: 2 };
+    if (count <= 6) return { cols: 3, rows: 2 };
+    if (count <= 9) return { cols: 3, rows: 3 };
+    if (count <= 12) return { cols: 4, rows: 3 };
+    return { cols: 4, rows: 4 };
+  };
+
+  const { cols, rows } = calculateGrid();
 
   return (
     <div className="w-full h-full">
@@ -205,29 +221,32 @@ const LivePreview = ({
             )}
           </div>
           
-          <div className="absolute top-[5%] right-[5%] bottom-[5%] left-[30%]">
-            <div className={`grid grid-cols-${gridCols} gap-1 w-full h-full`}>
-              {participantList
-                .filter(p => p.selected)
-                .slice(0, Math.min(participantCount, 100))
-                .map((participant) => (
-                  <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center">
-                    {!participant.hasVideo && <User className="h-6 w-6 text-white/30" />}
-                    <div 
-                      id={`preview-participant-video-${participant.id}`} 
-                      className="absolute inset-0 w-full h-full overflow-hidden"
-                      style={{ position: 'relative' }}
-                    >
-                      {/* Video will be inserted here dynamically */}
-                    </div>
+          {/* Participant grid area */}
+          <div className="absolute top-[5%] right-[5%] bottom-[5%] left-[25%]">
+            <div 
+              className="w-full h-full grid gap-1" 
+              style={{ 
+                gridTemplateColumns: `repeat(${cols}, 1fr)`,
+                gridTemplateRows: `repeat(${rows}, 1fr)`
+              }}
+            >
+              {Array.from({ length: Math.min(participantCount, cols * rows) }).map((_, i) => {
+                const participant = participantList.filter(p => p.selected)[i];
+                
+                return (
+                  <div key={`preview-cell-${i}`} className="bg-black/40 rounded overflow-hidden flex items-center justify-center relative">
+                    {(!participant || !participant.hasVideo) && <User className="h-6 w-6 text-white/30" />}
+                    {participant && (
+                      <div 
+                        id={`preview-participant-video-${participant.id}`} 
+                        className="absolute inset-0 w-full h-full overflow-hidden"
+                      >
+                        {/* Video will be inserted here dynamically */}
+                      </div>
+                    )}
                   </div>
-                ))}
-              
-              {Array(Math.max(0, Math.min(participantCount, 100) - participantList.filter(p => p.selected).length)).fill(0).map((_, i) => (
-                <div key={`empty-preview-${i}`} className="bg-black/20 rounded overflow-hidden flex items-center justify-center">
-                  <User className="h-6 w-6 text-white/30" />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
           

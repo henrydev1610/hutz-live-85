@@ -3,7 +3,7 @@ import { User, Check, Video, VideoOff } from 'lucide-react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface Participant {
   id: string;
@@ -28,6 +28,7 @@ const ParticipantGrid = ({
   participantStreams = {}
 }: ParticipantGridProps) => {
   const videoRefs = useRef<{[id: string]: HTMLDivElement | null}>({});
+  const [streamStatus, setStreamStatus] = useState<{[id: string]: boolean}>({});
   
   const activeParticipants = participants.filter(p => p.active);
   const inactiveParticipants = participants.filter(p => !p.active);
@@ -44,10 +45,34 @@ const ParticipantGrid = ({
   
   // Effect to update video elements when streams change
   useEffect(() => {
+    console.log("ParticipantGrid: participantStreams updated:", Object.keys(participantStreams));
+    
     Object.entries(participantStreams).forEach(([participantId, stream]) => {
       const container = videoRefs.current[participantId];
       if (container) {
         updateVideoElement(container, stream);
+        
+        // Check if stream has video tracks
+        const hasVideoTracks = stream.getVideoTracks().some(track => track.enabled);
+        setStreamStatus(prev => ({
+          ...prev,
+          [participantId]: hasVideoTracks
+        }));
+      }
+    });
+    
+    // Check for participants with refs but no streams
+    Object.keys(videoRefs.current).forEach(participantId => {
+      if (!participantStreams[participantId] && videoRefs.current[participantId]) {
+        const container = videoRefs.current[participantId];
+        const videoElement = container?.querySelector('video');
+        if (videoElement) {
+          videoElement.srcObject = null;
+          setStreamStatus(prev => ({
+            ...prev,
+            [participantId]: false
+          }));
+        }
       }
     });
   }, [participantStreams, displayParticipants]);
@@ -63,6 +88,19 @@ const ParticipantGrid = ({
       videoElement.muted = true;
       videoElement.className = 'w-full h-full object-cover';
       container.appendChild(videoElement);
+      
+      // Add event listeners for video
+      videoElement.onloadedmetadata = () => {
+        videoElement?.play().catch(err => console.error('Error playing video:', err));
+      };
+      
+      videoElement.onplay = () => {
+        console.log('Video is playing');
+      };
+      
+      videoElement.onerror = (e) => {
+        console.error('Video error:', e);
+      };
     }
     
     if (videoElement.srcObject !== stream) {
@@ -77,7 +115,7 @@ const ParticipantGrid = ({
   };
   
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full max-w-[1100px]">
       {displayParticipants.length > 0 && (
         <div className="mb-4">
           <h3 className="text-sm font-medium text-white/70 mb-2">Participantes Ativos ({displayParticipants.length})</h3>
@@ -86,9 +124,9 @@ const ParticipantGrid = ({
               <Card key={participant.id} className={`bg-secondary/60 border ${participant.selected ? 'border-accent' : 'border-white/10'}`}>
                 <CardContent className="p-4 text-center">
                   <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2 relative">
-                    {!participant.hasVideo && <User className="h-8 w-8 text-white/30" />}
+                    {!streamStatus[participant.id] && <User className="h-8 w-8 text-white/30" />}
                     <div className="absolute top-2 right-2 bg-green-500/20 p-1 rounded-full">
-                      {participant.hasVideo ? (
+                      {streamStatus[participant.id] ? (
                         <Video className="h-3 w-3 text-green-500" />
                       ) : (
                         <VideoOff className="h-3 w-3 text-orange-500" />

@@ -1,4 +1,3 @@
-
 import { addParticipantToSession, updateParticipantStatus } from './sessionUtils';
 
 // Define SocketType interface
@@ -163,10 +162,8 @@ export const initHostWebRTC = async (
 ): Promise<void> => {
   onParticipantTrackCallback = onTrack;
 
-  if (!localStream) {
-    console.warn('Local stream is not available. Call setLocalStream first.');
-    return;
-  }
+  // Don't initialize localStream - we'll do that separately when needed
+  // This ensures camera doesn't turn on just for generating QR code
 
   await initSocket(sessionId);
 
@@ -631,7 +628,7 @@ export const setLocalStream = (stream: MediaStream): void => {
   });
 };
 
-// Create host peer connection
+// Create host peer connection with enhanced debugging
 const createHostPeerConnection = async (sessionId: string, participantId: string) => {
   console.log(`Creating participant->host peer connection`);
   
@@ -709,10 +706,12 @@ const createHostPeerConnection = async (sessionId: string, participantId: string
   };
 
   if (localStream) {
-    console.log(`Adding ${localStream.getTracks().length} tracks to peer connection`);
+    console.log(`Adding ${localStream.getTracks().length} tracks to peer connection:`, 
+      localStream.getTracks().map(t => `${t.kind} (${t.id}) - enabled: ${t.enabled}, readyState: ${t.readyState}`));
+    
     try {
       localStream.getTracks().forEach(track => {
-        console.log(`Adding track to peer connection: ${track.kind}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
+        console.log(`Adding track to peer connection: ${track.kind} (${track.id}), enabled: ${track.enabled}, readyState: ${track.readyState}`);
         activePeerConnections['host'].addTrack(track, localStream!);
       });
     } catch (e) {
