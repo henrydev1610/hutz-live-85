@@ -1,3 +1,4 @@
+
 import { io, Socket } from 'socket.io-client';
 import { addParticipantToSession, updateParticipantStatus } from './sessionUtils';
 
@@ -16,6 +17,35 @@ let signalingSessions: { [sessionId: string]: boolean } = {};
 let currentSessionId: string | null = null;
 let localStream: MediaStream | null = null;
 let onParticipantTrackCallback: ((participantId: string, track: MediaStreamTrack) => void) | null = null;
+
+/**
+ * Sets codec preference to H.264 if available
+ */
+export const setH264CodecPreference = (pc: RTCPeerConnection): void => {
+  if (RTCRtpTransceiver.prototype.setCodecPreferences && RTCRtpSender.getCapabilities) {
+    try {
+      const capabilities = RTCRtpSender.getCapabilities('video');
+      if (!capabilities) return;
+      
+      const h264Codecs = capabilities.codecs.filter(codec => 
+        codec.mimeType.toLowerCase() === 'video/h264'
+      );
+      
+      if (h264Codecs.length > 0) {
+        const transceivers = pc.getTransceivers();
+        const videoTransceiver = transceivers.find(t => 
+          t.sender && t.sender.track && t.sender.track.kind === 'video'
+        );
+        
+        if (videoTransceiver) {
+          videoTransceiver.setCodecPreferences(h264Codecs);
+        }
+      }
+    } catch (e) {
+      console.warn('Error setting codec preferences:', e);
+    }
+  }
+};
 
 /**
  * Initializes the socket connection
@@ -190,6 +220,58 @@ export const initParticipantWebRTC = async (
 
   createPeerConnection(sessionId, participantId);
 };
+
+// Initialize WebRTC connection for a telao session
+export const initTelaoWebRTC = async (
+  sessionId: string,
+  callbacks: {
+    onParticipantTrack?: (participantId: string, track: MediaStreamTrack) => void;
+    onParticipantLeave?: (participantId: string) => void;
+  } = {}
+): Promise<() => void> => {
+  if (callbacks.onParticipantTrack) {
+    onParticipantTrackCallback = callbacks.onParticipantTrack;
+  }
+  
+  await initSocket(sessionId);
+  
+  // Return cleanup function
+  return () => {
+    endWebRTC(sessionId);
+  };
+};
+
+// Start screen sharing
+export const startScreenShare = async (): Promise<MediaStream> => {
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { cursor: "always" },
+      audio: false,
+    });
+    
+    localStream = stream;
+    return stream;
+  } catch (e) {
+    console.error("Error starting screen share:", e);
+    throw e;
+  }
+};
+
+// Stop screen sharing
+export const stopScreenShare = (): void => {
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+    localStream = null;
+  }
+};
+
+// Set callback for participant track event
+export const setOnParticipantTrack = (callback: (participantId: string, track: MediaStreamTrack) => void): void => {
+  onParticipantTrackCallback = callback;
+};
+
+// Export activeParticipants for external use
+export { activeParticipants };
 
 const createPeerConnection = async (sessionId: string, participantId: string) => {
   console.log(`Creating peer connection for participant ${participantId} to session ${sessionId}`);

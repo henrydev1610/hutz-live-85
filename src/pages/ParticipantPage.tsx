@@ -1,1069 +1,475 @@
 
-import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/hooks/use-toast';
-import { Camera, Video, VideoOff } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/ui/use-toast";
+import { Camera, User, VideoOff, Loader2, X, ChevronRight, CheckSquare, Tv2 } from "lucide-react";
+import { isSessionActive, addParticipantToSession } from '@/utils/sessionUtils';
 import { initParticipantWebRTC, setLocalStream } from '@/utils/webrtc';
 
 const ParticipantPage = () => {
-  const { sessionId } = useParams<{ sessionId: string }>();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [deviceId, setDeviceId] = useState<string | null>(null);
-  const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [transmitting, setTransmitting] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const navigate = useNavigate();
   const { toast } = useToast();
-  const participantIdRef = useRef<string>(Math.random().toString(36).substr(2, 9));
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const [participantId, setParticipantId] = useState<string>('');
+  const [participantName, setParticipantName] = useState<string>('');
+  const [isJoining, setIsJoining] = useState(false);
+  const [isJoined, setIsJoined] = useState(false);
+  const [sessionFound, setSessionFound] = useState<boolean | null>(null);
+  const [cameraPermission, setCameraPermission] = useState<boolean | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasWebcam, setHasWebcam] = useState(true);
+  const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
-  const supabaseChannelRef = useRef<any>(null);
-  const connectionRetryCountRef = useRef<number>(0);
-  const maxConnectionRetries = 15;
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const joinIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const connectionTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const joinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const localStorageChannelRef = useRef<BroadcastChannel | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const pageVisibilityRef = useRef<boolean>(true);
-  const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  const cameraStartedRef = useRef<boolean>(false);
-  const toastShownRef = useRef<boolean>(false);
-  const autoStartTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Setup visibility change detection to better handle mobile browser behavior
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      const isVisible = !document.hidden;
-      pageVisibilityRef.current = isVisible;
-      
-      console.log(`Page visibility changed to ${isVisible ? 'visible' : 'hidden'}`);
-      
-      // If coming back to visible and we're connected but not transmitting, restart
-      if (isVisible && connected && !transmitting && cameraActive && streamRef.current) {
-        console.log("Page became visible again, restarting transmission if needed");
-        if (!transmitting && sessionId) {
-          initWebRTC(streamRef.current);
-        }
-      }
-      
-      // If going to hidden state, send heartbeat to maintain connection
-      if (!isVisible && connected) {
-        console.log("Page hidden, sending keep-alive heartbeat");
-        sendHeartbeat();
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
+    // Generate a unique participant ID
+    const newParticipantId = `participant-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    setParticipantId(newParticipantId);
+
+    // Check if session exists
+    checkSession();
+
+    // Check for camera availability
+    checkCameraAvailability();
+
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      cleanupResources();
     };
-  }, [connected, transmitting, cameraActive, sessionId]);
+  }, []);
 
-  // Check for mobile low-power mode issues
-  useEffect(() => {
-    if (isMobileDevice) {
-      // On mobile, periodically check if the video track is still active
-      const checkInterval = setInterval(() => {
-        if (cameraActive && streamRef.current) {
-          const videoTracks = streamRef.current.getVideoTracks();
-          if (videoTracks.length > 0) {
-            const track = videoTracks[0];
-            if (!track.enabled || track.readyState !== 'live') {
-              console.log("Video track is disabled or not live, attempting to restart camera");
-              // Only restart if we were previously active
-              if (cameraStartedRef.current) {
-                stopCamera();
-                setTimeout(() => startCamera(false), 500);
-              }
-            }
-          }
-        }
-      }, 5000);
-      
-      return () => clearInterval(checkInterval);
-    }
-  }, [cameraActive, isMobileDevice]);
-
-  // Handle session connection and cleanup
-  useEffect(() => {
-    console.log(`Session ID: ${sessionId}, Participant ID: ${participantIdRef.current}`);
-    
-    setupLocalStorageChannel();
-    
-    const getVideoDevices = async () => {
-      try {
-        await ensureMediaPermissions();
-        
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        setAvailableDevices(videoDevices);
-        
-        // On mobile, prefer back camera by default
-        if (isMobileDevice) {
-          const backCamera = videoDevices.find(device => 
-            device.label.toLowerCase().includes('back') || 
-            device.label.toLowerCase().includes('traseira') ||
-            device.label.toLowerCase().includes('rear')
-          );
-          
-          const frontCamera = videoDevices.find(device => 
-            device.label.toLowerCase().includes('front') || 
-            device.label.toLowerCase().includes('frente')
-          );
-          
-          // If we have a back camera, use it (better quality usually)
-          if (backCamera) {
-            setDeviceId(backCamera.deviceId);
-          } else if (frontCamera) {
-            setDeviceId(frontCamera.deviceId);
-          } else if (videoDevices.length > 0) {
-            setDeviceId(videoDevices[0].deviceId);
-          }
-        } else {
-          // Desktop usually uses webcam (front facing)
-          if (videoDevices.length > 0) {
-            setDeviceId(videoDevices[0].deviceId);
-          }
-        }
-      } catch (error) {
-        console.error('Error getting video devices:', error);
-        if (!toastShownRef.current) {
-          toast({
-            title: "Erro ao acessar câmeras",
-            description: "Não foi possível listar as câmeras disponíveis. Verifique as permissões.",
-            variant: "destructive"
-          });
-          toastShownRef.current = true;
-        }
-      }
-    };
-
-    getVideoDevices();
-    
-    if (sessionId) {
-      connectToSession();
-      
-      // Bail-out timer in case connection takes too long
-      const fallbackTimer = setTimeout(() => {
-        if (!connected) {
-          console.log("Connection not established, retrying...");
-          connectToSession();
-        }
-      }, 2000) as unknown as NodeJS.Timeout;
-      
-      joinTimeoutRef.current = fallbackTimer;
-    }
-    
-    // On mobile, automatically start camera after permissions but with a delay
-    if (isMobileDevice && !cameraStartedRef.current) {
-      // Clear any existing timer
-      if (autoStartTimerRef.current) {
-        clearTimeout(autoStartTimerRef.current);
-      }
-      
-      // Set new timer with increased delay
-      autoStartTimerRef.current = setTimeout(() => {
-        if (!cameraStartedRef.current) {
-          startCamera(true);
-        }
-      }, 2000) as unknown as NodeJS.Timeout;
-    }
-    
-    // Add proper cleanup
-    return () => {
-      // Send explicit disconnect message
-      if (connected && sessionId) {
-        sendDisconnectMessage();
-      }
-      
-      if (cameraActive) {
-        stopCamera();
-      }
-      
-      // Full connection cleanup
-      disconnectFromSession();
-      
-      if (joinTimeoutRef.current) {
-        clearTimeout(joinTimeoutRef.current);
-        joinTimeoutRef.current = null;
-      }
-      
-      if (joinIntervalRef.current) {
-        clearInterval(joinIntervalRef.current);
-        joinIntervalRef.current = null;
-      }
-      
-      if (connectionTimerRef.current) {
-        clearTimeout(connectionTimerRef.current);
-        connectionTimerRef.current = null;
-      }
-      
-      if (autoStartTimerRef.current) {
-        clearTimeout(autoStartTimerRef.current);
-        autoStartTimerRef.current = null;
-      }
-      
-      if (localStorageChannelRef.current) {
-        localStorageChannelRef.current.close();
-      }
-      
-      if (supabaseChannelRef.current) {
-        supabaseChannelRef.current.unsubscribe();
-      }
-    };
-  }, [sessionId, toast, isMobileDevice]);
-
-  // Ensure camera permissions are granted
-  const ensureMediaPermissions = async () => {
+  const checkSession = async () => {
+    setIsLoading(true);
     try {
-      // Request minimal permissions to trigger the permission dialog
-      const tempStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false
-      });
-      
-      // Immediately stop all tracks to free up the camera
-      tempStream.getTracks().forEach(track => track.stop());
-      return true;
-    } catch (error) {
-      console.error("Error requesting media permissions:", error);
-      return false;
-    }
-  };
-
-  const setupLocalStorageChannel = () => {
-    try {
-      const localChannel = new BroadcastChannel(`telao-local-${sessionId}`);
-      localStorageChannelRef.current = localChannel;
-      
-      localChannel.onmessage = (event) => {
-        const data = event.data;
-        handleChannelMessage(data);
-      };
-      
-      console.log("Local storage channel set up successfully");
-    } catch (error) {
-      console.error("Error creating local storage channel:", error);
-    }
-  };
-
-  const handleChannelMessage = (data: any) => {
-    if (data.type === 'host-acknowledge' && data.participantId === participantIdRef.current) {
-      console.log("Connection acknowledged by host");
-      setConnected(true);
-      setConnecting(false);
-      setConnectionError(null);
-      connectionRetryCountRef.current = 0;
-      
-      startHeartbeat();
-      
-      if (!cameraActive && !cameraStartedRef.current) {
-        startCamera(true);
-      } else if (streamRef.current && sessionId && !transmitting) {
-        // Initialize WebRTC if we already have camera active
-        initWebRTC(streamRef.current);
-      }
-      
-      if (!toastShownRef.current) {
+      if (!sessionId) {
+        setSessionFound(false);
         toast({
-          title: "Conectado à sessão",
-          description: `Você está conectado à sessão ${sessionId}.`,
+          title: "Sessão não encontrada",
+          description: "O ID da sessão não foi fornecido.",
+          variant: "destructive",
         });
-        toastShownRef.current = true;
-      }
-    }
-  };
-
-  const initWebRTC = async (stream: MediaStream) => {
-    if (!sessionId || transmitting) return;
-    
-    console.log("Initializing WebRTC connection with H.264 codec preference");
-    setLocalStream(stream);
-    
-    try {
-      await initParticipantWebRTC(
-        sessionId,
-        participantIdRef.current,
-        stream
-      );
-      console.log("WebRTC initialized successfully");
-      setTransmitting(true);
-    } catch (error) {
-      console.error("Error initializing WebRTC:", error);
-      if (!toastShownRef.current) {
-        toast({
-          title: "Erro na conexão de vídeo",
-          description: "Não foi possível estabelecer a conexão de vídeo. Tente novamente.",
-          variant: "destructive"
-        });
-        toastShownRef.current = true;
-      }
-    }
-  };
-
-  const connectToSession = () => {
-    if (!sessionId) return;
-    
-    setConnecting(true);
-    setConnectionError(null);
-    
-    console.log(`Connecting to session: ${sessionId}, attempt ${connectionRetryCountRef.current + 1}`);
-    
-    if (broadcastChannelRef.current) {
-      broadcastChannelRef.current.close();
-    }
-    
-    if (joinIntervalRef.current) {
-      clearInterval(joinIntervalRef.current);
-      joinIntervalRef.current = null;
-    }
-    
-    if (connectionTimerRef.current) {
-      clearTimeout(connectionTimerRef.current);
-      connectionTimerRef.current = null;
-    }
-    
-    if (supabaseChannelRef.current) {
-      supabaseChannelRef.current.unsubscribe();
-    }
-    
-    try {
-      const channel = new BroadcastChannel(`telao-session-${sessionId}`);
-      broadcastChannelRef.current = channel;
-      
-      channel.onmessage = (event) => {
-        handleChannelMessage(event.data);
-      };
-      
-      sendJoinMessage();
-      
-      const joinInterval = setInterval(() => {
-        if (!connected) {
-          console.log("Sending join message...");
-          sendJoinMessage();
-          
-          try {
-            const timestamp = Date.now();
-            window.localStorage.setItem(`telao-join-${sessionId}`, JSON.stringify({
-              type: 'participant-join',
-              id: participantIdRef.current,
-              timestamp: timestamp
-            }));
-            
-            setTimeout(() => {
-              try {
-                window.localStorage.removeItem(`telao-join-${sessionId}`);
-              } catch (e) {
-                // Ignore errors
-              }
-            }, 5000);
-          } catch (e) {
-            console.warn("Could not use localStorage for fallback communication", e);
-          }
-        } else {
-          clearInterval(joinInterval);
-          joinIntervalRef.current = null;
-        }
-      }, 1000);
-      
-      joinIntervalRef.current = joinInterval as unknown as NodeJS.Timeout;
-      
-      setTimeout(() => {
-        if (joinIntervalRef.current) {
-          clearInterval(joinIntervalRef.current);
-          joinIntervalRef.current = null;
-        }
-      }, 30000);
-    } catch (error) {
-      console.error("Error creating broadcast channel:", error);
-    }
-    
-    try {
-      const channel = supabase.channel(`session-${sessionId}`)
-        .on('broadcast', { event: 'message' }, (payload) => {
-          if (payload.payload.type === 'host-acknowledge' && 
-              payload.payload.participantId === participantIdRef.current) {
-            console.log("Connection acknowledged via Supabase Realtime");
-            setConnected(true);
-            setConnecting(false);
-            setConnectionError(null);
-            startHeartbeat();
-            
-            if (!cameraActive) {
-              startCamera();
-            } else if (streamRef.current && sessionId) {
-              // Initialize WebRTC if we already have camera active
-              initWebRTC(streamRef.current);
-            }
-            
-            toast({
-              title: "Conectado à sessão",
-              description: `Você está conectado à sessão ${sessionId} (via Supabase).`,
-            });
-          }
-        })
-        .subscribe((status) => {
-          console.log("Supabase channel status:", status);
-          if (status === 'SUBSCRIBED') {
-            sendJoinMessage();
-            
-            const supabaseJoinInterval = setInterval(() => {
-              if (!connected) {
-                channel.send({
-                  type: 'broadcast',
-                  event: 'message',
-                  payload: {
-                    type: 'participant-join',
-                    id: participantIdRef.current,
-                    timestamp: Date.now()
-                  }
-                });
-              } else {
-                clearInterval(supabaseJoinInterval);
-              }
-            }, 2000);
-            
-            setTimeout(() => clearInterval(supabaseJoinInterval), 30000);
-          }
-        });
-      
-      supabaseChannelRef.current = channel;
-    } catch (e) {
-      console.warn("Supabase Realtime connection failed", e);
-    }
-    
-    try {
-      const checkLocalStorage = setInterval(() => {
-        if (!connected) {
-          try {
-            const ackKey = `telao-ack-${sessionId}-${participantIdRef.current}`;
-            const response = window.localStorage.getItem(ackKey);
-            if (response) {
-              console.log("Got acknowledgment via localStorage");
-              window.localStorage.removeItem(ackKey);
-              clearInterval(checkLocalStorage);
-              
-              setConnected(true);
-              setConnecting(false);
-              setConnectionError(null);
-              startHeartbeat();
-              
-              if (!cameraActive) {
-                startCamera();
-              } else if (streamRef.current && sessionId) {
-                // Initialize WebRTC if we already have camera active
-                initWebRTC(streamRef.current);
-              }
-              
-              toast({
-                title: "Conectado à sessão",
-                description: `Você está conectado à sessão ${sessionId} (modo alternativo).`,
-              });
-            }
-          } catch (e) {
-            // Ignore errors
-          }
-        } else {
-          clearInterval(checkLocalStorage);
-        }
-      }, 1000);
-      
-      setTimeout(() => {
-        clearInterval(checkLocalStorage);
-      }, 30000);
-    } catch (e) {
-      console.warn("LocalStorage checking failed", e);
-    }
-    
-    // Connection timeout timer
-    connectionTimerRef.current = setTimeout(() => {
-      if (!connected) {
-        console.log(`Connection attempt ${connectionRetryCountRef.current + 1} timed out`);
-        
-        if (connectionRetryCountRef.current < maxConnectionRetries) {
-          connectionRetryCountRef.current++;
-          setConnecting(false);
-          setConnectionError(`Tentativa ${connectionRetryCountRef.current} falhou. Tentando novamente...`);
-          
-          setTimeout(() => {
-            connectToSession();
-          }, 1000);
-        } else {
-          setConnecting(false);
-          setConnectionError("Não foi possível conectar após várias tentativas. Verifique sua conexão ou tente gerar um novo QR Code.");
-          
-          if (!toastShownRef.current) {
-            toast({
-              title: "Erro de conexão",
-              description: "Não foi possível conectar à sessão. Por favor, tente novamente ou gere um novo QR Code.",
-              variant: "destructive"
-            });
-            toastShownRef.current = true;
-          }
-        }
-      }
-    }, 5000) as unknown as NodeJS.Timeout;
-  };
-
-  const sendJoinMessage = () => {
-    if (broadcastChannelRef.current) {
-      try {
-        console.log("Sending join message via BroadcastChannel");
-        broadcastChannelRef.current.postMessage({
-          type: 'participant-join',
-          id: participantIdRef.current,
-          timestamp: Date.now()
-        });
-      } catch (e) {
-        console.warn("Error sending via BroadcastChannel:", e);
-      }
-    }
-    
-    if (localStorageChannelRef.current) {
-      try {
-        console.log("Sending join message via LocalStorageChannel");
-        localStorageChannelRef.current.postMessage({
-          type: 'participant-join',
-          id: participantIdRef.current,
-          timestamp: Date.now()
-        });
-      } catch (e) {
-        console.warn("Error sending via LocalStorageChannel:", e);
-      }
-    }
-    
-    if (supabaseChannelRef.current) {
-      try {
-        supabaseChannelRef.current.send({
-          type: 'broadcast',
-          event: 'message',
-          payload: {
-            type: 'participant-join',
-            id: participantIdRef.current,
-            timestamp: Date.now()
-          }
-        });
-      } catch (e) {
-        console.warn("Error sending via Supabase Realtime:", e);
-      }
-    }
-    
-    try {
-      window.localStorage.setItem(`telao-join-${sessionId}-${Date.now()}`, JSON.stringify({
-        type: 'participant-join',
-        id: participantIdRef.current,
-        timestamp: Date.now()
-      }));
-      
-      setTimeout(() => {
-        try {
-          window.localStorage.removeItem(`telao-join-${sessionId}-${Date.now()}`);
-        } catch (e) {
-          // Ignore errors
-        }
-      }, 5000);
-    } catch (e) {
-      console.warn("Error using localStorage directly:", e);
-    }
-  };
-
-  // Send explicit disconnect message
-  const sendDisconnectMessage = () => {
-    console.log(`Sending explicit disconnect message for ${participantIdRef.current}`);
-    
-    // Via BroadcastChannel
-    if (broadcastChannelRef.current) {
-      try {
-        broadcastChannelRef.current.postMessage({
-          type: 'participant-leave',
-          id: participantIdRef.current,
-          timestamp: Date.now()
-        });
-      } catch (e) {
-        console.warn("Error sending disconnect via BroadcastChannel:", e);
-      }
-    }
-    
-    // Via LocalStorage
-    if (localStorageChannelRef.current) {
-      try {
-        localStorageChannelRef.current.postMessage({
-          type: 'participant-leave',
-          id: participantIdRef.current,
-          timestamp: Date.now()
-        });
-      } catch (e) {
-        console.warn("Error sending disconnect via LocalStorageChannel:", e);
-      }
-    }
-    
-    // Via Supabase
-    if (supabaseChannelRef.current) {
-      try {
-        supabaseChannelRef.current.send({
-          type: 'broadcast',
-          event: 'message',
-          payload: {
-            type: 'participant-leave',
-            id: participantIdRef.current,
-            timestamp: Date.now()
-          }
-        });
-      } catch (e) {
-        console.warn("Error sending disconnect via Supabase Realtime:", e);
-      }
-    }
-    
-    // Via localStorage
-    try {
-      window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, JSON.stringify({
-        type: 'participant-leave',
-        id: participantIdRef.current,
-        timestamp: Date.now()
-      }));
-      
-      // Correção do tipo para NodeJS.Timeout
-      setTimeout(() => {
-        try {
-          window.localStorage.removeItem(`telao-leave-${sessionId}-${participantIdRef.current}`);
-        } catch (e) {
-          // Ignore errors
-        }
-      }, 10000);
-    } catch (e) {
-      console.warn("Error using localStorage for disconnect:", e);
-    }
-  };
-
-  const startHeartbeat = () => {
-    if (heartbeatIntervalRef.current) {
-      clearInterval(heartbeatIntervalRef.current);
-    }
-    
-    heartbeatIntervalRef.current = setInterval(() => {
-      if (!connected) {
         return;
       }
-      
-      sendHeartbeat();
-    }, 2000);
-  };
-  
-  const sendHeartbeat = () => {
-    if (broadcastChannelRef.current) {
-      try {
-        broadcastChannelRef.current.postMessage({
-          type: 'participant-heartbeat',
-          id: participantIdRef.current,
-          timestamp: Date.now()
-        });
-      } catch (e) {
-        console.warn("Error sending heartbeat via BroadcastChannel:", e);
-      }
-    }
-    
-    if (localStorageChannelRef.current) {
-      try {
-        localStorageChannelRef.current.postMessage({
-          type: 'participant-heartbeat',
-          id: participantIdRef.current,
-          timestamp: Date.now()
-        });
-      } catch (e) {
-        console.warn("Error sending heartbeat via LocalStorageChannel:", e);
-      }
-    }
-    
-    if (supabaseChannelRef.current) {
-      try {
-        supabaseChannelRef.current.send({
-          type: 'broadcast',
-          event: 'message',
-          payload: {
-            type: 'participant-heartbeat',
-            id: participantIdRef.current,
-            timestamp: Date.now()
-          }
-        });
-      } catch (e) {
-        console.warn("Error sending heartbeat via Supabase Realtime:", e);
-      }
-    }
-    
-    try {
-      window.localStorage.setItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`, Date.now().toString());
-      
-      setTimeout(() => {
-        try {
-          window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
-        } catch (e) {
-          // Ignore errors
-        }
-      }, 5000);
-    } catch (e) {
-      // Ignore errors
-    }
-  };
 
-  const disconnectFromSession = () => {
-    if (connected) {
-      console.log(`Disconnecting from session: ${sessionId}`);
-      sendDisconnectMessage();
-      
-      setConnected(false);
-      setTransmitting(false);
-      
-      if (broadcastChannelRef.current) {
-        try {
-          broadcastChannelRef.current.close();
-          broadcastChannelRef.current = null;
-        } catch (e) {
-          console.warn("Error disconnecting via BroadcastChannel:", e);
-        }
-      }
-      
-      if (localStorageChannelRef.current) {
-        try {
-          localStorageChannelRef.current.close();
-          localStorageChannelRef.current = null;
-        } catch (e) {
-          console.warn("Error disconnecting via LocalStorageChannel:", e);
-        }
-      }
-      
-      if (supabaseChannelRef.current) {
-        try {
-          supabaseChannelRef.current.unsubscribe();
-          supabaseChannelRef.current = null;
-        } catch (e) {
-          console.warn("Error disconnecting via Supabase Realtime:", e);
-        }
-      }
-      
-      // Make sure disconnect is persisted in localStorage
-      try {
-        window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, JSON.stringify({
-          type: 'participant-leave',
-          id: participantIdRef.current,
-          timestamp: Date.now()
-        }));
-        
-        // Clear heartbeat
-        window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
-      } catch (e) {
-        // Ignore errors
-      }
-      
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-        heartbeatIntervalRef.current = null;
-      }
-      
-      if (joinIntervalRef.current) {
-        clearInterval(joinIntervalRef.current);
-        joinIntervalRef.current = null;
-      }
-    }
-  };
+      const isActive = isSessionActive(sessionId);
+      setSessionFound(isActive);
 
-  const startTransmitting = () => {
-    if (!connected || !cameraActive || transmitting) return;
-    setTransmitting(true);
-    console.log(`Started transmitting video to session: ${sessionId}`);
-
-    // With WebRTC transmission is handled by the connection itself
-    // The stream is already being sent after initWebRTC is called
-    if (!toastShownRef.current) {
+      if (!isActive) {
+        toast({
+          title: "Sessão não encontrada",
+          description: "A sessão não existe ou expirou.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error checking session:", error);
+      setSessionFound(false);
       toast({
-        title: "Transmissão iniciada",
-        description: "Sua imagem está sendo transmitida para a sessão com melhor qualidade (H.264).",
+        title: "Erro ao verificar sessão",
+        description: "Não foi possível verificar se a sessão existe.",
+        variant: "destructive",
       });
-      toastShownRef.current = true;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const stopTransmitting = () => {
-    if (!transmitting) return;
-    setTransmitting(false);
-    console.log(`Stopped transmitting video to session: ${sessionId}`);
-    
-    if (!toastShownRef.current) {
-      toast({
-        title: "Transmissão interrompida",
-        description: "Sua imagem não está mais sendo transmitida para a sessão.",
-      });
-      toastShownRef.current = true;
-    }
-  };
-
-  const startCamera = async (showToast: boolean) => {
+  const checkCameraAvailability = async () => {
     try {
-      // Don't start camera if it's already active or in the process of starting
-      if (cameraActive || cameraStartedRef.current || !videoRef.current) return;
-      
-      // Set flag to prevent duplicate starts
-      cameraStartedRef.current = true;
-      
-      // Request high-quality video with preference for H.264 and support for mobile
-      const constraints: MediaStreamConstraints = {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const hasVideoDevices = devices.some(device => device.kind === 'videoinput');
+      setHasWebcam(hasVideoDevices);
+
+      if (hasVideoDevices) {
+        try {
+          await navigator.mediaDevices.getUserMedia({ video: true });
+          setCameraPermission(true);
+        } catch (error) {
+          setCameraPermission(false);
+        }
+      } else {
+        setCameraPermission(false);
+      }
+    } catch (error) {
+      console.error("Error checking camera:", error);
+      setCameraPermission(false);
+      setHasWebcam(false);
+    }
+  };
+
+  const startCamera = async () => {
+    try {
+      // Stop any existing stream
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+      }
+
+      // Get new video stream
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          deviceId: deviceId ? { exact: deviceId } : undefined,
           width: { ideal: 1280 },
           height: { ideal: 720 },
-          frameRate: { ideal: 30 },
-          // For mobile devices, facingMode helps select the right camera
-          facingMode: isMobileDevice ? "environment" : "user" 
+          facingMode: "user"
         },
         audio: false
-      };
-      
-      console.log("Requesting camera with constraints:", constraints);
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      
-      videoRef.current.srcObject = stream;
-      streamRef.current = stream;
-      setCameraActive(true);
-      
-      if (showToast && !toastShownRef.current) {
-        toast({
-          title: "Câmera ativada",
-          description: "Sua câmera foi ativada com sucesso.",
-        });
-        toastShownRef.current = true;
+      });
+
+      // Set stream to video element
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
       }
-      
-      // Initialize WebRTC if connected to a session
-      if (connected && sessionId && !transmitting) {
-        await initWebRTC(stream);
-      }
-      
-      // Ensure we're sending a join message when camera is ready
-      setTimeout(() => {
-        if (connected && !transmitting) {
-          startTransmitting();
-        }
-        
-        if (!connected && sessionId) {
-          sendJoinMessage();
-        }
-      }, 500);
-      
-      // On mobile, add wake lock to prevent screen from turning off
-      try {
-        if (isMobileDevice && 'wakeLock' in navigator) {
-          // @ts-ignore - TypeScript doesn't know about wakeLock API yet
-          const wakeLock = await navigator.wakeLock.request('screen');
-          console.log("Wake Lock acquired to keep screen on");
-          
-          // Release it when component unmounts or user navigates away
-          const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
-              // @ts-ignore
-              navigator.wakeLock.request('screen')
-                .then(() => console.log("Wake Lock re-acquired"))
-                .catch(err => console.warn("Failed to re-acquire Wake Lock:", err));
-            }
-          };
-          
-          document.addEventListener('visibilitychange', handleVisibilityChange);
-          
-          return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-            wakeLock.release()
-              .then(() => console.log("Wake Lock released"))
-              .catch(err => console.warn("Failed to release Wake Lock:", err));
-          };
-        }
-      } catch (err) {
-        console.warn("Wake Lock API not supported or failed:", err);
-      }
-      
+
+      setVideoStream(stream);
+      setIsCameraActive(true);
+      return stream;
     } catch (error) {
-      console.error('Error accessing camera:', error);
-      cameraStartedRef.current = false;
-      if (!toastShownRef.current) {
-        toast({
-          title: "Erro ao acessar câmera",
-          description: "Verifique se você concedeu permissão para acessar a câmera.",
-          variant: "destructive"
-        });
-        toastShownRef.current = true;
-      }
+      console.error("Error starting camera:", error);
+      toast({
+        title: "Erro na câmera",
+        description: "Não foi possível acessar a câmera.",
+        variant: "destructive",
+      });
+      setIsCameraActive(false);
+      return null;
     }
   };
 
   const stopCamera = () => {
-    if (!videoRef.current || !cameraActive) return;
-    
-    stopTransmitting();
-    
-    const stream = videoRef.current.srcObject as MediaStream;
-    if (stream) {
-      const tracks = stream.getTracks();
-      tracks.forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-      streamRef.current = null;
-      setCameraActive(false);
-      cameraStartedRef.current = false;
-      toastShownRef.current = false;
-      
-      if (!toastShownRef.current) {
-        toast({
-          title: "Câmera desativada",
-          description: "A transmissão da sua imagem foi interrompida.",
-        });
-        toastShownRef.current = true;
+    if (videoStream) {
+      videoStream.getTracks().forEach(track => track.stop());
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
       }
+      setVideoStream(null);
+      setIsCameraActive(false);
     }
   };
 
-  const switchCamera = async () => {
-    if (availableDevices.length <= 1) return;
+  const joinSession = async (showToast: boolean = true) => {
+    if (!sessionId || !participantId) return;
+
+    setIsJoining(true);
     
-    stopCamera();
-    toastShownRef.current = false;
-    cameraStartedRef.current = false;
-    
-    const currentIndex = availableDevices.findIndex(device => device.deviceId === deviceId);
-    const nextIndex = (currentIndex + 1) % availableDevices.length;
-    const nextDeviceId = availableDevices[nextIndex].deviceId;
-    
-    setDeviceId(nextDeviceId);
-    
-    setTimeout(() => {
-      startCamera(true);
-    }, 300);
+    try {
+      // Start camera if not already started
+      let stream: MediaStream | null = videoStream;
+      if (!stream) {
+        stream = await startCamera();
+        if (!stream) {
+          setIsJoining(false);
+          return;
+        }
+      }
+
+      // Add participant to session
+      const success = addParticipantToSession(sessionId, participantId, participantName);
+      
+      if (!success) {
+        throw new Error("Failed to add participant to session");
+      }
+
+      // Set up WebRTC
+      setLocalStream(stream);
+      await initParticipantWebRTC(sessionId, participantId, stream);
+
+      // Set up broadcast channel for heartbeats
+      const channel = new BroadcastChannel(`telao-session-${sessionId}`);
+      broadcastChannelRef.current = channel;
+
+      // Send initial join message
+      channel.postMessage({
+        type: 'participant-join',
+        id: participantId,
+        name: participantName,
+        timestamp: Date.now()
+      });
+
+      // Set up heartbeat
+      const heartbeatInterval = setInterval(() => {
+        if (channel) {
+          channel.postMessage({
+            type: 'participant-heartbeat',
+            id: participantId,
+            timestamp: Date.now()
+          });
+        }
+      }, 5000);
+
+      heartbeatIntervalRef.current = heartbeatInterval;
+
+      // Update state
+      setIsJoined(true);
+      setIsJoining(false);
+
+      if (showToast) {
+        toast({
+          title: "Conectado à sessão",
+          description: "Você está conectado e visível para o apresentador.",
+        });
+      }
+
+      return () => {
+        // Cleanup function
+        if (channel) {
+          channel.close();
+        }
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+        }
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+      };
+    } catch (error) {
+      console.error("Error joining session:", error);
+      setIsJoining(false);
+      
+      if (showToast) {
+        toast({
+          title: "Erro ao conectar",
+          description: "Não foi possível conectar à sessão.",
+          variant: "destructive",
+        });
+      }
+      return () => {}; // Return empty cleanup function on error
+    }
   };
 
-  // Handle page unload/navigation to ensure disconnect
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (connected && sessionId) {
-        // Send disconnect message before user navigates away
-        console.log("User navigating away, sending disconnect");
-        sendDisconnectMessage();
-      }
-    };
+  const leaveSession = () => {
+    cleanupResources();
+    setIsJoined(false);
     
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    navigate('/');
     
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [connected, sessionId]);
+    toast({
+      title: "Desconectado",
+      description: "Você saiu da sessão.",
+    });
+  };
 
-  return (
-    <div className="min-h-screen bg-black flex flex-col">
-      <div className="flex flex-col items-center justify-center flex-1 p-4">
-        <h1 className="text-xl font-semibold mb-4 text-white">Transmissão ao Vivo</h1>
-        <p className="text-sm text-white/70 mb-6">
-          Sessão: {sessionId}
-        </p>
-        
-        <div className="w-full max-w-md aspect-video bg-secondary/40 backdrop-blur-lg border border-white/10 rounded-lg overflow-hidden relative">
-          <video 
-            ref={videoRef} 
-            autoPlay 
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-          />
-          
-          {!cameraActive && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Camera className="h-12 w-12 text-white/30" />
+  const cleanupResources = () => {
+    // Stop camera
+    if (videoStream) {
+      videoStream.getTracks().forEach(track => track.stop());
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      setVideoStream(null);
+      setIsCameraActive(false);
+    }
+
+    // Close broadcast channel
+    if (broadcastChannelRef.current) {
+      broadcastChannelRef.current.close();
+      broadcastChannelRef.current = null;
+    }
+
+    // Clear heartbeat interval
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="container max-w-md mx-auto py-16 px-4 flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
+        <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 w-full">
+          <CardContent className="pt-6 px-6 pb-8 flex flex-col items-center">
+            <Loader2 className="h-10 w-10 text-accent animate-spin mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Verificando sessão</h2>
+            <p className="text-muted-foreground text-center">
+              Estamos verificando se a sessão existe e está ativa...
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (sessionFound === false) {
+    return (
+      <div className="container max-w-md mx-auto py-16 px-4 flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
+        <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 w-full">
+          <CardContent className="pt-6 px-6 pb-8 flex flex-col items-center">
+            <X className="h-10 w-10 text-destructive mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Sessão não encontrada</h2>
+            <p className="text-muted-foreground text-center mb-6">
+              A sessão que você está tentando acessar não existe ou já foi encerrada.
+            </p>
+            <Button 
+              className="w-full"
+              onClick={() => navigate('/')}
+            >
+              Voltar para a página inicial
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isJoined) {
+    return (
+      <div className="container max-w-md mx-auto py-8 px-4 flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
+        <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 w-full">
+          <CardContent className="pt-6 px-6 pb-8">
+            <div className="mb-6 text-center">
+              <div className="inline-flex items-center justify-center bg-green-500/20 text-green-500 h-12 w-12 rounded-full mb-4">
+                <CheckSquare className="h-6 w-6" />
+              </div>
+              <h2 className="text-xl font-semibold mb-2">Conectado à sessão</h2>
+              <p className="text-muted-foreground">
+                Você está conectado e sua câmera está sendo transmitida.
+              </p>
             </div>
-          )}
-          
-          {cameraActive && transmitting && (
-            <div className="absolute top-2 right-2">
-              <div className="flex items-center bg-black/50 rounded-full px-2 py-1">
-                <div className="h-2 w-2 rounded-full bg-red-500 mr-1"></div>
-                <span className="text-xs text-white">AO VIVO</span>
+
+            <div className="relative mb-6 bg-black rounded-lg overflow-hidden">
+              <div className="aspect-video flex items-center justify-center">
+                {isCameraActive ? (
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  ></video>
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-8">
+                    <VideoOff className="h-10 w-10 text-white/30 mb-2" />
+                    <p className="text-white/50 text-sm text-center">
+                      Câmera desativada
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="absolute bottom-2 right-2">
+                <Button 
+                  size="sm" 
+                  variant={isCameraActive ? "destructive" : "default"}
+                  className="rounded-full h-10 w-10 p-0"
+                  onClick={() => isCameraActive ? stopCamera() : startCamera()}
+                >
+                  {isCameraActive ? <VideoOff className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
+                </Button>
               </div>
             </div>
-          )}
-        </div>
-        
-        <div className="flex gap-2 mt-6">
-          {!cameraActive ? (
-            <Button 
-              className="bg-accent hover:bg-accent/90 text-white"
-              onClick={startCamera}
-            >
-              <Video className="h-4 w-4 mr-2" />
-              Iniciar Câmera
-            </Button>
-          ) : (
-            <Button 
-              variant="destructive"
-              onClick={stopCamera}
-            >
-              <VideoOff className="h-4 w-4 mr-2" />
-              Parar Câmera
-            </Button>
-          )}
-          
-          {availableDevices.length > 1 && (
-            <Button 
-              variant="outline" 
-              className="border-white/20"
-              onClick={switchCamera}
-              disabled={!cameraActive}
-            >
-              <Camera className="h-4 w-4 mr-2" />
-              Trocar Câmera
-            </Button>
-          )}
-        </div>
-        
-        <p className="text-xs text-white/50 mt-8 text-center">
-          Mantenha esta janela aberta para continuar transmitindo sua imagem.<br />
-          {isMobileDevice && "Caso esteja utilizando um celular, mantenha a tela ligada durante a transmissão."}<br />
-          Sua câmera será exibida apenas quando o host incluir você na transmissão.
-        </p>
-        
-        <div className="mt-6 flex items-center gap-2">
-          <div 
-            className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : connecting ? 'bg-yellow-500' : 'bg-red-500'}`}
-          ></div>
-          <span className="text-xs text-white">
-            {connected ? 'Conectado à sessão' : 
-             connecting ? 'Tentando conectar à sessão...' : 
-             'Desconectado'}
-          </span>
-        </div>
-        
-        {connectionError && (
-          <p className="text-xs text-red-400 mt-2 text-center">
-            {connectionError}
-          </p>
-        )}
-        
-        {!connected && (
-          <Button 
-            variant="outline" 
-            className="mt-4 border-white/20"
-            onClick={() => {
-              connectionRetryCountRef.current = 0;
-              connectToSession();
-              toast({
-                title: "Reconectando",
-                description: "Tentando conectar novamente à sessão.",
-              });
-            }}
-            disabled={connecting}
-          >
-            {connecting ? 'Conectando...' : 'Reconectar'}
-          </Button>
-        )}
+
+            <div className="space-y-4">
+              <div className="bg-secondary/20 border border-white/10 rounded-lg p-4">
+                <div className="flex items-center">
+                  <div className="flex-1">
+                    <h3 className="text-sm font-medium">Nome do participante</h3>
+                    <p className="text-sm text-white/70">{participantName || 'Anônimo'}</p>
+                  </div>
+                  <Tv2 className="h-5 w-5 text-white/40" />
+                </div>
+              </div>
+
+              <Button 
+                variant="destructive" 
+                className="w-full" 
+                onClick={leaveSession}
+              >
+                Sair da sessão
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
+    );
+  }
+
+  return (
+    <div className="container max-w-md mx-auto py-8 px-4 flex flex-col items-center justify-center min-h-[calc(100vh-100px)]">
+      <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 w-full">
+        <CardContent className="pt-6 px-6 pb-8">
+          <h2 className="text-xl font-semibold mb-6 text-center">Entrar na sessão</h2>
+          
+          <div className="space-y-4 mb-6">
+            <div>
+              <Label htmlFor="participantName">Seu nome (opcional)</Label>
+              <Input
+                id="participantName"
+                placeholder="Digite seu nome"
+                value={participantName}
+                onChange={(e) => setParticipantName(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            
+            <div className="relative mb-6 bg-black rounded-lg overflow-hidden">
+              <div className="aspect-video flex items-center justify-center">
+                {isCameraActive ? (
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  ></video>
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-8">
+                    {hasWebcam ? (
+                      <>
+                        <Camera className="h-10 w-10 text-white/30 mb-2" />
+                        <p className="text-white/50 text-sm text-center">
+                          Clique para ativar sua câmera
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <VideoOff className="h-10 w-10 text-white/30 mb-2" />
+                        <p className="text-white/50 text-sm text-center">
+                          Nenhuma câmera detectada
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {hasWebcam && (
+                <div className="absolute bottom-2 right-2">
+                  <Button 
+                    size="sm" 
+                    variant={isCameraActive ? "destructive" : "default"}
+                    className="rounded-full h-10 w-10 p-0"
+                    onClick={() => isCameraActive ? stopCamera() : startCamera()}
+                  >
+                    {isCameraActive ? <VideoOff className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <Button 
+            className="w-full hutz-button-accent" 
+            onClick={() => joinSession()}
+            disabled={isJoining}
+          >
+            {isJoining ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Conectando...
+              </>
+            ) : (
+              <>
+                Entrar na sessão 
+                <ChevronRight className="ml-2 h-4 w-4" />
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 };
