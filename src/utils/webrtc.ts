@@ -1,5 +1,13 @@
 import { addParticipantToSession, updateParticipantStatus } from './sessionUtils';
 
+// Define SocketType interface
+interface SocketType {
+  id: string;
+  connected: boolean;
+  on: (event: string, callback: (...args: any[]) => void) => void;
+  emit: (event: string, ...args: any[]) => void;
+}
+
 const PEER_CONNECTION_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
