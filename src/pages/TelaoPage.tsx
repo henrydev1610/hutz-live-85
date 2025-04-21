@@ -69,7 +69,6 @@ const TelaoPage = () => {
   const [sessionCheckInterval, setSessionCheckInterval] = useState<NodeJS.Timeout | null>(null);
   const [sessionHeartbeatInterval, setSessionHeartbeatInterval] = useState<NodeJS.Timeout | null>(null);
 
-  // Initialize session from URL if available
   useEffect(() => {
     if (routeSessionId) {
       setSessionId(routeSessionId);
@@ -77,7 +76,6 @@ const TelaoPage = () => {
     }
   }, [routeSessionId]);
 
-  // Check and initialize session
   const checkAndInitializeSession = async (id: string) => {
     if (!id) return;
     
@@ -102,26 +100,20 @@ const TelaoPage = () => {
     }
   };
 
-  // Initialize session
   const initializeSession = (id: string) => {
     setIsStarting(true);
     
     try {
-      // Create or update session in local storage
       createSession(id);
       
-      // Set up broadcast channel
       const channel = new BroadcastChannel(`telao-session-${id}`);
       setBroadcastChannel(channel);
       
-      // Listen for participant updates
       channel.addEventListener('message', handleBroadcastMessage);
       
-      // Load existing participants
       const participants = getSessionParticipants(id);
       setParticipantList(participants);
       
-      // Set up heartbeat to keep session active
       const heartbeatInterval = setInterval(() => {
         const timestamps = participants
           .filter(p => p.active)
@@ -131,7 +123,6 @@ const TelaoPage = () => {
           const latestActivity = Math.max(...timestamps);
           const now = Date.now();
           
-          // If no activity in the last 5 minutes, check if session is still active
           if (now - latestActivity > 5 * 60 * 1000) {
             const stillActive = isSessionActive(id);
             if (!stillActive) {
@@ -139,12 +130,11 @@ const TelaoPage = () => {
             }
           }
         }
-      }, 60 * 1000); // Check every minute
+      }, 60 * 1000);
       
       setSessionHeartbeatInterval(heartbeatInterval);
       setIsLive(true);
       
-      // Generate QR code
       generateQRCode(id);
       
       toast({
@@ -163,7 +153,6 @@ const TelaoPage = () => {
     }
   };
 
-  // Handle broadcast messages
   const handleBroadcastMessage = (event: MessageEvent) => {
     const { type, id, participants, timestamp } = event.data;
     
@@ -176,7 +165,6 @@ const TelaoPage = () => {
     }
   };
 
-  // Handle participant join
   const handleParticipantJoin = (id: string) => {
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === id);
@@ -188,12 +176,11 @@ const TelaoPage = () => {
         id,
         name: `Participante ${prev.length + 1}`,
         active: true,
-        selected: prev.length === 0, // Auto-select first participant
+        selected: prev.length === 0,
         hasVideo: false,
         connectedAt: Date.now()
       };
       
-      // Update in storage
       addParticipantToSession(sessionId, id, newParticipant.name);
       
       toast({
@@ -205,22 +192,18 @@ const TelaoPage = () => {
     });
   };
 
-  // Handle participant leave
   const handleParticipantLeave = (id: string) => {
     setParticipantList(prev => 
       prev.map(p => p.id === id ? { ...p, active: false } : p)
     );
     
-    // Update in storage
     if (sessionId) {
       updateParticipantStatus(sessionId, id, { active: false });
     }
     
-    // Clean up WebRTC connection for this participant
     cleanupWebRTC(id);
   };
 
-  // Generate QR code
   const generateQRCode = async (id: string) => {
     try {
       const origin = window.location.origin;
@@ -237,19 +220,15 @@ const TelaoPage = () => {
     }
   };
 
-  // Start live session
   const startLiveSession = async () => {
     setIsStarting(true);
     
     try {
-      // Generate new session ID if not provided
       const id = newSessionId || generateSessionId();
       setSessionId(id);
       
-      // Initialize session
       initializeSession(id);
       
-      // Update URL without reloading page
       navigate(`/telao/${id}`, { replace: true });
     } catch (e) {
       console.error("Error starting session:", e);
@@ -263,23 +242,19 @@ const TelaoPage = () => {
     }
   };
 
-  // End live session
   const endLiveSession = () => {
     setIsStopping(true);
     
     try {
-      // End session in local storage
       if (sessionId) {
         endSession(sessionId);
       }
       
-      // Close broadcast channel
       if (broadcastChannel) {
         broadcastChannel.close();
         setBroadcastChannel(null);
       }
       
-      // Clear intervals
       if (sessionHeartbeatInterval) {
         clearInterval(sessionHeartbeatInterval);
         setSessionHeartbeatInterval(null);
@@ -290,17 +265,14 @@ const TelaoPage = () => {
         setSessionCheckInterval(null);
       }
       
-      // Clean up WebRTC connections
       cleanupWebRTC();
       
-      // Stop screen sharing if active
       if (screenShareStream) {
         screenShareStream.getTracks().forEach(track => track.stop());
         setScreenShareStream(null);
         setIsScreenSharing(false);
       }
       
-      // Reset state
       setIsLive(false);
       setSessionId('');
       setNewSessionId('');
@@ -308,7 +280,6 @@ const TelaoPage = () => {
       setParticipantList([]);
       setSelectedParticipantId(null);
       
-      // Reset URL
       navigate('/telao', { replace: true });
       
       toast({
@@ -327,7 +298,6 @@ const TelaoPage = () => {
     }
   };
 
-  // Handle participant selection
   const handleSelectParticipant = (id: string) => {
     setParticipantList(prev => 
       prev.map(p => ({
@@ -336,7 +306,6 @@ const TelaoPage = () => {
       }))
     );
     
-    // Update in storage
     if (sessionId) {
       const participant = participantList.find(p => p.id === id);
       if (participant) {
@@ -345,18 +314,15 @@ const TelaoPage = () => {
     }
   };
 
-  // Handle participant removal
   const handleRemoveParticipant = (id: string) => {
     setParticipantList(prev => 
       prev.filter(p => p.id !== id)
     );
     
-    // Update in storage
     if (sessionId) {
       updateParticipantStatus(sessionId, id, { active: false });
     }
     
-    // Clean up WebRTC connection for this participant
     cleanupWebRTC(id);
     
     toast({
@@ -365,7 +331,6 @@ const TelaoPage = () => {
     });
   };
 
-  // Clean up on unmount
   useEffect(() => {
     return () => {
       if (broadcastChannel) {
@@ -384,7 +349,6 @@ const TelaoPage = () => {
         screenShareStream.getTracks().forEach(track => track.stop());
       }
       
-      // Clean up WebRTC connections
       cleanupWebRTC();
     };
   }, []);
@@ -441,7 +405,6 @@ const TelaoPage = () => {
             <div className="mt-8 border-t border-white/10 pt-4">
               <h3 className="text-lg font-medium mb-2">Ou continuar uma sessão existente</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Placeholder for recent sessions */}
                 <Card className="bg-secondary/20 border border-white/5">
                   <CardContent className="p-4 flex flex-col items-center justify-center h-32">
                     <p className="text-white/50 text-center">
@@ -653,7 +616,7 @@ const TelaoPage = () => {
                       } else {
                         try {
                           const stream = await navigator.mediaDevices.getDisplayMedia({
-                            video: { cursor: "always" },
+                            video: true,
                             audio: false,
                           });
                           
