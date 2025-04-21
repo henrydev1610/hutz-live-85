@@ -1,3 +1,4 @@
+
 import { useRef, useState } from 'react';
 import { User } from 'lucide-react';
 
@@ -6,8 +7,6 @@ interface Participant {
   name: string;
   active: boolean;
   selected: boolean;
-  hasVideo?: boolean;
-  connectedAt?: number;
 }
 
 interface QrCodePosition {
@@ -178,8 +177,6 @@ const LivePreview = ({
     }
   };
 
-  const gridCols = Math.ceil(Math.sqrt(participantCount));
-
   return (
     <div 
       className="aspect-video relative bg-black rounded-lg overflow-hidden" 
@@ -205,12 +202,7 @@ const LivePreview = ({
       </div>
       
       <div className="absolute top-[5%] right-[5%] bottom-[5%] left-[30%]">
-        <div 
-          className="grid gap-2 h-full"
-          style={{ 
-            gridTemplateColumns: `repeat(${gridCols}, 1fr)` 
-          }}
-        >
+        <div className={`grid grid-cols-${Math.ceil(Math.sqrt(participantCount))} gap-2 h-full`}>
           {participantList
             .filter(p => p.selected)
             .slice(0, participantCount)
