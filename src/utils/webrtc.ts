@@ -11,7 +11,7 @@ export const ICE_SERVERS = {
     // { urls: 'turn:turn.example.com:3478', username: 'username', credential: 'password' }
   ],
   iceCandidatePoolSize: 10,
-  iceTransportPolicy: 'all'
+  iceTransportPolicy: 'all' as RTCIceTransportPolicy
 };
 
 export function setupPeerConnection(config: RTCConfiguration = ICE_SERVERS): RTCPeerConnection {
@@ -228,5 +228,95 @@ export async function attemptICERestart(pc: RTCPeerConnection): Promise<RTCSessi
   } catch (error) {
     console.error('Error during ICE restart:', error);
     return null;
+  }
+}
+
+// Add the missing exported functions to fix the import errors
+let participantConnections: Record<string, RTCPeerConnection> = {};
+let onParticipantTrackCallback: ((stream: MediaStream, participantId: string) => void) | null = null;
+let localStreamCache: MediaStream | null = null;
+
+export function setLocalStream(stream: MediaStream): void {
+  localStreamCache = stream;
+}
+
+export function initParticipantWebRTC(sessionId: string, participantId: string, stream: MediaStream): Promise<void> {
+  return new Promise((resolve, reject) => {
+    try {
+      const pc = setupPeerConnection();
+      
+      stream.getTracks().forEach(track => {
+        pc.addTrack(track, stream);
+      });
+      
+      // Set up signaling
+      const channel = createSignalingChannel(`${sessionId}-${participantId}`);
+      
+      // Resolve when connected
+      pc.oniceconnectionstatechange = () => {
+        if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+          resolve();
+        }
+      };
+      
+      // Create and send offer
+      createOfferWithPreferredCodecs(pc)
+        .then(offer => pc.setLocalDescription(offer))
+        .then(() => {
+          channel.postMessage({
+            type: 'offer',
+            participantId,
+            offer: pc.localDescription,
+            timestamp: Date.now()
+          });
+        })
+        .catch(reject);
+      
+      // Listen for answer
+      channel.onmessage = event => {
+        if (event.data.type === 'answer' && event.data.answer) {
+          pc.setRemoteDescription(event.data.answer)
+            .catch(reject);
+        }
+      };
+      
+      // Store the connection
+      participantConnections[participantId] = pc;
+      
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+export function initHostWebRTC(sessionId: string): void {
+  console.log(`Initializing host WebRTC for session ${sessionId}`);
+  participantConnections = {};
+}
+
+export function setOnParticipantTrackCallback(callback: (stream: MediaStream, participantId: string) => void): void {
+  onParticipantTrackCallback = callback;
+}
+
+export function getParticipantConnection(participantId: string): RTCPeerConnection | null {
+  return participantConnections[participantId] || null;
+}
+
+export function cleanupWebRTC(): void {
+  // Close all connections
+  Object.values(participantConnections).forEach(pc => {
+    try {
+      pc.close();
+    } catch (e) {
+      console.warn('Error closing peer connection:', e);
+    }
+  });
+  
+  participantConnections = {};
+  onParticipantTrackCallback = null;
+  
+  if (localStreamCache) {
+    localStreamCache.getTracks().forEach(track => track.stop());
+    localStreamCache = null;
   }
 }
