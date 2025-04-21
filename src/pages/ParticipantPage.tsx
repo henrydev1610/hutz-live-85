@@ -149,7 +149,6 @@ const ParticipantPage = () => {
     }
     
     if (isMobileDevice && !cameraStartedRef.current) {
-      clearTimeout(autoStartTimerRef.current);
       autoStartTimerRef.current = setTimeout(() => {
         if (!cameraStartedRef.current) {
           startCamera(true);
@@ -269,47 +268,6 @@ const ParticipantPage = () => {
       );
       console.log("WebRTC initialized successfully");
       setTransmitting(true);
-      
-      const peerConnections = (window as any)._peerConnections || {};
-      const pc = peerConnections[sessionId];
-      
-      if (pc) {
-        pc.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
-          if (event.candidate) {
-            console.log("ICE candidate generated:", event.candidate.candidate);
-          } else {
-            console.log("ICE candidate gathering complete");
-          }
-        };
-        
-        pc.oniceconnectionstatechange = () => {
-          console.log("ICE connection state:", pc.iceConnectionState);
-          if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-            console.log("ICE connection failed or disconnected, attempting to restart");
-            pc.restartIce();
-          }
-        };
-        
-        pc.onconnectionstatechange = () => {
-          console.log("Connection state:", pc.connectionState);
-        };
-        
-        pc.onsignalingstatechange = () => {
-          console.log("Signaling state:", pc.signalingState);
-        };
-        
-        const candidates = pc.localDescription?.sdp.split('\r\n').filter((line: string) => 
-          line.indexOf('a=candidate:') === 0
-        );
-        
-        if (candidates && candidates.length) {
-          console.log("Current ICE candidates:", candidates);
-        } else {
-          console.log("No ICE candidates found in SDP");
-        }
-        
-        console.log("Using ICE servers:", pc.getConfiguration().iceServers);
-      }
     } catch (error) {
       console.error("Error initializing WebRTC:", error);
       if (!toastShownRef.current) {
@@ -412,7 +370,7 @@ const ParticipantPage = () => {
             startHeartbeat();
             
             if (!cameraActive) {
-              startCamera();
+              startCamera(true);
             } else if (streamRef.current && sessionId) {
               initWebRTC(streamRef.current);
             }
@@ -440,7 +398,7 @@ const ParticipantPage = () => {
                   }
                 });
               } else {
-                clearInterval(supababJoinInterval);
+                clearInterval(supabaseJoinInterval);
               }
             }, 2000);
             
@@ -470,7 +428,7 @@ const ParticipantPage = () => {
               startHeartbeat();
               
               if (!cameraActive) {
-                startCamera();
+                startCamera(true);
               } else if (streamRef.current && sessionId) {
                 initWebRTC(streamRef.current);
               }
@@ -636,15 +594,9 @@ const ParticipantPage = () => {
         timestamp: Date.now()
       }));
       
-      setTimeout(() => {
-        try {
-          window.localStorage.removeItem(`telao-leave-${sessionId}-${participantIdRef.current}`);
-        } catch (e) {
-          // Ignore errors
-        }
-      }, 10000);
+      window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
     } catch (e) {
-      console.warn("Error using localStorage for disconnect:", e);
+      // Ignore errors
     }
   };
 
@@ -753,18 +705,6 @@ const ParticipantPage = () => {
         }
       }
       
-      try {
-        window.localStorage.setItem(`telao-leave-${sessionId}-${participantIdRef.current}`, JSON.stringify({
-          type: 'participant-leave',
-          id: participantIdRef.current,
-          timestamp: Date.now()
-        }));
-        
-        window.localStorage.removeItem(`telao-heartbeat-${sessionId}-${participantIdRef.current}`);
-      } catch (e) {
-        // Ignore errors
-      }
-      
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
@@ -805,7 +745,7 @@ const ParticipantPage = () => {
     }
   };
 
-  const startCamera = async (showToast: boolean = false) => {
+  const startCamera = async (showToast: boolean = true) => {
     try {
       if (cameraActive || cameraStartedRef.current || !videoRef.current) return;
       
@@ -817,21 +757,13 @@ const ParticipantPage = () => {
           width: { ideal: 1280 },
           height: { ideal: 720 },
           frameRate: { ideal: 30 },
-          facingMode: isMobileDevice ? "environment" : "user"
+          facingMode: isMobileDevice ? "environment" : "user" 
         },
         audio: false
       };
       
       console.log("Requesting camera with constraints:", constraints);
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      
-      const videoTracks = stream.getVideoTracks();
-      if (videoTracks.length === 0) {
-        throw new Error("No video tracks in the stream");
-      }
-      
-      console.log("Video tracks obtained:", videoTracks.length);
-      console.log("Video track settings:", videoTracks[0].getSettings());
       
       videoRef.current.srcObject = stream;
       streamRef.current = stream;
@@ -945,7 +877,6 @@ const ParticipantPage = () => {
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (connected && sessionId) {
-        console.log("User navigating away, sending disconnect");
         sendDisconnectMessage();
       }
     };
@@ -994,7 +925,7 @@ const ParticipantPage = () => {
           {!cameraActive ? (
             <Button 
               className="bg-accent hover:bg-accent/90 text-white"
-              onClick={() => startCamera(true)}
+              onClick={() => startCamera()}
             >
               <Video className="h-4 w-4 mr-2" />
               Iniciar Câmera

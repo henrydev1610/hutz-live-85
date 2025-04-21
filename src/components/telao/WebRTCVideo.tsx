@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 interface WebRTCVideoProps {
@@ -22,9 +23,30 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
   const streamCheckRef = useRef<NodeJS.Timeout | null>(null);
   const disconnectListenerRef = useRef<((event: StorageEvent) => void) | null>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+  const connectionStatusChannelRef = useRef<BroadcastChannel | null>(null);
   const playAttemptedRef = useRef<boolean>(false);
   const videoStartedRef = useRef<boolean>(false);
   const hasSetSrcObjectRef = useRef<boolean>(false);
+  const statsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Update connection status via broadcast channel
+  const updateConnectionStatus = useCallback((status: 'connecting' | 'connected' | 'disconnected') => {
+    setConnectionStatus(status);
+    
+    try {
+      if (!connectionStatusChannelRef.current) {
+        connectionStatusChannelRef.current = new BroadcastChannel(`telao-connection-status`);
+      }
+      
+      connectionStatusChannelRef.current.postMessage({
+        type: 'connection-status',
+        participantId,
+        status
+      });
+    } catch (err) {
+      console.warn('Error broadcasting connection status:', err);
+    }
+  }, [participantId]);
   
   const tryPlayVideo = useCallback(() => {
     if (!videoRef.current || playAttemptedRef.current || videoStartedRef.current) return;
@@ -37,19 +59,80 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         .then(() => {
           console.log(`Successfully started playback for ${participantId}`);
           setVideoActive(true);
-          setConnectionStatus('connected');
+          updateConnectionStatus('connected');
           lastUpdateTimeRef.current = Date.now();
           videoStartedRef.current = true;
         })
         .catch(err => {
-          console.warn(`Auto-play failed: ${err}, will not retry automatically`);
+          console.warn(`Auto-play failed: ${err}, will retry once`);
+          // Retry once after user interaction might have happened
+          setTimeout(() => {
+            if (videoRef.current && videoRef.current.paused) {
+              videoRef.current.play()
+                .then(() => {
+                  console.log(`Successfully started playback on retry for ${participantId}`);
+                  setVideoActive(true);
+                  updateConnectionStatus('connected');
+                  lastUpdateTimeRef.current = Date.now();
+                  videoStartedRef.current = true;
+                })
+                .catch(retryErr => {
+                  console.warn(`Retry auto-play failed: ${retryErr}`);
+                });
+            }
+          }, 2000);
         });
     }
-  }, [participantId]);
+  }, [participantId, updateConnectionStatus]);
+  
+  // Monitor WebRTC stats
+  const monitorRTCStats = useCallback(() => {
+    if (!stream) return;
+    
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+    }
+    
+    statsIntervalRef.current = setInterval(() => {
+      if (!stream) {
+        if (statsIntervalRef.current) {
+          clearInterval(statsIntervalRef.current);
+          statsIntervalRef.current = null;
+        }
+        return;
+      }
+      
+      try {
+        const videoTracks = stream.getVideoTracks();
+        const audioTracks = stream.getAudioTracks();
+        
+        console.log(`Stats for participant ${participantId}:`, {
+          videoTracks: videoTracks.length,
+          audioTracks: audioTracks.length,
+          videoActive: videoTracks.length > 0 && videoTracks[0].enabled && videoTracks[0].readyState === 'live',
+          audioActive: audioTracks.length > 0 && audioTracks[0].enabled && audioTracks[0].readyState === 'live'
+        });
+        
+        if (videoTracks.length > 0) {
+          const settings = videoTracks[0].getSettings();
+          console.log(`Video settings for ${participantId}:`, settings);
+        }
+      } catch (err) {
+        console.warn(`Error monitoring stats for ${participantId}:`, err);
+      }
+    }, 10000); // Check every 10 seconds
+    
+    return () => {
+      if (statsIntervalRef.current) {
+        clearInterval(statsIntervalRef.current);
+        statsIntervalRef.current = null;
+      }
+    };
+  }, [stream, participantId]);
   
   useEffect(() => {
     console.log(`WebRTCVideo: New participant ${participantId}`);
-    setConnectionStatus('connecting');
+    updateConnectionStatus('connecting');
     setVideoActive(false);
     lastUpdateTimeRef.current = Date.now();
     reconnectAttemptRef.current = 0;
@@ -72,27 +155,39 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       streamCheckRef.current = null;
     }
     
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
+    }
+    
     setupDisconnectDetection();
     
     inactivityTimeoutRef.current = setTimeout(() => {
       if (connectionStatus === 'connecting') {
         console.log(`Participant ${participantId} connection timed out`);
-        setConnectionStatus('disconnected');
+        updateConnectionStatus('disconnected');
       }
     }, 15000);
+    
+    // Create connection status channel
+    try {
+      connectionStatusChannelRef.current = new BroadcastChannel(`telao-connection-status`);
+    } catch (err) {
+      console.warn('Error creating connection status channel:', err);
+    }
     
     return () => {
       cleanupAllListeners();
     };
-  }, [participantId]);
+  }, [participantId, updateConnectionStatus, connectionStatus]);
   
-  const setupDisconnectDetection = () => {
+  const setupDisconnectDetection = useCallback(() => {
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key && 
          (event.key.startsWith('telao-leave-') && event.key.includes(participantId)) ||
          (event.key === `telao-leave-*-${participantId}`)) {
         console.log(`Participant ${participantId} disconnected (via localStorage)`);
-        setConnectionStatus('disconnected');
+        updateConnectionStatus('disconnected');
         setVideoActive(false);
         if (videoRef.current) {
           videoRef.current.srcObject = null;
@@ -116,7 +211,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       channel.onmessage = (event) => {
         if (event.data.type === 'participant-leave' && event.data.id === participantId) {
           console.log(`Participant ${participantId} disconnected (via BroadcastChannel)`);
-          setConnectionStatus('disconnected');
+          updateConnectionStatus('disconnected');
           setVideoActive(false);
           if (videoRef.current) {
             videoRef.current.srcObject = null;
@@ -126,7 +221,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         if (event.data.type === 'pong') {
           console.log(`Received pong from ${participantId}`);
           lastUpdateTimeRef.current = Date.now();
-          setConnectionStatus('connected');
+          updateConnectionStatus('connected');
         }
       };
     } catch (err) {
@@ -142,7 +237,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         
         if (keys.length > 0) {
           console.log(`Participant ${participantId} disconnected via localStorage marker`);
-          setConnectionStatus('disconnected');
+          updateConnectionStatus('disconnected');
           setVideoActive(false);
           if (videoRef.current) {
             videoRef.current.srcObject = null;
@@ -150,13 +245,14 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
           clearInterval(checkDisconnect);
         }
       } catch (e) {
+        // Ignore storage errors
       }
     }, 2000);
     
     return () => clearInterval(checkDisconnect);
-  };
+  }, [participantId, updateConnectionStatus]);
   
-  const cleanupAllListeners = () => {
+  const cleanupAllListeners = useCallback(() => {
     if (videoTimeoutRef.current) {
       clearTimeout(videoTimeoutRef.current);
       videoTimeoutRef.current = null;
@@ -170,6 +266,11 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     if (streamCheckRef.current) {
       clearInterval(streamCheckRef.current);
       streamCheckRef.current = null;
+    }
+    
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
     }
     
     if (disconnectListenerRef.current) {
@@ -186,14 +287,26 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       }
     }
     
+    if (connectionStatusChannelRef.current) {
+      try {
+        connectionStatusChannelRef.current.close();
+        connectionStatusChannelRef.current = null;
+      } catch (err) {
+        console.warn('Error closing connection status channel:', err);
+      }
+    }
+    
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-  };
+  }, []);
   
   useEffect(() => {
     if (stream && videoRef.current) {
       console.log(`Setting video stream for participant ${participantId}`);
+      
+      // Start monitoring WebRTC stats
+      monitorRTCStats();
       
       if (inactivityTimeoutRef.current) {
         clearTimeout(inactivityTimeoutRef.current);
@@ -232,7 +345,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
               if (isTrackActive && !videoActive) {
                 console.log(`Track is active but video isn't - updating state for ${participantId}`);
                 setVideoActive(true);
-                setConnectionStatus('connected');
+                updateConnectionStatus('connected');
                 
                 if (videoRef.current.paused && !videoStartedRef.current && !playAttemptedRef.current) {
                   tryPlayVideo();
@@ -255,14 +368,14 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         setVideoActive(isActive);
         
         if (isActive) {
-          setConnectionStatus('connected');
+          updateConnectionStatus('connected');
           lastUpdateTimeRef.current = Date.now();
           reconnectAttemptRef.current = 0;
         }
         
         const onEnded = () => {
           console.log(`Video track ended for participant ${participantId}`);
-          setConnectionStatus('disconnected');
+          updateConnectionStatus('disconnected');
           setVideoActive(false);
         };
         
@@ -274,7 +387,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         const onUnmute = () => {
           console.log(`Video track unmuted for participant ${participantId}`);
           setVideoActive(true);
-          setConnectionStatus('connected');
+          updateConnectionStatus('connected');
           lastUpdateTimeRef.current = Date.now();
         };
         
@@ -291,7 +404,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       }
     } else {
       if (connectionStatus !== 'disconnected') {
-        setConnectionStatus('connecting');
+        updateConnectionStatus('connecting');
       }
       setVideoActive(false);
       
@@ -307,7 +420,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
       inactivityTimeoutRef.current = setTimeout(() => {
         if (!stream && connectionStatus === 'connecting') {
           console.log(`No stream received for participant ${participantId} after timeout`);
-          setConnectionStatus('disconnected');
+          updateConnectionStatus('disconnected');
         }
       }, 10000);
     }
@@ -315,7 +428,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
     return () => {
       cleanupAllListeners();
     };
-  }, [stream, participantId, connectionStatus, videoActive, tryPlayVideo]);
+  }, [stream, participantId, connectionStatus, videoActive, tryPlayVideo, cleanupAllListeners, updateConnectionStatus, monitorRTCStats]);
 
   useEffect(() => {
     const stabilityCheck = setInterval(() => {
@@ -332,6 +445,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
             }
           }
         } catch (e) {
+          // Ignore storage errors
         }
         
         if (timeSinceLastUpdate > 30000) {
@@ -349,7 +463,7 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
             }
           } else {
             console.log(`Max reconnection attempts reached for ${participantId}`);
-            setConnectionStatus('disconnected');
+            updateConnectionStatus('disconnected');
             setVideoActive(false);
           }
         }
@@ -357,18 +471,18 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         const connectingTime = Date.now() - lastUpdateTimeRef.current;
         if (connectingTime > 30000) {
           console.log(`Participant ${participantId} failed to connect after 30 seconds`);
-          setConnectionStatus('disconnected');
+          updateConnectionStatus('disconnected');
         }
       }
     }, 10000);
     
     return () => clearInterval(stabilityCheck);
-  }, [connectionStatus, videoActive, participantId]);
+  }, [connectionStatus, videoActive, participantId, updateConnectionStatus]);
 
   const handleVideoLoadedData = () => {
     console.log(`Video loaded for participant ${participantId}`);
     setVideoActive(true);
-    setConnectionStatus('connected');
+    updateConnectionStatus('connected');
     lastUpdateTimeRef.current = Date.now();
     reconnectAttemptRef.current = 0;
     videoStartedRef.current = true;
@@ -390,13 +504,13 @@ const WebRTCVideo: React.FC<WebRTCVideoProps> = ({
         if (videoRef.current && !videoStartedRef.current) {
           videoRef.current.play().catch(() => {
             if (reconnectAttemptRef.current >= maxReconnectAttempts) {
-              setConnectionStatus('disconnected');
+              updateConnectionStatus('disconnected');
             }
           });
         }
       }, 1000);
     } else {
-      setConnectionStatus('disconnected');
+      updateConnectionStatus('disconnected');
     }
   };
 
