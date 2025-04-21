@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Camera, Video, VideoOff } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { initParticipantWebRTC, setLocalStream } from '@/utils/webrtc';
+import { checkAndRequestMediaPermissions } from '@/utils/mediaPermissions';
 
 const ParticipantPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -201,18 +202,7 @@ const ParticipantPage = () => {
   }, [sessionId, toast, isMobileDevice]);
 
   const ensureMediaPermissions = async () => {
-    try {
-      const tempStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false
-      });
-      
-      tempStream.getTracks().forEach(track => track.stop());
-      return true;
-    } catch (error) {
-      console.error("Error requesting media permissions:", error);
-      return false;
-    }
+    return checkAndRequestMediaPermissions();
   };
 
   const setupLocalStorageChannel = () => {
