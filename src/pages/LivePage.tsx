@@ -77,15 +77,18 @@ const LivePage = () => {
     }
   }, []);
   
+  // Initialize host WebRTC when session is created
   useEffect(() => {
     if (sessionId) {
       console.log("Setting up WebRTC for session:", sessionId);
+      // Create a dummy stream for the host to initialize WebRTC properly
       navigator.mediaDevices.getUserMedia({ video: true, audio: false })
         .then(stream => {
           console.log("Created host media stream for WebRTC initialization", stream);
           setLocalMediaStream(stream);
           setLocalStream(stream);
           
+          // Initialize host session with callbacks for participant events
           const cleanup = initializeHostSession(sessionId, {
             onParticipantJoin: handleParticipantJoin,
             onParticipantLeave: (id) => {
@@ -101,6 +104,7 @@ const LivePage = () => {
             }
           });
 
+          // Set up WebRTC track handler
           initHostWebRTC(sessionId, (participantId, track) => {
             console.log(`Received track from participant ${participantId}:`, track);
             handleParticipantTrack(participantId, track);
@@ -124,72 +128,33 @@ const LivePage = () => {
     }
   }, [sessionId]);
 
-  const handleParticipantJoin = (id: string) => {
-    console.log(`Participant joined: ${id}`);
-    const currentTime = Date.now();
-    
-    setParticipantList(prev => {
-      const existingParticipant = prev.find(p => p.id === id);
-      if (existingParticipant) {
-        return prev.map(p => 
-          p.id === id ? { ...p, active: true, connectedAt: currentTime } : p
-        );
-      }
-      
-      const placeholdersToRemove = prev
-        .filter(p => p.id.startsWith('placeholder-') && !p.active)
-        .slice(0, 1);
-      
-      if (placeholdersToRemove.length > 0) {
-        const filteredList = prev.filter(p => p !== placeholdersToRemove[0]);
-        return [
-          ...filteredList,
-          {
-            id,
-            name: `Participante ${filteredList.length + 1}`,
-            active: true,
-            selected: false,
-            hasVideo: false,
-            connectedAt: currentTime
-          }
-        ];
-      }
-      
-      return [
-        ...prev,
-        {
-          id,
-          name: `Participante ${prev.length + 1}`,
-          active: true,
-          selected: false,
-          hasVideo: false,
-          connectedAt: currentTime
-        }
-      ];
-    });
-  };
-
   const handleParticipantTrack = (participantId: string, track: MediaStreamTrack) => {
     console.log(`Processing track from participant ${participantId}:`, track);
     
+    // Create or update the stream for this participant
     setParticipantStreams(prev => {
+      // If we already have a stream for this participant
       if (prev[participantId]) {
         const existingStream = prev[participantId];
         console.log(`Adding track to existing stream for ${participantId}`);
         
+        // Check if this track is already in the stream
         const trackExists = existingStream.getTracks().some(t => t.id === track.id);
         
         if (!trackExists) {
           existingStream.addTrack(track);
           console.log(`Added track to existing stream for ${participantId}, now has ${existingStream.getTracks().length} tracks`);
+          // Return a new object to trigger re-render
           return { ...prev };
         }
         return prev;
       }
       
+      // Otherwise create a new stream entry
       console.log(`Creating new stream for ${participantId}`);
       const newStream = new MediaStream([track]);
       
+      // Update participant status to indicate they have video
       setParticipantList(prev => 
         prev.map(p => p.id === participantId ? { ...p, hasVideo: true } : p)
       );
@@ -200,6 +165,7 @@ const LivePage = () => {
       };
     });
     
+    // Send the stream to the transmission window if it's open
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
       const channel = new BroadcastChannel(`live-session-${sessionId}`);
       channel.postMessage({
@@ -246,6 +212,7 @@ const LivePage = () => {
     };
   }, [sessionId, localStream]);
 
+  // Update video elements when participant list or streams change
   useEffect(() => {
     console.log("LivePage: Updating video elements with streams:", Object.keys(participantStreams));
     
@@ -256,12 +223,14 @@ const LivePage = () => {
       if (participant) {
         console.log(`LivePage: Found participant ${participantId} in list`);
         
+        // Update the preview container video if the participant is selected
         if (participant.selected) {
           console.log(`LivePage: Participant ${participantId} is selected, updating preview`);
           const previewContainer = document.getElementById(`preview-participant-video-${participantId}`);
           updateVideoElement(previewContainer, stream);
         }
         
+        // Always update the grid container video
         console.log(`LivePage: Updating grid container for participant ${participantId}`);
         const gridContainer = document.getElementById(`participant-video-${participantId}`);
         updateVideoElement(gridContainer, stream);
@@ -626,6 +595,7 @@ const LivePage = () => {
                 return videoElement;
               }
             
+              // Capture browser camera as a placeholder for remote stream
               async function getLocalStreamForDisplay() {
                 try {
                   const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -641,18 +611,21 @@ const LivePage = () => {
                 }
               }
               
+              // Listen for video streams from participants
               channel.addEventListener('message', async (event) => {
                 const data = event.data;
                 
                 if (data.type === 'video-stream' && data.participantId) {
                   console.log('Received video stream notification for participant:', data.participantId);
                   
+                  // Find out if this participant has a slot already
                   if (!participantSlots[data.participantId] && availableSlots.length > 0) {
                     const slotIndex = availableSlots.shift();
                     participantSlots[data.participantId] = slotIndex;
                     
                     const slotElement = document.getElementById("participant-slot-" + slotIndex);
                     if (slotElement) {
+                      // Set a placeholder stream until the real one arrives
                       if (!window.localPlaceholderStream) {
                         window.localPlaceholderStream = await getLocalStreamForDisplay();
                       }
@@ -660,6 +633,7 @@ const LivePage = () => {
                       if (window.localPlaceholderStream) {
                         const videoEl = createVideoElement(slotElement, window.localPlaceholderStream);
                         
+                        // Add participant ID as data attribute
                         if (videoEl) {
                           videoEl.dataset.participantId = data.participantId;
                         }
@@ -669,11 +643,13 @@ const LivePage = () => {
                 }
               });
             
+              // Handle participant updates from parent window
               window.addEventListener('message', (event) => {
                 if (event.data.type === 'update-participants') {
                   const { participants } = event.data;
                   console.log('Got participants update:', participants);
                   
+                  // Process selected participants
                   participants.forEach(p => {
                     if (p.selected) {
                       if (!participantSlots[p.id] && availableSlots.length > 0) {
@@ -694,10 +670,12 @@ const LivePage = () => {
                             </div>
                           \`;
                           
+                          // Tag the slot with participant ID
                           slotElement.dataset.participantId = p.id;
                         }
                       }
                     } else {
+                      // Handle unselected participants
                       if (participantSlots[p.id] !== undefined) {
                         const slotIndex = participantSlots[p.id];
                         delete participantSlots[p.id];
@@ -722,12 +700,14 @@ const LivePage = () => {
                             </svg>
                           \`;
                           
+                          // Remove participant ID
                           delete slotElement.dataset.participantId;
                         }
                       }
                     }
                   });
                   
+                  // Clean up any participants that are no longer in the list
                   Object.keys(participantSlots).forEach(participantId => {
                     const isStillSelected = participants.some(p => p.id === participantId && p.selected);
                     if (!isStillSelected) {
@@ -754,6 +734,7 @@ const LivePage = () => {
                           </svg>
                         \`;
                         
+                        // Remove participant ID
                         delete slotElement.dataset.participantId;
                       }
                     }
@@ -761,12 +742,15 @@ const LivePage = () => {
                 }
               });
               
+              // Tell the parent window we're ready to receive updates
               window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
               
+              // Periodically ask for updates
               setInterval(() => {
                 window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
               }, 5000);
               
+              // Notify the parent window when participants join
               channel.onmessage = (event) => {
                 const { type, id } = event.data;
                 if (type === 'participant-join') {
@@ -775,6 +759,7 @@ const LivePage = () => {
                 }
               };
               
+              // Clean up resources when the window is closed
               window.addEventListener('beforeunload', () => {
                 Object.values(activeVideoElements).forEach(videoElement => {
                   if (videoElement.srcObject) {
@@ -885,255 +870,3 @@ const LivePage = () => {
   };
 
   const handleFinalActionClick = () => {
-    if (finalAction === 'image' && finalActionLink) {
-      window.open(finalActionLink, '_blank');
-    }
-    closeFinalAction();
-  };
-  
-  return (
-    <div className="container mx-auto p-4 max-w-7xl">
-      <h1 className="text-3xl font-bold mb-6">Transmissão Ao Vivo</h1>
-      
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <Card className="bg-secondary/40 overflow-hidden rounded-xl h-auto w-auto" style={{ width: 'calc(100% + 250px)' }}>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center">
-              <MonitorPlay className="h-5 w-5 mr-2" />
-              Controle de Transmissão
-            </CardTitle>
-            <CardDescription>
-              Gerencie sua transmissão ao vivo
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="participants" className="w-full">
-              <TabsList className="w-full">
-                <TabsTrigger value="participants" className="flex-1">
-                  <Users className="h-4 w-4 mr-2" />
-                  Participantes
-                </TabsTrigger>
-                <TabsTrigger value="qrcode" className="flex-1">
-                  <QrCode className="h-4 w-4 mr-2" />
-                  QR Code
-                </TabsTrigger>
-                <TabsTrigger value="appearance" className="flex-1">
-                  <Palette className="h-4 w-4 mr-2" />
-                  Aparência
-                </TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="participants" className="mt-4">
-                <ParticipantGrid 
-                  participants={participantList} 
-                  onSelectParticipant={handleParticipantSelect}
-                  onRemoveParticipant={handleParticipantRemove}
-                  participantStreams={participantStreams}
-                />
-              </TabsContent>
-              
-              <TabsContent value="qrcode" className="mt-4">
-                <QrCodeSettings
-                  qrCodeGenerated={!!qrCodeURL}
-                  qrCodeVisible={qrCodeVisible}
-                  qrCodeURL={qrCodeURL}
-                  finalAction={finalAction}
-                  setFinalAction={setFinalAction}
-                  finalActionImage={finalActionImage}
-                  setFinalActionImage={setFinalActionImage}
-                  finalActionLink={finalActionLink}
-                  setFinalActionLink={setFinalActionLink}
-                  finalActionCoupon={finalActionCoupon}
-                  setFinalActionCoupon={setFinalActionCouponCode}
-                  onGenerateQRCode={handleGenerateQRCode}
-                  onQRCodeToTransmission={handleQRCodeToTransmission}
-                />
-              </TabsContent>
-              
-              <TabsContent value="appearance" className="mt-4">
-                <div className="space-y-4">
-                  <AppearanceSettings
-                    participantCount={participantCount}
-                    setParticipantCount={setParticipantCount}
-                    selectedBackgroundColor={selectedBackgroundColor}
-                    setSelectedBackgroundColor={setSelectedBackgroundColor}
-                    backgroundImage={backgroundImage}
-                    setBackgroundImage={setBackgroundImage}
-                    fileInputRef={fileInputRef}
-                    handleFileSelect={handleFileSelect}
-                    removeBackgroundImage={removeBackgroundImage}
-                  />
-                
-                  <Separator />
-                
-                  <TextSettings
-                    selectedFont={selectedFont}
-                    setSelectedFont={setSelectedFont}
-                    selectedTextColor={selectedTextColor}
-                    setSelectedTextColor={setSelectedTextColor}
-                    qrDescriptionFontSize={qrDescriptionFontSize}
-                    setQrDescriptionFontSize={setQrDescriptionFontSize}
-                    qrCodeDescription={qrCodeDescription}
-                    setQrCodeDescription={setQrCodeDescription}
-                  />
-                </div>
-              </TabsContent>
-            </Tabs>
-            
-            <div className="mt-6 flex flex-col gap-4">
-              <Separator />
-              
-              <div className="flex justify-between items-center">
-                <div className="text-sm">
-                  {transmissionOpen ? (
-                    <span className="text-green-500 flex items-center">
-                      <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-                      Transmissão em andamento
-                    </span>
-                  ) : sessionId ? (
-                    <span className="text-orange-400 flex items-center">
-                      <span className="w-2 h-2 bg-orange-400 rounded-full mr-2"></span>
-                      Sessão iniciada, aguardando transmissão
-                    </span>
-                  ) : (
-                    <span className="text-gray-400 flex items-center">
-                      <span className="w-2 h-2 bg-gray-400 rounded-full mr-2"></span>
-                      Nenhuma sessão iniciada
-                    </span>
-                  )}
-                </div>
-                
-                <div className="flex gap-3">
-                  {transmissionOpen ? (
-                    <Button 
-                      variant="destructive" 
-                      onClick={finishTransmission}
-                      className="gap-2"
-                    >
-                      <StopCircle className="h-4 w-4" />
-                      Finalizar Transmissão
-                    </Button>
-                  ) : sessionId ? (
-                    <Button 
-                      onClick={openTransmissionWindow}
-                      className="gap-2"
-                    >
-                      <MonitorPlay className="h-4 w-4" />
-                      Iniciar Transmissão
-                    </Button>
-                  ) : (
-                    <Button 
-                      variant="outline" 
-                      disabled
-                      className="gap-2"
-                    >
-                      <MonitorPlay className="h-4 w-4" />
-                      Iniciar Transmissão
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-secondary/40 overflow-hidden rounded-xl" style={{ width: 'calc(100% + 250px)' }}>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center">
-              <ExternalLink className="h-5 w-5 mr-2" />
-              Pré-visualização
-            </CardTitle>
-            <CardDescription>
-              Visualize como a transmissão será exibida
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="relative">
-              <LivePreview 
-                qrCodeVisible={qrCodeVisible}
-                qrCodeSvg={qrCodeSvg}
-                qrCodePosition={qrCodePosition}
-                setQrCodePosition={setQrCodePosition}
-                qrDescriptionPosition={qrDescriptionPosition}
-                setQrDescriptionPosition={setQrDescriptionPosition}
-                qrCodeDescription={qrCodeDescription}
-                selectedFont={selectedFont}
-                selectedTextColor={selectedTextColor}
-                qrDescriptionFontSize={qrDescriptionFontSize}
-                backgroundImage={backgroundImage}
-                selectedBackgroundColor={selectedBackgroundColor}
-                participantList={participantList}
-                participantCount={participantCount}
-              />
-            </div>
-            
-            <div className="text-xs text-white/60 mt-3">
-              Esta é uma pré-visualização. Você pode arrastar o QR Code e o texto se estiverem visíveis.
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-      
-      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
-        <DialogContent className="sm:max-w-md text-center">
-          <DialogHeader>
-            <DialogTitle>Obrigado por participar!</DialogTitle>
-            <DialogDescription>
-              A transmissão foi finalizada.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="flex flex-col items-center justify-center gap-4 py-4">
-            {finalAction === 'image' && finalActionImage && (
-              <div 
-                className="cursor-pointer" 
-                onClick={handleFinalActionClick}
-              >
-                <img 
-                  src={finalActionImage} 
-                  alt="Imagem final" 
-                  className="max-w-full max-h-48 object-contain rounded"
-                />
-              </div>
-            )}
-            
-            {finalAction === 'coupon' && (
-              <div className="space-y-2">
-                <div className="text-xl font-bold">
-                  {finalActionCoupon}
-                </div>
-                <p className="text-sm text-white/70">
-                  Use este cupom para obter um desconto!
-                </p>
-              </div>
-            )}
-            
-            {finalAction !== 'none' && finalActionLink && (
-              <Button 
-                onClick={handleFinalActionClick}
-                variant="default"
-              >
-                {finalAction === 'image' ? 'Visitar Link' : 'Utilizar Cupom'}
-              </Button>
-            )}
-            
-            <div className="text-sm mt-4">
-              Esta janela será fechada em {finalActionTimeLeft} segundos
-            </div>
-          </div>
-          
-          <div className="flex justify-center">
-            <Button 
-              variant="ghost" 
-              onClick={closeFinalAction}
-            >
-              Fechar
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-};
-
-export default LivePage;
