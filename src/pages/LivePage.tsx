@@ -382,18 +382,18 @@ const LivePage = () => {
             <div class="container">
               <div class="content-wrapper">
                 ${backgroundImage ? `<img src="${backgroundImage}" class="bg-image" alt="Background" />` : ''}
-                
-                <div class="participants-grid" id="participants-container">
-                  ${Array.from({ length: participantCount }, (_, i) => `
-                    <div class="participant" id="participant-slot-${i}">
-                      <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="12" cy="7" r="4"></circle>
-                      </svg>
-                    </div>
-                  `).join('')}
-                </div>
-                
+              
+              <div class="participants-grid" id="participants-container">
+                ${Array.from({ length: Math.min(participantCount, 100) }, (_, i) => `
+                  <div class="participant" id="participant-slot-${i}">
+                    <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                      <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                  </div>
+                `).join('')}
+              </div>
+              
                 <div class="qr-code">
                   ${qrCodeSvg ? `<img src="${qrCodeSvg}" alt="QR Code" />` : ''}
                 </div>
@@ -414,88 +414,60 @@ const LivePage = () => {
               const backupChannel = new BroadcastChannel("telao-session-" + sessionId);
               
               let participantSlots = {};
-              let availableSlots = Array.from({ length: ${participantCount} }, (_, i) => i);
+              let availableSlots = Array.from({ length: Math.min(participantCount, 100) }, (_, i) => i);
               let participantStreams = {};
               let activeVideoElements = {};
-              
-              function createVideoElement(slotElement, stream) {
-                const existingVideo = slotElement.querySelector('video');
-                if (existingVideo) {
-                  console.log('Video element already exists in slot, not creating a new one');
-                  return;
+            
+            function createVideoElement(slotElement, stream) {
+              const existingVideo = slotElement.querySelector('video');
+              if (existingVideo) {
+                if (existingVideo.srcObject !== stream) {
+                  existingVideo.srcObject = stream;
                 }
-                
-                slotElement.innerHTML = '';
-                const videoElement = document.createElement('video');
-                videoElement.autoplay = true;
-                videoElement.playsInline = true;
-                videoElement.muted = true;
-                
-                videoElement.style.transform = 'translateZ(0)';
-                videoElement.style.backfaceVisibility = 'hidden';
-                videoElement.style.webkitBackfaceVisibility = 'hidden';
-                videoElement.style.willChange = 'transform';
-                videoElement.style.transition = 'none';
-                
-                slotElement.appendChild(videoElement);
-                
-                let playAttempted = false;
-                
-                setTimeout(() => {
-                  if (!playAttempted) {
-                    playAttempted = true;
-                    console.log('Setting video source and playing');
-                    videoElement.srcObject = stream;
-                    
-                    videoElement.play().catch(err => {
-                      console.warn('Error playing video:', err);
-                      // We won't auto-retry to avoid continuous retries
-                    });
-                  }
-                }, 100);
-                
-                videoElement.addEventListener('loadeddata', () => {
-                  console.log('Video loaded successfully');
-                });
-                
-                videoElement.addEventListener('error', (err) => {
-                  console.error('Video error:', err);
-                  // Only retry once
-                  if (!playAttempted) {
-                    playAttempted = true;
-                    setTimeout(() => {
-                      videoElement.srcObject = stream;
-                      videoElement.play().catch(err => console.warn('Error playing video after recovery:', err));
-                    }, 1000);
-                  }
-                });
-                
-                activeVideoElements[slotElement.id] = videoElement;
+                return;
               }
               
-              channel.addEventListener('message', (event) => {
-                const data = event.data;
-                if (data.type === 'video-stream-info' && data.hasStream) {
-                  console.log('Received video stream info for:', data.id);
-                  participantStreams[data.id] = {
-                    hasStream: true,
-                    lastUpdate: Date.now(),
-                    info: data
-                  };
-                }
+              slotElement.innerHTML = '';
+              const videoElement = document.createElement('video');
+              videoElement.autoplay = true;
+              videoElement.playsInline = true;
+              videoElement.muted = true;
+              
+              videoElement.style.transform = 'translateZ(0)';
+              videoElement.style.backfaceVisibility = 'hidden';
+              videoElement.style.webkitBackfaceVisibility = 'hidden';
+              videoElement.style.willChange = 'transform';
+              videoElement.style.transition = 'none';
+              
+              slotElement.appendChild(videoElement);
+              videoElement.srcObject = stream;
+              
+              videoElement.play().catch(err => {
+                console.warn('Error playing video:', err);
               });
               
-              backupChannel.addEventListener('message', (event) => {
-                const data = event.data;
-                if (data.type === 'video-stream-info' && data.hasStream) {
-                  console.log('Received video stream info for (backup):', data.id);
-                  participantStreams[data.id] = {
-                    hasStream: true,
-                    lastUpdate: Date.now(),
-                    info: data
-                  };
+              activeVideoElements[slotElement.id] = videoElement;
+            }
+            
+            channel.addEventListener('message', (event) => {
+              const data = event.data;
+              if (data.type === 'video-stream' && data.stream) {
+                console.log('Received video stream from participant:', data.participantId);
+                participantStreams[data.participantId] = data.stream;
+                
+                // Find or assign a slot for this participant
+                if (!participantSlots[data.participantId] && availableSlots.length > 0) {
+                  const slotIndex = availableSlots.shift();
+                  participantSlots[data.participantId] = slotIndex;
+                  
+                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                  if (slotElement) {
+                    createVideoElement(slotElement, data.stream);
+                  }
                 }
-              });
+              }
+            });
+            
               
               function updateParticipantDisplay() {
                 window.addEventListener('message', (event) => {
@@ -901,58 +873,4 @@ const LivePage = () => {
                 qrDescriptionFontSize={qrDescriptionFontSize}
                 backgroundImage={backgroundImage}
                 selectedBackgroundColor={selectedBackgroundColor}
-                participantList={participantList}
-                participantCount={participantCount}
-              />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-      
-      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
-        <DialogContent className="text-center max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-xl mb-2">
-              {finalAction === 'coupon' ? 'Seu cupom está disponível!' : 'Obrigado por participar!'}
-            </DialogTitle>
-            <DialogDescription>
-              Esta janela será fechada em {finalActionTimeLeft} segundos
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {finalAction === 'image' && (
-              <div 
-                className="bg-muted rounded-md overflow-hidden hover:opacity-90 transition-opacity cursor-pointer aspect-video" 
-                onClick={handleFinalActionClick}
-              >
-                <img
-                  src={finalActionImage || 'https://placehold.co/600x400/png?text=Imagem+Exemplo'}
-                  alt="Final action"
-                  className="object-cover w-full h-full"
-                />
-              </div>
-            )}
-            
-            {finalAction === 'coupon' && (
-              <div className="border border-dashed border-white/30 rounded-md p-6 bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer" onClick={handleFinalActionClick}>
-                <p className="text-sm mb-2">Seu cupom de desconto:</p>
-                <p className="text-2xl font-bold mb-4">{finalActionCoupon || 'DESC20'}</p>
-                <Button variant="outline" className="w-full">
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Usar cupom agora
-                </Button>
-              </div>
-            )}
-          </div>
-          
-          <Button variant="ghost" className="absolute top-2 right-2" onClick={closeFinalAction}>
-            <X className="h-4 w-4" />
-          </Button>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-};
-
-export default LivePage;
+                participantList={

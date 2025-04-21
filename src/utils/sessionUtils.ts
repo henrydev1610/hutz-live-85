@@ -346,6 +346,27 @@ export const getSessionFinalAction = (sessionId: string) => {
   }
 };
 
+/**
+ * Handle participant video stream
+ */
+export const handleParticipantVideo = (sessionId: string, participantId: string, stream: MediaStream) => {
+  const channel = new BroadcastChannel(`live-session-${sessionId}`);
+  
+  // Create a MediaStreamTrack from the participant's video stream
+  const videoTrack = stream.getVideoTracks()[0];
+  if (videoTrack) {
+    // Create a new MediaStream with just the video track
+    const videoStream = new MediaStream([videoTrack]);
+    
+    // Send the stream through the broadcast channel
+    channel.postMessage({
+      type: 'video-stream',
+      participantId,
+      stream: videoStream
+    });
+  }
+};
+
 // Declare the window._sessionIntervals property for TypeScript
 declare global {
   interface Window {

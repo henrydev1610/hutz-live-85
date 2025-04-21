@@ -179,12 +179,12 @@ const LivePreview = ({
 
   return (
     <div 
-      className="aspect-video relative bg-black rounded-lg overflow-hidden" 
+      className="relative bg-black rounded-lg overflow-hidden w-full"
+      style={{ aspectRatio: '16/9', maxHeight: 'calc(100vh - 200px)' }}
       onMouseMove={handleMouseMove} 
       onMouseUp={stopDragging}
       onMouseLeave={stopDragging}
       ref={previewContainerRef}
-      style={{ height: '600px' }}
     >
       <div 
         className="absolute inset-0" 
@@ -202,17 +202,17 @@ const LivePreview = ({
       </div>
       
       <div className="absolute top-[5%] right-[5%] bottom-[5%] left-[30%]">
-        <div className={`grid grid-cols-${Math.ceil(Math.sqrt(participantCount))} gap-2 h-full`}>
+        <div className={`grid grid-cols-${Math.min(Math.ceil(Math.sqrt(participantCount)), 10)} gap-2 h-full`}>
           {participantList
             .filter(p => p.selected)
-            .slice(0, participantCount)
+            .slice(0, Math.min(participantCount, 100))
             .map((participant) => (
               <div key={participant.id} className="bg-black/40 rounded overflow-hidden flex items-center justify-center">
                 <User className="h-8 w-8 text-white/30" />
               </div>
             ))}
           
-          {Array(Math.max(0, participantCount - participantList.filter(p => p.selected).length)).fill(0).map((_, i) => (
+          {Array(Math.max(0, Math.min(participantCount, 100) - participantList.filter(p => p.selected).length)).fill(0).map((_, i) => (
             <div key={`empty-preview-${i}`} className="bg-black/20 rounded overflow-hidden flex items-center justify-center">
               <User className="h-8 w-8 text-white/30" />
             </div>
