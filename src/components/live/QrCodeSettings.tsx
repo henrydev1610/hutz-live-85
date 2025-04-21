@@ -4,9 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useState, useEffect } from 'react';
-import { getSocket } from '@/utils/webrtc';
-import { useToast } from "@/components/ui/use-toast";
 
 interface QrCodeSettingsProps {
   qrCodeGenerated: boolean;
@@ -22,7 +19,6 @@ interface QrCodeSettingsProps {
   setFinalActionCoupon: (code: string) => void;
   onGenerateQRCode: () => void;
   onQRCodeToTransmission: () => void;
-  sessionId?: string | null;
 }
 
 const QrCodeSettings = ({
@@ -38,62 +34,8 @@ const QrCodeSettings = ({
   finalActionCoupon,
   setFinalActionCoupon,
   onGenerateQRCode,
-  onQRCodeToTransmission,
-  sessionId
+  onQRCodeToTransmission
 }: QrCodeSettingsProps) => {
-  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
-  const { toast } = useToast();
-  
-  // Monitor connection status
-  useEffect(() => {
-    if (!sessionId) return;
-    
-    const socket = getSocket();
-    if (!socket) {
-      setConnectionStatus('disconnected');
-      return;
-    }
-    
-    setConnectionStatus(socket.connected ? 'connected' : 'connecting');
-    
-    const handleConnect = () => {
-      setConnectionStatus('connected');
-      toast({
-        title: "Conexão estabelecida",
-        description: "Servidor de sinalização conectado com sucesso.",
-      });
-      console.log('QR code connection established successfully');
-    };
-    
-    const handleDisconnect = () => {
-      setConnectionStatus('disconnected');
-      toast({
-        title: "Conexão perdida",
-        description: "A conexão com o servidor de sinalização foi perdida.",
-        variant: "destructive"
-      });
-      console.log('QR code connection lost');
-    };
-    
-    const handleParticipantJoin = (data: any) => {
-      console.log('Participant joined via QR code:', data);
-      toast({
-        title: "Novo participante",
-        description: `Participante ${data.id || 'desconhecido'} conectou via QR Code`,
-      });
-    };
-    
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-    socket.on('participant-join', handleParticipantJoin);
-    
-    return () => {
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-      socket.off('participant-join', handleParticipantJoin);
-    };
-  }, [sessionId, toast]);
-  
   return (
     <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
       <div>
@@ -129,24 +71,6 @@ const QrCodeSettings = ({
         
         {qrCodeGenerated && (
           <div className="mt-2">
-            <div className="flex items-center gap-2 mb-2">
-              <Label className="text-xs">
-                Status da Conexão:
-              </Label>
-              <div className="flex items-center">
-                <div 
-                  className={`w-3 h-3 rounded-full mr-1 ${
-                    connectionStatus === 'connected' ? 'bg-green-500' : 
-                    connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
-                  }`}
-                ></div>
-                <span className="text-xs">
-                  {connectionStatus === 'connected' ? 'Conectado' : 
-                   connectionStatus === 'connecting' ? 'Conectando...' : 'Desconectado'}
-                </span>
-              </div>
-            </div>
-            
             <Label className="block mb-1 text-xs">
               Link do QR Code:
             </Label>

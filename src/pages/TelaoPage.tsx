@@ -186,8 +186,8 @@ const TelaoPage = () => {
       
       setBroadcastChannel(channel);
       
-      // Initialize WebRTC for host with sessionId and an optional host identifier
-      initHostWebRTC(sessionId, 'host');
+      // Initialize WebRTC for host
+      initHostWebRTC(sessionId);
       
       // Set up callback for when we receive tracks from participants
       setOnParticipantTrackCallback((participantId, event) => {

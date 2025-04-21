@@ -5,7 +5,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Camera, Video, VideoOff } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { initParticipantWebRTC, setLocalStream } from '@/utils/webrtc';
-import { checkAndRequestMediaPermissions } from '@/utils/mediaPermissions';
 
 const ParticipantPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -150,9 +149,7 @@ const ParticipantPage = () => {
     }
     
     if (isMobileDevice && !cameraStartedRef.current) {
-      if (autoStartTimerRef.current) {
-        clearTimeout(autoStartTimerRef.current);
-      }
+      clearTimeout(autoStartTimerRef.current);
       autoStartTimerRef.current = setTimeout(() => {
         if (!cameraStartedRef.current) {
           startCamera(true);
@@ -202,7 +199,18 @@ const ParticipantPage = () => {
   }, [sessionId, toast, isMobileDevice]);
 
   const ensureMediaPermissions = async () => {
-    return checkAndRequestMediaPermissions();
+    try {
+      const tempStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false
+      });
+      
+      tempStream.getTracks().forEach(track => track.stop());
+      return true;
+    } catch (error) {
+      console.error("Error requesting media permissions:", error);
+      return false;
+    }
   };
 
   const setupLocalStorageChannel = () => {
@@ -228,12 +236,15 @@ const ParticipantPage = () => {
       setConnecting(false);
       setConnectionError(null);
       connectionRetryCountRef.current = 0;
+      
       startHeartbeat();
+      
       if (!cameraActive && !cameraStartedRef.current) {
         startCamera(true);
       } else if (streamRef.current && sessionId && !transmitting) {
         initWebRTC(streamRef.current);
       }
+      
       if (!toastShownRef.current) {
         toast({
           title: "Conectado à sessão",
@@ -258,6 +269,47 @@ const ParticipantPage = () => {
       );
       console.log("WebRTC initialized successfully");
       setTransmitting(true);
+      
+      const peerConnections = (window as any)._peerConnections || {};
+      const pc = peerConnections[sessionId];
+      
+      if (pc) {
+        pc.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
+          if (event.candidate) {
+            console.log("ICE candidate generated:", event.candidate.candidate);
+          } else {
+            console.log("ICE candidate gathering complete");
+          }
+        };
+        
+        pc.oniceconnectionstatechange = () => {
+          console.log("ICE connection state:", pc.iceConnectionState);
+          if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+            console.log("ICE connection failed or disconnected, attempting to restart");
+            pc.restartIce();
+          }
+        };
+        
+        pc.onconnectionstatechange = () => {
+          console.log("Connection state:", pc.connectionState);
+        };
+        
+        pc.onsignalingstatechange = () => {
+          console.log("Signaling state:", pc.signalingState);
+        };
+        
+        const candidates = pc.localDescription?.sdp.split('\r\n').filter((line: string) => 
+          line.indexOf('a=candidate:') === 0
+        );
+        
+        if (candidates && candidates.length) {
+          console.log("Current ICE candidates:", candidates);
+        } else {
+          console.log("No ICE candidates found in SDP");
+        }
+        
+        console.log("Using ICE servers:", pc.getConfiguration().iceServers);
+      }
     } catch (error) {
       console.error("Error initializing WebRTC:", error);
       if (!toastShownRef.current) {
@@ -359,8 +411,8 @@ const ParticipantPage = () => {
             setConnectionError(null);
             startHeartbeat();
             
-            if (!cameraActive && !cameraStartedRef.current) {
-              startCamera(true);
+            if (!cameraActive) {
+              startCamera();
             } else if (streamRef.current && sessionId) {
               initWebRTC(streamRef.current);
             }
@@ -388,7 +440,7 @@ const ParticipantPage = () => {
                   }
                 });
               } else {
-                clearInterval(supabaseJoinInterval);
+                clearInterval(supababJoinInterval);
               }
             }, 2000);
             
@@ -417,8 +469,8 @@ const ParticipantPage = () => {
               setConnectionError(null);
               startHeartbeat();
               
-              if (!cameraActive && !cameraStartedRef.current) {
-                startCamera(true);
+              if (!cameraActive) {
+                startCamera();
               } else if (streamRef.current && sessionId) {
                 initWebRTC(streamRef.current);
               }
@@ -753,7 +805,7 @@ const ParticipantPage = () => {
     }
   };
 
-  const startCamera = async (showToast: boolean = true) => {
+  const startCamera = async (showToast: boolean = false) => {
     try {
       if (cameraActive || cameraStartedRef.current || !videoRef.current) return;
       
@@ -765,13 +817,21 @@ const ParticipantPage = () => {
           width: { ideal: 1280 },
           height: { ideal: 720 },
           frameRate: { ideal: 30 },
-          facingMode: isMobileDevice ? "environment" : "user" 
+          facingMode: isMobileDevice ? "environment" : "user"
         },
         audio: false
       };
       
       console.log("Requesting camera with constraints:", constraints);
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      const videoTracks = stream.getVideoTracks();
+      if (videoTracks.length === 0) {
+        throw new Error("No video tracks in the stream");
+      }
+      
+      console.log("Video tracks obtained:", videoTracks.length);
+      console.log("Video track settings:", videoTracks[0].getSettings());
       
       videoRef.current.srcObject = stream;
       streamRef.current = stream;
@@ -885,6 +945,7 @@ const ParticipantPage = () => {
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (connected && sessionId) {
+        console.log("User navigating away, sending disconnect");
         sendDisconnectMessage();
       }
     };
@@ -895,10 +956,6 @@ const ParticipantPage = () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [connected, sessionId]);
-
-  const handleStartCameraClick = () => {
-    startCamera(true);
-  };
 
   return (
     <div className="min-h-screen bg-black flex flex-col">
@@ -937,7 +994,7 @@ const ParticipantPage = () => {
           {!cameraActive ? (
             <Button 
               className="bg-accent hover:bg-accent/90 text-white"
-              onClick={handleStartCameraClick}
+              onClick={() => startCamera(true)}
             >
               <Video className="h-4 w-4 mr-2" />
               Iniciar Câmera

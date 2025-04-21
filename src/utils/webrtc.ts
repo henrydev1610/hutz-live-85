@@ -1,523 +1,467 @@
-import { io, Socket } from 'socket.io-client';
-import { supabase } from '@/integrations/supabase/client';
-import { announceParticipantVideoReady } from './sessionUtils';
-
-let socket: Socket | null = null;
-let peerConnection: RTCPeerConnection | null = null;
 let localStream: MediaStream | null = null;
-let remoteStream: MediaStream | null = null;
-let remoteStreams: { [participantId: string]: MediaStream } = {};
-const iceCandidateBuffer: { [participantId: string]: RTCIceCandidate[] } = {};
-const MAX_ICE_CANDIDATES = 50;
-let participantTrackCallback: ((participantId: string, event: RTCTrackEvent) => void) | null = null;
 
-const servers = {
-  iceServers: [
-    {
-      urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'],
+export const setLocalStream = (stream: MediaStream) => {
+  localStream = stream;
+  
+  // Log stream details for debugging
+  const videoTracks = stream.getVideoTracks();
+  if (videoTracks.length) {
+    console.log('Using video device:', videoTracks[0].label);
+    console.log('Video track settings:', videoTracks[0].getSettings());
+    console.log('Video track constraints:', videoTracks[0].getConstraints());
+  }
+};
+
+// Store peer connections for debugging and management
+(window as any)._peerConnections = {};
+
+// Configure WebRTC with proper STUN/TURN servers
+const getIceServers = () => {
+  return [
+    { 
+      urls: [
+        'stun:stun.l.google.com:19302',
+        'stun:stun1.l.google.com:19302',
+        'stun:stun2.l.google.com:19302',
+        'stun:stun3.l.google.com:19302',
+        'stun:stun4.l.google.com:19302'
+      ] 
     },
-  ],
-  iceCandidatePoolSize: 10,
-};
-
-export const getSocket = (): Socket | null => socket;
-
-export const getPeerConnection = (): RTCPeerConnection | null => peerConnection;
-
-export const getLocalStream = (): MediaStream | null => localStream;
-
-export const getRemoteStream = (): MediaStream | null => remoteStream;
-
-export const getRemoteStreams = (): { [participantId: string]: MediaStream } => remoteStreams;
-
-export const getParticipantConnection = (participantId: string): RTCPeerConnection | null => {
-  return peerConnection;
-};
-
-export const setLocalStream = (stream: MediaStream | null) => {
-  localStream = stream;
-};
-
-export const removeRemoteStream = (participantId: string) => {
-  if (remoteStreams[participantId]) {
-    delete remoteStreams[participantId];
-  }
-};
-
-export const setOnParticipantTrackCallback = (callback: (participantId: string, event: RTCTrackEvent) => void) => {
-  participantTrackCallback = callback;
-};
-
-export const cleanupWebRTC = (participantId?: string) => {
-  if (participantId) {
-    removeRemoteStream(participantId);
-  } else {
-    if (peerConnection) {
-      peerConnection.close();
-      peerConnection = null;
+    {
+      urls: 'turn:global.turn.twilio.com:3478?transport=udp',
+      username: 'public',
+      credential: 'public'
+    },
+    {
+      urls: 'turn:global.turn.twilio.com:3478?transport=tcp',
+      username: 'public',
+      credential: 'public'
     }
-    
-    stopAllTracks(localStream);
-    stopAllTracks(remoteStream);
-    
-    Object.keys(remoteStreams).forEach(id => {
-      const stream = remoteStreams[id];
-      stopAllTracks(stream);
-    });
-    
-    localStream = null;
-    remoteStream = null;
-    remoteStreams = {};
-  }
+  ];
 };
 
-export const stopAllTracks = (stream: MediaStream | null) => {
-  stream?.getTracks().forEach((track) => {
-    track.stop();
-  });
-};
-
-export const closeMediaStream = () => {
-  stopAllTracks(localStream);
-  stopAllTracks(remoteStream);
-  localStream = null;
-  remoteStream = null;
-};
-
-export const createPeerConnection = (participantId: string): RTCPeerConnection => {
-  peerConnection = new RTCPeerConnection(servers);
-
-  peerConnection.onicecandidate = async (event) => {
-    if (event.candidate) {
-      console.log('ICE candidate:', event.candidate);
-      addIceCandidate(participantId, event.candidate);
-    }
-  };
-
-  peerConnection.onicegatheringstatechange = () => {
-    console.log(`ICE gathering state changed: ${peerConnection?.iceGatheringState}`);
-  };
-
-  peerConnection.onconnectionstatechange = () => {
-    console.log(`Connection state change: ${peerConnection?.connectionState}`);
-    if (peerConnection?.connectionState === 'failed') {
-      console.log('Peer connection failed, restarting ICE');
-      peerConnection?.restartIce();
-    }
-  };
-
-  peerConnection.onsignalingstatechange = () => {
-    console.log(`Signaling state change: ${peerConnection?.signalingState}`);
-  };
-
-  peerConnection.ontrack = (event: RTCTrackEvent) => {
-    console.log('Track event:', event);
-    
-    if (participantTrackCallback) {
-      participantTrackCallback(participantId, event);
-    }
-    
-    if (!remoteStreams[participantId]) {
-      remoteStreams[participantId] = new MediaStream();
-    }
-    
-    event.streams[0].getTracks().forEach((track) => {
-      remoteStreams[participantId]?.addTrack(track);
-    });
-  };
-
-  return peerConnection;
-};
-
-export const addIceCandidate = (participantId: string, iceCandidate: RTCIceCandidate) => {
-  if (!iceCandidateBuffer[participantId]) {
-    iceCandidateBuffer[participantId] = [];
-  }
-
-  iceCandidateBuffer[participantId]?.push(iceCandidate);
-
-  if (iceCandidateBuffer[participantId]?.length > MAX_ICE_CANDIDATES) {
-    iceCandidateBuffer[participantId]?.shift();
-  }
-};
-
-export const flushIceCandidateBuffer = async (participantId: string) => {
-  if (peerConnection && iceCandidateBuffer[participantId]) {
-    for (const candidate of iceCandidateBuffer[participantId]) {
-      try {
-        await peerConnection.addIceCandidate(candidate);
-        console.log('ICE candidate added successfully');
-      } catch (e) {
-        console.error('Error adding ICE candidate:', e);
-      }
-    }
-    iceCandidateBuffer[participantId] = [];
-  }
-};
-
-export const sendIceCandidates = async (participantId: string, iceCandidates: RTCIceCandidate[]) => {
-  if (socket) {
-    socket.emit('ice-candidate', {
-      participantId,
-      iceCandidates,
-    });
-  }
-};
-
-export const createOffer = async (participantId: string): Promise<void> => {
-  if (!peerConnection) {
-    throw new Error('Peer connection is not initialized.');
-  }
-
-  try {
-    if (localStream) {
-      localStream.getTracks().forEach((track) => {
-        peerConnection?.addTrack(track, localStream as MediaStream);
-      });
-    }
-
-    const offer = await peerConnection.createOffer({
-      offerToReceiveAudio: false,
-      offerToReceiveVideo: false,
-    });
-    await peerConnection.setLocalDescription(offer);
-
-    if (socket) {
-      socket.emit('offer', {
-        sdp: offer.sdp,
-        target: participantId,
-      });
-    }
-  } catch (e) {
-    console.error('Error creating offer:', e);
-  }
-};
-
-export const createAnswer = async (offer: RTCSessionDescriptionInit, participantId: string): Promise<void> => {
-  if (!peerConnection) {
-    throw new Error('Peer connection is not initialized.');
-  }
-
-  try {
-    await peerConnection.setRemoteDescription(offer);
-
-    if (localStream) {
-      localStream.getTracks().forEach((track) => {
-        peerConnection?.addTrack(track, localStream as MediaStream);
-      });
-    }
-
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-
-    if (socket) {
-      socket.emit('answer', {
-        sdp: answer.sdp,
-        target: participantId,
-      });
-    }
-  } catch (e) {
-    console.error('Error creating answer:', e);
-  }
-};
-
-export const setRemoteAnswer = async (answer: RTCSessionDescriptionInit): Promise<void> => {
-  if (!peerConnection) {
-    throw new Error('Peer connection is not initialized.');
-  }
-
-  try {
-    await peerConnection.setRemoteDescription(answer);
-  } catch (e) {
-    console.error('Error setting remote description:', e);
-  }
-};
-
-export const hangUp = async (participantId: string) => {
-  if (peerConnection) {
-    peerConnection.close();
-    console.log('Peer connection closed');
-    peerConnection = null;
-  }
-
-  removeRemoteStream(participantId);
-
-  if (socket) {
-    socket.emit('hangup', {
-      target: participantId,
-    });
-  }
-};
-
-export const initHostWebRTC = async (sessionId: string, participantId?: string) => {
-  if (!socket) {
-    try {
-      const socketUrl = process.env.REACT_APP_SIGNALING_SERVER_URL || 'https://lovable-signal.herokuapp.com';
-      socket = io(socketUrl, {
-        query: {
-          sessionId,
-          role: 'host',
-          participantId: participantId || 'host'
-        },
-        transports: ['websocket', 'polling']
-      });
-      
-      console.log('Socket initialized in host mode for session', sessionId);
-    } catch (error) {
-      console.error('Failed to initialize socket:', error);
-      
-      console.log('Using broadcast channel as fallback for signaling');
-      
-      try {
-        const channel = new BroadcastChannel(`live-session-${sessionId}`);
-        
-        channel.onmessage = (event) => {
-          const { type, id } = event.data;
-          if (type === 'participant-join-request') {
-            console.log(`Participant ${id} requested to join the session`);
-            
-            channel.postMessage({
-              type: 'host-acknowledge',
-              target: id,
-              participantId: participantId || 'host',
-              timestamp: Date.now()
-            });
-          }
-        };
-      } catch (err) {
-        console.error('Failed to create broadcast channel:', err);
-      }
-    }
-  }
-
-  socket?.on('join', async (data: { origin: string; id: string }) => {
-    const { origin, id } = data;
-    console.log(`Participant ${id} joined the session from ${origin}`);
-
-    createPeerConnection(id);
-
-    socket?.on('ice-candidate', async (data: { participantId: string; iceCandidates: RTCIceCandidate[] }) => {
-      if (id === data.participantId) {
-        data.iceCandidates.forEach(async (candidate) => {
-          try {
-            await peerConnection?.addIceCandidate(candidate);
-            console.log('ICE candidate added successfully');
-          } catch (e) {
-            console.error('Error adding ICE candidate:', e);
-          }
-        });
-      }
-    });
-
-    socket?.on('offer', async (data: { sdp: string; origin: string }) => {
-      if (id === data.origin) {
-        const offer: RTCSessionDescriptionInit = {
-          type: 'offer',
-          sdp: data.sdp,
-        };
-        await createAnswer(offer, id);
-      }
-    });
-
-    socket?.on('hangup', async (data: { origin: string }) => {
-      if (id === data.origin) {
-        console.log(`Participant ${id} hung up`);
-        hangUp(id);
-      }
-    });
-
-    socket?.emit('host-acknowledge', {
-      target: id,
-      participantId: participantId || 'host',
-    });
-  });
-
-  socket?.on('leave', (data: { id: string }) => {
-    console.log(`Participant ${data.id} left the session`);
-    hangUp(data.id);
-  });
-
-  socket?.on('disconnect', () => {
-    console.log('Socket disconnected, cleaning up');
-    closeMediaStream();
-  });
-  
-  try {
-    const channel = new BroadcastChannel(`telao-session-${sessionId}`);
-    channel.onmessage = (event) => {
-      const data = event.data;
-      if (data.type === 'participant-join-request' || data.type === 'qr-code-scan') {
-        console.log(`QR Code scan detected for participant ${data.id}`);
-        
-        channel.postMessage({
-          type: 'host-acknowledge',
-          target: data.id,
-          participantId: participantId || 'host',
-          timestamp: Date.now()
-        });
-      }
-    };
-  } catch (error) {
-    console.warn('BroadcastChannel not supported for QR code events');
-  }
-};
-
+// Initialize WebRTC for participant
 export const initParticipantWebRTC = async (sessionId: string, participantId: string, stream: MediaStream) => {
-  if (!socket) {
-    try {
-      const socketUrl = process.env.REACT_APP_SIGNALING_SERVER_URL || 'https://lovable-signal.herokuapp.com';
-      socket = io(socketUrl, {
-        query: {
-          sessionId,
-          role: 'participant',
-          participantId
-        },
-        transports: ['websocket', 'polling']
-      });
-      
-      console.log('Socket initialized in participant mode for session', sessionId);
-    } catch (error) {
-      console.error('Failed to initialize socket:', error);
-      
-      console.log('Using broadcast channel as fallback for signaling');
-      
-      try {
-        const channel = new BroadcastChannel(`telao-session-${sessionId}`);
-        channel.postMessage({
-          type: 'participant-join-request',
-          id: participantId,
-          timestamp: Date.now()
-        });
-        
-        channel.postMessage({
-          type: 'qr-code-scan',
-          id: participantId,
-          timestamp: Date.now()
-        });
-      } catch (err) {
-        console.error('Failed to create broadcast channel:', err);
-      }
-    }
-  }
-
-  localStream = stream;
-  
-  announceParticipantVideoReady(sessionId, participantId);
-
-  createPeerConnection(participantId);
-
-  socket?.on('ice-candidate', async (data: { participantId: string; iceCandidates: RTCIceCandidate[] }) => {
-    if (participantId === data.participantId) {
-      data.iceCandidates.forEach(async (candidate) => {
-        try {
-          await peerConnection?.addIceCandidate(candidate);
-          console.log('ICE candidate added successfully');
-        } catch (e) {
-          console.error('Error adding ICE candidate:', e);
-        }
-      });
-    }
-  });
-
-  socket?.on('answer', async (data: { sdp: string }) => {
-    const answer: RTCSessionDescriptionInit = {
-      type: 'answer',
-      sdp: data.sdp,
-    };
-    await setRemoteAnswer(answer);
-  });
-
-  socket?.on('hangup', () => {
-    console.log('Host hung up');
-    hangUp(participantId);
-  });
-
-  socket?.on('host-leave', () => {
-    console.log('Host left the session');
-    closeMediaStream();
-  });
-
-  await createOffer(participantId);
-
-  const statsInterval = setInterval(async () => {
-    if (peerConnection?.connectionState === 'closed') {
-      clearInterval(statsInterval);
-      return;
-    }
-
-    try {
-      const stats = await peerConnection?.getStats();
-      let videoReceived = false;
-      let audioReceived = false;
-
-      stats?.forEach((report) => {
-        if (report.type === 'inbound-rtp' && report.kind === 'video') {
-          videoReceived = report.bytesReceived > 0;
-          console.log('Estatísticas de vídeo recebido:', {
-            bytesReceived: report.bytesReceived,
-            packetsReceived: report.packetsReceived,
-            packetsLost: report.packetsLost,
-            frameWidth: report.frameWidth,
-            frameHeight: report.frameHeight,
-            framesPerSecond: report.framesPerSecond,
-          });
-        }
-
-        if (report.type === 'inbound-rtp' && report.kind === 'audio') {
-          audioReceived = report.bytesReceived > 0;
-          console.log('Estatísticas de áudio recebido:', {
-            bytesReceived: report.bytesReceived,
-            packetsReceived: report.packetsReceived,
-            packetsLost: report.packetsLost,
-          });
-        }
-
-        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-          console.log('Estatísticas de conexão ICE:', {
-            currentRoundTripTime: report.currentRoundTripTime,
-            availableOutgoingBitrate: report.availableOutgoingBitrate,
-            availableIncomingBitrate: report.availableIncomingBitrate,
-          });
-        }
-      });
-
-      if (!videoReceived) {
-        console.warn('Não estamos recebendo vídeo');
-      }
-
-      if (!audioReceived) {
-        console.warn('Não estamos recebendo áudio');
-      }
-    } catch (error) {
-      console.error('Erro ao obter estatísticas:', error);
-    }
-  }, 5000);
-};
-
-export const handleQRCodeScan = (sessionId: string, userId: string) => {
-  console.log('Handling QR code scan for session', sessionId, 'with user ID', userId);
-  
   try {
-    const channel = new BroadcastChannel(`telao-session-${sessionId}`);
-    channel.postMessage({
-      type: 'qr-code-scan',
-      id: userId,
-      deviceType: 'mobile',
-      timestamp: Date.now()
+    if (!stream) {
+      console.error("No media stream provided to initParticipantWebRTC");
+      return false;
+    }
+    
+    // Configure peer connection with STUN/TURN servers and options for better NAT traversal
+    const peerConnection = new RTCPeerConnection({
+      iceServers: getIceServers(),
+      iceTransportPolicy: 'all',
+      iceCandidatePoolSize: 10, // Increase candidate pool for better connectivity
+      rtcpMuxPolicy: 'require',
+      bundlePolicy: 'max-bundle'
     });
     
-    if (socket && socket.connected) {
-      socket.emit('join-session', {
-        sessionId: sessionId,
-        userId: userId,
-        deviceType: 'mobile'
-      });
-      console.log('Enviando solicitação para entrar na sessão:', sessionId);
+    // Save to global for debugging
+    (window as any)._peerConnections = (window as any)._peerConnections || {};
+    (window as any)._peerConnections[sessionId] = peerConnection;
+    
+    // Add all tracks from the stream
+    const videoTracks = stream.getVideoTracks();
+    if (videoTracks.length === 0) {
+      console.error("No video tracks in stream");
+      return false;
     }
     
-    return true;
+    // Log current resolution and frame rate
+    console.log("Video track settings:", videoTracks[0].getSettings());
+    
+    // Add each track to the peer connection
+    stream.getTracks().forEach(track => {
+      console.log(`Adding ${track.kind} track to peer connection`);
+      peerConnection.addTrack(track, stream);
+    });
+    
+    // Set up ICE candidate handling
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        console.log(`ICE candidate for session ${sessionId}:`, event.candidate.candidate);
+        
+        // Send candidate to the host via broadcast channel and localStorage
+        try {
+          const candidateChannel = new BroadcastChannel(`telao-candidate-${sessionId}`);
+          candidateChannel.postMessage({
+            type: 'ice-candidate',
+            sessionId,
+            participantId,
+            candidate: event.candidate,
+            timestamp: Date.now()
+          });
+          setTimeout(() => candidateChannel.close(), 500);
+        } catch (e) {
+          console.warn("BroadcastChannel not supported for ICE candidates", e);
+        }
+        
+        // Also use localStorage as fallback for ICE candidates
+        try {
+          const candidateKey = `telao-ice-${sessionId}-${participantId}-${Date.now()}`;
+          localStorage.setItem(candidateKey, JSON.stringify({
+            type: 'ice-candidate',
+            sessionId,
+            participantId,
+            candidate: event.candidate,
+            timestamp: Date.now()
+          }));
+          
+          // Remove after 30 seconds to avoid cluttering localStorage
+          setTimeout(() => {
+            try {
+              localStorage.removeItem(candidateKey);
+            } catch (e) {
+              // Ignore errors
+            }
+          }, 30000);
+        } catch (e) {
+          console.warn("localStorage not supported for ICE candidates", e);
+        }
+      } else {
+        console.log("ICE candidate gathering complete");
+      }
+    };
+    
+    // Set up debugging events for connection state
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log(`ICE connection state changed to: ${peerConnection.iceConnectionState}`);
+      
+      if (peerConnection.iceConnectionState === 'failed') {
+        console.log("Attempting to restart ICE");
+        peerConnection.restartIce();
+      }
+    };
+    
+    peerConnection.onconnectionstatechange = () => {
+      console.log(`Connection state changed to: ${peerConnection.connectionState}`);
+      
+      // Notify about connections for debugging
+      try {
+        const stateChannel = new BroadcastChannel(`telao-state-${sessionId}`);
+        stateChannel.postMessage({
+          type: 'connection-state',
+          participantId,
+          state: peerConnection.connectionState,
+          timestamp: Date.now()
+        });
+        setTimeout(() => stateChannel.close(), 500);
+      } catch (e) {
+        // Ignore errors
+      }
+    };
+    
+    // Create and set local description with H.264 preference
+    try {
+      // Create offer with specific codec preferences
+      const offerOptions = {
+        offerToReceiveAudio: false,
+        offerToReceiveVideo: true
+      };
+      
+      const offer = await peerConnection.createOffer(offerOptions);
+      
+      // Prefer H.264 codec (if available) for better compatibility
+      let sdpWithH264Preference = offer.sdp;
+      if (sdpWithH264Preference && sdpWithH264Preference.includes('H264')) {
+        // Modify SDP to prefer H.264 codec if available
+        const lines = sdpWithH264Preference.split('\r\n');
+        const videoMLineIndex = lines.findIndex(line => line.startsWith('m=video'));
+        
+        if (videoMLineIndex !== -1) {
+          // Find the payload types
+          const videoPayloadTypes = [];
+          let rtpmapH264Index = -1;
+          
+          for (let i = videoMLineIndex + 1; i < lines.length; i++) {
+            if (lines[i].startsWith('a=rtpmap:') && lines[i].includes('H264')) {
+              rtpmapH264Index = i;
+              const payloadType = lines[i].split(':')[1].split(' ')[0];
+              videoPayloadTypes.unshift(payloadType); // Put H.264 at the start
+            } else if (lines[i].startsWith('a=rtpmap:') && lines[i].includes('VP8')) {
+              const payloadType = lines[i].split(':')[1].split(' ')[0];
+              videoPayloadTypes.push(payloadType); // Put VP8 after H.264
+            }
+          }
+          
+          if (rtpmapH264Index !== -1 && videoPayloadTypes.length > 0) {
+            // Rebuild the m=video line with H.264 as the preferred codec
+            const videoMLine = lines[videoMLineIndex];
+            const parts = videoMLine.split(' ');
+            const newVideoMLine = `${parts[0]} ${parts[1]} ${parts[2]}`;
+            
+            // Add the payload types with H.264 first
+            const rebuiltLine = `${newVideoMLine} ${videoPayloadTypes.join(' ')}`;
+            lines[videoMLineIndex] = rebuiltLine;
+            
+            sdpWithH264Preference = lines.join('\r\n');
+            console.log("Modified SDP to prefer H.264 codec");
+          }
+        }
+      }
+      
+      // Use the potentially modified SDP
+      offer.sdp = sdpWithH264Preference;
+      
+      console.log("Setting local description");
+      await peerConnection.setLocalDescription(offer);
+      console.log("Local description set successfully");
+      
+      // Send offer to the host via broadcast channel
+      try {
+        console.log("Sending offer via broadcast channel");
+        const offerChannel = new BroadcastChannel(`telao-offer-${sessionId}`);
+        offerChannel.postMessage({
+          type: 'offer',
+          sessionId,
+          participantId,
+          offer: peerConnection.localDescription,
+          timestamp: Date.now()
+        });
+        setTimeout(() => offerChannel.close(), 500);
+      } catch (e) {
+        console.warn("BroadcastChannel not supported for offer", e);
+      }
+      
+      // Also use localStorage as fallback for the offer
+      try {
+        console.log("Sending offer via localStorage");
+        const offerKey = `telao-offer-${sessionId}-${participantId}`;
+        localStorage.setItem(offerKey, JSON.stringify({
+          type: 'offer',
+          sessionId,
+          participantId,
+          offer: peerConnection.localDescription,
+          timestamp: Date.now()
+        }));
+      } catch (e) {
+        console.warn("localStorage not supported for offer", e);
+      }
+      
+      // Listen for answer from the host
+      console.log("Setting up answer listener");
+      listenForAnswer(sessionId, participantId, peerConnection);
+      
+      // Also listen for ICE candidates from the host
+      listenForICECandidates(sessionId, participantId, peerConnection);
+      
+      return true;
+    } catch (error) {
+      console.error("Error creating or setting local description:", error);
+      return false;
+    }
   } catch (error) {
-    console.error('Error handling QR code scan:', error);
+    console.error("Error in initParticipantWebRTC:", error);
     return false;
+  }
+};
+
+// Listen for the answer from the host
+const listenForAnswer = (sessionId: string, participantId: string, peerConnection: RTCPeerConnection) => {
+  try {
+    // Via BroadcastChannel
+    const answerChannel = new BroadcastChannel(`telao-answer-${sessionId}-${participantId}`);
+    
+    answerChannel.onmessage = async (event) => {
+      console.log("Received answer via BroadcastChannel");
+      const data = event.data;
+      
+      if (data && data.type === 'answer' && data.answer) {
+        try {
+          console.log("Setting remote description from answer");
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+          console.log("Remote description set successfully");
+        } catch (error) {
+          console.error("Error setting remote description:", error);
+        }
+      }
+    };
+    
+    // Check localStorage periodically for answer 
+    const checkLocalStorageForAnswer = () => {
+      try {
+        const answerKey = `telao-answer-${sessionId}-${participantId}`;
+        const answerData = localStorage.getItem(answerKey);
+        
+        if (answerData) {
+          const data = JSON.parse(answerData);
+          
+          if (data && data.type === 'answer' && data.answer) {
+            console.log("Found answer in localStorage");
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
+              .then(() => {
+                console.log("Remote description set from localStorage");
+                localStorage.removeItem(answerKey);
+              })
+              .catch(error => {
+                console.error("Error setting remote description from localStorage:", error);
+              });
+          }
+        }
+      } catch (e) {
+        console.warn("Error checking localStorage for answer:", e);
+      }
+    };
+    
+    // Check immediately and then periodically
+    checkLocalStorageForAnswer();
+    const answerCheckInterval = setInterval(checkLocalStorageForAnswer, 2000);
+    
+    // Stop checking after 30 seconds
+    setTimeout(() => {
+      clearInterval(answerCheckInterval);
+      answerChannel.close();
+    }, 30000);
+    
+  } catch (e) {
+    console.warn("Error setting up answer listener:", e);
+    
+    // Fallback to just localStorage if BroadcastChannel isn't supported
+    const checkLocalStorageForAnswer = () => {
+      try {
+        const answerKey = `telao-answer-${sessionId}-${participantId}`;
+        const answerData = localStorage.getItem(answerKey);
+        
+        if (answerData) {
+          const data = JSON.parse(answerData);
+          
+          if (data && data.type === 'answer' && data.answer) {
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
+              .then(() => {
+                console.log("Remote description set from localStorage (fallback)");
+                localStorage.removeItem(answerKey);
+              })
+              .catch(error => {
+                console.error("Error setting remote description from localStorage (fallback):", error);
+              });
+          }
+        }
+      } catch (e) {
+        // Ignore errors
+      }
+    };
+    
+    const answerCheckInterval = setInterval(checkLocalStorageForAnswer, 1000);
+    
+    setTimeout(() => {
+      clearInterval(answerCheckInterval);
+    }, 30000);
+  }
+};
+
+// Listen for ICE candidates from the host
+const listenForICECandidates = (sessionId: string, participantId: string, peerConnection: RTCPeerConnection) => {
+  try {
+    // Via BroadcastChannel
+    const candidateChannel = new BroadcastChannel(`telao-candidate-${sessionId}-${participantId}`);
+    
+    candidateChannel.onmessage = async (event) => {
+      const data = event.data;
+      
+      if (data && data.type === 'ice-candidate' && data.candidate) {
+        try {
+          console.log("Adding ICE candidate from BroadcastChannel");
+          await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } catch (error) {
+          console.error("Error adding ICE candidate:", error);
+        }
+      }
+    };
+    
+    // Check localStorage periodically for ICE candidates
+    const checkLocalStorageForCandidates = () => {
+      try {
+        // Find all ICE candidate keys
+        const candidateKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(`telao-ice-${sessionId}-${participantId}`)) {
+            candidateKeys.push(key);
+          }
+        }
+        
+        // Process candidates
+        for (const key of candidateKeys) {
+          const candidateData = localStorage.getItem(key);
+          if (candidateData) {
+            try {
+              const data = JSON.parse(candidateData);
+              
+              if (data && data.type === 'ice-candidate' && data.candidate) {
+                console.log("Found ICE candidate in localStorage");
+                peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
+                  .then(() => {
+                    localStorage.removeItem(key);
+                  })
+                  .catch(error => {
+                    console.warn("Error adding ICE candidate from localStorage:", error);
+                  });
+              }
+            } catch (e) {
+              // Ignore parsing errors
+            }
+            localStorage.removeItem(key);
+          }
+        }
+      } catch (e) {
+        console.warn("Error checking localStorage for ICE candidates:", e);
+      }
+    };
+    
+    // Check immediately and then periodically
+    checkLocalStorageForCandidates();
+    const candidateCheckInterval = setInterval(checkLocalStorageForCandidates, 1000);
+    
+    // Stop checking after 30 seconds
+    setTimeout(() => {
+      clearInterval(candidateCheckInterval);
+      candidateChannel.close();
+    }, 30000);
+    
+  } catch (e) {
+    console.warn("Error setting up ICE candidate listener:", e);
+    
+    // Fallback to just localStorage if BroadcastChannel isn't supported
+    const checkLocalStorageForCandidates = () => {
+      try {
+        // Find all ICE candidate keys
+        const candidateKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(`telao-ice-${sessionId}-${participantId}`)) {
+            candidateKeys.push(key);
+          }
+        }
+        
+        // Process candidates
+        for (const key of candidateKeys) {
+          const candidateData = localStorage.getItem(key);
+          if (candidateData) {
+            try {
+              const data = JSON.parse(candidateData);
+              
+              if (data && data.type === 'ice-candidate' && data.candidate) {
+                peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
+                  .catch(error => {
+                    console.warn("Error adding ICE candidate from localStorage (fallback):", error);
+                  });
+              }
+            } catch (e) {
+              // Ignore parsing errors
+            }
+            localStorage.removeItem(key);
+          }
+        }
+      } catch (e) {
+        // Ignore errors
+      }
+    };
+    
+    const candidateCheckInterval = setInterval(checkLocalStorageForCandidates, 1000);
+    
+    setTimeout(() => {
+      clearInterval(candidateCheckInterval);
+    }, 30000);
   }
 };
