@@ -1,5 +1,6 @@
+
 import { addParticipantToSession, updateParticipantStatus } from './sessionUtils';
-import { Socket, io as socketIO } from 'socket.io-client';
+import { Socket, io } from 'socket.io-client';
 
 // Define SocketType interface
 interface SocketType {
@@ -89,7 +90,7 @@ export const setH264CodecPreference = (pc: RTCPeerConnection): void => {
 const initSocket = (sessionId: string): Promise<void> => {
   return new Promise((resolve, reject) => {
     // Try to use the signaling server if available
-    if (!socketIO) {
+    if (!io) {
       console.warn("Socket.io client not loaded, switching to fallback mode");
       enableFallbackMode();
       resolve();
@@ -108,7 +109,7 @@ const initSocket = (sessionId: string): Promise<void> => {
       const serverUrl = process.env.NEXT_PUBLIC_SIGNALING_SERVER_URL || 'https://signaling.hutz.co';
       console.log(`Connecting to signaling server at ${serverUrl}...`);
       
-      socket = socketIO(serverUrl) as unknown as SocketType;
+      socket = io(serverUrl) as unknown as SocketType;
 
       // Set a timeout for connection
       const connectionTimeout = setTimeout(() => {
