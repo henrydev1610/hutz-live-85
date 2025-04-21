@@ -1,9 +1,8 @@
-
 import { User, Check, Video, VideoOff } from 'lucide-react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface Participant {
   id: string;
@@ -23,6 +22,7 @@ interface ParticipantGridProps {
 const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipant }: ParticipantGridProps) => {
   const activeParticipants = participants.filter(p => p.active);
   const inactiveParticipants = participants.filter(p => !p.active);
+  const [videoElements, setVideoElements] = useState<{[key: string]: boolean}>({});
   
   // Sort participants by connection time (most recent first)
   const sortedActiveParticipants = [...activeParticipants].sort((a, b) => 
@@ -47,7 +47,10 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
     // Connect video elements to their container divs
     displayParticipants.forEach(participant => {
       const videoContainer = document.getElementById(`participant-video-${participant.id}`);
-      if (!videoContainer) return;
+      if (!videoContainer) {
+        console.log(`Video container for participant ${participant.id} not found`);
+        return;
+      }
 
       // Check if we already have a video element for this participant
       if (!videoRefs.current[participant.id]) {
@@ -68,6 +71,10 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
           // Clear the container and add the video element
           videoContainer.innerHTML = '';
           videoContainer.appendChild(videoElement);
+          
+          console.log(`Created new video element for participant ${participant.id}`);
+        } else {
+          console.log(`Found existing video element for participant ${participant.id}`);
         }
         
         // Store reference to video element
@@ -80,18 +87,28 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
       displayParticipants.forEach(participant => {
         // Get video container by ID
         const videoContainer = document.getElementById(`participant-video-${participant.id}`);
-        if (!videoContainer) return;
+        if (!videoContainer) {
+          console.log(`Video container not found for participant ${participant.id}`);
+          return;
+        }
         
         // Try to find any existing video element in the container
         const videoElement = videoRefs.current[participant.id];
-        if (!videoElement) return;
+        if (!videoElement) {
+          console.log(`Video element reference not found for participant ${participant.id}`);
+          return;
+        }
         
         // Check if video element already has a stream
         if (!videoElement.srcObject) {
+          console.log(`Requesting stream for participant ${participant.id}`);
           // Dispatch a custom event to request the participant's stream
           window.dispatchEvent(new CustomEvent('request-participant-stream', {
             detail: { participantId: participant.id }
           }));
+        } else {
+          console.log(`Stream already set for participant ${participant.id}`);
+          setVideoElements(prev => ({...prev, [participant.id]: true}));
         }
       });
     };
@@ -119,6 +136,13 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
         videoElement.play().catch(err => {
           console.warn(`Error playing video for participant ${participantId}:`, err);
         });
+        
+        setVideoElements(prev => ({...prev, [participantId]: true}));
+      } else {
+        console.warn(`Cannot set stream for participant ${participantId}`, {
+          hasVideoElement: !!videoElement,
+          hasStream: !!stream
+        });
       }
     };
 
@@ -140,7 +164,7 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
               <Card key={participant.id} className={`bg-secondary/60 border ${participant.selected ? 'border-accent' : 'border-white/10'}`}>
                 <CardContent className="p-4 text-center">
                   <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2 relative">
-                    {!participant.hasVideo && <User className="h-8 w-8 text-white/30" />}
+                    {!videoElements[participant.id] && <User className="h-8 w-8 text-white/30" />}
                     <div className="absolute top-2 right-2 bg-green-500/20 p-1 rounded-full">
                       {participant.hasVideo ? (
                         <Video className="h-3 w-3 text-green-500" />
