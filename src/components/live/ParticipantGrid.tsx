@@ -1,9 +1,8 @@
 
-import { User, Check, Video, VideoOff, RefreshCw, WifiOff } from 'lucide-react';
+import { User, Check, Video, VideoOff } from 'lucide-react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useEffect, useState } from "react";
 
 interface Participant {
   id: string;
@@ -22,30 +21,6 @@ interface ParticipantGridProps {
 const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipant }: ParticipantGridProps) => {
   const activeParticipants = participants.filter(p => p.active);
   const inactiveParticipants = participants.filter(p => !p.active);
-  
-  const [connectionStatus, setConnectionStatus] = useState<Record<string, 'connecting' | 'connected' | 'disconnected'>>({});
-
-  useEffect(() => {
-    // Setup broadcast channel to monitor participant connection status
-    const broadcastChannel = new BroadcastChannel(`telao-connection-status`);
-    
-    const handleStatusUpdate = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'connection-status') {
-        setConnectionStatus(prev => ({
-          ...prev,
-          [event.data.participantId]: event.data.status
-        }));
-      }
-    };
-    
-    broadcastChannel.addEventListener('message', handleStatusUpdate);
-    
-    // Cleanup
-    return () => {
-      broadcastChannel.removeEventListener('message', handleStatusUpdate);
-      broadcastChannel.close();
-    };
-  }, []);
   
   return (
     <div className="space-y-4">
@@ -70,18 +45,6 @@ const ParticipantGrid = ({ participants, onSelectParticipant, onRemoveParticipan
                     {participant.selected && (
                       <div className="absolute inset-0 bg-accent/10 flex items-center justify-center">
                         <span className="text-xs bg-accent text-white px-2 py-1 rounded-full">Na tela</span>
-                      </div>
-                    )}
-                    {/* Connection status indicator */}
-                    {connectionStatus[participant.id] && (
-                      <div className="absolute bottom-2 left-2 flex items-center bg-black/50 rounded-full px-2 py-1">
-                        {connectionStatus[participant.id] === 'connecting' ? (
-                          <><RefreshCw className="h-3 w-3 text-yellow-500 animate-spin mr-1" /><span className="text-xs text-yellow-500">Conectando...</span></>
-                        ) : connectionStatus[participant.id] === 'connected' ? (
-                          <><span className="w-2 h-2 rounded-full bg-green-500 mr-1"></span><span className="text-xs text-green-500">Conectado</span></>
-                        ) : (
-                          <><WifiOff className="h-3 w-3 text-red-500 mr-1" /><span className="text-xs text-red-500">Desconectado</span></>
-                        )}
                       </div>
                     )}
                   </div>
