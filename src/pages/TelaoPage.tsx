@@ -11,28 +11,17 @@ import { useToast } from "@/components/ui/use-toast";
 import { Copy, Check, UserPlus, UserMinus, Loader2, X, Tv2, AlertTriangle } from "lucide-react";
 import { generateSessionId, isSessionActive, createSession, endSession, getSessionParticipants, addParticipantToSession, updateParticipantStatus } from "@/utils/sessionUtils";
 import ParticipantGrid from "@/components/live/ParticipantGrid";
-import { initHostWebRTC, cleanupWebRTC, setLocalStream } from '@/utils/webrtc';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
+import { 
+  initHostWebRTC, 
+  cleanupWebRTC, 
+  setLocalStream, 
+  setH264CodecPreference, 
+  initTelaoWebRTC,
+  startScreenShare,
+  stopScreenShare,
+  setOnParticipantTrack,
+  activeParticipants 
+} from '@/utils/webrtc';
 
 interface Participant {
   id: string;
@@ -615,12 +604,7 @@ const TelaoPage = () => {
                         setIsScreenSharing(false);
                       } else {
                         try {
-                          const stream = await navigator.mediaDevices.getDisplayMedia({
-                            video: {
-                              displaySurface: 'monitor',
-                            },
-                            audio: false,
-                          });
+                          const stream = await startScreenShare();
                           
                           setScreenShareStream(stream);
                           setLocalStream(stream);

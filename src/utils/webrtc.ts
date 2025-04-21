@@ -1,4 +1,3 @@
-import { io, Socket } from 'socket.io-client';
 import { addParticipantToSession, updateParticipantStatus } from './sessionUtils';
 
 const PEER_CONNECTION_CONFIG = {
@@ -9,7 +8,12 @@ const PEER_CONNECTION_CONFIG = {
   ]
 };
 
-let socket: Socket | null = null;
+let io: any;
+import('socket.io-client').then(module => {
+  io = module.io;
+});
+
+let socket: SocketType | null = null;
 let activePeerConnections: { [participantId: string]: RTCPeerConnection } = {};
 let activeParticipants: { [participantId: string]: boolean } = {};
 let signalingSessions: { [sessionId: string]: boolean } = {};
@@ -51,6 +55,11 @@ export const setH264CodecPreference = (pc: RTCPeerConnection): void => {
  */
 const initSocket = (sessionId: string): Promise<void> => {
   return new Promise((resolve, reject) => {
+    if (!io) {
+      reject(new Error('Socket.io client not loaded yet. Please try again.'));
+      return;
+    }
+
     if (socket && socket.connected && currentSessionId === sessionId) {
       console.log('Socket already initialized for this session.');
       resolve();
@@ -66,12 +75,12 @@ const initSocket = (sessionId: string): Promise<void> => {
       resolve();
     });
 
-    socket.on('connect_error', (error) => {
+    socket.on('connect_error', (error: any) => {
       console.error('Socket connection error:', error);
       reject(error);
     });
 
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', (reason: string) => {
       console.log('Socket disconnected:', reason);
     });
   });
