@@ -10,7 +10,7 @@ import Navbar from "./components/layout/Navbar";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import LightShowPage from "./pages/LightShowPage";
-import TelaoPage from "./pages/TelaoPage";
+// Removed TelaoPage import
 import QuizPage from "./pages/QuizPage";
 import LivePage from "./pages/LivePage";
 import NotFound from "./pages/NotFound";
@@ -63,14 +63,7 @@ const AppRoutes = () => {
               </ProtectedRoute>
             } 
           />
-          <Route 
-            path="/telao" 
-            element={
-              <ProtectedRoute>
-                <TelaoPage />
-              </ProtectedRoute>
-            } 
-          />
+          {/* Removed the /telao route */}
           <Route 
             path="/live" 
             element={
@@ -125,3 +118,4 @@ const App = () => {
 };
 
 export default App;
+
