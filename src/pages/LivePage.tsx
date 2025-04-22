@@ -333,23 +333,6 @@ const LivePage = () => {
       return;
     }
     
-    if (sessionId && !localStream) {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-        .then(stream => {
-          console.log("Created host media stream for transmission", stream);
-          setLocalMediaStream(stream);
-          setLocalStream(stream);
-        })
-        .catch(err => {
-          console.error("Error creating host media stream:", err);
-          toast({
-            title: "Erro ao inicializar câmera",
-            description: "Não foi possível acessar a câmera para inicializar a transmissão.",
-            variant: "destructive"
-          });
-        });
-    }
-    
     const width = window.innerWidth * 0.9;
     const height = window.innerHeight * 0.9;
     const left = (window.screen.width - width) / 2;
@@ -533,6 +516,8 @@ const LivePage = () => {
             </div>
             
             <script>
+              window.transmissionWindow = true;
+              
               const sessionId = "${sessionId}";
               console.log("Live transmission window opened for session:", sessionId);
               
@@ -753,21 +738,35 @@ const LivePage = () => {
                 }
               });
               
+              window.onbeforeunload = function() {
+                if (!window.isClosingIntentionally) {
+                  return "Are you sure you want to leave the transmission?";
+                }
+              };
+              
+              window.isClosingIntentionally = false;
+              
               window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
               
               setInterval(() => {
-                window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
-              }, 5000);
+                if (window.opener && !window.opener.closed) {
+                  window.opener.postMessage({ type: 'transmission-heartbeat', sessionId }, '*');
+                }
+              }, 2000);
               
               channel.onmessage = (event) => {
                 const { type, id } = event.data;
                 if (type === 'participant-join') {
                   console.log('Participant joined:', id);
-                  window.opener.postMessage({ type: 'participant-joined', id, sessionId }, '*');
+                  if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({ type: 'participant-joined', id, sessionId }, '*');
+                  }
                 }
               };
               
               window.addEventListener('beforeunload', () => {
+                window.isClosingIntentionally = true;
+                
                 Object.values(activeVideoElements).forEach(videoElement => {
                   if (videoElement.srcObject) {
                     const tracks = videoElement.srcObject.getTracks();
@@ -794,14 +793,30 @@ const LivePage = () => {
       newWindow.document.close();
       setTransmissionOpen(true);
       
-      newWindow.onbeforeunload = () => {
+      newWindow.addEventListener('beforeunload', () => {
         setTransmissionOpen(false);
         transmissionWindowRef.current = null;
-      };
+      });
       
       window.addEventListener('message', handleTransmissionMessage);
       
-      updateTransmissionParticipants();
+      setTimeout(() => {
+        if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+          transmissionWindowRef.current.postMessage({
+            type: 'update-qr-positions',
+            qrCodePosition,
+            qrDescriptionPosition,
+            qrCodeVisible,
+            qrCodeSvg,
+            qrCodeDescription,
+            selectedFont,
+            selectedTextColor,
+            qrDescriptionFontSize
+          }, '*');
+          
+          updateTransmissionParticipants();
+        }
+      }, 300);
     }
   };
   
@@ -916,6 +931,31 @@ const LivePage = () => {
     
     setTimeout(updateTransmissionParticipants, 500);
   };
+
+  useEffect(() => {
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      transmissionWindowRef.current.postMessage({
+        type: 'update-qr-positions',
+        qrCodePosition,
+        qrDescriptionPosition,
+        qrCodeVisible,
+        qrCodeSvg,
+        qrCodeDescription,
+        selectedFont,
+        selectedTextColor,
+        qrDescriptionFontSize
+      }, '*');
+    }
+  }, [
+    qrCodePosition, 
+    qrDescriptionPosition, 
+    qrCodeVisible, 
+    qrCodeSvg, 
+    qrCodeDescription,
+    selectedFont,
+    selectedTextColor,
+    qrDescriptionFontSize
+  ]);
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-[calc(100vw-100px)]">
