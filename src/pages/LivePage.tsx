@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -80,7 +79,6 @@ const LivePage = () => {
   }, []);
 
   useEffect(() => {
-    // Only initialize camera when a session is active AND transmission window is open
     if (sessionId && transmissionOpen) {
       navigator.mediaDevices.getUserMedia({ video: true, audio: false })
         .then(stream => {
@@ -125,7 +123,6 @@ const LivePage = () => {
         });
     }
     
-    // If we have a sessionId but transmission is not open, just initialize the session without camera
     else if (sessionId && !transmissionOpen) {
       const cleanup = initializeHostSession(sessionId, {
         onParticipantJoin: handleParticipantJoin,
@@ -967,9 +964,9 @@ const LivePage = () => {
               <div className="grid md:grid-cols-[1fr_300px] gap-6">
                 <div>
                   <LivePreview
-                    participantList={participantList.filter(p => p.selected)}
+                    participants={participantList.filter(p => p.selected)}
                     participantCount={participantCount}
-                    backgroundColor={selectedBackgroundColor}
+                    selectedBackgroundColor={selectedBackgroundColor}
                     backgroundImage={backgroundImage}
                     qrCodeSvg={qrCodeSvg}
                     qrCodeVisible={qrCodeVisible}
@@ -986,7 +983,7 @@ const LivePage = () => {
                 <div>
                   <TabsContent value="participants" className="space-y-4 m-0">
                     <ParticipantGrid
-                      participantList={participantList}
+                      participants={participantList}
                       onSelectParticipant={handleParticipantSelect}
                       onRemoveParticipant={handleParticipantRemove}
                       participantStreams={participantStreams}
@@ -999,21 +996,23 @@ const LivePage = () => {
                       setSelectedBackgroundColor={setSelectedBackgroundColor}
                       backgroundImage={backgroundImage}
                       onFileSelect={handleFileSelect}
-                      onRemoveBackgroundImage={removeBackgroundImage}
+                      onRemoveImage={removeBackgroundImage}
                       fileInputRef={fileInputRef}
                     />
                   </TabsContent>
                   
                   <TabsContent value="text" className="space-y-4 m-0">
                     <TextSettings
+                      participantCount={participantCount}
+                      setParticipantCount={setParticipantCount}
+                      qrCodeDescription={qrCodeDescription}
+                      setQrCodeDescription={setQrCodeDescription}
                       selectedFont={selectedFont}
                       setSelectedFont={setSelectedFont}
                       selectedTextColor={selectedTextColor}
                       setSelectedTextColor={setSelectedTextColor}
                       qrDescriptionFontSize={qrDescriptionFontSize}
                       setQrDescriptionFontSize={setQrDescriptionFontSize}
-                      qrCodeDescription={qrCodeDescription}
-                      setQrCodeDescription={setQrCodeDescription}
                     />
                   </TabsContent>
                   
@@ -1041,60 +1040,72 @@ const LivePage = () => {
             </Tabs>
           </CardContent>
         </Card>
-      </div>
-      
-      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Transmissão Finalizada</DialogTitle>
-            <DialogDescription>
-              Esta tela será fechada em {finalActionTimeLeft} segundos
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {finalAction === 'image' && finalActionImage && (
-              <div 
-                className="border rounded overflow-hidden cursor-pointer"
-                onClick={handleFinalActionClick}
-              >
-                <img 
-                  src={finalActionImage} 
-                  alt="Ação Final"
-                  className="w-full h-auto object-contain"
-                />
-              </div>
-            )}
+        
+        <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
+          <DialogContent className="bg-black text-white border-white/10">
+            <DialogHeader>
+              <DialogTitle>Ação Final da Transmissão</DialogTitle>
+              <DialogDescription>
+                A transmissão foi finalizada. Esta tela será exibida para todos os participantes.
+              </DialogDescription>
+            </DialogHeader>
             
-            {finalAction === 'coupon' && (
-              <div className="p-6 border rounded text-center space-y-3">
-                <p className="text-sm text-muted-foreground">Use o cupom:</p>
-                <p className="text-xl font-bold tracking-wider">{finalActionCoupon}</p>
-                
-                {finalActionLink && (
-                  <Button 
-                    variant="default" 
-                    className="w-full mt-4"
-                    onClick={handleFinalActionClick}
-                  >
-                    Acessar Loja
-                  </Button>
-                )}
+            <div className="space-y-4">
+              <div className="p-3 border border-white/10 rounded-md text-center">
+                <p className="text-sm mb-2">Esta tela será fechada automaticamente em:</p>
+                <span className="text-xl font-bold">{finalActionTimeLeft} segundos</span>
               </div>
-            )}
-          </div>
-          
-          <div className="flex justify-end">
-            <Button 
-              variant="outline" 
-              onClick={closeFinalAction}
-            >
-              <X className="h-4 w-4 mr-2" />
-              Fechar
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+              
+              {finalAction === 'image' && finalActionImage && (
+                <div 
+                  className="aspect-video bg-white/5 rounded-md flex items-center justify-center cursor-pointer relative overflow-hidden"
+                  onClick={handleFinalActionClick}
+                >
+                  <img 
+                    src={finalActionImage} 
+                    alt="Imagem final" 
+                    className="w-full h-full object-contain" 
+                  />
+                  {finalActionLink && (
+                    <div className="absolute bottom-2 right-2 bg-white/20 text-white text-xs px-2 py-1 rounded-full flex items-center">
+                      <ExternalLink className="h-3 w-3 mr-1" />
+                      Clique para acessar
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {finalAction === 'coupon' && (
+                <div className="p-6 border border-accent/50 rounded-md text-center space-y-4">
+                  <p className="text-sm">Utilize o código abaixo para obter seu desconto:</p>
+                  <div className="p-3 bg-white/5 rounded font-mono text-accent text-xl">
+                    {finalActionCoupon}
+                  </div>
+                  {finalActionLink && (
+                    <Button 
+                      variant="default" 
+                      className="w-full"
+                      onClick={handleFinalActionClick}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Resgatar Cupom
+                    </Button>
+                  )}
+                </div>
+              )}
+              
+              <Button 
+                variant="outline" 
+                className="w-full border-white/20"
+                onClick={closeFinalAction}
+              >
+                <X className="h-4 w-4 mr-2" />
+                Fechar
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   );
 };
