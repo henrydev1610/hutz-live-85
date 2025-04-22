@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -8,6 +7,7 @@ import { Camera, VideoOff, Loader2, X, ChevronRight, CheckSquare } from "lucide-
 import { isSessionActive, addParticipantToSession, getSessionFinalAction } from '@/utils/sessionUtils';
 import { initParticipantWebRTC, setLocalStream, cleanupWebRTC } from '@/utils/webrtc';
 import { initializeParticipantSession } from '@/utils/liveStreamUtils';
+import { diagnoseConnection, testBroadcastReception } from '@/utils/connectionDiagnostics';
 
 const ParticipantPage = () => {
   const { toast } = useToast();

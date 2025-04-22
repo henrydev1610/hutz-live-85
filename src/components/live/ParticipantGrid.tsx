@@ -51,127 +51,287 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
 }) => {
   const { toast } = useToast();
   const [hasVideoMap, setHasVideoMap] = useState<{[key: string]: boolean}>({});
+  const [streamConnectionCount, setStreamConnectionCount] = useState<{[key: string]: number}>({});
   const videoRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
   const videoElements = useRef<{[key: string]: HTMLVideoElement | null}>({});
   
-  // Effect to update video elements when stream references change
+  // Set up ping response channel for host to acknowledge participants
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    try {
+      const pingChannel = new BroadcastChannel(`ping-${sessionId}`);
+      
+      pingChannel.onmessage = (event) => {
+        if (event.data.type === 'participant-ping') {
+          const participantId = event.data.id;
+          
+          // Send back acknowledgment
+          pingChannel.postMessage({
+            type: 'host-pong',
+            targetId: participantId,
+            timestamp: Date.now()
+          });
+          
+          // Update the participant's status if they exist
+          const participant = participants.find(p => p.id === participantId);
+          if (participant) {
+            updateParticipantStatus(sessionId, participantId, {
+              active: true,
+              lastActive: Date.now()
+            });
+          }
+        }
+      };
+      
+      return () => {
+        pingChannel.close();
+      };
+    } catch (e) {
+      console.error("Error setting up ping channel:", e);
+    }
+  }, [sessionId, participants]);
+  
+  // Listen for diagnostic information
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    try {
+      const diagnosticChannel = new BroadcastChannel(`diagnostic-${sessionId}`);
+      
+      diagnosticChannel.onmessage = (event) => {
+        if (event.data.type === 'participant-diagnostics') {
+          console.log(`Received diagnostics from ${event.data.participantId}:`, event.data);
+        }
+      };
+      
+      return () => {
+        diagnosticChannel.close();
+      };
+    } catch (e) {
+      console.error("Error setting up diagnostic channel:", e);
+    }
+  }, [sessionId]);
+  
+  // Enhanced effect to update video elements when stream references change
   useEffect(() => {
     if (!participantStreams) return;
     
     // Log the available participant streams
     console.log("Participant streams available:", Object.keys(participantStreams));
+    console.log("Total number of participants:", participants.length);
+    console.log("Participants with selected=true:", participants.filter(p => p.selected).length);
     
-    // Update all video elements with their streams
-    Object.entries(participantStreams).forEach(([participantId, stream]) => {
-      // Skip if no stream or it has no tracks
-      if (!stream || stream.getTracks().length === 0) {
-        console.log(`Stream for ${participantId} has no tracks`);
-        return;
-      }
-      
-      const hasVideoTracks = stream.getVideoTracks().length > 0;
-      console.log(`Participant ${participantId} has video tracks: ${hasVideoTracks}`);
-      
-      // Log more details about the stream for debugging
-      if (hasVideoTracks) {
-        const videoTrack = stream.getVideoTracks()[0];
-        console.log(`Video track details for ${participantId}:`, {
-          enabled: videoTrack.enabled,
-          readyState: videoTrack.readyState,
-          id: videoTrack.id,
-          settings: videoTrack.getSettings(),
-          constraints: videoTrack.getConstraints()
-        });
-      }
-      
-      // Update hasVideo state for this participant
-      setHasVideoMap(prev => ({
-        ...prev,
-        [participantId]: hasVideoTracks
-      }));
-      
-      // Find the container for this participant's video
-      const container = videoRefs.current[participantId];
-      if (container) {
-        updateVideoElement(container, stream);
-      } else {
-        console.log(`Container for participant ${participantId} not found. Will try again in the next render.`);
-      }
-    });
-    
-    // Also check for video containers that might need streams
+    // Check all participants that should have video
     participants.forEach(participant => {
-      if (participant.hasVideo && !hasVideoMap[participant.id] && videoRefs.current[participant.id]) {
-        // This participant should have video but doesn't have it in our state
-        // Check if we have a stream for them
-        const stream = participantStreams[participant.id];
-        if (stream && stream.getVideoTracks().length > 0) {
-          updateVideoElement(videoRefs.current[participant.id]!, stream);
-          setHasVideoMap(prev => ({
-            ...prev,
-            [participant.id]: true
-          }));
+      const stream = participantStreams[participant.id];
+      const hasStreamData = stream !== undefined;
+      
+      console.log(`Checking participant ${participant.id} (${participant.name}):`, {
+        hasStreamInProps: hasStreamData,
+        streamTracks: stream ? stream.getTracks().length : 0,
+        selected: participant.selected,
+        active: participant.active,
+        hasVideoInState: hasVideoMap[participant.id],
+        hasVideoInData: participant.hasVideo
+      });
+      
+      // If we have a stream for this participant but it's not in hasVideoMap
+      if (hasStreamData && stream && stream.getTracks().length > 0) {
+        const hasVideoTracks = stream.getVideoTracks().length > 0;
+        
+        // Log more details about the stream for debugging
+        if (hasVideoTracks) {
+          const videoTrack = stream.getVideoTracks()[0];
+          console.log(`Video track details for ${participant.id}:`, {
+            enabled: videoTrack.enabled,
+            readyState: videoTrack.readyState,
+            id: videoTrack.id,
+            settings: videoTrack.getSettings(),
+            constraints: videoTrack.getConstraints()
+          });
         }
+        
+        // Update hasVideo state for this participant
+        setHasVideoMap(prev => ({
+          ...prev,
+          [participant.id]: hasVideoTracks
+        }));
+        
+        // Increment connection count for this participant
+        setStreamConnectionCount(prev => ({
+          ...prev,
+          [participant.id]: (prev[participant.id] || 0) + 1
+        }));
+        
+        // Find the container for this participant's video
+        const container = videoRefs.current[participant.id];
+        if (container) {
+          console.log(`Attempting to update video for ${participant.id}`);
+          updateVideoElement(container, stream);
+        } else {
+          console.log(`Container for participant ${participant.id} not found. Will try again in the next render.`);
+        }
+      } 
+      // If participant should have video but we don't have a stream
+      else if (participant.hasVideo && !hasStreamData) {
+        console.log(`Participant ${participant.id} should have video but no stream available`);
       }
     });
   }, [participantStreams, participants]);
   
-  // Effect to update video element visibility when hasVideo changes
+  // Effect to poll for media element readiness
   useEffect(() => {
-    participants.forEach(participant => {
-      // If we have a record of whether this participant has video
-      if (hasVideoMap[participant.id] !== undefined) {
-        const hasVideo = hasVideoMap[participant.id];
+    // Check every second if video elements are playing correctly
+    const videoCheckInterval = setInterval(() => {
+      participants.forEach(participant => {
+        const videoElement = videoElements.current[participant.id];
+        const stream = participantStreams[participant.id];
         
-        // Update participant status if our local state differs from participant data
-        if (participant.hasVideo !== hasVideo) {
-          updateParticipantStatus(sessionId, participant.id, { hasVideo });
+        // If we have a video element and a stream but the video isn't playing
+        if (videoElement && stream && stream.getVideoTracks().length > 0) {
+          const isPlaying = !videoElement.paused && 
+                           videoElement.readyState >= 3 && 
+                           videoElement.videoWidth > 0;
+                           
+          if (!isPlaying) {
+            console.log(`Video for ${participant.id} not playing correctly, retrying attachment`);
+            videoElement.srcObject = null;
+            videoElement.srcObject = stream;
+            videoElement.play().catch(err => {
+              console.error(`Error playing video for ${participant.id}:`, err);
+            });
+          }
         }
-      }
-    });
-  }, [hasVideoMap, participants, sessionId]);
+      });
+    }, 5000);
+    
+    return () => {
+      clearInterval(videoCheckInterval);
+    };
+  }, [participants, participantStreams]);
 
-  // Function to add or update video element in container
+  // Function to add or update video element in container with improved error handling
   const updateVideoElement = (container: HTMLDivElement, stream: MediaStream) => {
     const participantId = container.id.replace('participant-video-', '');
     let videoElement = videoElements.current[participantId];
     
-    if (!videoElement) {
-      videoElement = document.createElement('video');
-      videoElement.autoplay = true;
-      videoElement.playsInline = true;
-      videoElement.muted = true;
-      videoElement.className = 'w-full h-full object-cover';
-      
-      // Store reference to video element
-      videoElements.current[participantId] = videoElement;
-      
-      // Clear container before adding
-      while (container.firstChild) {
-        container.removeChild(container.firstChild);
+    try {
+      if (!videoElement) {
+        console.log(`Creating new video element for ${participantId}`);
+        videoElement = document.createElement('video');
+        videoElement.autoplay = true;
+        videoElement.playsInline = true;
+        videoElement.muted = true;
+        videoElement.className = 'w-full h-full object-cover';
+        
+        // Add a data attribute for debugging
+        videoElement.setAttribute('data-participant-id', participantId);
+        
+        // Store reference to video element
+        videoElements.current[participantId] = videoElement;
+        
+        // Clear container before adding
+        while (container.firstChild) {
+          container.removeChild(container.firstChild);
+        }
+        
+        container.appendChild(videoElement);
+        
+        // Add event listeners for video with detailed logging
+        videoElement.onloadedmetadata = () => {
+          console.log(`Video metadata loaded for ${participantId}, dimensions: ${videoElement?.videoWidth}x${videoElement?.videoHeight}`);
+          videoElement?.play().catch(err => {
+            console.error(`Error playing video on metadata load for ${participantId}:`, err);
+            
+            // Try again with a delay
+            setTimeout(() => {
+              console.log(`Retrying play for ${participantId} after metadata load`);
+              videoElement?.play().catch(e => {
+                console.error(`Retry failed for ${participantId}:`, e);
+              });
+            }, 1000);
+          });
+        };
+        
+        // Add more event listeners for debugging
+        videoElement.oncanplay = () => {
+          console.log(`Video can play for ${participantId}`);
+        };
+        
+        videoElement.onerror = (event) => {
+          console.error(`Video element error for ${participantId}:`, videoElement?.error);
+        };
       }
       
-      container.appendChild(videoElement);
-      
-      // Add event listeners for video
-      videoElement.onloadedmetadata = () => {
-        videoElement?.play().catch(err => console.error('Error playing video:', err));
-      };
-    }
-    
-    if (videoElement.srcObject !== stream) {
-      console.log(`Attaching stream to video element for ${participantId}`);
-      videoElement.srcObject = stream;
-      
-      // Try to play video
-      videoElement.play().catch(err => {
-        console.error('Error playing video:', err);
+      if (videoElement.srcObject !== stream) {
+        console.log(`Attaching stream to video element for ${participantId}`);
         
-        // Try again after a delay
+        // Check if stream has active video tracks
+        const videoTracks = stream.getVideoTracks();
+        if (videoTracks.length === 0) {
+          console.warn(`Stream for ${participantId} has no video tracks`);
+        } else {
+          const videoTrack = videoTracks[0];
+          if (!videoTrack.enabled) {
+            console.warn(`Video track for ${participantId} is not enabled`);
+          }
+          
+          if (videoTrack.readyState !== 'live') {
+            console.warn(`Video track for ${participantId} is not live (state: ${videoTrack.readyState})`);
+          }
+        }
+        
+        // Set the stream as source
+        videoElement.srcObject = stream;
+        
+        // Try to play video with retries
+        videoElement.play().catch(err => {
+          console.error(`Error playing video for ${participantId}:`, err);
+          
+          // Implementation of retry logic with increasing delays
+          const retryPlay = (attempt = 1, maxAttempts = 3) => {
+            if (attempt > maxAttempts) {
+              console.error(`Max play attempts reached for ${participantId}`);
+              return;
+            }
+            
+            const delay = attempt * 1000;
+            console.log(`Retry ${attempt}/${maxAttempts} playing video for ${participantId} in ${delay}ms`);
+            
+            setTimeout(() => {
+              if (videoElement) {
+                videoElement.play()
+                  .then(() => console.log(`Successfully played video on retry ${attempt} for ${participantId}`))
+                  .catch(retryErr => {
+                    console.error(`Error on retry ${attempt} for ${participantId}:`, retryErr);
+                    retryPlay(attempt + 1, maxAttempts);
+                  });
+              }
+            }, delay);
+          };
+          
+          retryPlay();
+        });
+      }
+    } catch (error) {
+      console.error(`Error updating video element for ${participantId}:`, error);
+      
+      // Try to recover by creating a new video element
+      try {
+        if (videoElement) {
+          videoElement.srcObject = null;
+          container.removeChild(videoElement);
+          videoElements.current[participantId] = null;
+        }
+        
+        // Try again with a new element
         setTimeout(() => {
-          videoElement?.play().catch(e => console.error('Error playing video on retry:', e));
+          updateVideoElement(container, stream);
         }, 1000);
-      });
+      } catch (recoveryError) {
+        console.error(`Recovery failed for ${participantId}:`, recoveryError);
+      }
     }
   };
 
@@ -189,12 +349,13 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     onSelectParticipant(id);
   };
 
-  // Render participant card
+  // Enhanced rendering with connection diagnostics
   const renderParticipantCard = (participant: Participant) => {
     const isActive = participant.active;
     const isSelected = participant.selected;
     const hasVideo = hasVideoMap[participant.id] || participant.hasVideo || false;
     const lastActiveDuration = formatTimeSince(participant.lastActive);
+    const connectionCount = streamConnectionCount[participant.id] || 0;
     
     return (
       <Card 
@@ -206,7 +367,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         }`}
       >
         <CardContent className="p-3 h-full flex flex-col">
-          {/* Participant video container */}
+          {/* Participant video container with improved diagnostics */}
           <div className="relative aspect-video bg-secondary/60 rounded-md mb-3 overflow-hidden">
             <div 
               id={`participant-video-${participant.id}`}
@@ -231,6 +392,13 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
             
             {/* Participant status indicators */}
             <div className="absolute top-2 right-2 flex gap-1">
+              {/* Add connection indicator */}
+              {connectionCount > 0 && (
+                <div className={`${connectionCount > 1 ? 'bg-green-500/90' : 'bg-yellow-500/90'} text-white p-1 rounded-full`}>
+                  <Share className="w-3 h-3" />
+                </div>
+              )}
+              
               {participant.isAdmin && (
                 <div className="bg-yellow-500/90 text-white p-1 rounded-full">
                   <Crown className="w-3 h-3" />

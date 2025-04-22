@@ -256,6 +256,41 @@ export const initHostWebRTC = async (
         }
       };
       
+      // Add diagnostic response channel
+      try {
+        const diagnosticChannel = new BroadcastChannel(`diagnostic-${sessionId}`);
+        diagnosticChannel.onmessage = (event) => {
+          const { data } = event;
+          if (data.type === 'connection-diagnostics' || data.type === 'participant-diagnostics') {
+            console.log(`Received diagnostics for session ${sessionId}:`, data);
+          }
+        };
+        
+        // Setup acknowledgment channel for test messages
+        const liveChannel = new BroadcastChannel(`live-session-${sessionId}`);
+        liveChannel.onmessage = (event) => {
+          const { data } = event;
+          if (data.testId && data.id) {
+            console.log(`Received test message from participant ${data.id}:`, data);
+            
+            // Send acknowledgment
+            try {
+              const responseChannel = new BroadcastChannel(`response-${sessionId}`);
+              responseChannel.postMessage({
+                type: 'host-ack',
+                testId: data.testId,
+                timestamp: Date.now()
+              });
+              setTimeout(() => responseChannel.close(), 500);
+            } catch (e) {
+              console.error("Error sending acknowledgment:", e);
+            }
+          }
+        };
+      } catch (e) {
+        console.warn("Error setting up diagnostic channels:", e);
+      }
+      
       // Keep the channel open and send regular heartbeats
       setInterval(() => {
         channel.postMessage({ type: 'host-heartbeat', timestamp: Date.now() });
