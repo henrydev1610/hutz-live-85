@@ -161,11 +161,11 @@ const ParticipantPage = () => {
 
   useEffect(() => {
     if (finalActionOpen && finalActionTimeLeft > 0) {
-      const timerId = window.setInterval(() => {
+      const timerId = setInterval(() => {
         setFinalActionTimeLeft((prev) => prev - 1);
       }, 1000);
       
-      setFinalActionTimerId(timerId as unknown as NodeJS.Timeout);
+      setFinalActionTimerId(timerId);
       
       return () => {
         if (timerId) clearInterval(timerId);
@@ -587,7 +587,7 @@ const ParticipantPage = () => {
 
   const closeFinalAction = () => {
     if (finalActionTimerId) {
-      clearInterval(finalActionTimerId as unknown as number);
+      clearInterval(finalActionTimerId);
       setFinalActionTimerId(null);
     }
     setFinalActionOpen(false);
