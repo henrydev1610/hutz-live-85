@@ -1,4 +1,5 @@
 import { addParticipantToSession, updateParticipantStatus } from './sessionUtils';
+import { io } from 'socket.io-client';
 
 // Define SocketType interface
 interface SocketType {
@@ -28,13 +29,6 @@ const PEER_CONNECTION_CONFIG = {
     }
   ]
 };
-
-let io: any;
-import('socket.io-client').then(module => {
-  io = module.io;
-}).catch(err => {
-  console.error("Error loading socket.io-client:", err);
-});
 
 let socket: SocketType | null = null;
 let activePeerConnections: { [participantId: string]: RTCPeerConnection } = {};

@@ -19,15 +19,5 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
-  },
-  build: {
-    rollupOptions: {
-      external: ['socket.io-client'],
-      output: {
-        globals: {
-          'socket.io-client': 'io'
-        }
-      }
-    }
   }
 }));
