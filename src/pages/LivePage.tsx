@@ -210,21 +210,6 @@ const LivePage = () => {
   const [isParticipantModeratorVisible] = useState(true);
   const [isParticipantAdminVisible] = useState(true);
   const [isParticipantOwnerVisible] = useState(true);
-  const [isParticipantSponsorVisible] = useState(true);
-  const [isParticipantPartnerVisible] = useState(true);
-  const [isParticipantEmployeeVisible] = useState(true);
-  const [isParticipantContractorVisible] = useState(true);
-  const [isParticipantVolunteerVisible] = useState(true);
-  const [isParticipantInternVisible] = useState(true);
-  const [isParticipantTraineeVisible] = useState(true);
-  const [isParticipantApprenticeVisible] = useState(true);
-  const [isParticipantStudentVisible] = useState(true);
-  const [isParticipantTeacherVisible] = useState(true);
-  const [isParticipantProfessorVisible] = useState(true);
-  const [isParticipantAlumniVisible] = useState(true);
-  const [isParticipantGuestVisible] = useState(true);
-  const [isParticipantVisitorVisible] = useState(true);
-  const [isParticipantUserVisible] = useState(true);
   const [
     isParticipantRevokeVisitorVisible
   ] = useState(true);
@@ -606,4 +591,28 @@ const LivePage = () => {
     updateSession(sessionId, { isParticipantRevokeAccessVisible: !isParticipantRevokeAccessVisible });
   };
 
-  const handleToggleParticipantGrantAdminVisibility =
+  const handleToggleParticipantGrantAdminVisibility = () => {
+    setIsParticipantGrantAdminVisible(!isParticipantGrantAdminVisible);
+    updateSession(sessionId, { isParticipantGrantAdminVisible: !isParticipantGrantAdminVisible });
+  };
+
+  const handleToggleParticipantRevokeAdminVisibility = () => {
+    setIsParticipantRevokeAdminVisible(!isParticipantRevokeAdminVisible);
+    updateSession(sessionId, { isParticipantRevokeAdminVisible: !isParticipantRevokeAdminVisible });
+  };
+
+  const handleToggleParticipantGrantOwnerVisibility = () => {
+    setIsParticipantGrantOwnerVisible(!isParticipantGrantOwnerVisible);
+    updateSession(sessionId, { isParticipantGrantOwnerVisible: !isParticipantGrantOwnerVisible });
+  };
+
+  const handleToggleParticipantRevokeOwnerVisibility = () => {
+    setIsParticipantRevokeOwnerVisible(!isParticipantRevokeOwnerVisible);
+    updateSession(sessionId, { isParticipantRevokeOwnerVisible: !isParticipantRevokeOwnerVisible });
+  };
+
+  return (
+    
+    
+      
+        Sessão
