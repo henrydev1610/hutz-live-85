@@ -27,6 +27,7 @@ const ParticipantPage = () => {
     link?: string;
     coupon?: string;
   } | null>(null);
+  const [finalActionTimerId, setFinalActionTimerId] = useState<NodeJS.Timeout | null>(null); // <-- added this line
   const videoRef = useRef<HTMLVideoElement>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);

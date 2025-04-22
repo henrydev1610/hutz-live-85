@@ -1098,7 +1098,7 @@ const LivePage = () => {
                     onSelectParticipant={handleParticipantSelect}
                     onRemoveParticipant={handleParticipantRemove}
                     participantStreams={participantStreams}
-                    sessionId={sessionId}
+                    sessionId={sessionId || ''}
                   />
                 </TabsContent>
                 

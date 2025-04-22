@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,9 +32,9 @@ interface ParticipantGridProps {
   sessionId: string;
   participants: Participant[];
   participantStreams?: { [key: string]: MediaStream };
-  onToggleSelect: (participantId: string) => void;
+  onSelectParticipant: (participantId: string) => void;
   onRemoveParticipant: (participantId: string) => void;
-  onToggleAdminStatus: (participantId: string) => void;
+  onToggleAdminStatus?: (participantId: string) => void;
   onToggleGrantAdminVisibility?: (participantId: string) => void;
   showAdminControls?: boolean;
 }
@@ -44,7 +43,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   sessionId,
   participants,
   participantStreams = {},
-  onToggleSelect,
+  onSelectParticipant,
   onRemoveParticipant,
   onToggleAdminStatus,
   onToggleGrantAdminVisibility,
@@ -174,7 +173,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   };
 
   const handleToggleSelect = (id: string) => {
-    onToggleSelect(id);
+    onSelectParticipant(id);
   };
 
   // Render participant card
