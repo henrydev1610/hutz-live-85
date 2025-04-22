@@ -567,18 +567,8 @@ const LivePage = () => {
               }
 
               async function getLocalStreamForDisplay() {
-                try {
-                  const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: true, 
-                    audio: false 
-                  });
-                  
-                  console.log("Got local stream for display with tracks:", stream.getTracks().length);
-                  return stream;
-                } catch (e) {
-                  console.error("Failed to get local stream:", e);
-                  return null;
-                }
+                console.log("Local stream for display not needed");
+                return null;
               }
               
               channel.addEventListener('message', async (event) => {
@@ -740,7 +730,7 @@ const LivePage = () => {
               
               window.onbeforeunload = function() {
                 if (!window.isClosingIntentionally) {
-                  return "Are you sure you want to leave the transmission?";
+                  return "Tem certeza que deseja sair da transmissão?";
                 }
               };
               
@@ -748,9 +738,12 @@ const LivePage = () => {
               
               window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
               
-              setInterval(() => {
+              const heartbeatInterval = setInterval(() => {
                 if (window.opener && !window.opener.closed) {
                   window.opener.postMessage({ type: 'transmission-heartbeat', sessionId }, '*');
+                } else {
+                  clearInterval(heartbeatInterval);
+                  window.close();
                 }
               }, 2000);
               
@@ -784,6 +777,14 @@ const LivePage = () => {
                 channel.close();
                 backupChannel.close();
               });
+              
+              setInterval(() => {
+                if (document.hidden) {
+                  const dummyDiv = document.createElement('div');
+                  document.body.appendChild(dummyDiv);
+                  setTimeout(() => document.body.removeChild(dummyDiv), 100);
+                }
+              }, 10000);
             </script>
           </body>
         </html>
@@ -816,7 +817,7 @@ const LivePage = () => {
           
           updateTransmissionParticipants();
         }
-      }, 300);
+      }, 500);
     }
   };
   
