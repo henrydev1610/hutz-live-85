@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +8,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { QrCode, BrainCircuit, Pencil, Trash2, Eye, Plus, Image, Palette } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import BackButton from '@/components/common/BackButton';
 
 const QuizPage = () => {
   const [qrCodeGenerated, setQrCodeGenerated] = useState(false);
@@ -23,7 +23,8 @@ const QuizPage = () => {
   };
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-6xl">
+    <div className="container mx-auto py-8 px-4 max-w-6xl relative">
+      <BackButton />
       <h1 className="text-3xl font-bold mb-8 hutz-gradient-text text-center">Momento Quiz</h1>
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

@@ -18,6 +18,7 @@ import QrCodeSettings from '@/components/live/QrCodeSettings';
 import { generateSessionId, addParticipantToSession } from '@/utils/sessionUtils';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
 import { initHostWebRTC, setOnParticipantTrack } from '@/utils/webrtc';
+import BackButton from '@/components/common/BackButton';
 
 const LivePage = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -1033,7 +1034,8 @@ const LivePage = () => {
   ]);
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-[calc(100vw-100px)]">
+    <div className="min-h-screen container mx-auto py-8 px-4 relative">
+      <BackButton />
       <h1 className="text-3xl font-bold mb-8 hutz-gradient-text text-center">Momento Live</h1>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

@@ -3,6 +3,7 @@ import React from 'react';
 import { useLightShowLogic } from '@/hooks/useLightShowLogic';
 import Header from '@/components/lightshow/Header';
 import MainContent from '@/components/lightshow/MainContent';
+import BackButton from '@/components/common/BackButton';
 
 const LightShowPage = () => {
   const {
@@ -41,7 +42,8 @@ const LightShowPage = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-black">
-      <div className="container mx-auto py-4 px-4">
+      <div className="container mx-auto py-4 px-4 relative">
+        <BackButton />
         <h1 className="text-3xl font-bold mb-4 hutz-gradient-text">Momento Light Show</h1>
         
         <Header 
