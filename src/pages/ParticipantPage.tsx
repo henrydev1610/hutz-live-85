@@ -27,7 +27,9 @@ const ParticipantPage = () => {
     link?: string;
     coupon?: string;
   } | null>(null);
-  const [finalActionTimerId, setFinalActionTimerId] = useState<NodeJS.Timeout | null>(null); // <-- added this line
+  const [finalActionTimerId, setFinalActionTimerId] = useState<NodeJS.Timeout | null>(null);
+  const [finalActionOpen, setFinalActionOpen] = useState(false);
+  const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const videoRef = useRef<HTMLVideoElement>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -156,6 +158,22 @@ const ParticipantPage = () => {
       return () => clearInterval(streamInfoInterval);
     }
   }, [isJoined, sessionId, videoStream, participantId]);
+
+  useEffect(() => {
+    if (finalActionOpen && finalActionTimeLeft > 0) {
+      const timerId = window.setInterval(() => {
+        setFinalActionTimeLeft((prev) => prev - 1);
+      }, 1000);
+      
+      setFinalActionTimerId(timerId);
+      
+      return () => {
+        if (timerId) clearInterval(timerId);
+      };
+    } else if (finalActionTimeLeft <= 0) {
+      closeFinalAction();
+    }
+  }, [finalActionOpen, finalActionTimeLeft]);
 
   const checkSession = async (showToast = true) => {
     setIsLoading(true);
@@ -565,6 +583,20 @@ const ParticipantPage = () => {
     if (finalAction && finalAction.link) {
       window.location.href = finalAction.link;
     }
+  };
+
+  const closeFinalAction = () => {
+    if (finalActionTimerId) {
+      clearInterval(finalActionTimerId);
+      setFinalActionTimerId(null);
+    }
+    setFinalActionOpen(false);
+    setFinalActionTimeLeft(20);
+    
+    toast({
+      title: "Transmissão finalizada",
+      description: "A transmissão foi encerrada com sucesso."
+    });
   };
 
   if (!isJoined && !isLoading && sessionFound && finalAction && finalAction.type !== 'none') {

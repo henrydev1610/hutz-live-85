@@ -25,7 +25,7 @@ const LivePage = () => {
   const [qrCodeURL, setQrCodeURL] = useState("");
   const [qrCodeVisible, setQrCodeVisible] = useState(false);
   const [qrCodeSvg, setQrCodeSvg] = useState<string | null>(null);
-  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean, hasVideo: boolean, connectedAt?: number}[]>([]);
+  const [participantList, setParticipantList] = useState<{id: string, name: string, joinedAt: number, lastActive: number, active: boolean, selected: boolean, hasVideo: boolean, connectedAt?: number}[]>([]);
   const [selectedBackgroundColor, setSelectedBackgroundColor] = useState("#000000");
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
   const [finalAction, setFinalAction] = useState<'none' | 'image' | 'coupon'>('none');
@@ -70,6 +70,8 @@ const LivePage = () => {
       const initialParticipants = Array(4).fill(0).map((_, i) => ({
         id: `placeholder-${i}`,
         name: `Participante ${i + 1}`,
+        joinedAt: Date.now(),
+        lastActive: Date.now(),
         active: false,
         selected: false,
         hasVideo: false
@@ -970,17 +972,20 @@ const LivePage = () => {
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === participantId);
       if (exists) {
-        return prev.map(p => p.id === participantId ? { ...p, active: true, hasVideo: true, connectedAt: Date.now() } : p);
+        return prev.map(p => p.id === participantId ? { ...p, active: true, hasVideo: true, lastActive: Date.now(), connectedAt: Date.now() } : p);
       }
       
       const participantName = `Participante ${prev.filter(p => !p.id.startsWith('placeholder-')).length + 1}`;
+      const now = Date.now();
       const newParticipant = {
         id: participantId,
         name: participantName,
+        joinedAt: now,
+        lastActive: now,
         active: true,
         selected: true, // Auto-select new participants for visibility
         hasVideo: true,
-        connectedAt: Date.now()
+        connectedAt: now
       };
       
       if (sessionId) {
