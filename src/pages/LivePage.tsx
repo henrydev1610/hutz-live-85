@@ -17,7 +17,7 @@ import TextSettings from '@/components/live/TextSettings';
 import QrCodeSettings from '@/components/live/QrCodeSettings';
 import { generateSessionId, addParticipantToSession } from '@/utils/sessionUtils';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
-import { initHostWebRTC, setOnParticipantTrack, setLocalStream } from '@/utils/webrtc';
+import { initHostWebRTC, setOnParticipantTrack } from '@/utils/webrtc';
 
 const LivePage = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -79,23 +79,7 @@ const LivePage = () => {
 
   useEffect(() => {
     if (sessionId) {
-      if (transmissionOpen) {
-        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-          .then(stream => {
-            console.log("Created host media stream for WebRTC initialization", stream);
-            setLocalMediaStream(stream);
-            setLocalStream(stream);
-          })
-          .catch(err => {
-            console.error("Error creating host media stream:", err);
-            toast({
-              title: "Erro ao inicializar câmera",
-              description: "Não foi possível acessar a câmera para inicializar a transmissão.",
-              variant: "destructive"
-            });
-          });
-      }
-      
+      // Initialize the host session without activating the camera
       const cleanup = initializeHostSession(sessionId, {
         onParticipantJoin: handleParticipantJoin,
         onParticipantLeave: (id) => {
@@ -111,6 +95,7 @@ const LivePage = () => {
         }
       });
 
+      // Initialize WebRTC without camera for host
       initHostWebRTC(sessionId, (participantId, track) => {
         console.log(`Received track from participant ${participantId}:`, track);
         handleParticipantTrack(participantId, track);
@@ -123,7 +108,7 @@ const LivePage = () => {
         }
       };
     }
-  }, [sessionId, transmissionOpen]);
+  }, [sessionId]);
 
   const handleParticipantTrack = (participantId: string, track: MediaStreamTrack) => {
     console.log(`Processing track from participant ${participantId}:`, track);
@@ -517,6 +502,7 @@ const LivePage = () => {
             
             <script>
               window.transmissionWindow = true;
+              window.isKeepAliveActive = true;
               
               const sessionId = "${sessionId}";
               console.log("Live transmission window opened for session:", sessionId);
@@ -528,6 +514,15 @@ const LivePage = () => {
               let availableSlots = Array.from({ length: Math.min(participantCount, 100) }, (_, i) => i);
               let participantStreams = {};
               let activeVideoElements = {};
+              
+              // Keep the window alive by preventing it from closing automatically
+              function keepAlive() {
+                if (window.isKeepAliveActive) {
+                  console.log("Keeping transmission window alive");
+                  setTimeout(keepAlive, 1000);
+                }
+              }
+              keepAlive();
 
               function createVideoElement(slotElement, stream) {
                 if (!slotElement) return;
@@ -566,17 +561,34 @@ const LivePage = () => {
                 return videoElement;
               }
 
-              async function getLocalStreamForDisplay() {
+              // Modified - Do not use real camera, create a mock placeholder video stream
+              function createPlaceholderStream() {
+                // Create a canvas element
+                const canvas = document.createElement('canvas');
+                canvas.width = 640;
+                canvas.height = 480;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw a placeholder icon
+                ctx.fillStyle = '#444444';
+                ctx.beginPath();
+                ctx.arc(canvas.width / 2, canvas.height / 2 - 50, 60, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(canvas.width / 2, canvas.height / 2 + 90, 100, 0, Math.PI, true);
+                ctx.fill();
+                
+                // Try to create a stream from the canvas
                 try {
-                  const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: true, 
-                    audio: false 
-                  });
-                  
-                  console.log("Got local stream for display with tracks:", stream.getTracks().length);
+                  const stream = canvas.captureStream(30);
+                  console.log("Created placeholder stream with", stream.getTracks().length, "tracks");
                   return stream;
-                } catch (e) {
-                  console.error("Failed to get local stream:", e);
+                } catch (error) {
+                  console.error("Failed to create placeholder stream:", error);
                   return null;
                 }
               }
@@ -594,7 +606,7 @@ const LivePage = () => {
                     const slotElement = document.getElementById("participant-slot-" + slotIndex);
                     if (slotElement) {
                       if (!window.localPlaceholderStream) {
-                        window.localPlaceholderStream = await getLocalStreamForDisplay();
+                        window.localPlaceholderStream = createPlaceholderStream();
                       }
                       
                       if (window.localPlaceholderStream) {
@@ -736,6 +748,10 @@ const LivePage = () => {
                 else if (event.data.type === 'update-qr-positions') {
                   updateQRPositions(event.data);
                 }
+                else if (event.data.type === 'keep-alive') {
+                  // Keep alive message received
+                  console.log("Keep-alive received");
+                }
               });
               
               window.onbeforeunload = function() {
@@ -746,8 +762,10 @@ const LivePage = () => {
               
               window.isClosingIntentionally = false;
               
+              // Send ready message to parent window
               window.opener.postMessage({ type: 'transmission-ready', sessionId }, '*');
               
+              // Send heartbeat to parent window
               setInterval(() => {
                 if (window.opener && !window.opener.closed) {
                   window.opener.postMessage({ type: 'transmission-heartbeat', sessionId }, '*');
@@ -765,6 +783,7 @@ const LivePage = () => {
               };
               
               window.addEventListener('beforeunload', () => {
+                window.isKeepAliveActive = false;
                 window.isClosingIntentionally = true;
                 
                 Object.values(activeVideoElements).forEach(videoElement => {
@@ -793,13 +812,29 @@ const LivePage = () => {
       newWindow.document.close();
       setTransmissionOpen(true);
       
+      // Set up a keep-alive interval to prevent the window from closing
+      const keepAliveInterval = setInterval(() => {
+        if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+          try {
+            transmissionWindowRef.current.postMessage({ type: 'keep-alive' }, '*');
+          } catch (e) {
+            console.error("Error sending keep-alive:", e);
+            clearInterval(keepAliveInterval);
+          }
+        } else {
+          clearInterval(keepAliveInterval);
+        }
+      }, 1000);
+      
       newWindow.addEventListener('beforeunload', () => {
+        clearInterval(keepAliveInterval);
         setTransmissionOpen(false);
         transmissionWindowRef.current = null;
       });
       
       window.addEventListener('message', handleTransmissionMessage);
       
+      // Wait a bit longer before sending initial data to ensure window is fully loaded
       setTimeout(() => {
         if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
           transmissionWindowRef.current.postMessage({
@@ -816,7 +851,7 @@ const LivePage = () => {
           
           updateTransmissionParticipants();
         }
-      }, 300);
+      }, 500);
     }
   };
   
