@@ -63,7 +63,6 @@ const LivePage = () => {
   
   const [participantStreams, setParticipantStreams] = useState<{[id: string]: MediaStream}>({});
   const [localStream, setLocalMediaStream] = useState<MediaStream | null>(null);
-  const [autoJoin, setAutoJoin] = useState(false);
 
   useEffect(() => {
     if (participantList.length === 0) {
@@ -79,51 +78,24 @@ const LivePage = () => {
   }, []);
 
   useEffect(() => {
-    if (sessionId && transmissionOpen) {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-        .then(stream => {
-          console.log("Created host media stream for WebRTC initialization", stream);
-          setLocalMediaStream(stream);
-          setLocalStream(stream);
-          
-          const cleanup = initializeHostSession(sessionId, {
-            onParticipantJoin: handleParticipantJoin,
-            onParticipantLeave: (id) => {
-              console.log(`Participant left: ${id}`);
-              setParticipantList(prev => 
-                prev.map(p => p.id === id ? { ...p, active: false } : p)
-              );
-            },
-            onParticipantHeartbeat: (id) => {
-              setParticipantList(prev => 
-                prev.map(p => p.id === id ? { ...p, active: true } : p)
-              );
-            }
+    if (sessionId) {
+      if (transmissionOpen) {
+        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+          .then(stream => {
+            console.log("Created host media stream for WebRTC initialization", stream);
+            setLocalMediaStream(stream);
+            setLocalStream(stream);
+          })
+          .catch(err => {
+            console.error("Error creating host media stream:", err);
+            toast({
+              title: "Erro ao inicializar câmera",
+              description: "Não foi possível acessar a câmera para inicializar a transmissão.",
+              variant: "destructive"
+            });
           });
-
-          initHostWebRTC(sessionId, (participantId, track) => {
-            console.log(`Received track from participant ${participantId}:`, track);
-            handleParticipantTrack(participantId, track);
-          });
-
-          return () => {
-            cleanup();
-            if (stream) {
-              stream.getTracks().forEach(track => track.stop());
-            }
-          };
-        })
-        .catch(err => {
-          console.error("Error creating host media stream:", err);
-          toast({
-            title: "Erro ao inicializar câmera",
-            description: "Não foi possível acessar a câmera para inicializar a transmissão.",
-            variant: "destructive"
-          });
-        });
-    }
-    
-    else if (sessionId && !transmissionOpen) {
+      }
+      
       const cleanup = initializeHostSession(sessionId, {
         onParticipantJoin: handleParticipantJoin,
         onParticipantLeave: (id) => {
@@ -146,6 +118,9 @@ const LivePage = () => {
 
       return () => {
         cleanup();
+        if (localStream) {
+          localStream.getTracks().forEach(track => track.stop());
+        }
       };
     }
   }, [sessionId, transmissionOpen]);
@@ -358,6 +333,23 @@ const LivePage = () => {
       return;
     }
     
+    if (sessionId && !localStream) {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        .then(stream => {
+          console.log("Created host media stream for transmission", stream);
+          setLocalMediaStream(stream);
+          setLocalStream(stream);
+        })
+        .catch(err => {
+          console.error("Error creating host media stream:", err);
+          toast({
+            title: "Erro ao inicializar câmera",
+            description: "Não foi possível acessar a câmera para inicializar a transmissão.",
+            variant: "destructive"
+          });
+        });
+    }
+    
     const width = window.innerWidth * 0.9;
     const height = window.innerHeight * 0.9;
     const left = (window.screen.width - width) / 2;
@@ -421,7 +413,7 @@ const LivePage = () => {
                 top: 5%;
                 right: 5%;
                 bottom: 5%;
-                left: 25%;
+                left: 30%;
                 display: grid;
                 grid-template-columns: repeat(${Math.ceil(Math.sqrt(participantCount))}, 1fr);
                 gap: 8px;
@@ -881,231 +873,182 @@ const LivePage = () => {
         description: `${participantName} se conectou à sessão.`,
       });
       
-      // Remove the last placeholder participant and add the new real participant
-      const filteredList = prev.filter(p => !p.id.startsWith('placeholder-') || prev.indexOf(p) < prev.length - 1);
+      const filteredList = prev.filter(p => !p.id.startsWith('placeholder-') || p.active);
       return [...filteredList, newParticipant];
     });
     
-    // Auto-select the new participant if auto-join is enabled
-    if (autoJoin) {
-      setTimeout(() => {
-        setParticipantList(prev => prev.map(p => p.id === participantId ? { ...p, selected: true } : p));
-        updateTransmissionParticipants();
-      }, 1000);
-    }
+    setTimeout(updateTransmissionParticipants, 500);
   };
 
-  const handleAutoJoinToggle = () => {
-    setAutoJoin(!autoJoin);
-  };
-  
   return (
-    <div className="container max-w-7xl mx-auto p-4">
-      <div className="space-y-4">
-        <Card className="border-white/10 bg-black/40">
-          <CardHeader className="p-4">
-            <CardTitle className="text-xl md:text-2xl">Momento Live</CardTitle>
-            <CardDescription>Gerencie sua transmissão ao vivo.</CardDescription>
-          </CardHeader>
-          
-          <CardContent className="space-y-4 p-4 pt-0">
-            {transmissionOpen ? (
-              <div className="bg-green-500/20 border border-green-500/30 text-green-500 p-3 rounded flex items-center justify-between">
-                <div className="flex items-center">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
-                  <span className="font-semibold">Transmissão em andamento</span>
+    <div className="container mx-auto py-8 px-4 max-w-[calc(100vw-100px)]">
+      <h1 className="text-3xl font-bold mb-8 hutz-gradient-text text-center">Momento Live</h1>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div>
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 min-h-[700px]">
+            <CardHeader className="flex flex-row justify-between items-center">
+              <div className="flex items-center gap-4 w-full">
+                <CardTitle className="flex items-center gap-2">
+                  Controle de Transmissão
+                </CardTitle>
+                <div className="flex gap-2">
+                  <Button 
+                    className="hutz-button-accent"
+                    onClick={openTransmissionWindow}
+                    disabled={transmissionOpen || !sessionId}
+                  >
+                    <MonitorPlay className="h-4 w-4 mr-2" />
+                    Iniciar Transmissão
+                  </Button>
+                  
+                  <Button 
+                    variant="destructive"
+                    onClick={finishTransmission}
+                    disabled={!transmissionOpen}
+                  >
+                    <StopCircle className="h-4 w-4 mr-2" />
+                    Finalizar Transmissão
+                  </Button>
                 </div>
-                <Button 
-                  variant="outline" 
-                  className="text-white border-white/20 hover:bg-white/20"
-                  onClick={finishTransmission}
-                >
-                  <StopCircle className="h-4 w-4 mr-2" />
-                  Finalizar
-                </Button>
               </div>
-            ) : sessionId ? (
-              <div className="bg-blue-500/20 border border-blue-500/30 text-blue-500 p-3 rounded flex items-center justify-between">
-                <div className="flex items-center">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2"></div>
-                  <span className="font-semibold">Sessão criada - pronta para iniciar</span>
-                </div>
-                <Button 
-                  variant="default" 
-                  className="bg-blue-600 hover:bg-blue-700"
-                  onClick={openTransmissionWindow}
-                >
-                  <MonitorPlay className="h-4 w-4 mr-2" />
-                  Iniciar Transmissão
-                </Button>
-              </div>
-            ) : null}
-          
-            <Tabs defaultValue="participants" className="space-y-4">
-              <TabsList className="grid grid-cols-4 bg-background/5 text-white border border-white/10">
-                <TabsTrigger value="participants" className="data-[state=active]:bg-white/10">
-                  <Users className="h-4 w-4 mr-2" />
-                  Participantes
-                </TabsTrigger>
-                <TabsTrigger value="appearance" className="data-[state=active]:bg-white/10">
-                  <Palette className="h-4 w-4 mr-2" />
-                  Aparência
-                </TabsTrigger>
-                <TabsTrigger value="text" className="data-[state=active]:bg-white/10">
-                  <span className="font-serif mr-2">T</span>
-                  Texto
-                </TabsTrigger>
-                <TabsTrigger value="qrcode" className="data-[state=active]:bg-white/10">
-                  <QrCode className="h-4 w-4 mr-2" />
-                  QR Code
-                </TabsTrigger>
-              </TabsList>
+            </CardHeader>
+            <CardContent>
+              <CardDescription className="mb-4">
+                Gerencie participantes, layout e aparência da sua transmissão ao vivo
+              </CardDescription>
               
-              <div className="grid md:grid-cols-[1fr_300px] gap-6">
-                <div>
-                  <LivePreview
-                    participants={participantList.filter(p => p.selected)}
-                    participantCount={participantCount}
-                    selectedBackgroundColor={selectedBackgroundColor}
-                    backgroundImage={backgroundImage}
-                    qrCodeSvg={qrCodeSvg}
-                    qrCodeVisible={qrCodeVisible}
-                    qrCodePosition={qrCodePosition}
-                    qrCodeDescription={qrCodeDescription}
-                    qrDescriptionPosition={qrDescriptionPosition}
-                    qrDescriptionFontSize={qrDescriptionFontSize}
-                    selectedFont={selectedFont}
-                    selectedTextColor={selectedTextColor}
+              <Tabs defaultValue="participants" className="w-full">
+                <TabsList className="grid grid-cols-4 mb-6">
+                  <TabsTrigger value="participants">
+                    <Users className="h-4 w-4 mr-2" />
+                    Participantes
+                  </TabsTrigger>
+                  <TabsTrigger value="layout">
+                    <MonitorPlay className="h-4 w-4 mr-2" />
+                    Layout
+                  </TabsTrigger>
+                  <TabsTrigger value="appearance">
+                    <Palette className="h-4 w-4 mr-2" />
+                    Aparência
+                  </TabsTrigger>
+                  <TabsTrigger value="qrcode">
+                    <QrCode className="h-4 w-4 mr-2" />
+                    QR Code
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="participants">
+                  <ParticipantGrid 
+                    participants={participantList}
+                    onSelectParticipant={handleParticipantSelect}
+                    onRemoveParticipant={handleParticipantRemove}
                     participantStreams={participantStreams}
                   />
-                </div>
+                </TabsContent>
                 
-                <div>
-                  <TabsContent value="participants" className="space-y-4 m-0">
-                    <ParticipantGrid
-                      participants={participantList}
-                      onSelectParticipant={handleParticipantSelect}
-                      onRemoveParticipant={handleParticipantRemove}
-                      participantStreams={participantStreams}
-                    />
-                  </TabsContent>
-                  
-                  <TabsContent value="appearance" className="space-y-4 m-0">
-                    <AppearanceSettings
-                      selectedBackgroundColor={selectedBackgroundColor}
-                      setSelectedBackgroundColor={setSelectedBackgroundColor}
-                      backgroundImage={backgroundImage}
-                      onFileSelect={handleFileSelect}
-                      onRemoveImage={removeBackgroundImage}
-                      fileInputRef={fileInputRef}
-                    />
-                  </TabsContent>
-                  
-                  <TabsContent value="text" className="space-y-4 m-0">
-                    <TextSettings
-                      participantCount={participantCount}
-                      setParticipantCount={setParticipantCount}
-                      qrCodeDescription={qrCodeDescription}
-                      setQrCodeDescription={setQrCodeDescription}
-                      selectedFont={selectedFont}
-                      setSelectedFont={setSelectedFont}
-                      selectedTextColor={selectedTextColor}
-                      setSelectedTextColor={setSelectedTextColor}
-                      qrDescriptionFontSize={qrDescriptionFontSize}
-                      setQrDescriptionFontSize={setQrDescriptionFontSize}
-                    />
-                  </TabsContent>
-                  
-                  <TabsContent value="qrcode" className="space-y-4 m-0">
-                    <QrCodeSettings
-                      qrCodeGenerated={!!sessionId}
-                      qrCodeVisible={qrCodeVisible}
-                      qrCodeURL={qrCodeURL}
-                      finalAction={finalAction}
-                      setFinalAction={setFinalAction}
-                      finalActionImage={finalActionImage}
-                      setFinalActionImage={setFinalActionImage}
-                      finalActionLink={finalActionLink}
-                      setFinalActionLink={setFinalActionLink}
-                      finalActionCoupon={finalActionCoupon}
-                      setFinalActionCoupon={setFinalActionCouponCode}
-                      onGenerateQRCode={handleGenerateQRCode}
-                      onQRCodeToTransmission={handleQRCodeToTransmission}
-                      autoJoin={autoJoin}
-                      setAutoJoin={handleAutoJoinToggle}
-                    />
-                  </TabsContent>
-                </div>
-              </div>
-            </Tabs>
-          </CardContent>
-        </Card>
-        
-        <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
-          <DialogContent className="bg-black text-white border-white/10">
-            <DialogHeader>
-              <DialogTitle>Ação Final da Transmissão</DialogTitle>
-              <DialogDescription>
-                A transmissão foi finalizada. Esta tela será exibida para todos os participantes.
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="space-y-4">
-              <div className="p-3 border border-white/10 rounded-md text-center">
-                <p className="text-sm mb-2">Esta tela será fechada automaticamente em:</p>
-                <span className="text-xl font-bold">{finalActionTimeLeft} segundos</span>
-              </div>
-              
-              {finalAction === 'image' && finalActionImage && (
-                <div 
-                  className="aspect-video bg-white/5 rounded-md flex items-center justify-center cursor-pointer relative overflow-hidden"
-                  onClick={handleFinalActionClick}
-                >
-                  <img 
-                    src={finalActionImage} 
-                    alt="Imagem final" 
-                    className="w-full h-full object-contain" 
+                <TabsContent value="layout">
+                  <TextSettings 
+                    participantCount={participantCount}
+                    setParticipantCount={setParticipantCount}
+                    qrCodeDescription={qrCodeDescription}
+                    setQrCodeDescription={setQrCodeDescription}
+                    selectedFont={selectedFont}
+                    setSelectedFont={setSelectedFont}
+                    selectedTextColor={selectedTextColor}
+                    setSelectedTextColor={setSelectedTextColor}
+                    qrDescriptionFontSize={qrDescriptionFontSize}
+                    setQrDescriptionFontSize={setQrDescriptionFontSize}
                   />
-                  {finalActionLink && (
-                    <div className="absolute bottom-2 right-2 bg-white/20 text-white text-xs px-2 py-1 rounded-full flex items-center">
-                      <ExternalLink className="h-3 w-3 mr-1" />
-                      Clique para acessar
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              {finalAction === 'coupon' && (
-                <div className="p-6 border border-accent/50 rounded-md text-center space-y-4">
-                  <p className="text-sm">Utilize o código abaixo para obter seu desconto:</p>
-                  <div className="p-3 bg-white/5 rounded font-mono text-accent text-xl">
-                    {finalActionCoupon}
-                  </div>
-                  {finalActionLink && (
-                    <Button 
-                      variant="default" 
-                      className="w-full"
-                      onClick={handleFinalActionClick}
-                    >
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Resgatar Cupom
-                    </Button>
-                  )}
-                </div>
-              )}
-              
-              <Button 
-                variant="outline" 
-                className="w-full border-white/20"
-                onClick={closeFinalAction}
-              >
-                <X className="h-4 w-4 mr-2" />
-                Fechar
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+                </TabsContent>
+                
+                <TabsContent value="appearance">
+                  <AppearanceSettings 
+                    selectedBackgroundColor={selectedBackgroundColor}
+                    setSelectedBackgroundColor={setSelectedBackgroundColor}
+                    backgroundImage={backgroundImage}
+                    onFileSelect={handleFileSelect}
+                    onRemoveImage={removeBackgroundImage}
+                    fileInputRef={fileInputRef}
+                  />
+                </TabsContent>
+                
+                <TabsContent value="qrcode">
+                  <QrCodeSettings 
+                    qrCodeGenerated={!!sessionId}
+                    qrCodeVisible={qrCodeVisible}
+                    qrCodeURL={qrCodeURL}
+                    finalAction={finalAction}
+                    setFinalAction={setFinalAction}
+                    finalActionImage={finalActionImage}
+                    setFinalActionImage={setFinalActionImage}
+                    finalActionLink={finalActionLink}
+                    setFinalActionLink={setFinalActionLink}
+                    finalActionCoupon={finalActionCoupon}
+                    setFinalActionCoupon={setFinalActionCouponCode}
+                    onGenerateQRCode={handleGenerateQRCode}
+                    onQRCodeToTransmission={handleQRCodeToTransmission}
+                  />
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </div>
+        
+        <div>
+          <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 min-h-[700px]">
+            <CardHeader>
+              <CardTitle>
+                Pré-visualização
+              </CardTitle>
+              <CardDescription>
+                Veja como sua transmissão será exibida
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="h-[650px] flex items-center justify-center">
+                <LivePreview 
+                  qrCodeVisible={qrCodeVisible}
+                  qrCodeSvg={qrCodeSvg}
+                  qrCodePosition={qrCodePosition}
+                  setQrCodePosition={setQrCodePosition}
+                  qrDescriptionPosition={qrDescriptionPosition}
+                  setQrDescriptionPosition={setQrDescriptionPosition}
+                  qrCodeDescription={qrCodeDescription}
+                  selectedFont={selectedFont}
+                  selectedTextColor={selectedTextColor}
+                  qrDescriptionFontSize={qrDescriptionFontSize}
+                  backgroundImage={backgroundImage}
+                  selectedBackgroundColor={selectedBackgroundColor}
+                  participantList={participantList}
+                  participantCount={participantCount}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
+      
+      <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ação final enviada!</DialogTitle>
+            <DialogDescription>
+              O conteúdo foi exibido para os participantes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center space-x-2">
+            <div className="grid flex-1 gap-2">
+              <p className="text-sm text-muted-foreground">
+                Esta tela será fechada automaticamente em {finalActionTimeLeft} segundos.
+              </p>
+            </div>
+            <Button variant="outline" onClick={closeFinalAction}>
+              Fechar agora
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Switch } from "@/components/ui/switch";
 
 interface QrCodeSettingsProps {
   qrCodeGenerated: boolean;
@@ -21,8 +20,6 @@ interface QrCodeSettingsProps {
   setFinalActionCoupon: (code: string) => void;
   onGenerateQRCode: () => void;
   onQRCodeToTransmission: () => void;
-  autoJoin: boolean;
-  setAutoJoin: () => void;
 }
 
 const QrCodeSettings = ({
@@ -38,9 +35,7 @@ const QrCodeSettings = ({
   finalActionCoupon,
   setFinalActionCoupon,
   onGenerateQRCode,
-  onQRCodeToTransmission,
-  autoJoin,
-  setAutoJoin
+  onQRCodeToTransmission
 }: QrCodeSettingsProps) => {
   const { toast } = useToast();
 
@@ -109,17 +104,6 @@ const QrCodeSettings = ({
             </div>
             
             <div className="mt-4 space-y-4">
-              <div className="flex items-center space-x-2 pb-4">
-                <Switch
-                  id="auto-join"
-                  checked={autoJoin}
-                  onCheckedChange={setAutoJoin}
-                />
-                <Label htmlFor="auto-join" className="cursor-pointer">
-                  Entrada automática na transmissão
-                </Label>
-              </div>
-              
               <div>
                 <Label className="block mb-2">
                   Ação ao Finalizar Transmissão
