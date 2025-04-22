@@ -606,6 +606,24 @@ const LivePage = () => {
                 }
               }
               
+              // Listen for participant heartbeat to keep track of active participants
+              setInterval(() => {
+                if (window.opener && !window.opener.closed) {
+                  const activeSlots = Object.keys(participantSlots);
+                  activeSlots.forEach(participantId => {
+                    try {
+                      channel.postMessage({
+                        type: 'participant-heartbeat',
+                        participantId,
+                        timestamp: Date.now()
+                      });
+                    } catch (e) {
+                      console.error("Error sending participant heartbeat:", e);
+                    }
+                  });
+                }
+              }, 2000);
+              
               channel.addEventListener('message', async (event) => {
                 const data = event.data;
                 
@@ -631,6 +649,16 @@ const LivePage = () => {
                       }
                     }
                   }
+                }
+                else if (data.type === 'request-participant-streams') {
+                  // Re-broadcast participant streams to ensure they're displayed
+                  Object.keys(participantSlots).forEach(participantId => {
+                    channel.postMessage({
+                      type: 'participant-heartbeat',
+                      participantId,
+                      timestamp: Date.now()
+                    });
+                  });
                 }
               });
 
@@ -745,6 +773,13 @@ const LivePage = () => {
                 else if (event.data.type === 'keep-alive') {
                   // Keep alive message received
                   console.log("Keep-alive received");
+                }
+                else if (event.data.type === 'participant-joined') {
+                  // Forward participant join events to all windows via broadcast channel
+                  channel.postMessage({
+                    type: 'participant-join',
+                    id: event.data.id
+                  });
                 }
               });
               
@@ -942,7 +977,7 @@ const LivePage = () => {
         id: participantId,
         name: participantName,
         active: true,
-        selected: false, // Auto-select new participants for visibility
+        selected: true, // Auto-select new participants for visibility
         hasVideo: true,
         connectedAt: Date.now()
       };
@@ -959,6 +994,15 @@ const LivePage = () => {
       const filteredList = prev.filter(p => !p.id.startsWith('placeholder-') || p.active);
       return [...filteredList, newParticipant];
     });
+    
+    // Immediately broadcast participant join to transmission window
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      transmissionWindowRef.current.postMessage({
+        type: 'participant-joined',
+        id: participantId,
+        sessionId
+      }, '*');
+    }
     
     setTimeout(updateTransmissionParticipants, 500);
   };
@@ -1052,6 +1096,7 @@ const LivePage = () => {
                     onSelectParticipant={handleParticipantSelect}
                     onRemoveParticipant={handleParticipantRemove}
                     participantStreams={participantStreams}
+                    sessionId={sessionId}
                   />
                 </TabsContent>
                 

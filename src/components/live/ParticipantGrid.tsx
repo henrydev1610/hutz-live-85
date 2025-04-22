@@ -19,13 +19,15 @@ interface ParticipantGridProps {
   onSelectParticipant: (id: string) => void;
   onRemoveParticipant: (id: string) => void;
   participantStreams?: {[id: string]: MediaStream};
+  sessionId?: string | null;
 }
 
 const ParticipantGrid = ({ 
   participants, 
   onSelectParticipant, 
   onRemoveParticipant,
-  participantStreams = {}
+  participantStreams = {},
+  sessionId
 }: ParticipantGridProps) => {
   const videoRefs = useRef<{[id: string]: HTMLDivElement | null}>({});
   const [streamStatus, setStreamStatus] = useState<{[id: string]: boolean}>({});
@@ -42,6 +44,34 @@ const ParticipantGrid = ({
   const displayParticipants = sortedActiveParticipants.filter((participant, index, self) =>
     index === self.findIndex((p) => p.id === participant.id)
   );
+
+  // Add listener for participant heartbeat messages
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const handleParticipantHeartbeat = (event: MessageEvent) => {
+      if (event.data.type === 'participant-heartbeat' && event.data.participantId) {
+        console.log('Received participant heartbeat:', event.data.participantId);
+        // Update stream status if participant is active
+        setStreamStatus(prev => ({
+          ...prev,
+          [event.data.participantId]: true
+        }));
+      }
+    };
+
+    try {
+      const channel = new BroadcastChannel(`live-session-${sessionId}`);
+      channel.addEventListener('message', handleParticipantHeartbeat);
+      
+      return () => {
+        channel.removeEventListener('message', handleParticipantHeartbeat);
+        channel.close();
+      };
+    } catch (e) {
+      console.error("Error setting up broadcast channel for participant heartbeats:", e);
+    }
+  }, [sessionId]);
 
   // Effect to update transmission window when participant selection changes
   useEffect(() => {
@@ -132,6 +162,8 @@ const ParticipantGrid = ({
   
   // Update transmission window when streams change
   useEffect(() => {
+    if (!sessionId) return;
+    
     const transmissionWindow = window.opener;
     if (transmissionWindow && !transmissionWindow.closed) {
       const selectedParticipants = participants.filter(p => p.selected);
@@ -139,18 +171,44 @@ const ParticipantGrid = ({
       selectedParticipants.forEach(participant => {
         if (participantStreams[participant.id]) {
           // Notify transmission window about participant stream status
-          const channel = new BroadcastChannel(`live-session-${window.sessionStorage.getItem('currentSessionId')}`);
-          channel.postMessage({
-            type: 'video-stream',
-            participantId: participant.id,
-            stream: { hasStream: true }
-          });
-          
-          setTimeout(() => channel.close(), 100);
+          try {
+            const channel = new BroadcastChannel(`live-session-${sessionId}`);
+            channel.postMessage({
+              type: 'video-stream',
+              participantId: participant.id,
+              stream: { hasStream: true }
+            });
+            
+            setTimeout(() => channel.close(), 100);
+          } catch (e) {
+            console.error("Error sending stream information via broadcast channel:", e);
+          }
         }
       });
     }
-  }, [participantStreams, participants]);
+  }, [participantStreams, participants, sessionId]);
+  
+  // Request participant streams periodically to ensure they're connected
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    const requestInterval = setInterval(() => {
+      if (activeParticipants.length > 0) {
+        try {
+          const channel = new BroadcastChannel(`live-session-${sessionId}`);
+          channel.postMessage({
+            type: 'request-participant-streams',
+            timestamp: Date.now()
+          });
+          setTimeout(() => channel.close(), 100);
+        } catch (e) {
+          console.error("Error requesting participant streams:", e);
+        }
+      }
+    }, 5000);
+    
+    return () => clearInterval(requestInterval);
+  }, [activeParticipants, sessionId]);
   
   return (
     <div className="space-y-4 w-full max-w-[1200px]">
