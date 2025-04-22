@@ -13,22 +13,22 @@ interface ModuleCardProps {
 
 const ModuleCard = ({ title, description, icon, path }: ModuleCardProps) => {
   return (
-    <Card className="h-full flex flex-col bg-secondary/40 backdrop-blur-lg border border-white/10 hover:border-white/30 transition-all duration-300 shadow-lg">
-      <CardHeader>
-        <div className="flex items-center justify-center mb-4 text-accent">
-          <div className="w-12 h-12 flex items-center justify-center">
+    <Card className="h-full flex flex-col bg-secondary/40 backdrop-blur-lg border border-white/10 hover:border-white/30 transition-all duration-300 shadow-lg p-4">
+      <CardHeader className="p-6">
+        <div className="flex items-center justify-center mb-6 text-accent">
+          <div className="w-16 h-16 flex items-center justify-center">
             {icon}
           </div>
         </div>
-        <CardTitle className="text-xl font-bold text-center">{title}</CardTitle>
+        <CardTitle className="text-2xl font-bold text-center mb-2">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="flex-grow">
-        <CardDescription className="text-white/70 text-center">
+      <CardContent className="flex-grow px-6">
+        <CardDescription className="text-white/70 text-center text-lg">
           {description}
         </CardDescription>
       </CardContent>
-      <CardFooter className="pt-2 pb-6 flex justify-center">
-        <Button asChild className="hutz-button-primary">
+      <CardFooter className="pt-4 pb-6 flex justify-center">
+        <Button asChild className="hutz-button-primary text-lg px-8 py-6">
           <Link to={path}>Acessar</Link>
         </Button>
       </CardFooter>
