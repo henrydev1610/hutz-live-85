@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ const ParticipantPage = () => {
     link?: string;
     coupon?: string;
   } | null>(null);
+  // Fix TypeScript error: Change number to NodeJS.Timeout
   const [finalActionTimerId, setFinalActionTimerId] = useState<NodeJS.Timeout | null>(null);
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
@@ -227,6 +229,7 @@ const ParticipantPage = () => {
 
   useEffect(() => {
     if (finalActionOpen && finalActionTimeLeft > 0) {
+      // Fix TypeScript error: Return type of setInterval is NodeJS.Timeout
       const timerId = setInterval(() => {
         setFinalActionTimeLeft((prev) => prev - 1);
       }, 1000);

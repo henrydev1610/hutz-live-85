@@ -57,82 +57,24 @@ export const diagnoseConnection = async (sessionId: string, participantId: strin
     const broadcastTest = await testBroadcastReception(sessionId, participantId);
     diagnostics.broadcastChannelWorking = broadcastTest;
     
-    // Optimized approach to sending diagnostics across browsers
+    // Send diagnostic info over broadcast with enhanced fallbacks
     try {
-      // Create a unique diagnostic ID to help with tracing
-      const diagnosticId = `diag-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-      diagnostics.diagnosticId = diagnosticId;
+      // Try Broadcast channel first (Chrome, Edge, others)
+      try {
+        const diagnosticChannel = new BroadcastChannel(`diagnostic-${sessionId}`);
+        diagnosticChannel.postMessage({
+          type: 'connection-diagnostics',
+          ...diagnostics
+        });
+        setTimeout(() => diagnosticChannel.close(), 500);
+      } catch (e) {
+        console.warn("BroadcastChannel not supported, using localStorage fallback");
+        // Fallback to localStorage for Firefox/Opera
+        sendStorageFallbackMessage(sessionId, diagnostics);
+      }
       
-      // Try all available communication methods for maximum compatibility
-      await Promise.allSettled([
-        // Method 1: BroadcastChannel (Chrome, Edge)
-        (async () => {
-          try {
-            if (typeof BroadcastChannel !== 'undefined') {
-              const channels = [
-                new BroadcastChannel(`diagnostic-${sessionId}`),
-                new BroadcastChannel(`live-session-${sessionId}`)
-              ];
-              
-              channels.forEach(channel => {
-                channel.postMessage({
-                  type: 'connection-diagnostics',
-                  ...diagnostics,
-                  method: 'broadcast'
-                });
-                setTimeout(() => channel.close(), 500);
-              });
-              return true;
-            }
-            return false;
-          } catch (e) {
-            console.warn("BroadcastChannel diagnostic message failed:", e);
-            return false;
-          }
-        })(),
-        
-        // Method 2: LocalStorage with custom events (Firefox/Opera/Safari)
-        (async () => {
-          try {
-            sendStorageFallbackMessage(sessionId, {
-              ...diagnostics,
-              method: 'storage'
-            });
-            return true;
-          } catch (e) {
-            console.error("LocalStorage diagnostic message failed:", e);
-            return false;
-          }
-        })(),
-        
-        // Method 3: WebRTC data channel ping if available
-        // This leverages existing WebRTC connections if they are established
-        (async () => {
-          if (window.RTCPeerConnection && (window as any).__webrtcConnections) {
-            try {
-              const connections = (window as any).__webrtcConnections;
-              let sent = false;
-              
-              for (const connId in connections) {
-                const conn = connections[connId];
-                if (conn?.dataChannel?.readyState === 'open') {
-                  conn.dataChannel.send(JSON.stringify({
-                    type: 'diagnostic-data',
-                    ...diagnostics,
-                    method: 'webrtc'
-                  }));
-                  sent = true;
-                }
-              }
-              return sent;
-            } catch (e) {
-              console.warn("WebRTC diagnostic message failed:", e);
-              return false;
-            }
-          }
-          return false;
-        })()
-      ]);
+      // Always also send via localStorage as redundant method
+      sendStorageFallbackMessage(sessionId, diagnostics, true);
       
       return diagnostics;
     } catch (e) {
@@ -146,64 +88,38 @@ export const diagnoseConnection = async (sessionId: string, participantId: strin
 };
 
 /**
- * Enhanced helper function to send messages via localStorage for Firefox/Opera/Safari
- * Now with better cross-browser event triggering
+ * Helper function to send messages via localStorage for Firefox/Opera
  */
 const sendStorageFallbackMessage = (sessionId: string, data: any, isRedundant = false) => {
   try {
     const storageKey = `diagnostic-${sessionId}-${data.participantId || ''}-${Date.now()}`;
-    const messageData = {
+    localStorage.setItem(storageKey, JSON.stringify({
       type: 'connection-diagnostics',
       ...(isRedundant ? { isRedundant: true } : {}),
       ...data,
       timestamp: Date.now()
-    };
+    }));
     
-    localStorage.setItem(storageKey, JSON.stringify(messageData));
-    
-    // Try multiple approaches to notify other tabs/windows
-    
-    // Approach 1: Standard storage event (works in Firefox)
+    // Create a storage event to notify other tabs
     try {
-      // This won't actually trigger in same tab, but helps other tabs
-      window.localStorage.setItem(`notify-${storageKey}`, Date.now().toString());
-      window.localStorage.removeItem(`notify-${storageKey}`);
+      // This is for Firefox primarily, which has better support for storage events
+      const notifyEvent = document.createEvent('StorageEvent');
+      notifyEvent.initStorageEvent('storage', false, false, storageKey, null, JSON.stringify(data), 
+                                 window.location.href, window.localStorage);
+      window.dispatchEvent(notifyEvent);
     } catch (e) {
-      console.warn("Standard storage notification failed:", e);
-    }
-    
-    // Approach 2: Dispatch custom event (works in most browsers)
-    try {
-      window.dispatchEvent(new CustomEvent('storage-message', { 
-        detail: { key: storageKey, data: messageData } 
-      }));
-    } catch (e) {
-      console.warn("Custom event dispatch failed:", e);
-    }
-    
-    // Approach 3: Try to create a real StorageEvent (for older browsers)
-    try {
-      const storageEvent = document.createEvent('StorageEvent');
-      storageEvent.initStorageEvent('storage', false, false, storageKey, null, 
-                                   JSON.stringify(messageData), window.location.href, 
-                                   window.localStorage);
-      window.dispatchEvent(storageEvent);
-    } catch (e) {
-      console.warn("Manual storage event dispatch failed:", e);
+      console.warn("Could not dispatch storage event manually:", e);
     }
     
     // Clean up old diagnostic data
     setTimeout(() => localStorage.removeItem(storageKey), 30000);
-    
-    return true;
   } catch (e) {
     console.error("Error in localStorage fallback:", e);
-    return false;
   }
 };
 
 /**
- * Enhanced browser detection with additional details for better debugging
+ * Detects the browser type for more specific handling
  */
 const detectBrowserType = (): string => {
   const ua = navigator.userAgent.toLowerCase();
@@ -239,8 +155,7 @@ const testLocalStorage = (): boolean => {
 };
 
 /**
- * Enhanced broadcast reception test with improved cross-browser support
- * Added more aggressive fallback mechanisms for Firefox and Opera
+ * Tests broadcast channel reception with enhanced fallbacks for Firefox and Opera
  */
 export const testBroadcastReception = async (sessionId: string, participantId: string): Promise<boolean> => {
   return new Promise((resolve) => {
@@ -249,133 +164,85 @@ export const testBroadcastReception = async (sessionId: string, participantId: s
       const testId = `test-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       const browserType = detectBrowserType();
       
-      // Enhanced browser-specific strategy
-      if (browserType === 'firefox' || browserType === 'opera' || browserType === 'safari') {
-        console.log(`Using optimized approach for ${browserType}`);
-        // For browsers with known BroadcastChannel issues, prioritize localStorage
+      // For Firefox and Opera, prioritize localStorage fallback
+      if (browserType === 'firefox' || browserType === 'opera') {
         fallbackStorageTest();
         
-        // Still try BroadcastChannel as secondary if it exists
-        if (typeof BroadcastChannel !== 'undefined') {
-          setTimeout(() => {
-            try {
-              broadcastChannelTest();
-            } catch (e) {
-              console.warn(`BroadcastChannel test failed for ${browserType}`, e);
-            }
-          }, 100);
+        // Try BroadcastChannel as secondary test
+        try {
+          broadcastChannelTest();
+        } catch (e) {
+          console.warn("BroadcastChannel test failed as expected for", browserType);
         }
       } else {
-        // Chrome/Edge first try BroadcastChannel, then fallback
+        // First try BroadcastChannel approach for Chrome and others
         try {
-          if (typeof BroadcastChannel !== 'undefined') {
-            broadcastChannelTest();
-          } else {
-            console.warn("BroadcastChannel not available, using localStorage fallback");
+          broadcastChannelTest();
+        } catch (broadcastError) {
+          console.warn("BroadcastChannel not supported, using localStorage fallback:", broadcastError);
+          fallbackStorageTest();
+        }
+      }
+      
+      // BroadcastChannel test implementation
+      function broadcastChannelTest() {
+        // Create a response channel to listen for acknowledgments
+        const responseChannel = new BroadcastChannel(`response-${sessionId}`);
+        responseChannel.onmessage = (event) => {
+          if (event.data.type === 'host-ack' && 
+              (event.data.targetId === participantId || !event.data.targetId)) {
+            received = true;
+            resolve(true);
+          }
+        };
+        
+        // Create test channel and send message
+        const testChannel = new BroadcastChannel(`live-session-${sessionId}`);
+        testChannel.postMessage({
+          type: 'connection-test',
+          id: participantId,
+          browserType,
+          testId,
+          timestamp: Date.now()
+        });
+        
+        // Set timeout to resolve after 2 seconds if no response
+        setTimeout(() => {
+          responseChannel.close();
+          testChannel.close();
+          if (!received) {
+            // Try localStorage fallback if BroadcastChannel failed
             fallbackStorageTest();
           }
-        } catch (broadcastError) {
-          console.warn("BroadcastChannel error, using localStorage fallback:", broadcastError);
-          fallbackStorageTest();
-        }
+        }, 2000);
       }
       
-      // BroadcastChannel test implementation with better error handling
-      function broadcastChannelTest() {
-        try {
-          // Create a response channel to listen for acknowledgments
-          const responseChannel = new BroadcastChannel(`response-${sessionId}`);
-          responseChannel.onmessage = (event) => {
-            if (event.data && event.data.type === 'host-ack' && 
-                (event.data.targetId === participantId || !event.data.targetId)) {
-              received = true;
-              responseChannel.close();
-              resolve(true);
-            }
-          };
-          
-          // Create test channel and send message
-          const channels = [
-            new BroadcastChannel(`live-session-${sessionId}`),
-            new BroadcastChannel(`telao-session-${sessionId}`)
-          ];
-          
-          channels.forEach(channel => {
-            try {
-              channel.postMessage({
-                type: 'connection-test',
-                id: participantId,
-                browserType,
-                testId,
-                timestamp: Date.now()
-              });
-            } catch (e) {
-              console.warn(`Error posting to channel:`, e);
-            }
-          });
-          
-          // Set timeout to resolve after 2 seconds if no response
-          setTimeout(() => {
-            responseChannel.close();
-            channels.forEach(channel => channel.close());
-            
-            if (!received) {
-              // Try localStorage fallback if BroadcastChannel failed
-              fallbackStorageTest();
-            }
-          }, 2000);
-        } catch (e) {
-          console.error("Error in broadcast test:", e);
-          fallbackStorageTest();
-        }
-      }
-      
-      // Enhanced localStorage fallback with multiple notification methods
+      // Fallback to localStorage for browsers that don't fully support BroadcastChannel
       function fallbackStorageTest() {
         try {
-          // Send test message via localStorage using multiple keys for redundancy
-          const baseKey = `test-${sessionId}-${participantId}`;
-          const keys = [
-            `${baseKey}-${testId}`,
-            `${baseKey}-fallback-${Date.now()}`
-          ];
-          
+          // Send test message via localStorage
+          const storageTestKey = `test-${sessionId}-${participantId}-${testId}`;
           const testData = {
             type: 'connection-test',
             id: participantId,
             browserType,
             testId,
-            timestamp: Date.now(),
-            keys // Include the keys we're using for better tracing
+            timestamp: Date.now()
           };
           
-          // Store in multiple locations for redundancy
-          keys.forEach(key => localStorage.setItem(key, JSON.stringify(testData)));
+          localStorage.setItem(storageTestKey, JSON.stringify(testData));
           
-          // Try multiple notification mechanisms
-          
-          // 1. Standard localStorage change (helps other tabs)
-          localStorage.setItem(`notify-${keys[0]}`, Date.now().toString());
-          localStorage.removeItem(`notify-${keys[0]}`);
-          
-          // 2. Custom event (helps same tab)
-          window.dispatchEvent(new CustomEvent('storage-message', { 
-            detail: { keys, data: testData } 
-          }));
-          
-          // 3. Try to create a real StorageEvent (for older browsers)
+          // Try to manually dispatch a storage event for Firefox
           try {
             const event = document.createEvent('StorageEvent');
-            event.initStorageEvent('storage', false, false, keys[0], null, 
+            event.initStorageEvent('storage', false, false, storageTestKey, null, 
                                  JSON.stringify(testData), location.href, localStorage);
             window.dispatchEvent(event);
           } catch (e) {
             console.warn("Could not dispatch storage event manually:", e);
           }
           
-          // Set up response listeners for all possible channels
-          
-          // 1. Storage event listener (works across tabs)
+          // Listen for response using storage events
           const storageListener = (e: StorageEvent) => {
             if (e.key && e.key.startsWith(`response-${sessionId}`)) {
               try {
@@ -394,29 +261,7 @@ export const testBroadcastReception = async (sessionId: string, participantId: s
           
           window.addEventListener('storage', storageListener);
           
-          // 2. Custom event listener (works in same tab)
-          const customListener = (e: Event) => {
-            const customEvent = e as CustomEvent;
-            if (customEvent.detail && 
-                customEvent.detail.key && 
-                customEvent.detail.key.startsWith(`response-${sessionId}`)) {
-              try {
-                const data = customEvent.detail.data;
-                if (data.type === 'host-ack' && 
-                    (data.targetId === participantId || !data.targetId || data.testId === testId)) {
-                  received = true;
-                  window.removeEventListener('storage-message', customListener);
-                  resolve(true);
-                }
-              } catch (parseError) {
-                console.error("Error handling custom event response:", parseError);
-              }
-            }
-          };
-          
-          window.addEventListener('storage-message', customListener);
-          
-          // 3. Direct localStorage polling (works everywhere as fallback)
+          // Periodically check localStorage directly for responses (for Opera)
           const checkInterval = setInterval(() => {
             try {
               // Scan localStorage for response keys
@@ -430,7 +275,6 @@ export const testBroadcastReception = async (sessionId: string, participantId: s
                       received = true;
                       clearInterval(checkInterval);
                       window.removeEventListener('storage', storageListener);
-                      window.removeEventListener('storage-message', customListener);
                       localStorage.removeItem(key);  // Clean up response
                       resolve(true);
                       return;
@@ -443,26 +287,22 @@ export const testBroadcastReception = async (sessionId: string, participantId: s
             } catch (e) {
               console.error("Error checking localStorage:", e);
             }
-          }, 300); // Check more frequently than before
+          }, 500);
           
-          // Set timeout to clean up and resolve
+          // Set timeout to resolve after 3 seconds if no response
           setTimeout(() => {
             window.removeEventListener('storage', storageListener);
-            window.removeEventListener('storage-message', customListener);
             clearInterval(checkInterval);
-            
-            // Clean up test messages
-            keys.forEach(key => localStorage.removeItem(key));
-            
+            localStorage.removeItem(storageTestKey);
             if (!received) {
-              // As a last resort, assume it works to prevent blocking the user
+              // As a last resort, just assume it works to not block the user experience
               console.log("No explicit confirmation of connection, proceeding anyway");
               resolve(true);
             }
           }, 3000);
         } catch (storageError) {
           console.error("localStorage fallback failed:", storageError);
-          // Last resort fallback - just assume connection works to not block user
+          // As a last resort, just assume it works to not block the user experience
           resolve(true);
         }
       }
