@@ -1,133 +1,129 @@
 
-import { User, Check, Video, VideoOff } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { useEffect, useRef, useState } from 'react';
+import { useToast } from "@/components/ui/use-toast";
+import { 
+  User, Video, VideoOff, Crown, Shield, 
+  Check, Ban, UserX, MoreVertical, X,
+  Eye, EyeOff, Share
+} from 'lucide-react';
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { updateParticipantStatus } from '@/utils/sessionUtils';
 
-interface Participant {
+export interface Participant {
   id: string;
   name: string;
+  joinedAt: number;
+  lastActive: number;
   active: boolean;
   selected: boolean;
-  hasVideo?: boolean;
   connectedAt?: number;
+  hasVideo?: boolean;
+  isAdmin?: boolean;
 }
 
 interface ParticipantGridProps {
+  sessionId: string;
   participants: Participant[];
-  onSelectParticipant: (id: string) => void;
-  onRemoveParticipant: (id: string) => void;
-  participantStreams?: {[id: string]: MediaStream};
-  sessionId?: string | null;
+  participantStreams?: { [key: string]: MediaStream };
+  onToggleSelect: (participantId: string) => void;
+  onRemoveParticipant: (participantId: string) => void;
+  onToggleAdminStatus: (participantId: string) => void;
+  onToggleGrantAdminVisibility?: (participantId: string) => void;
+  showAdminControls?: boolean;
 }
 
-const ParticipantGrid = ({ 
-  participants, 
-  onSelectParticipant, 
-  onRemoveParticipant,
+const ParticipantGrid: React.FC<ParticipantGridProps> = ({
+  sessionId,
+  participants,
   participantStreams = {},
-  sessionId
-}: ParticipantGridProps) => {
-  const videoRefs = useRef<{[id: string]: HTMLDivElement | null}>({});
-  const [streamStatus, setStreamStatus] = useState<{[id: string]: boolean}>({});
+  onToggleSelect,
+  onRemoveParticipant,
+  onToggleAdminStatus,
+  onToggleGrantAdminVisibility,
+  showAdminControls = false,
+}) => {
+  const { toast } = useToast();
+  const [hasVideoMap, setHasVideoMap] = useState<{[key: string]: boolean}>({});
+  const videoRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
+  const videoElements = useRef<{[key: string]: HTMLVideoElement | null}>({});
   
-  const activeParticipants = participants.filter(p => p.active);
-  const inactiveParticipants = participants.filter(p => !p.active);
-  
-  // Sort participants by connection time (most recent first)
-  const sortedActiveParticipants = [...activeParticipants].sort((a, b) => 
-    (b.connectedAt || 0) - (a.connectedAt || 0)
-  );
-  
-  // Remove duplicates in the display
-  const displayParticipants = sortedActiveParticipants.filter((participant, index, self) =>
-    index === self.findIndex((p) => p.id === participant.id)
-  );
-
-  // Add listener for participant heartbeat messages
+  // Effect to update video elements when stream references change
   useEffect(() => {
-    if (!sessionId) return;
-
-    const handleParticipantHeartbeat = (event: MessageEvent) => {
-      if (event.data.type === 'participant-heartbeat' && event.data.participantId) {
-        console.log('Received participant heartbeat:', event.data.participantId);
-        // Update stream status if participant is active
-        setStreamStatus(prev => ({
-          ...prev,
-          [event.data.participantId]: true
-        }));
-      }
-    };
-
-    try {
-      const channel = new BroadcastChannel(`live-session-${sessionId}`);
-      channel.addEventListener('message', handleParticipantHeartbeat);
-      
-      return () => {
-        channel.removeEventListener('message', handleParticipantHeartbeat);
-        channel.close();
-      };
-    } catch (e) {
-      console.error("Error setting up broadcast channel for participant heartbeats:", e);
-    }
-  }, [sessionId]);
-
-  // Effect to update transmission window when participant selection changes
-  useEffect(() => {
-    const transmissionWindow = window.opener;
-    if (transmissionWindow && !transmissionWindow.closed) {
-      transmissionWindow.postMessage({
-        type: 'update-participants',
-        participants
-      }, '*');
-    }
-  }, [participants]);
-  
-  // Effect to update video elements when streams change
-  useEffect(() => {
-    console.log("ParticipantGrid: participantStreams updated:", Object.keys(participantStreams));
+    if (!participantStreams) return;
     
-    // Track which participants have streams
-    const participantsWithStreams = new Set<string>();
+    // Log the available participant streams
+    console.log("Participant streams available:", Object.keys(participantStreams));
     
+    // Update all video elements with their streams
     Object.entries(participantStreams).forEach(([participantId, stream]) => {
-      participantsWithStreams.add(participantId);
+      // Skip if no stream or it has no tracks
+      if (!stream || stream.getTracks().length === 0) {
+        console.log(`Stream for ${participantId} has no tracks`);
+        return;
+      }
       
+      const hasVideoTracks = stream.getVideoTracks().length > 0;
+      console.log(`Participant ${participantId} has video tracks: ${hasVideoTracks}`);
+      
+      // Update hasVideo state for this participant
+      setHasVideoMap(prev => ({
+        ...prev,
+        [participantId]: hasVideoTracks
+      }));
+      
+      // Find the container for this participant's video
       const container = videoRefs.current[participantId];
       if (container) {
         updateVideoElement(container, stream);
-        
-        // Check if stream has video tracks
-        const hasVideoTracks = stream.getVideoTracks().some(track => track.enabled);
-        setStreamStatus(prev => ({
-          ...prev,
-          [participantId]: hasVideoTracks
-        }));
       } else {
         console.log(`Container for participant ${participantId} not found. Will try again in the next render.`);
       }
     });
     
-    // Check for participants with refs but no streams
-    Object.keys(videoRefs.current).forEach(participantId => {
-      if (!participantsWithStreams.has(participantId) && videoRefs.current[participantId]) {
-        const container = videoRefs.current[participantId];
-        const videoElement = container?.querySelector('video');
-        if (videoElement) {
-          videoElement.srcObject = null;
-          setStreamStatus(prev => ({
+    // Also check for video containers that might need streams
+    participants.forEach(participant => {
+      if (participant.hasVideo && !hasVideoMap[participant.id] && videoRefs.current[participant.id]) {
+        // This participant should have video but doesn't have it in our state
+        // Check if we have a stream for them
+        const stream = participantStreams[participant.id];
+        if (stream && stream.getVideoTracks().length > 0) {
+          updateVideoElement(videoRefs.current[participant.id]!, stream);
+          setHasVideoMap(prev => ({
             ...prev,
-            [participantId]: false
+            [participant.id]: true
           }));
         }
       }
     });
-  }, [participantStreams, displayParticipants]);
+  }, [participantStreams, participants]);
   
+  // Effect to update video element visibility when hasVideo changes
+  useEffect(() => {
+    participants.forEach(participant => {
+      // If we have a record of whether this participant has video
+      if (hasVideoMap[participant.id] !== undefined) {
+        const hasVideo = hasVideoMap[participant.id];
+        
+        // Update participant status if our local state differs from participant data
+        if (participant.hasVideo !== hasVideo) {
+          updateParticipantStatus(sessionId, participant.id, { hasVideo });
+        }
+      }
+    });
+  }, [hasVideoMap, participants, sessionId]);
+
   // Function to add or update video element in container
   const updateVideoElement = (container: HTMLDivElement, stream: MediaStream) => {
-    let videoElement = container.querySelector('video');
+    const participantId = container.id.replace('participant-video-', '');
+    let videoElement = videoElements.current[participantId];
     
     if (!videoElement) {
       videoElement = document.createElement('video');
@@ -135,208 +131,209 @@ const ParticipantGrid = ({
       videoElement.playsInline = true;
       videoElement.muted = true;
       videoElement.className = 'w-full h-full object-cover';
+      
+      // Store reference to video element
+      videoElements.current[participantId] = videoElement;
+      
+      // Clear container before adding
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+      
       container.appendChild(videoElement);
       
       // Add event listeners for video
       videoElement.onloadedmetadata = () => {
         videoElement?.play().catch(err => console.error('Error playing video:', err));
       };
-      
-      videoElement.onplay = () => {
-        console.log('Video is playing');
-      };
-      
-      videoElement.onerror = (e) => {
-        console.error('Video error:', e);
-      };
     }
     
     if (videoElement.srcObject !== stream) {
       videoElement.srcObject = stream;
-      videoElement.play().catch(err => console.error('Error playing video:', err));
-    }
-  };
-  
-  const getShortName = (participant: Participant) => {
-    if (participant.name) return participant.name;
-    return `Participante ${participant.id.substring(participant.id.lastIndexOf('-') + 1)}`;
-  };
-  
-  // Update transmission window when streams change
-  useEffect(() => {
-    if (!sessionId) return;
-    
-    const transmissionWindow = window.opener;
-    if (transmissionWindow && !transmissionWindow.closed) {
-      const selectedParticipants = participants.filter(p => p.selected);
       
-      selectedParticipants.forEach(participant => {
-        if (participantStreams[participant.id]) {
-          // Notify transmission window about participant stream status
-          try {
-            const channel = new BroadcastChannel(`live-session-${sessionId}`);
-            channel.postMessage({
-              type: 'video-stream',
-              participantId: participant.id,
-              stream: { hasStream: true }
-            });
-            
-            setTimeout(() => channel.close(), 100);
-          } catch (e) {
-            console.error("Error sending stream information via broadcast channel:", e);
-          }
-        }
+      // Try to play video
+      videoElement.play().catch(err => {
+        console.error('Error playing video:', err);
+        
+        // Try again after a delay
+        setTimeout(() => {
+          videoElement?.play().catch(e => console.error('Error playing video on retry:', e));
+        }, 1000);
       });
     }
-  }, [participantStreams, participants, sessionId]);
-  
-  // Request participant streams periodically to ensure they're connected
-  useEffect(() => {
-    if (!sessionId) return;
+  };
+
+  const formatTimeSince = (timestamp: number) => {
+    const now = Date.now();
+    const diffMs = now - timestamp;
+    const diffSec = Math.floor(diffMs / 1000);
     
-    const requestInterval = setInterval(() => {
-      if (activeParticipants.length > 0) {
-        try {
-          const channel = new BroadcastChannel(`live-session-${sessionId}`);
-          channel.postMessage({
-            type: 'request-participant-streams',
-            timestamp: Date.now()
-          });
-          setTimeout(() => channel.close(), 100);
-        } catch (e) {
-          console.error("Error requesting participant streams:", e);
-        }
-      }
-    }, 5000);
+    if (diffSec < 60) return `${diffSec}s`;
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m`;
+    return `${Math.floor(diffSec / 3600)}h`;
+  };
+
+  const handleToggleSelect = (id: string) => {
+    onToggleSelect(id);
+  };
+
+  // Render participant card
+  const renderParticipantCard = (participant: Participant) => {
+    const isActive = participant.active;
+    const isSelected = participant.selected;
+    const hasVideo = hasVideoMap[participant.id] || participant.hasVideo || false;
+    const lastActiveDuration = formatTimeSince(participant.lastActive);
     
-    return () => clearInterval(requestInterval);
-  }, [activeParticipants, sessionId]);
-  
-  return (
-    <div className="space-y-4 w-full max-w-[1200px]">
-      {displayParticipants.length > 0 && (
-        <div className="mb-4">
-          <h3 className="text-sm font-medium text-white/70 mb-2">Participantes Ativos ({displayParticipants.length})</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {displayParticipants.map((participant) => (
-              <Card key={participant.id} className={`bg-secondary/60 border ${participant.selected ? 'border-accent' : 'border-white/10'}`}>
-                <CardContent className="p-4 text-center">
-                  <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2 relative">
-                    {!streamStatus[participant.id] && <User className="h-8 w-8 text-white/30" />}
-                    <div className="absolute top-2 right-2 bg-green-500/20 p-1 rounded-full">
-                      {streamStatus[participant.id] ? (
-                        <Video className="h-3 w-3 text-green-500" />
-                      ) : (
-                        <VideoOff className="h-3 w-3 text-orange-500" />
-                      )}
-                    </div>
-                    {participant.selected && (
-                      <div className="absolute inset-0 bg-accent/10 flex items-center justify-center">
-                        <span className="text-xs bg-accent text-white px-2 py-1 rounded-full">Na tela</span>
-                      </div>
-                    )}
-                    <div 
-                      id={`participant-video-${participant.id}`}
-                      className="absolute inset-0 overflow-hidden"
-                      ref={el => {
-                        videoRefs.current[participant.id] = el;
-                        // If we already have a stream for this participant, update the video element
-                        if (el && participantStreams[participant.id]) {
-                          updateVideoElement(el, participantStreams[participant.id]);
-                        }
-                      }}
+    return (
+      <Card 
+        key={participant.id}
+        className={`transition-all duration-200 h-full ${
+          !isActive ? 'opacity-50' : ''
+        } ${
+          isSelected ? 'ring-2 ring-primary' : ''
+        }`}
+      >
+        <CardContent className="p-3 h-full flex flex-col">
+          {/* Participant video container */}
+          <div className="relative aspect-video bg-secondary/60 rounded-md mb-3 overflow-hidden">
+            <div 
+              id={`participant-video-${participant.id}`}
+              className="absolute inset-0 overflow-hidden"
+              ref={el => {
+                videoRefs.current[participant.id] = el;
+                // If we already have a stream for this participant, update the video element
+                if (el && participantStreams[participant.id]) {
+                  updateVideoElement(el, participantStreams[participant.id]);
+                }
+              }}
+            >
+              {/* Video element will be inserted here dynamically */}
+            </div>
+            
+            {/* Placeholder if no video */}
+            {!hasVideo && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <User className="w-12 h-12 text-muted-foreground/50" />
+              </div>
+            )}
+            
+            {/* Participant status indicators */}
+            <div className="absolute top-2 right-2 flex gap-1">
+              {participant.isAdmin && (
+                <div className="bg-yellow-500/90 text-white p-1 rounded-full">
+                  <Crown className="w-3 h-3" />
+                </div>
+              )}
+              
+              {isSelected && (
+                <div className="bg-primary/90 text-white p-1 rounded-full">
+                  <Check className="w-3 h-3" />
+                </div>
+              )}
+              
+              {!isActive && (
+                <div className="bg-destructive/90 text-white p-1 rounded-full">
+                  <X className="w-3 h-3" />
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Participant info and controls */}
+          <div className="flex items-center justify-between mt-auto">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{participant.name || 'Participante'}</p>
+              <p className="text-xs text-muted-foreground">
+                {isActive ? 'Ativo' : `Inativo (${lastActiveDuration})`}
+              </p>
+            </div>
+            
+            <div className="flex gap-1">
+              <Button
+                size="icon"
+                variant={isSelected ? "default" : "outline"}
+                className="h-8 w-8"
+                onClick={() => handleToggleSelect(participant.id)}
+              >
+                <Eye className="h-4 w-4" />
+              </Button>
+              
+              {showAdminControls && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
                     >
-                      {/* Video element will be inserted here dynamically */}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-center gap-2 mb-2">
-                    <p className="text-sm font-medium truncate">
-                      {getShortName(participant)}
-                    </p>
-                    <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-400/20 text-xs">
-                      <span className="w-2 h-2 rounded-full bg-green-500 mr-1"></span>
-                      Online
-                    </Badge>
-                  </div>
-                  <div className="flex justify-center gap-2 mt-2">
-                    <Button 
-                      variant={participant.selected ? "default" : "outline"} 
-                      size="sm" 
-                      className={`h-8 ${participant.selected ? 'bg-accent text-white' : 'border-white/20'}`}
-                      onClick={() => onSelectParticipant(participant.id)}
-                    >
-                      {participant.selected ? (
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => onToggleAdminStatus(participant.id)}>
+                      {participant.isAdmin ? (
                         <>
-                          <Check className="h-3 w-3 mr-1" />
-                          Selecionado
+                          <Shield className="mr-2 h-4 w-4 text-destructive" />
+                          <span>Remover admin</span>
                         </>
-                      ) : 'Selecionar'}
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 text-white/60 hover:text-white"
+                      ) : (
+                        <>
+                          <Crown className="mr-2 h-4 w-4 text-yellow-500" />
+                          <span>Tornar admin</span>
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    
+                    {onToggleGrantAdminVisibility && (
+                      <DropdownMenuItem onClick={() => onToggleGrantAdminVisibility(participant.id)}>
+                        {participant.selected ? (
+                          <>
+                            <EyeOff className="mr-2 h-4 w-4" />
+                            <span>Ocultar para admin</span>
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="mr-2 h-4 w-4" />
+                            <span>Mostrar para admin</span>
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                    )}
+                    
+                    <DropdownMenuSeparator />
+                    
+                    <DropdownMenuItem 
+                      className="text-destructive"
                       onClick={() => onRemoveParticipant(participant.id)}
                     >
-                      Remover
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                      <Ban className="mr-2 h-4 w-4" />
+                      <span>Remover participante</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-      
-      {inactiveParticipants.length > 0 && (
-        <div className="mb-4">
-          <h3 className="text-sm font-medium text-white/70 mb-2">Participantes Inativos ({inactiveParticipants.length})</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {inactiveParticipants.map((participant) => (
-              <Card key={participant.id} className="bg-secondary/60 border border-white/10 opacity-60">
-                <CardContent className="p-4 text-center">
-                  <div className="aspect-video bg-black/40 rounded-md flex items-center justify-center mb-2">
-                    <User className="h-8 w-8 text-white/30" />
-                  </div>
-                  <div className="flex items-center justify-center gap-2 mb-2">
-                    <p className="text-sm font-medium truncate">
-                      {getShortName(participant)}
-                    </p>
-                    <Badge variant="outline" className="bg-gray-500/10 text-gray-400 border-gray-400/20 text-xs">
-                      <span className="w-2 h-2 rounded-full bg-gray-500 mr-1"></span>
-                      Offline
-                    </Badge>
-                  </div>
-                  <div className="flex justify-center gap-2 mt-2">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 text-white/60 hover:text-white"
-                      onClick={() => onRemoveParticipant(participant.id)}
-                    >
-                      Remover
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {participants.length > 0 ? (
+          participants.map(renderParticipantCard)
+        ) : (
+          <div className="col-span-full flex flex-col items-center justify-center p-8 bg-secondary/20 rounded-lg border border-dashed border-muted">
+            <UserX className="h-12 w-12 text-muted-foreground mb-3" />
+            <h3 className="text-lg font-medium mb-1">Nenhum participante</h3>
+            <p className="text-sm text-muted-foreground text-center max-w-xs">
+              Compartilhe o link ou QR code para que os participantes possam se conectar.
+            </p>
           </div>
-        </div>
-      )}
-      
-      {activeParticipants.length === 0 && inactiveParticipants.length === 0 && (
-        <div className="bg-secondary/30 border border-white/10 rounded-lg p-8 text-center">
-          <User className="h-12 w-12 text-white/20 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-white/70 mb-2">Sem participantes</h3>
-          <p className="text-sm text-white/50 max-w-sm mx-auto">
-            Compartilhe o QR Code para que os participantes possam entrar na sessão.
-          </p>
-        </div>
-      )}
-      
-      <p className="text-sm text-white/60 mt-4">
-        Participantes são adicionados automaticamente quando acessam o link do QR Code.
-      </p>
+        )}
+      </div>
     </div>
   );
 };

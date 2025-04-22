@@ -350,20 +350,46 @@ export const getSessionFinalAction = (sessionId: string) => {
  * Handle participant video stream
  */
 export const handleParticipantVideo = (sessionId: string, participantId: string, stream: MediaStream) => {
-  const channel = new BroadcastChannel(`live-session-${sessionId}`);
-  
-  // Create a MediaStreamTrack from the participant's video stream
-  const videoTrack = stream.getVideoTracks()[0];
-  if (videoTrack) {
-    // Create a new MediaStream with just the video track
-    const videoStream = new MediaStream([videoTrack]);
+  try {
+    console.log(`Handling video stream for participant ${participantId}`);
     
-    // Send the stream through the broadcast channel
-    channel.postMessage({
-      type: 'video-stream',
-      participantId,
-      stream: videoStream
+    // Update participant status to indicate they have video
+    updateParticipantStatus(sessionId, participantId, {
+      hasVideo: true,
+      lastActive: Date.now()
     });
+    
+    // Broadcast stream info through multiple channels for redundancy
+    try {
+      // Main channel
+      const channel = new BroadcastChannel(`live-session-${sessionId}`);
+      channel.postMessage({
+        type: 'video-stream',
+        participantId,
+        hasStream: true,
+        trackIds: stream.getTracks().map(track => track.id),
+        timestamp: Date.now()
+      });
+      
+      // Backup channel
+      const backupChannel = new BroadcastChannel(`stream-info-${sessionId}`);
+      backupChannel.postMessage({
+        type: 'video-stream',
+        participantId,
+        hasStream: true,
+        trackIds: stream.getTracks().map(track => track.id),
+        timestamp: Date.now()
+      });
+      
+      setTimeout(() => {
+        channel.close();
+        backupChannel.close();
+      }, 500);
+    } catch (e) {
+      console.error("Error broadcasting stream info:", e);
+    }
+  } catch (e) {
+    console.error("Error handling participant video:", e);
   }
 };
 
@@ -371,6 +397,9 @@ export const handleParticipantVideo = (sessionId: string, participantId: string,
 declare global {
   interface Window {
     _sessionIntervals?: {
+      [key: string]: number;
+    };
+    _streamIntervals?: {
       [key: string]: number;
     };
   }

@@ -157,10 +157,27 @@ export const initHostWebRTC = async (
 ): Promise<void> => {
   onParticipantTrackCallback = onTrack;
 
-  // Don't initialize localStream - we'll do that separately when needed
-  // This ensures camera doesn't turn on just for generating QR code
-
   await initSocket(sessionId);
+
+  // Set up a channel specifically for stream info
+  try {
+    const streamChannel = new BroadcastChannel(`stream-info-${sessionId}`);
+    streamChannel.onmessage = (event) => {
+      const { data } = event;
+      if (data.type === 'participant-stream-info') {
+        console.log(`Received stream info from participant ${data.participantId}:`, data);
+        // Update participant status with video info
+        if (data.hasStream) {
+          updateParticipantStatus(sessionId, data.participantId, { 
+            hasVideo: true,
+            lastActive: Date.now()
+          });
+        }
+      }
+    };
+  } catch (e) {
+    console.warn("BroadcastChannel not supported for stream info:", e);
+  }
 
   // Set up broadcast channel fallback for signaling
   if (fallbackModeEnabled) {
@@ -174,7 +191,32 @@ export const initHostWebRTC = async (
         if (data.type === 'participant-join') {
           console.log(`Participant joined via broadcast channel: ${data.participantId}`);
           activeParticipants[data.participantId] = true;
-          createPeerConnection(data.participantId, true);
+          
+          // Update participant in session with video availability info
+          updateParticipantStatus(sessionId, data.participantId, {
+            hasVideo: data.hasVideo || false,
+            active: true,
+            lastActive: Date.now()
+          });
+          
+          // Create peer connection after a short delay to allow participant to initialize
+          setTimeout(() => {
+            createPeerConnection(data.participantId, true);
+          }, 1000);
+        }
+        else if (data.type === 'stream-info') {
+          console.log(`Received stream info from: ${data.senderId}`, data);
+          if (data.hasStream && !activePeerConnections[data.senderId]) {
+            console.log(`Creating peer connection for participant with stream: ${data.senderId}`);
+            createPeerConnection(data.senderId, true);
+          }
+          
+          // Update participant in session with video info
+          updateParticipantStatus(sessionId, data.senderId, {
+            hasVideo: data.videoTracks > 0,
+            active: true,
+            lastActive: Date.now()
+          });
         }
         else if (data.type === 'offer' && data.targetId === 'host') {
           console.log(`Received offer from participant: ${data.senderId}`);
@@ -191,7 +233,8 @@ export const initHostWebRTC = async (
               type: 'answer',
               senderId: 'host',
               targetId: data.senderId,
-              description: activePeerConnections[data.senderId].localDescription
+              description: activePeerConnections[data.senderId].localDescription,
+              timestamp: Date.now()
             });
           } catch (e) {
             console.error('Error handling offer via broadcast channel:', e);
@@ -213,14 +256,14 @@ export const initHostWebRTC = async (
         }
       };
       
-      // Keep the channel open
+      // Keep the channel open and send regular heartbeats
       setInterval(() => {
         channel.postMessage({ type: 'host-heartbeat', timestamp: Date.now() });
-      }, 10000);
+      }, 5000);
       
       // Clean up on window unload
       window.addEventListener('beforeunload', () => {
-        channel.postMessage({ type: 'host-leave', sessionId });
+        channel.postMessage({ type: 'host-leave', sessionId, timestamp: Date.now() });
         channel.close();
       });
     } catch (e) {
@@ -270,6 +313,13 @@ export const initHostWebRTC = async (
 
   const createPeerConnection = async (participantId: string, isInitiator: boolean) => {
     console.log(`Creating peer connection for ${participantId}, isInitiator: ${isInitiator}`);
+    
+    // Close any existing connection
+    if (activePeerConnections[participantId]) {
+      console.log(`Closing existing connection for ${participantId}`);
+      activePeerConnections[participantId].close();
+    }
+    
     activePeerConnections[participantId] = new RTCPeerConnection(PEER_CONNECTION_CONFIG);
 
     activePeerConnections[participantId].onicecandidate = (event) => {
@@ -281,7 +331,8 @@ export const initHostWebRTC = async (
               type: 'candidate',
               senderId: 'host',
               targetId: participantId,
-              candidate: event.candidate
+              candidate: event.candidate,
+              timestamp: Date.now()
             });
           } catch (e) {
             console.error("Error sending ICE candidate via broadcast channel:", e);
@@ -298,7 +349,11 @@ export const initHostWebRTC = async (
       // Update participant status based on connection state
       if (activePeerConnections[participantId].iceConnectionState === 'connected' || 
           activePeerConnections[participantId].iceConnectionState === 'completed') {
-        updateParticipantStatus(sessionId, participantId, { active: true, lastActive: Date.now() });
+        updateParticipantStatus(sessionId, participantId, { 
+          active: true, 
+          lastActive: Date.now(),
+          hasVideo: true
+        });
       }
       else if (activePeerConnections[participantId].iceConnectionState === 'disconnected' || 
                activePeerConnections[participantId].iceConnectionState === 'failed' ||
@@ -310,13 +365,24 @@ export const initHostWebRTC = async (
           } catch (e) {
             console.error("Error restarting ICE:", e);
           }
+          
+          // If restart doesn't work, recreate the connection
+          setTimeout(() => {
+            if (activePeerConnections[participantId]?.iceConnectionState === 'failed') {
+              console.log("ICE restart failed, recreating connection");
+              closePeerConnection(participantId);
+              createPeerConnection(participantId, true);
+            }
+          }, 5000);
         }
         
         if (activePeerConnections[participantId].iceConnectionState === 'disconnected') {
           // Give some time for reconnection before closing
           setTimeout(() => {
             if (activePeerConnections[participantId]?.iceConnectionState === 'disconnected') {
+              console.log("Connection remained disconnected, recreating");
               closePeerConnection(participantId);
+              createPeerConnection(participantId, true);
             }
           }, 5000);
         } else if (activePeerConnections[participantId].iceConnectionState === 'closed') {
@@ -326,10 +392,16 @@ export const initHostWebRTC = async (
     };
 
     activePeerConnections[participantId].ontrack = (event: RTCTrackEvent) => {
-      console.log(`Received track for participant ${participantId}`);
+      console.log(`Received track for participant ${participantId}:`, event.track);
       if (onParticipantTrackCallback) {
         onParticipantTrackCallback(participantId, event.track);
       }
+      
+      // Update participant video status
+      updateParticipantStatus(sessionId, participantId, { 
+        hasVideo: true,
+        lastActive: Date.now()
+      });
     };
 
     if (localStream) {
@@ -357,7 +429,8 @@ export const initHostWebRTC = async (
               type: 'offer',
               senderId: 'host',
               targetId: participantId,
-              description: activePeerConnections[participantId].localDescription
+              description: activePeerConnections[participantId].localDescription,
+              timestamp: Date.now()
             });
           } catch (e) {
             console.error("Error sending offer via broadcast channel:", e);
@@ -404,7 +477,11 @@ export const initParticipantWebRTC = async (
     // Try to recover by refreshing the stream
     try {
       const newStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
+        video: {
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
+          frameRate: { min: 15, ideal: 30 }
+        },
         audio: false
       });
       localStream = newStream;
@@ -417,6 +494,37 @@ export const initParticipantWebRTC = async (
 
   await initSocket(sessionId);
 
+  // Set up broadcast channel for more reliable stream information
+  try {
+    const streamChannel = new BroadcastChannel(`stream-info-${sessionId}`);
+    
+    // Send detailed stream info every 3 seconds
+    const streamInfoInterval = setInterval(() => {
+      if (stream && stream.active) {
+        streamChannel.postMessage({
+          type: 'participant-stream-info',
+          participantId: participantId,
+          hasStream: true,
+          trackInfo: stream.getTracks().map(track => ({
+            id: track.id,
+            kind: track.kind,
+            enabled: track.enabled,
+            readyState: track.readyState
+          })),
+          timestamp: Date.now()
+        });
+      }
+    }, 3000);
+    
+    // Clean up on unload
+    window.addEventListener('beforeunload', () => {
+      clearInterval(streamInfoInterval);
+      streamChannel.close();
+    });
+  } catch (e) {
+    console.warn("BroadcastChannel not supported for stream info:", e);
+  }
+
   // Set up broadcast channel fallback for signaling
   if (fallbackModeEnabled) {
     console.log("Participant using broadcast channel for signaling");
@@ -426,7 +534,9 @@ export const initParticipantWebRTC = async (
       // Announce our joining
       channel.postMessage({
         type: 'participant-join',
-        participantId: participantId
+        participantId: participantId,
+        hasVideo: stream.getVideoTracks().length > 0,
+        timestamp: Date.now()
       });
       
       // Send stream information
@@ -434,7 +544,9 @@ export const initParticipantWebRTC = async (
         type: 'stream-info',
         senderId: participantId,
         hasStream: true,
-        trackCount: stream.getTracks().length
+        trackCount: stream.getTracks().length,
+        videoTracks: stream.getVideoTracks().length,
+        timestamp: Date.now()
       });
       
       // Listen for messages
@@ -456,7 +568,8 @@ export const initParticipantWebRTC = async (
               type: 'answer',
               senderId: participantId,
               targetId: 'host',
-              description: activePeerConnections['host'].localDescription
+              description: activePeerConnections['host'].localDescription,
+              timestamp: Date.now()
             });
           } catch (e) {
             console.error('Error handling offer via broadcast channel:', e);
@@ -486,23 +599,39 @@ export const initParticipantWebRTC = async (
         }
       };
       
-      // Create the peer connection
+      // Create the peer connection with more verbose logging
+      console.log("Creating WebRTC peer connection to host...");
       createHostPeerConnection(sessionId, participantId);
       
       // Keep sending stream info in case host missed it
       const infoInterval = setInterval(() => {
+        console.log("Sending periodic stream info...");
         channel.postMessage({
           type: 'stream-info',
           senderId: participantId,
           hasStream: true,
-          trackCount: stream.getTracks().length
+          trackCount: stream.getTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+          timestamp: Date.now()
         });
+        
+        // Also attempt to recreate connection if it failed
+        if (activePeerConnections['host']?.iceConnectionState === 'failed' || 
+            activePeerConnections['host']?.iceConnectionState === 'disconnected') {
+          console.log("Detected failed connection, recreating...");
+          closePeerConnection('host');
+          createHostPeerConnection(sessionId, participantId);
+        }
       }, 5000);
       
       // Clean up on window unload
       window.addEventListener('beforeunload', () => {
         clearInterval(infoInterval);
-        channel.postMessage({ type: 'participant-leave', participantId });
+        channel.postMessage({ 
+          type: 'participant-leave', 
+          participantId,
+          timestamp: Date.now()
+        });
         channel.close();
       });
     } catch (e) {
@@ -638,7 +767,8 @@ const createHostPeerConnection = async (sessionId: string, participantId: string
             type: 'candidate',
             senderId: participantId,
             targetId: 'host',
-            candidate: event.candidate
+            candidate: event.candidate,
+            timestamp: Date.now()
           });
         } catch (e) {
           console.error("Error sending ICE candidate via broadcast channel:", e);
@@ -657,6 +787,19 @@ const createHostPeerConnection = async (sessionId: string, participantId: string
         activePeerConnections['host'].iceConnectionState === 'completed') {
       mediaStreamEstablished = true;
       console.log("WebRTC peer connection successfully established");
+      
+      // Announce successful connection
+      try {
+        const channel = new BroadcastChannel(`live-session-${sessionId}`);
+        channel.postMessage({
+          type: 'webrtc-connected',
+          participantId: participantId,
+          timestamp: Date.now()
+        });
+        setTimeout(() => channel.close(), 500);
+      } catch (e) {
+        console.error("Error announcing successful connection:", e);
+      }
     }
     
     // Attempt to restart ICE if the connection fails
@@ -681,7 +824,9 @@ const createHostPeerConnection = async (sessionId: string, participantId: string
     else if (activePeerConnections['host'].iceConnectionState === 'disconnected') {
       setTimeout(() => {
         if (activePeerConnections['host']?.iceConnectionState === 'disconnected') {
+          console.log("Connection remained disconnected, recreating");
           closePeerConnection('host');
+          createHostPeerConnection(sessionId, participantId);
         }
       }, 5000);
     }
@@ -734,7 +879,8 @@ const createHostPeerConnection = async (sessionId: string, participantId: string
           type: 'offer',
           senderId: participantId,
           targetId: 'host',
-          description: activePeerConnections['host'].localDescription
+          description: activePeerConnections['host'].localDescription,
+          timestamp: Date.now()
         });
       } catch (e) {
         console.error("Error sending offer via broadcast channel:", e);
