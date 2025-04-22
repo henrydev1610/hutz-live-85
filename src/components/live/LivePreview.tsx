@@ -221,10 +221,10 @@ const LivePreview = ({
             )}
           </div>
           
-          {/* Participant grid area */}
+          {/* Participant grid area - exactly matching the transmission layout */}
           <div className="absolute top-[5%] right-[5%] bottom-[5%] left-[25%]">
             <div 
-              className="w-full h-full grid gap-1" 
+              className="w-full h-full grid gap-2" 
               style={{ 
                 gridTemplateColumns: `repeat(${cols}, 1fr)`,
                 gridTemplateRows: `repeat(${rows}, 1fr)`
@@ -316,6 +316,12 @@ const LivePreview = ({
               </div>
             </>
           )}
+          
+          {/* Live indicator - matching the transmission */}
+          <div className="absolute top-[10px] right-[10px] bg-black/50 text-white px-[10px] py-[5px] rounded-[4px] text-xs flex items-center">
+            <div className="w-[8px] h-[8px] bg-red-500 rounded-full mr-[5px] animate-pulse"></div>
+            AO VIVO
+          </div>
         </div>
       </AspectRatio>
     </div>
