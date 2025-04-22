@@ -61,6 +61,16 @@ export const diagnoseConnection = async (sessionId: string, participantId: strin
       }
     }
     
+    // Get network connection type safely with proper type checking
+    let connectionType = 'unknown';
+    try {
+      // Use type assertion with the Navigator interface extended with the connection property
+      const nav = navigator as Navigator & { connection?: { effectiveType?: string } };
+      connectionType = nav.connection?.effectiveType || 'unknown';
+    } catch (e) {
+      console.error("Error getting connection type:", e);
+    }
+    
     // Log diagnostics to console and attempt to send via BroadcastChannel
     const diagnostics = {
       sessionId,
@@ -76,7 +86,7 @@ export const diagnoseConnection = async (sessionId: string, participantId: strin
         cameraPermission,
       },
       videoDevices: videoDevices.length,
-      connectionType: navigator.connection ? (navigator.connection as any).effectiveType : 'unknown',
+      connectionType,
     };
     
     console.log("Connection diagnostics:", diagnostics);
