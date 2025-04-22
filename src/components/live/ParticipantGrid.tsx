@@ -72,6 +72,18 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
       const hasVideoTracks = stream.getVideoTracks().length > 0;
       console.log(`Participant ${participantId} has video tracks: ${hasVideoTracks}`);
       
+      // Log more details about the stream for debugging
+      if (hasVideoTracks) {
+        const videoTrack = stream.getVideoTracks()[0];
+        console.log(`Video track details for ${participantId}:`, {
+          enabled: videoTrack.enabled,
+          readyState: videoTrack.readyState,
+          id: videoTrack.id,
+          settings: videoTrack.getSettings(),
+          constraints: videoTrack.getConstraints()
+        });
+      }
+      
       // Update hasVideo state for this participant
       setHasVideoMap(prev => ({
         ...prev,
@@ -148,6 +160,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     }
     
     if (videoElement.srcObject !== stream) {
+      console.log(`Attaching stream to video element for ${participantId}`);
       videoElement.srcObject = stream;
       
       // Try to play video

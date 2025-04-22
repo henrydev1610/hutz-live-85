@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -462,6 +463,26 @@ const ParticipantPage = () => {
         try {
           await initParticipantWebRTC(sessionId, participantId, stream);
           console.log("WebRTC initialized successfully");
+          
+          // Ensure we announce our stream multiple times for better discovery
+          for (let i = 0; i < 3; i++) {
+            setTimeout(() => {
+              try {
+                const channel = new BroadcastChannel(`live-session-${sessionId}`);
+                channel.postMessage({
+                  type: 'video-stream-info',
+                  id: participantId,
+                  hasStream: true,
+                  hasVideo: true,
+                  trackIds: stream?.getTracks().map(t => t.id) || [],
+                  timestamp: Date.now()
+                });
+                setTimeout(() => channel.close(), 500);
+              } catch (e) {
+                console.error(`Error in stream announcement attempt ${i+1}:`, e);
+              }
+            }, i * 1000);
+          }
         } catch (e) {
           console.error("WebRTC initialization error:", e);
           setTimeout(async () => {
@@ -478,12 +499,15 @@ const ParticipantPage = () => {
           if (stream && stream.active) {
             try {
               const channel = new BroadcastChannel(`live-session-${sessionId}`);
+              // Add codec info for debugging
+              const videoTrackSettings = stream.getVideoTracks()[0]?.getSettings() || {};
               channel.postMessage({
                 type: 'video-stream-info',
                 id: participantId,
                 hasStream: true,
                 hasVideo: true,
                 trackIds: stream.getTracks().map(t => t.id),
+                codecInfo: videoTrackSettings,
                 timestamp: Date.now()
               });
               setTimeout(() => channel.close(), 500);
