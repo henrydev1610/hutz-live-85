@@ -297,9 +297,12 @@ const LivePage = () => {
       const newList = prev.filter(p => p.id !== id);
       
       const nextId = `placeholder-${prev.length}`;
+      const now = Date.now();
       const newParticipant = {
         id: nextId,
         name: `Participante ${newList.length + 1}`,
+        joinedAt: now,
+        lastActive: now,
         active: false,
         selected: false,
         hasVideo: false
@@ -983,7 +986,7 @@ const LivePage = () => {
         joinedAt: now,
         lastActive: now,
         active: true,
-        selected: true, // Auto-select new participants for visibility
+        selected: true,
         hasVideo: true,
         connectedAt: now
       };

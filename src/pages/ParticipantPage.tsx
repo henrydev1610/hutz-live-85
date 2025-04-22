@@ -165,7 +165,7 @@ const ParticipantPage = () => {
         setFinalActionTimeLeft((prev) => prev - 1);
       }, 1000);
       
-      setFinalActionTimerId(timerId);
+      setFinalActionTimerId(timerId as unknown as NodeJS.Timeout);
       
       return () => {
         if (timerId) clearInterval(timerId);
@@ -587,7 +587,7 @@ const ParticipantPage = () => {
 
   const closeFinalAction = () => {
     if (finalActionTimerId) {
-      clearInterval(finalActionTimerId);
+      clearInterval(finalActionTimerId as unknown as number);
       setFinalActionTimerId(null);
     }
     setFinalActionOpen(false);
