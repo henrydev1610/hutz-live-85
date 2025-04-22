@@ -33,6 +33,7 @@ const ParticipantPage = () => {
   const cleanupFunctionRef = useRef<(() => void) | null>(null);
   const autoJoinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const cameraStartAttempts = useRef<number>(0);
+  const [finalActionTimerId, setFinalActionTimerId] = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const newParticipantId = `participant-${Date.now()}-${Math.floor(Math.random() * 1000)}`;

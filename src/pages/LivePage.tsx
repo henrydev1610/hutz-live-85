@@ -19,12 +19,26 @@ import { generateSessionId, addParticipantToSession } from '@/utils/sessionUtils
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
 import { initHostWebRTC, setOnParticipantTrack } from '@/utils/webrtc';
 
+// Define a simplified interface for our internal participant state that matches what we're using
+interface LivePageParticipant {
+  id: string;
+  name: string;
+  active: boolean;
+  selected: boolean;
+  hasVideo: boolean;
+  connectedAt?: number;
+  // Adding the properties that were missing to match Participant interface
+  joinedAt: number;
+  lastActive: number;
+  isAdmin?: boolean;
+}
+
 const LivePage = () => {
   const [participantCount, setParticipantCount] = useState(4);
   const [qrCodeURL, setQrCodeURL] = useState("");
   const [qrCodeVisible, setQrCodeVisible] = useState(false);
   const [qrCodeSvg, setQrCodeSvg] = useState<string | null>(null);
-  const [participantList, setParticipantList] = useState<{id: string, name: string, active: boolean, selected: boolean, hasVideo: boolean, connectedAt?: number}[]>([]);
+  const [participantList, setParticipantList] = useState<LivePageParticipant[]>([]);
   const [selectedBackgroundColor, setSelectedBackgroundColor] = useState("#000000");
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
   const [finalAction, setFinalAction] = useState<'none' | 'image' | 'coupon'>('none');
@@ -66,12 +80,15 @@ const LivePage = () => {
 
   useEffect(() => {
     if (participantList.length === 0) {
+      const currentTime = Date.now();
       const initialParticipants = Array(4).fill(0).map((_, i) => ({
         id: `placeholder-${i}`,
         name: `Participante ${i + 1}`,
         active: false,
         selected: false,
-        hasVideo: false
+        hasVideo: false,
+        joinedAt: currentTime,
+        lastActive: currentTime
       }));
       setParticipantList(initialParticipants);
     }
@@ -294,12 +311,15 @@ const LivePage = () => {
       const newList = prev.filter(p => p.id !== id);
       
       const nextId = `placeholder-${prev.length}`;
+      const currentTime = Date.now();
       const newParticipant = {
         id: nextId,
         name: `Participante ${newList.length + 1}`,
         active: false,
         selected: false,
-        hasVideo: false
+        hasVideo: false,
+        joinedAt: currentTime,
+        lastActive: currentTime
       };
       
       return [...newList, newParticipant];
@@ -968,18 +988,28 @@ const LivePage = () => {
     
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === participantId);
+      const currentTime = Date.now();
+      
       if (exists) {
-        return prev.map(p => p.id === participantId ? { ...p, active: true, hasVideo: true, connectedAt: Date.now() } : p);
+        return prev.map(p => p.id === participantId ? { 
+          ...p, 
+          active: true, 
+          hasVideo: true, 
+          connectedAt: currentTime,
+          lastActive: currentTime 
+        } : p);
       }
       
       const participantName = `Participante ${prev.filter(p => !p.id.startsWith('placeholder-')).length + 1}`;
-      const newParticipant = {
+      const newParticipant: LivePageParticipant = {
         id: participantId,
         name: participantName,
         active: true,
         selected: true, // Auto-select new participants for visibility
         hasVideo: true,
-        connectedAt: Date.now()
+        connectedAt: currentTime,
+        joinedAt: currentTime,
+        lastActive: currentTime
       };
       
       if (sessionId) {
