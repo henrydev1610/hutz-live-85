@@ -543,7 +543,7 @@ const LivePage = () => {
               let availableSlots = Array.from({ length: Math.min(participantCount, 100) }, (_, i) => i);
               let participantStreams = {};
               let activeVideoElements = {};
-            
+
               function createVideoElement(slotElement, stream) {
                 if (!slotElement) return;
                 
@@ -580,7 +580,7 @@ const LivePage = () => {
                 activeVideoElements[slotElement.id] = videoElement;
                 return videoElement;
               }
-            
+
               async function getLocalStreamForDisplay() {
                 try {
                   const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -623,7 +623,41 @@ const LivePage = () => {
                   }
                 }
               });
-            
+
+              function updateQRPositions(data) {
+                const qrCodeElement = document.querySelector('.qr-code');
+                const qrDescriptionElement = document.querySelector('.qr-description');
+                
+                if (qrCodeElement && data.qrCodePosition) {
+                  qrCodeElement.style.left = data.qrCodePosition.x + 'px';
+                  qrCodeElement.style.top = data.qrCodePosition.y + 'px';
+                  qrCodeElement.style.width = data.qrCodePosition.width + 'px';
+                  qrCodeElement.style.height = data.qrCodePosition.height + 'px';
+                  qrCodeElement.style.display = data.qrCodeVisible ? 'flex' : 'none';
+                  
+                  if (data.qrCodeSvg) {
+                    const imgElement = qrCodeElement.querySelector('img') || document.createElement('img');
+                    imgElement.src = data.qrCodeSvg;
+                    imgElement.alt = "QR Code";
+                    if (!imgElement.parentNode) {
+                      qrCodeElement.appendChild(imgElement);
+                    }
+                  }
+                }
+                
+                if (qrDescriptionElement && data.qrDescriptionPosition) {
+                  qrDescriptionElement.style.left = data.qrDescriptionPosition.x + 'px';
+                  qrDescriptionElement.style.top = data.qrDescriptionPosition.y + 'px';
+                  qrDescriptionElement.style.width = data.qrDescriptionPosition.width + 'px';
+                  qrDescriptionElement.style.height = data.qrDescriptionPosition.height + 'px';
+                  qrDescriptionElement.style.fontSize = data.qrDescriptionFontSize + 'px';
+                  qrDescriptionElement.style.fontFamily = data.selectedFont;
+                  qrDescriptionElement.style.color = data.selectedTextColor;
+                  qrDescriptionElement.style.display = data.qrCodeVisible ? 'flex' : 'none';
+                  qrDescriptionElement.textContent = data.qrCodeDescription;
+                }
+              }
+
               window.addEventListener('message', (event) => {
                 if (event.data.type === 'update-participants') {
                   const { participants } = event.data;
@@ -713,6 +747,9 @@ const LivePage = () => {
                       }
                     }
                   });
+                }
+                else if (event.data.type === 'update-qr-positions') {
+                  updateQRPositions(event.data);
                 }
               });
               
