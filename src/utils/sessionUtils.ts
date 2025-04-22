@@ -238,7 +238,7 @@ export const addParticipantToSession = (sessionId: string, participantId: string
         lastActive: Date.now(),
         connectedAt: Date.now(),
         active: true,
-        selected: false,
+        selected: false, // Participants are not selected by default
         hasVideo: true // Assume they have video for now
       });
     }

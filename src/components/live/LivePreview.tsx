@@ -1,5 +1,5 @@
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { User } from 'lucide-react';
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 
@@ -33,6 +33,7 @@ interface LivePreviewProps {
   selectedBackgroundColor: string;
   participantList: Participant[];
   participantCount: number;
+  participantStreams?: {[id: string]: MediaStream};
 }
 
 const LivePreview = ({
@@ -49,11 +50,13 @@ const LivePreview = ({
   backgroundImage,
   selectedBackgroundColor,
   participantList,
-  participantCount
+  participantCount,
+  participantStreams = {}
 }: LivePreviewProps) => {
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const qrCodeRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
+  const videoRefs = useRef<{[id: string]: HTMLDivElement | null}>({});
   
   const [isDraggingQR, setIsDraggingQR] = useState(false);
   const [isDraggingText, setIsDraggingText] = useState(false);
@@ -179,6 +182,47 @@ const LivePreview = ({
     }
   };
 
+  // Function to add or update video element in container
+  const updateVideoElement = (container: HTMLDivElement, stream: MediaStream) => {
+    let videoElement = container.querySelector('video');
+    
+    if (!videoElement) {
+      videoElement = document.createElement('video');
+      videoElement.autoplay = true;
+      videoElement.playsInline = true;
+      videoElement.muted = true;
+      videoElement.className = 'w-full h-full object-cover';
+      container.appendChild(videoElement);
+      
+      // Add event listeners for video
+      videoElement.onloadedmetadata = () => {
+        videoElement?.play().catch(err => console.error('Error playing video:', err));
+      };
+    }
+    
+    if (videoElement.srcObject !== stream) {
+      videoElement.srcObject = stream;
+      videoElement.play().catch(err => console.error('Error playing video:', err));
+    }
+  };
+
+  // Effect to update video elements when streams change
+  useEffect(() => {
+    if (!participantStreams) return;
+    
+    // Get selected participants
+    const selectedParticipants = participantList.filter(p => p.selected);
+    
+    selectedParticipants.forEach((participant, index) => {
+      if (participantStreams[participant.id] && videoRefs.current[participant.id]) {
+        const container = videoRefs.current[participant.id];
+        if (container) {
+          updateVideoElement(container, participantStreams[participant.id]);
+        }
+      }
+    });
+  }, [participantStreams, participantList]);
+
   // Calculate grid columns and rows based on participant count
   const calculateGrid = () => {
     // Get selected participants
@@ -241,6 +285,13 @@ const LivePreview = ({
                       <div 
                         id={`preview-participant-video-${participant.id}`} 
                         className="absolute inset-0 w-full h-full overflow-hidden"
+                        ref={el => {
+                          videoRefs.current[participant.id] = el;
+                          // If we already have a stream for this participant, update the video element
+                          if (el && participantStreams && participantStreams[participant.id]) {
+                            updateVideoElement(el, participantStreams[participant.id]);
+                          }
+                        }}
                       >
                         {/* Video will be inserted here dynamically */}
                       </div>

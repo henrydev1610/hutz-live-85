@@ -104,6 +104,8 @@ const ParticipantGrid = ({
           ...prev,
           [participantId]: hasVideoTracks
         }));
+      } else {
+        console.log(`Container for participant ${participantId} not found. Will try again in the next render.`);
       }
     });
     
@@ -236,7 +238,13 @@ const ParticipantGrid = ({
                     <div 
                       id={`participant-video-${participant.id}`}
                       className="absolute inset-0 overflow-hidden"
-                      ref={el => videoRefs.current[participant.id] = el}
+                      ref={el => {
+                        videoRefs.current[participant.id] = el;
+                        // If we already have a stream for this participant, update the video element
+                        if (el && participantStreams[participant.id]) {
+                          updateVideoElement(el, participantStreams[participant.id]);
+                        }
+                      }}
                     >
                       {/* Video element will be inserted here dynamically */}
                     </div>
