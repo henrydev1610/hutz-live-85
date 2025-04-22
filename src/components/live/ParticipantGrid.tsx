@@ -1,3 +1,4 @@
+
 import { User, Check, Video, VideoOff } from 'lucide-react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -155,16 +156,37 @@ const ParticipantGrid = ({
   };
   
   const getShortName = (participant: Participant) => {
-    if (participant.name && participant.name.trim()) {
-      return participant.name;
-    }
-    return `Participante ${participantShortId(participant.id)}`;
+    if (participant.name) return participant.name;
+    return `Participante ${participant.id.substring(participant.id.lastIndexOf('-') + 1)}`;
   };
   
-  const participantShortId = (id: string) => {
-    const lastPart = id.substring(id.lastIndexOf('-') + 1);
-    return lastPart.length > 3 ? lastPart.substring(0, 3) : lastPart;
-  };
+  // Update transmission window when streams change
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    const transmissionWindow = window.opener;
+    if (transmissionWindow && !transmissionWindow.closed) {
+      const selectedParticipants = participants.filter(p => p.selected);
+      
+      selectedParticipants.forEach(participant => {
+        if (participantStreams[participant.id]) {
+          // Notify transmission window about participant stream status
+          try {
+            const channel = new BroadcastChannel(`live-session-${sessionId}`);
+            channel.postMessage({
+              type: 'video-stream',
+              participantId: participant.id,
+              stream: { hasStream: true }
+            });
+            
+            setTimeout(() => channel.close(), 100);
+          } catch (e) {
+            console.error("Error sending stream information via broadcast channel:", e);
+          }
+        }
+      });
+    }
+  }, [participantStreams, participants, sessionId]);
   
   // Request participant streams periodically to ensure they're connected
   useEffect(() => {
@@ -183,25 +205,10 @@ const ParticipantGrid = ({
           console.error("Error requesting participant streams:", e);
         }
       }
-    }, 3000); // Request more frequently
+    }, 5000);
     
     return () => clearInterval(requestInterval);
   }, [activeParticipants, sessionId]);
-  
-  // Regularly check for video tracks in streams
-  useEffect(() => {
-    const checkVideoInterval = setInterval(() => {
-      Object.entries(participantStreams).forEach(([participantId, stream]) => {
-        const hasVideoTracks = stream.getVideoTracks().some(track => track.enabled);
-        setStreamStatus(prev => ({
-          ...prev,
-          [participantId]: hasVideoTracks
-        }));
-      });
-    }, 2000);
-    
-    return () => clearInterval(checkVideoInterval);
-  }, [participantStreams]);
   
   return (
     <div className="space-y-4 w-full max-w-[1200px]">
