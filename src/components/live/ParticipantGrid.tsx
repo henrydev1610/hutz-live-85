@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -5,7 +6,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { 
   User, Video, VideoOff, Crown, Shield, 
   Check, Ban, UserX, MoreVertical, X,
-  Eye, EyeOff, Share
+  Eye, EyeOff, Share, AlertTriangle
 } from 'lucide-react';
 import { 
   DropdownMenu,
@@ -26,6 +27,7 @@ export interface Participant {
   connectedAt?: number;
   hasVideo?: boolean;
   isAdmin?: boolean;
+  browserType?: string;
 }
 
 interface ParticipantGridProps {
@@ -52,6 +54,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   const { toast } = useToast();
   const [hasVideoMap, setHasVideoMap] = useState<{[key: string]: boolean}>({});
   const [streamConnectionCount, setStreamConnectionCount] = useState<{[key: string]: number}>({});
+  const [streamErrors, setStreamErrors] = useState<{[key: string]: string}>({});
   const videoRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
   const videoElements = useRef<{[key: string]: HTMLVideoElement | null}>({});
   
@@ -67,56 +70,210 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         new BroadcastChannel(`stream-info-${sessionId}`)
       ];
       
-      const handleStreamInfo = (event: MessageEvent) => {
-        if (event.data.type === 'video-stream-info') {
-          const participantId = event.data.id;
-          console.log(`Received stream info from ${participantId}:`, event.data);
+      // Also set up localStorage monitoring for Firefox/Opera
+      const storageListener = (event: StorageEvent) => {
+        if (!event.key) return;
+        
+        // Check for stream info in storage events
+        if (event.key.startsWith(`stream-info-${sessionId}`)) {
+          try {
+            const data = JSON.parse(event.newValue || "{}");
+            if (data.type === 'video-stream-info') {
+              handleStreamInfo(data);
+            }
+          } catch (e) {
+            console.error("Error parsing storage event stream info:", e);
+          }
+        }
+        
+        // Check for diagnostic data
+        if (event.key.startsWith(`diagnostic-${sessionId}`)) {
+          try {
+            const data = JSON.parse(event.newValue || "{}");
+            if (data.type === 'connection-diagnostics') {
+              console.log("Received diagnostic data via storage:", data);
+              // Update participant browser info if available
+              if (data.participantId && data.browserType) {
+                updateParticipantStatus(sessionId, data.participantId, {
+                  browserType: data.browserType,
+                  lastActive: Date.now()
+                });
+              }
+            }
+          } catch (e) {
+            console.error("Error parsing diagnostic data:", e);
+          }
+        }
+      };
+      
+      window.addEventListener('storage', storageListener);
+      
+      // Poll localStorage directly for Firefox/Opera (they handle storage events differently)
+      const checkStorageInterval = setInterval(() => {
+        try {
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key) continue;
+            
+            if (key.startsWith(`stream-info-${sessionId}`) || 
+                key.startsWith(`test-${sessionId}`) ||
+                key.startsWith(`diagnostic-${sessionId}`)) {
+              try {
+                const value = localStorage.getItem(key);
+                if (!value) continue;
+                
+                const data = JSON.parse(value);
+                
+                // Process various message types
+                if (data.type === 'video-stream-info') {
+                  handleStreamInfo(data);
+                  // Remove after processing to avoid duplicates
+                  localStorage.removeItem(key);
+                }
+                else if (data.type === 'connection-test') {
+                  // Send ack response
+                  const responseKey = `response-${sessionId}-${data.id}-${Date.now()}`;
+                  localStorage.setItem(responseKey, JSON.stringify({
+                    type: 'host-ack',
+                    targetId: data.id,
+                    testId: data.testId,
+                    timestamp: Date.now()
+                  }));
+                  
+                  // Remove test message
+                  localStorage.removeItem(key);
+                }
+              } catch (e) {
+                console.warn("Error processing localStorage item:", e);
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Error checking localStorage:", e);
+        }
+      }, 1000);
+      
+      const handleStreamInfo = (data: any) => {
+        if (!data || !data.id) return;
+        
+        const participantId = data.id;
+        console.log(`Received stream info from ${participantId}:`, data);
+        
+        // Update hasVideo state based on the message
+        if (data.hasVideo !== undefined) {
+          setHasVideoMap(prev => ({
+            ...prev,
+            [participantId]: data.hasVideo
+          }));
           
-          // Update hasVideo state based on the message
-          if (event.data.hasVideo !== undefined) {
-            setHasVideoMap(prev => ({
-              ...prev,
-              [participantId]: event.data.hasVideo
+          // Ensure participant is shown as active
+          const participant = participants.find(p => p.id === participantId);
+          if (participant) {
+            const updates: any = {
+              active: true,
+              lastActive: Date.now(),
+              hasVideo: data.hasVideo
+            };
+            
+            // Update browser type if available
+            if (data.deviceInfo?.userAgent) {
+              const ua = data.deviceInfo.userAgent.toLowerCase();
+              if (ua.indexOf('firefox') > -1) {
+                updates.browserType = 'firefox';
+              } else if (ua.indexOf('opr') > -1 || ua.indexOf('opera') > -1) {
+                updates.browserType = 'opera';
+              } else if (ua.indexOf('edge') > -1 || ua.indexOf('edg') > -1) {
+                updates.browserType = 'edge';
+              } else if (ua.indexOf('chrome') > -1) {
+                updates.browserType = 'chrome';
+              } else if (ua.indexOf('safari') > -1) {
+                updates.browserType = 'safari';
+              }
+            }
+            
+            updateParticipantStatus(sessionId, participantId, updates);
+          }
+          
+          // Send acknowledgment back to participant (try both broadcast and storage)
+          try {
+            const responseChannel = new BroadcastChannel(`response-${sessionId}`);
+            responseChannel.postMessage({
+              type: 'host-ack',
+              targetId: participantId,
+              received: true,
+              timestamp: Date.now()
+            });
+            setTimeout(() => responseChannel.close(), 500);
+          } catch (e) {
+            console.error("Error sending broadcast acknowledgment:", e);
+          }
+          
+          // Also store ack in localStorage for Firefox/Opera
+          try {
+            const responseKey = `response-${sessionId}-${participantId}-${Date.now()}`;
+            localStorage.setItem(responseKey, JSON.stringify({
+              type: 'host-ack',
+              targetId: participantId,
+              received: true,
+              timestamp: Date.now()
             }));
-            
-            // Ensure participant is shown as active
-            const participant = participants.find(p => p.id === participantId);
-            if (participant) {
-              updateParticipantStatus(sessionId, participantId, {
-                active: true,
-                lastActive: Date.now(),
-                hasVideo: event.data.hasVideo
-              });
-            }
-            
-            // Send acknowledgment back to participant
-            try {
-              const responseChannel = new BroadcastChannel(`response-${sessionId}`);
-              responseChannel.postMessage({
-                type: 'host-ack',
-                targetId: participantId,
-                received: true,
-                timestamp: Date.now()
-              });
-              setTimeout(() => responseChannel.close(), 500);
-            } catch (e) {
-              console.error("Error sending acknowledgment:", e);
-            }
+            setTimeout(() => localStorage.removeItem(responseKey), 10000);
+          } catch (e) {
+            console.error("Error storing localStorage acknowledgment:", e);
           }
         }
       };
       
       // Set up listeners for all channels
       channels.forEach(channel => {
-        channel.onmessage = handleStreamInfo;
+        channel.onmessage = (event) => {
+          if (event.data.type === 'video-stream-info') {
+            handleStreamInfo(event.data);
+          }
+        };
       });
       
-      // Cleanup function to close all channels
+      // Cleanup function to close all channels and intervals
       return () => {
         channels.forEach(channel => channel.close());
+        window.removeEventListener('storage', storageListener);
+        clearInterval(checkStorageInterval);
       };
     } catch (e) {
       console.error("Error setting up stream info channels:", e);
+      
+      // Fallback to pure localStorage approach for Firefox/Opera
+      const storageListener = (event: StorageEvent) => {
+        // We need this for browsers that don't support BroadcastChannel
+        if (event.key && event.key.includes(`stream-info-${sessionId}`)) {
+          try {
+            const data = JSON.parse(event.newValue || "{}");
+            if (data.type === 'video-stream-info' && data.id) {
+              console.log("Received stream info via localStorage:", data);
+              
+              setHasVideoMap(prev => ({
+                ...prev,
+                [data.id]: data.hasVideo
+              }));
+              
+              // Update participant status
+              updateParticipantStatus(sessionId, data.id, {
+                active: true,
+                lastActive: Date.now(),
+                hasVideo: data.hasVideo
+              });
+            }
+          } catch (error) {
+            console.error("Error handling storage event:", error);
+          }
+        }
+      };
+      
+      window.addEventListener('storage', storageListener);
+      
+      return () => {
+        window.removeEventListener('storage', storageListener);
+      };
     }
   }, [sessionId, participants]);
   
@@ -127,9 +284,6 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     // Log the available participant streams for debugging
     console.log("Available participant streams:", Object.keys(participantStreams));
     console.log("Participants with streams:", participants.filter(p => participantStreams[p.id]).length);
-    
-    // Force manual selection - don't auto-select participants
-    // This is a critical change to fix the auto-selection issue
     
     // Check for each participant that should have video
     participants.forEach(participant => {
@@ -142,6 +296,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         videoTracks: stream ? stream.getVideoTracks().length : 0,
         selected: participant.selected,
         active: participant.active,
+        browserType: participant.browserType
       });
       
       // If we have a stream for this participant
@@ -160,11 +315,17 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
           [participant.id]: (prev[participant.id] || 0) + 1
         }));
         
+        // Clear any previous errors
+        setStreamErrors(prev => ({
+          ...prev,
+          [participant.id]: ''
+        }));
+        
         // Find the container for this participant's video
         const container = videoRefs.current[participant.id];
         if (container) {
           console.log(`Updating video for ${participant.id}`);
-          updateVideoElement(container, stream);
+          updateVideoElement(container, stream, participant.id);
         } else {
           console.log(`Container for participant ${participant.id} not found yet.`);
         }
@@ -173,8 +334,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   }, [participantStreams, participants]);
   
   // Function to add or update video element in container with improved error handling
-  const updateVideoElement = (container: HTMLDivElement, stream: MediaStream) => {
-    const participantId = container.id.replace('participant-video-', '');
+  const updateVideoElement = (container: HTMLDivElement, stream: MediaStream, participantId: string) => {
     let videoElement = videoElements.current[participantId];
     
     try {
@@ -205,6 +365,12 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
           videoElement?.play().catch(err => {
             console.error(`Error playing video on metadata load for ${participantId}:`, err);
             
+            // Track the error
+            setStreamErrors(prev => ({
+              ...prev,
+              [participantId]: `Play error: ${err.message}`
+            }));
+            
             // Try again with a delay
             setTimeout(() => {
               console.log(`Retrying play for ${participantId} after metadata load`);
@@ -218,10 +384,20 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         // Add more event listeners for debugging
         videoElement.oncanplay = () => {
           console.log(`Video can play for ${participantId}`);
+          // Clear errors when video can play
+          setStreamErrors(prev => ({
+            ...prev,
+            [participantId]: ''
+          }));
         };
         
         videoElement.onerror = (event) => {
-          console.error(`Video element error for ${participantId}:`, videoElement?.error);
+          const errorMessage = videoElement?.error?.message || "Unknown video error";
+          console.error(`Video element error for ${participantId}:`, errorMessage);
+          setStreamErrors(prev => ({
+            ...prev,
+            [participantId]: errorMessage
+          }));
         };
       }
       
@@ -233,9 +409,20 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         
         // Try to play video
         videoElement.play()
-          .then(() => console.log(`Video playing for ${participantId}`))
+          .then(() => {
+            console.log(`Video playing for ${participantId}`);
+            // Clear errors when video plays successfully
+            setStreamErrors(prev => ({
+              ...prev,
+              [participantId]: ''
+            }));
+          })
           .catch(err => {
             console.error(`Error playing video for ${participantId}:`, err);
+            setStreamErrors(prev => ({
+              ...prev,
+              [participantId]: `Play error: ${err.message}`
+            }));
             
             // Retry logic
             setTimeout(() => {
@@ -248,7 +435,12 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
           });
       }
     } catch (error) {
-      console.error(`Error updating video element for ${participantId}:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`Error updating video element for ${participantId}:`, errorMessage);
+      setStreamErrors(prev => ({
+        ...prev,
+        [participantId]: errorMessage
+      }));
     }
   };
 
@@ -275,6 +467,8 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     const hasVideo = hasVideoMap[participant.id] || participant.hasVideo || false;
     const lastActiveDuration = formatTimeSince(participant.lastActive);
     const connectionCount = streamConnectionCount[participant.id] || 0;
+    const streamError = streamErrors[participant.id];
+    const browserType = participant.browserType || 'unknown';
     
     return (
       <Card 
@@ -295,7 +489,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
                 videoRefs.current[participant.id] = el;
                 // If we already have a stream for this participant, update the video element
                 if (el && participantStreams[participant.id]) {
-                  updateVideoElement(el, participantStreams[participant.id]);
+                  updateVideoElement(el, participantStreams[participant.id], participant.id);
                 }
               }}
             >
@@ -309,8 +503,23 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
               </div>
             )}
             
+            {/* Stream error indicator */}
+            {streamError && (
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/70 p-2 rounded-md">
+                <AlertTriangle className="h-6 w-6 text-yellow-500 mx-auto mb-1" />
+                <p className="text-xs text-center text-white">{streamError.substring(0, 40)}{streamError.length > 40 ? '...' : ''}</p>
+              </div>
+            )}
+            
             {/* Participant status indicators */}
             <div className="absolute top-2 right-2 flex gap-1">
+              {/* Browser type indicator */}
+              {browserType !== 'unknown' && (
+                <div className="bg-black/70 text-white px-1.5 py-0.5 text-[10px] rounded">
+                  {browserType}
+                </div>
+              )}
+              
               {connectionCount > 0 && (
                 <div className={`${connectionCount > 1 ? 'bg-green-500/90' : 'bg-yellow-500/90'} text-white p-1 rounded-full`}>
                   <Share className="w-3 h-3" />
