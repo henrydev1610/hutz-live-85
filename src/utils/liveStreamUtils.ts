@@ -288,8 +288,8 @@ export const initializeHostSession = (sessionId: string, callbacks: ParticipantC
 /**
  * Initialize a participant session for live streaming
  */
-export const initializeParticipantSession = (sessionId: string, participantId: string, participantName: string = '') => {
-  console.log("Initializing participant session:", sessionId, "participant:", participantId);
+export const initializeParticipantSession = (sessionId: string, participantId: string, participantName: string, autoSelect: boolean = false) => {
+  console.log(`Initializing participant session: ${sessionId}, ${participantId}, autoSelect: ${autoSelect}`);
   
   // Set up broadcast channel for this session
   const channel = new BroadcastChannel(`live-session-${sessionId}`);
@@ -303,7 +303,9 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
       type: 'participant-join',
       id: participantId,
       name: participantName,
-      timestamp: Date.now()
+      autoSelect,
+      timestamp: Date.now(),
+      connectionTime: Date.now()
     }));
   } catch (e) {
     console.warn("Error using localStorage join:", e);
@@ -314,7 +316,9 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
     type: 'participant-join',
     id: participantId,
     name: participantName,
-    timestamp: Date.now()
+    autoSelect,
+    timestamp: Date.now(),
+    connectionTime: Date.now()
   });
   
   // Send join message on backup channel too
@@ -322,7 +326,9 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
     type: 'participant-join',
     id: participantId,
     name: participantName,
-    timestamp: Date.now()
+    autoSelect,
+    timestamp: Date.now(),
+    connectionTime: Date.now()
   });
   
   // Set up periodic join message until acknowledged
@@ -515,7 +521,9 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
         type: 'participant-join',
         id: participantId,
         name: participantName,
-        timestamp: Date.now()
+        autoSelect,
+        timestamp: Date.now(),
+        connectionTime: Date.now()
       });
       
       // Send via backup channel
@@ -523,7 +531,9 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
         type: 'participant-join',
         id: participantId,
         name: participantName,
-        timestamp: Date.now()
+        autoSelect,
+        timestamp: Date.now(),
+        connectionTime: Date.now()
       });
       
       // Also try localStorage
@@ -532,7 +542,9 @@ export const initializeParticipantSession = (sessionId: string, participantId: s
           type: 'participant-join',
           id: participantId,
           name: participantName,
-          timestamp: Date.now()
+          autoSelect,
+          timestamp: Date.now(),
+          connectionTime: Date.now()
         }));
       } catch (e) {
         // Ignore localStorage errors
