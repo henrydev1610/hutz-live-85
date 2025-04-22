@@ -249,54 +249,6 @@ const LivePage = () => {
   const [isParticipantGuestVisible] = useState(true);
   const [isParticipantVisitorVisible] = useState(true);
   const [isParticipantUserVisible] = useState(true);
-  const [isParticipantMemberVisible] = useState(true);
-  const [isParticipantSubscriberVisible] = useState(true);
-  const [isParticipantFollowerVisible] = useState(true);
-  const [isParticipantCommenterVisible] = useState(true);
-  const [isParticipantContributorVisible] = useState(true);
-  const [isParticipantEditorVisible] = useState(true);
-  const [isParticipantModeratorVisible] = useState(true);
-  const [isParticipantAdminVisible] = useState(true);
-  const [isParticipantOwnerVisible] = useState(true);
-  const [isParticipantSponsorVisible] = useState(true);
-  const [isParticipantPartnerVisible] = useState(true);
-  const [isParticipantEmployeeVisible] = useState(true);
-  const [isParticipantContractorVisible] = useState(true);
-  const [isParticipantVolunteerVisible] = useState(true);
-  const [isParticipantInternVisible] = useState(true);
-  const [isParticipantTraineeVisible] = useState(true);
-  const [isParticipantApprenticeVisible] = useState(true);
-  const [isParticipantStudentVisible] = useState(true);
-  const [isParticipantTeacherVisible] = useState(true);
-  const [isParticipantProfessorVisible] = useState(true);
-  const [isParticipantAlumniVisible] = useState(true);
-  const [isParticipantGuestVisible] = useState(true);
-  const [isParticipantVisitorVisible] = useState(true);
-  const [isParticipantUserVisible] = useState(true);
-  const [isParticipantMemberVisible] = useState(true);
-  const [isParticipantSubscriberVisible] = useState(true);
-  const [isParticipantFollowerVisible] = useState(true);
-  const [isParticipantCommenterVisible] = useState(true);
-  const [isParticipantContributorVisible] = useState(true);
-  const [isParticipantEditorVisible] = useState(true);
-  const [isParticipantModeratorVisible] = useState(true);
-  const [isParticipantAdminVisible] = useState(true);
-  const [isParticipantOwnerVisible] = useState(true);
-  const [isParticipantSponsorVisible] = useState(true);
-  const [isParticipantPartnerVisible] = useState(true);
-  const [isParticipantEmployeeVisible] = useState(true);
-  const [isParticipantContractorVisible] = useState(true);
-  const [isParticipantVolunteerVisible] = useState(true);
-  const [isParticipantInternVisible] = useState(true);
-  const [isParticipantTraineeVisible] = useState(true);
-  const [isParticipantApprenticeVisible] = useState(true);
-  const [isParticipantStudentVisible] = useState(true);
-  const [isParticipantTeacherVisible] = useState(true);
-  const [isParticipantProfessorVisible] = useState(true);
-  const [isParticipantAlumniVisible] = useState(true);
-  const [isParticipantGuestVisible] = useState(true);
-  const [isParticipantVisitorVisible] = useState(true);
-  const [isParticipantUserVisible] = useState(true);
   const [
     isParticipantRevokeVisitorVisible
   ] = useState(true);
@@ -430,51 +382,219 @@ const LivePage = () => {
       setIsParticipantRevokeProfessorVisible(session.isParticipantRevokeProfessorVisible !== undefined ? session.isParticipantRevokeProfessorVisible : true);
       setIsParticipantGrantAlumniVisible(session.isParticipantAlumniVisible !== undefined ? session.isParticipantAlumniVisible : true);
       setIsParticipantRevokeAlumniVisible(session.isParticipantRevokeAlumniVisible !== undefined ? session.isParticipantRevokeAlumniVisible : true);
-      setIsParticipantGuestVisible(session.isParticipantGuestVisible !== undefined ? session.isParticipantGuestVisible : true);
-      setIsParticipantVisitorVisible(session.isParticipantVisitorVisible !== undefined ? session.isParticipantVisitorVisible : true);
-      setIsParticipantUserVisible(session.isParticipantUserVisible !== undefined ? session.isParticipantUserVisible : true);
-      setIsParticipantMemberVisible(session.isParticipantMemberVisible !== undefined ? session.isParticipantMemberVisible : true);
-      setIsParticipantSubscriberVisible(session.isParticipantSubscriberVisible !== undefined ? session.isParticipantSubscriberVisible : true);
-      setIsParticipantFollowerVisible(session.isParticipantFollowerVisible !== undefined ? session.isParticipantFollowerVisible : true);
-      setIsParticipantCommenterVisible(session.isParticipantCommenterVisible !== undefined ? session.isParticipantCommenterVisible : true);
-      setIsParticipantContributorVisible(session.isParticipantContributorVisible !== undefined ? session.isParticipantContributorVisible : true);
-      setIsParticipantEditorVisible(session.isParticipantEditorVisible !== undefined ? session.isParticipantEditorVisible : true);
-      setIsParticipantModeratorVisible(session.isParticipantModeratorVisible !== undefined ? session.isParticipantModeratorVisible : true);
-      setIsParticipantAdminVisible(session.isParticipantAdminVisible !== undefined ? session.isParticipantAdminVisible : true);
-      setIsParticipantOwnerVisible(session.isParticipantOwnerVisible !== undefined ? session.isParticipantOwnerVisible : true);
-      setIsParticipantSponsorVisible(session.isParticipantSponsorVisible !== undefined ? session.isParticipantSponsorVisible : true);
-      setIsParticipantPartnerVisible(session.isParticipantPartnerVisible !== undefined ? session.isParticipantPartnerVisible : true);
-      setIsParticipantEmployeeVisible(session.isParticipantEmployeeVisible !== undefined ? session.isParticipantEmployeeVisible : true);
-      setIsParticipantContractorVisible(session.isParticipantContractorVisible !== undefined ? session.isParticipantContractorVisible : true);
-      setIsParticipantVolunteerVisible(session.isParticipantVolunteerVisible !== undefined ? session.isParticipantVolunteerVisible : true);
-      setIsParticipantInternVisible(session.isParticipantInternVisible !== undefined ? session.isParticipantInternVisible : true);
-      setIsParticipantTraineeVisible(session.isParticipantTraineeVisible !== undefined ? session.isParticipantTraineeVisible : true);
-      setIsParticipantApprenticeVisible(session.isParticipantApprenticeVisible !== undefined ? session.isParticipantApprenticeVisible : true);
-      setIsParticipantStudentVisible(session.isParticipantStudentVisible !== undefined ? session.isParticipantStudentVisible : true);
-      setIsParticipantTeacherVisible(session.isParticipantTeacherVisible !== undefined ? session.isParticipantTeacherVisible : true);
-      setIsParticipantProfessorVisible(session.isParticipantProfessorVisible !== undefined ? session.isParticipantProfessorVisible : true);
-      setIsParticipantAlumniVisible(session.isParticipantAlumniVisible !== undefined ? session.isParticipantAlumniVisible : true);
-      setIsParticipantGuestVisible(session.isParticipantGuestVisible !== undefined ? session.isParticipantGuestVisible : true);
-      setIsParticipantVisitorVisible(session.isParticipantVisitorVisible !== undefined ? session.isParticipantVisitorVisible : true);
-      setIsParticipantUserVisible(session.isParticipantUserVisible !== undefined ? session.isParticipantUserVisible : true);
-      setIsParticipantMemberVisible(session.isParticipantMemberVisible !== undefined ? session.isParticipantMemberVisible : true);
-      setIsParticipantSubscriberVisible(session.isParticipantSubscriberVisible !== undefined ? session.isParticipantSubscriberVisible : true);
-      setIsParticipantFollowerVisible(session.isParticipantFollowerVisible !== undefined ? session.isParticipantFollowerVisible : true);
-      setIsParticipantCommenterVisible(session.isParticipantCommenterVisible !== undefined ? session.isParticipantCommenterVisible : true);
-      setIsParticipantContributorVisible(session.isParticipantContributorVisible !== undefined ? session.isParticipantContributorVisible : true);
-      setIsParticipantEditorVisible(session.isParticipantEditorVisible !== undefined ? session.isParticipantEditorVisible : true);
-      setIsParticipantModeratorVisible(session.isParticipantModeratorVisible !== undefined ? session.isParticipantModeratorVisible : true);
-      setIsParticipantAdminVisible(session.isParticipantAdminVisible !== undefined ? session.isParticipantAdminVisible : true);
-      setIsParticipantOwnerVisible(session.isParticipantOwnerVisible !== undefined ? session.isParticipantOwnerVisible : true);
-      setIsParticipantSponsorVisible(session.isParticipantSponsorVisible !== undefined ? session.isParticipantSponsorVisible : true);
-      setIsParticipantPartnerVisible(session.isParticipantPartnerVisible !== undefined ? session.isParticipantPartnerVisible : true);
-      setIsParticipantEmployeeVisible(session.isParticipantEmployeeVisible !== undefined ? session.isParticipantEmployeeVisible : true);
-      setIsParticipantContractorVisible(session.isParticipantContractorVisible !== undefined ? session.isParticipantContractorVisible : true);
-      setIsParticipantVolunteerVisible(session.isParticipantVolunteerVisible !== undefined ? session.isParticipantVolunteerVisible : true);
-      setIsParticipantInternVisible(session.isParticipantInternVisible !== undefined ? session.isParticipantInternVisible : true);
-      setIsParticipantTraineeVisible(session.isParticipantTraineeVisible !== undefined ? session.isParticipantTraineeVisible : true);
-      setIsParticipantApprenticeVisible(session.isParticipantApprenticeVisible !== undefined ? session.isParticipantApprenticeVisible : true);
-      setIsParticipantStudentVisible(session.isParticipantStudentVisible !== undefined ? session.isParticipantStudentVisible : true);
-      setIsParticipantTeacherVisible(session.isParticipantTeacherVisible !== undefined ? session.isParticipantTeacherVisible : true);
-      setIsParticipantProfessorVisible(session.isParticipantProfessorVisible !== undefined ? session.isParticipantProfessorVisible : true);
-      setIsParticipantAlumniVisible(session.isParticipantAlumniVisible !== undefined ?
+      setIsParticipantGrantGuestVisible(session.isParticipantGuestVisible !== undefined ? session.isParticipantGuestVisible : true);
+      setIsParticipantRevokeGuestVisible(session.isParticipantRevokeGuestVisible !== undefined ? session.isParticipantRevokeGuestVisible : true);
+      setIsParticipantGrantVisitorVisible(session.isParticipantVisitorVisible !== undefined ? session.isParticipantVisitorVisible : true);
+      setIsParticipantRevokeVisitorVisible(session.isParticipantRevokeVisitorVisible !== undefined ? session.isParticipantRevokeVisitorVisible : true);
+      setIsParticipantGrantUserVisible(session.isParticipantUserVisible !== undefined ? session.isParticipantUserVisible : true);
+      setIsParticipantRevokeUserVisible(session.isParticipantRevokeUserVisible !== undefined ? session.isParticipantRevokeUserVisible : true);
+    }
+  }, [session]);
+
+  const fetchSessionData = async (sessionId: string) => {
+    setIsLoading(true);
+    try {
+      const sessionData = await getSession(sessionId);
+      setSession(sessionData);
+    } catch (error) {
+      console.error("Failed to fetch session data:", error);
+      toast({
+        variant: "destructive",
+        title: "Erro ao carregar sessão",
+        description: "Não foi possível carregar os dados da sessão. Por favor, tente novamente."
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startNewSession = async () => {
+    setIsLoading(true);
+    try {
+      const newSessionId = generateRandomId();
+      const newSession = await createSession(newSessionId);
+      setSessionId(newSessionId);
+      setSession(newSession);
+      setSessionName(newSession.name || '');
+      toast({
+        title: "Sessão iniciada",
+        description: "Uma nova sessão foi iniciada com sucesso."
+      });
+    } catch (error) {
+      console.error("Failed to create a new session:", error);
+      toast({
+        variant: "destructive",
+        title: "Erro ao iniciar sessão",
+        description: "Não foi possível iniciar uma nova sessão. Por favor, tente novamente."
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEndSession = async () => {
+    setIsEnding(true);
+    try {
+      if (sessionId) {
+        await endSession(sessionId);
+        localStorage.removeItem('sessionId');
+        navigate('/');
+        toast({
+          title: "Sessão encerrada",
+          description: "A sessão foi encerrada e os dados foram removidos."
+        });
+      }
+    } catch (error) {
+      console.error("Failed to end session:", error);
+      toast({
+        variant: "destructive",
+        title: "Erro ao encerrar sessão",
+        description: "Não foi possível encerrar a sessão. Por favor, tente novamente."
+      });
+    } finally {
+      setIsEnding(false);
+    }
+  };
+
+  const handleSessionNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSessionName(e.target.value);
+  };
+
+  const handleUpdateSessionName = async () => {
+    if (sessionId) {
+      try {
+        await updateSession(sessionId, { name: sessionName });
+        setSession(prevSession => ({ ...prevSession, name: sessionName }));
+        toast({
+          title: "Sessão atualizada",
+          description: "O nome da sessão foi atualizado com sucesso."
+        });
+      } catch (error) {
+        console.error("Failed to update session name:", error);
+        toast({
+          variant: "destructive",
+          title: "Erro ao atualizar sessão",
+          description: "Não foi possível atualizar o nome da sessão. Por favor, tente novamente."
+        });
+      }
+    }
+  };
+
+  const generateQrCode = async (text: string) => {
+    try {
+      const svg = await QRCode.toString(text, { type: 'svg' });
+      setQrCodeSvg(svg);
+    } catch (error) {
+      console.error("Failed to generate QR code:", error);
+      toast({
+        variant: "destructive",
+        title: "Erro ao gerar QR Code",
+        description: "Não foi possível gerar o QR Code. Por favor, tente novamente."
+      });
+    }
+  };
+
+  const handleCopySessionLink = () => {
+    if (sessionId) {
+      const sessionLink = `${window.location.origin}/join/${sessionId}`;
+      navigator.clipboard.writeText(sessionLink)
+        .then(() => {
+          toast({
+            title: "Link copiado",
+            description: "O link da sessão foi copiado para a área de transferência."
+          });
+        })
+        .catch(err => {
+          console.error("Failed to copy session link:", err);
+          toast({
+            variant: "destructive",
+            title: "Erro ao copiar link",
+            description: "Não foi possível copiar o link da sessão. Por favor, tente novamente."
+          });
+        });
+    }
+  };
+
+  const handleToggleQrCodeVisibility = () => {
+    setIsQrCodeVisible(!isQrCodeVisible);
+    updateSession(sessionId, { isQrCodeVisible: !isQrCodeVisible });
+  };
+
+  const handleToggleQrDescriptionVisibility = () => {
+    setIsQrDescriptionVisible(!isQrDescriptionVisible);
+    updateSession(sessionId, { isQrDescriptionVisible: !isQrDescriptionVisible });
+  };
+
+  const handleToggleLiveIndicatorVisibility = () => {
+    setIsLiveIndicatorVisible(!isLiveIndicatorVisible);
+    updateSession(sessionId, { isLiveIndicatorVisible: !isLiveIndicatorVisible });
+  };
+
+  const handleToggleParticipantCountVisibility = () => {
+    setIsParticipantCountVisible(!isParticipantCountVisible);
+    updateSession(sessionId, { isParticipantCountVisible: !isParticipantCountVisible });
+  };
+
+  const handleToggleParticipantListVisibility = () => {
+    setIsParticipantListVisible(!isParticipantListVisible);
+    updateSession(sessionId, { isParticipantListVisible: !isParticipantListVisible });
+  };
+
+  const handleToggleParticipantSettingsVisibility = () => {
+    setIsParticipantSettingsVisible(!isParticipantSettingsVisible);
+    updateSession(sessionId, { isParticipantSettingsVisible: !isParticipantSettingsVisible });
+  };
+
+  const handleToggleParticipantNameVisibility = () => {
+    setIsParticipantNameVisible(!isParticipantNameVisible);
+    updateSession(sessionId, { isParticipantNameVisible: !isParticipantNameVisible });
+  };
+
+  const handleToggleParticipantStatusVisibility = () => {
+    setIsParticipantStatusVisible(!isParticipantStatusVisible);
+    updateSession(sessionId, { isParticipantStatusVisible: !isParticipantStatusVisible });
+  };
+
+  const handleToggleParticipantActionsVisibility = () => {
+    setIsParticipantActionsVisible(!isParticipantActionsVisible);
+    updateSession(sessionId, { isParticipantActionsVisible: !isParticipantActionsVisible });
+  };
+
+  const handleToggleParticipantVideoVisibility = () => {
+    setIsParticipantVideoVisible(!isParticipantVideoVisible);
+    updateSession(sessionId, { isParticipantVideoVisible: !isParticipantVideoVisible });
+  };
+
+  const handleToggleParticipantAudioVisibility = () => {
+    setIsParticipantAudioVisible(!isParticipantAudioVisible);
+    updateSession(sessionId, { isParticipantAudioVisible: !isParticipantAudioVisible });
+  };
+
+  const handleToggleParticipantShareVisibility = () => {
+    setIsParticipantShareVisible(!isParticipantShareVisible);
+    updateSession(sessionId, { isParticipantShareVisible: !isParticipantShareVisible });
+  };
+
+  const handleToggleParticipantRemoveVisibility = () => {
+    setIsParticipantRemoveVisible(!isParticipantRemoveVisible);
+    updateSession(sessionId, { isParticipantRemoveVisible: !isParticipantRemoveVisible });
+  };
+
+  const handleToggleParticipantMuteVisibility = () => {
+    setIsParticipantMuteVisible(!isParticipantMuteVisible);
+    updateSession(sessionId, { isParticipantMuteVisible: !isParticipantMuteVisible });
+  };
+
+  const handleToggleParticipantDeafenVisibility = () => {
+    setIsParticipantDeafenVisible(!isParticipantDeafenVisible);
+    updateSession(sessionId, { isParticipantDeafenVisible: !isParticipantDeafenVisible });
+  };
+
+  const handleToggleParticipantKickVisibility = () => {
+    setIsParticipantKickVisible(!isParticipantKickVisible);
+    updateSession(sessionId, { isParticipantKickVisible: !isParticipantKickVisible });
+  };
+
+  const handleToggleParticipantBanVisibility = () => {
+    setIsParticipantBanVisible(!isParticipantBanVisible);
+    updateSession(sessionId
