@@ -1,185 +1,98 @@
 
-/**
- * Utility for WebRTC and BroadcastChannel connection diagnostics
- */
+// Need to add type declaration for navigator.connection
+interface NetworkInformation {
+  downlink: number;
+  effectiveType: string;
+  rtt: number;
+  saveData: boolean;
+  type?: string;
+}
 
-// Function to diagnose WebRTC connection issues
-export const diagnoseConnection = async (sessionId: string, participantId: string) => {
+declare global {
+  interface Navigator {
+    connection?: NetworkInformation;
+  }
+}
+
+export const diagnoseConnection = async (sessionId: string, participantId: string): Promise<any> => {
   try {
-    // Check BroadcastChannel support
-    const broadcastSupported = 'BroadcastChannel' in window;
-    
-    // Check WebRTC support
-    const rtcSupported = 'RTCPeerConnection' in window;
-    
-    // Check MediaDevices support
-    const mediaDevicesSupported = 'mediaDevices' in navigator;
-    
-    // Get available devices
-    let videoDevices: MediaDeviceInfo[] = [];
-    if (mediaDevicesSupported) {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        videoDevices = devices.filter(device => device.kind === 'videoinput');
-      } catch (e) {
-        console.error("Error enumerating devices:", e);
-      }
-    }
-    
-    // Check permissions
-    let cameraPermission = false;
-    if (mediaDevicesSupported) {
-      try {
-        await navigator.mediaDevices.getUserMedia({ video: true });
-        cameraPermission = true;
-      } catch (e) {
-        console.error("Camera permission denied:", e);
-      }
-    }
-    
-    // Test BroadcastChannel
-    let broadcastWorking = false;
-    if (broadcastSupported) {
-      try {
-        const testChannel = new BroadcastChannel(`test-${sessionId}`);
-        
-        const testPromise = new Promise<boolean>((resolve) => {
-          const timeoutId = setTimeout(() => resolve(false), 1000);
-          
-          testChannel.onmessage = () => {
-            clearTimeout(timeoutId);
-            resolve(true);
-          };
-          
-          testChannel.postMessage({ type: 'test', timestamp: Date.now() });
-        });
-        
-        broadcastWorking = await testPromise;
-        testChannel.close();
-      } catch (e) {
-        console.error("Error testing BroadcastChannel:", e);
-      }
-    }
-    
-    // Get network connection type safely with proper type checking
-    let connectionType = 'unknown';
-    try {
-      // Use type assertion with the Navigator interface extended with the connection property
-      const nav = navigator as Navigator & { connection?: { effectiveType?: string } };
-      connectionType = nav.connection?.effectiveType || 'unknown';
-    } catch (e) {
-      console.error("Error getting connection type:", e);
-    }
-    
-    // Log diagnostics to console and attempt to send via BroadcastChannel
-    const diagnostics = {
-      sessionId,
-      participantId,
+    const diagnostics: any = {
       timestamp: Date.now(),
-      userAgent: navigator.userAgent,
-      platform: navigator.platform,
-      features: {
-        broadcastSupported,
-        broadcastWorking,
-        rtcSupported,
-        mediaDevicesSupported,
-        cameraPermission,
-      },
-      videoDevices: videoDevices.length,
-      connectionType,
-    };
-    
-    console.log("Connection diagnostics:", diagnostics);
-    
-    // Try to send diagnostics via multiple channels
-    if (broadcastSupported) {
-      try {
-        const channels = [
-          new BroadcastChannel(`diagnostic-${sessionId}`),
-          new BroadcastChannel(`live-session-${sessionId}`),
-          new BroadcastChannel(`telao-session-${sessionId}`)
-        ];
-        
-        channels.forEach(channel => {
-          channel.postMessage({
-            type: 'connection-diagnostics',
-            ...diagnostics
-          });
-          setTimeout(() => channel.close(), 500);
-        });
-      } catch (e) {
-        console.error("Error sending diagnostics:", e);
-      }
-    }
-    
-    return diagnostics;
-  } catch (e) {
-    console.error("Error running diagnostics:", e);
-    return {
-      error: e,
       sessionId,
       participantId,
-      timestamp: Date.now()
+      browser: navigator.userAgent,
+      network: {}
     };
+    
+    // Access navigator.connection with proper type checking
+    if (navigator.connection) {
+      diagnostics.network = {
+        downlink: navigator.connection.downlink,
+        effectiveType: navigator.connection.effectiveType,
+        rtt: navigator.connection.rtt,
+        saveData: navigator.connection.saveData
+      };
+    }
+    
+    // Test broadcast channel communication
+    const broadcastTest = await testBroadcastReception(sessionId, participantId);
+    diagnostics.broadcastChannelWorking = broadcastTest;
+    
+    // Send diagnostic info over broadcast
+    try {
+      const diagnosticChannel = new BroadcastChannel(`diagnostic-${sessionId}`);
+      diagnosticChannel.postMessage({
+        type: 'connection-diagnostics',
+        ...diagnostics
+      });
+      setTimeout(() => diagnosticChannel.close(), 500);
+      
+      return diagnostics;
+    } catch (e) {
+      console.error("Error sending diagnostics:", e);
+      return { ...diagnostics, error: String(e) };
+    }
+  } catch (e) {
+    console.error("Error in diagnostics:", e);
+    return { error: String(e) };
   }
 };
 
-// Checks if BroadcastChannel message is being received by the host
-export const testBroadcastReception = async (
-  sessionId: string, 
-  participantId: string,
-  messageType: string = 'video-stream-info'
-) => {
-  try {
-    if (!('BroadcastChannel' in window)) {
-      console.error("BroadcastChannel not supported");
-      return false;
-    }
-    
-    // Create a unique test message
-    const testMessage = {
-      type: messageType,
-      id: participantId,
-      testId: `test-${Date.now()}`,
-      timestamp: Date.now()
-    };
-    
-    // Send via multiple channels
-    const channels = [
-      new BroadcastChannel(`live-session-${sessionId}`),
-      new BroadcastChannel(`telao-session-${sessionId}`),
-      new BroadcastChannel(`stream-info-${sessionId}`)
-    ];
-    
-    console.log(`Sending test message of type ${messageType} for participant ${participantId}`);
-    
-    channels.forEach(channel => {
-      channel.postMessage(testMessage);
-      setTimeout(() => channel.close(), 500);
-    });
-    
-    // Create a special channel to listen for acknowledgment
-    const responseChannel = new BroadcastChannel(`response-${sessionId}`);
-    
-    const receivedPromise = new Promise<boolean>((resolve) => {
-      const timeoutId = setTimeout(() => {
-        responseChannel.close();
-        resolve(false);
-      }, 3000);
+export const testBroadcastReception = async (sessionId: string, participantId: string): Promise<boolean> => {
+  return new Promise((resolve) => {
+    try {
+      let received = false;
+      const testId = `test-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       
+      // Create a response channel to listen for acknowledgments
+      const responseChannel = new BroadcastChannel(`response-${sessionId}`);
       responseChannel.onmessage = (event) => {
-        if (event.data.type === 'host-ack' && 
-            event.data.testId === testMessage.testId) {
-          clearTimeout(timeoutId);
-          responseChannel.close();
+        if (event.data.type === 'host-ack' && event.data.targetId === participantId) {
+          received = true;
           resolve(true);
         }
       };
-    });
-    
-    return await receivedPromise;
-  } catch (e) {
-    console.error("Error testing broadcast reception:", e);
-    return false;
-  }
+      
+      // Create test channel and send message
+      const testChannel = new BroadcastChannel(`live-session-${sessionId}`);
+      testChannel.postMessage({
+        type: 'connection-test',
+        id: participantId,
+        testId,
+        timestamp: Date.now()
+      });
+      
+      // Set timeout to resolve after 2 seconds if no response
+      setTimeout(() => {
+        responseChannel.close();
+        testChannel.close();
+        if (!received) {
+          resolve(false);
+        }
+      }, 2000);
+    } catch (e) {
+      console.error("BroadcastChannel test error:", e);
+      resolve(false);
+    }
+  });
 };

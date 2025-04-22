@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ const ParticipantPage = () => {
     link?: string;
     coupon?: string;
   } | null>(null);
+  // Update the type to NodeJS.Timeout | null instead of number
   const [finalActionTimerId, setFinalActionTimerId] = useState<NodeJS.Timeout | null>(null);
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
