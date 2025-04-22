@@ -1,4 +1,3 @@
-
 import { QrCode, ExternalLink, Check, Copy } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,11 +39,61 @@ const QrCodeSettings = ({
   const { toast } = useToast();
 
   const copyQrCodeUrl = () => {
-    navigator.clipboard.writeText(qrCodeURL);
-    toast({
-      title: "Link copiado",
-      description: "URL do QR Code copiado para a área de transferência."
-    });
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(qrCodeURL).then(() => {
+        toast({
+          title: "Link copiado",
+          description: "URL do QR Code copiado para a área de transferência."
+        });
+      }).catch(err => {
+        console.error("Clipboard error:", err);
+        fallbackCopy();
+      });
+    } else {
+      fallbackCopy();
+    }
+  };
+  
+  const fallbackCopy = () => {
+    try {
+      const textArea = document.createElement("textarea");
+      textArea.value = qrCodeURL;
+      
+      // Avoid scrolling to bottom
+      textArea.style.position = "fixed";
+      textArea.style.top = "0";
+      textArea.style.left = "0";
+      textArea.style.width = "2em";
+      textArea.style.height = "2em";
+      textArea.style.padding = "0";
+      textArea.style.border = "none";
+      textArea.style.outline = "none";
+      textArea.style.boxShadow = "none";
+      textArea.style.background = "transparent";
+      
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      try {
+        document.execCommand('copy');
+        toast({
+          title: "Link copiado",
+          description: "URL do QR Code copiado para a área de transferência."
+        });
+      } catch (err) {
+        console.error("Fallback copy failed:", err);
+        toast({
+          title: "Erro ao copiar",
+          description: "Por favor, selecione e copie o link manualmente.",
+          variant: "destructive"
+        });
+      }
+      
+      document.body.removeChild(textArea);
+    } catch (err) {
+      console.error("Fallback copy error:", err);
+    }
   };
 
   return (

@@ -45,12 +45,39 @@ const ParticipantPage = () => {
     
     checkSession();
 
+    checkBrowserCompatibility();
+    
     checkCameraAvailability();
 
     return () => {
       cleanupResources();
     };
   }, []);
+
+  const checkBrowserCompatibility = () => {
+    const isWebRTCSupported = 
+      navigator.mediaDevices && 
+      navigator.mediaDevices.getUserMedia && 
+      window.RTCPeerConnection;
+    
+    console.log("Browser information:", {
+      userAgent: navigator.userAgent,
+      webRTCSupported: isWebRTCSupported,
+      mediaDevicesSupported: !!navigator.mediaDevices,
+      getUserMediaSupported: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+      RTCPeerConnectionSupported: !!window.RTCPeerConnection,
+      broadcastChannelSupported: typeof BroadcastChannel !== 'undefined'
+    });
+    
+    if (!isWebRTCSupported) {
+      console.warn("WebRTC is not fully supported in this browser");
+      toast({
+        title: "Compatibilidade limitada",
+        description: "Este navegador pode ter compatibilidade limitada com a transmissão ao vivo.",
+        variant: "destructive",
+      });
+    }
+  };
 
   useEffect(() => {
     if (sessionFound && !isJoined && !isJoining && cameraPermission !== null) {
@@ -331,10 +358,9 @@ const ParticipantPage = () => {
         try {
           const testStream = await navigator.mediaDevices.getUserMedia({ 
             video: {
-              width: { ideal: 1280, min: 640 },
-              height: { ideal: 720, min: 480 },
-              facingMode: "user",
-              frameRate: { ideal: 30, min: 15 }
+              width: { ideal: 1280, min: 320 },
+              height: { ideal: 720, min: 240 },
+              frameRate: { ideal: 30, min: 10 }
             },
             audio: false 
           });
@@ -345,9 +371,20 @@ const ParticipantPage = () => {
           
           if (videoRef.current) {
             videoRef.current.srcObject = testStream;
-            videoRef.current.play().catch(err => {
-              console.error("Error playing initial video:", err);
-            });
+            videoRef.current.onloadedmetadata = () => {
+              if (videoRef.current) {
+                videoRef.current.play().catch(err => {
+                  console.error("Error playing initial video:", err);
+                });
+              }
+            };
+            
+            if (videoRef.current.readyState >= 2) {
+              videoRef.current.play().catch(err => {
+                console.error("Error playing initial video:", err);
+              });
+            }
+            
             console.log("Preview camera stream set successfully");
           } else {
             console.warn("Video element ref not available yet");
@@ -355,6 +392,26 @@ const ParticipantPage = () => {
         } catch (error) {
           console.error("Camera permission denied:", error);
           setCameraPermission(false);
+          
+          if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+            toast({
+              title: "Permissão negada",
+              description: "Você precisa permitir o acesso à câmera para participar.",
+              variant: "destructive",
+            });
+          } else if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+            toast({
+              title: "Câmera não encontrada",
+              description: "Não foi possível detectar uma câmera conectada.",
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Erro de câmera",
+              description: `Não foi possível acessar a câmera: ${error.message || error.name}`,
+              variant: "destructive",
+            });
+          }
         }
       } else {
         setCameraPermission(false);
@@ -382,13 +439,12 @@ const ParticipantPage = () => {
         return videoStream;
       }
 
-      console.log("Starting camera with higher quality settings...");
+      console.log("Starting camera with browser-compatible settings...");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 },
-          facingMode: "user",
-          frameRate: { ideal: 30, min: 15 }
+          width: { ideal: 1280, min: 320 },
+          height: { ideal: 720, min: 240 },
+          frameRate: { ideal: 30, min: 10 }
         },
         audio: false
       });
@@ -402,9 +458,19 @@ const ParticipantPage = () => {
         videoRef.current.srcObject = stream;
         console.log("Set video element source object successfully");
         
+        videoRef.current.onloadedmetadata = () => {
+          if (videoRef.current) {
+            videoRef.current.play().catch(playError => {
+              console.error("Error playing video on loadedmetadata:", playError);
+            });
+          }
+        };
+        
         try {
-          await videoRef.current.play();
-          console.log("Video playback started successfully");
+          if (videoRef.current.readyState >= 2) {
+            await videoRef.current.play();
+            console.log("Video playback started successfully");
+          }
         } catch (playError) {
           console.error("Error playing video:", playError);
           setTimeout(async () => {
@@ -413,6 +479,16 @@ const ParticipantPage = () => {
               console.log("Video playback started on retry");
             } catch (retryError) {
               console.error("Error playing video on retry:", retryError);
+              try {
+                document.addEventListener('click', function tryPlayOnce() {
+                  if (videoRef.current) {
+                    videoRef.current.play().catch(e => console.error("Play on click failed:", e));
+                    document.removeEventListener('click', tryPlayOnce);
+                  }
+                }, {once: true});
+              } catch (e) {
+                console.error("Failed to set up play-on-click handler:", e);
+              }
             }
           }, 1000);
         }
@@ -424,22 +500,10 @@ const ParticipantPage = () => {
       setIsCameraActive(true);
       
       if (isJoined && sessionId) {
-        try {
-          const channel = new BroadcastChannel(`live-session-${sessionId}`);
-          channel.postMessage({
-            type: 'video-stream-info',
-            id: participantId,
-            hasStream: true,
-            hasVideo: true,
-            timestamp: Date.now()
-          });
-          setTimeout(() => channel.close(), 500);
-          
-          setLocalStream(stream);
-          console.log("Updated WebRTC with new camera stream");
-        } catch (e) {
-          console.error("Error broadcasting stream info:", e);
-        }
+        announceStreamInfo(stream, sessionId, participantId);
+        
+        setLocalStream(stream);
+        console.log("Updated WebRTC with new camera stream");
       }
       
       return stream;
@@ -452,6 +516,42 @@ const ParticipantPage = () => {
       });
       setIsCameraActive(false);
       return null;
+    }
+  };
+
+  const announceStreamInfo = (stream: MediaStream, sessId: string, partId: string) => {
+    try {
+      try {
+        const channel = new BroadcastChannel(`live-session-${sessId}`);
+        channel.postMessage({
+          type: 'video-stream-info',
+          id: partId,
+          hasStream: true,
+          hasVideo: stream.getVideoTracks().length > 0,
+          trackIds: stream.getTracks().map(t => t.id) || [],
+          timestamp: Date.now()
+        });
+        setTimeout(() => channel.close(), 500);
+      } catch (broadcastError) {
+        console.warn("BroadcastChannel not supported for announcements:", broadcastError);
+      }
+      
+      try {
+        const storageKey = `stream-info-${sessId}-${partId}-${Date.now()}`;
+        localStorage.setItem(storageKey, JSON.stringify({
+          type: 'video-stream-info',
+          id: partId,
+          hasStream: true,
+          hasVideo: stream.getVideoTracks().length > 0,
+          trackIds: stream.getTracks().map(t => t.id) || [],
+          timestamp: Date.now()
+        }));
+        setTimeout(() => localStorage.removeItem(storageKey), 10000);
+      } catch (storageError) {
+        console.warn("localStorage fallback failed:", storageError);
+      }
+    } catch (e) {
+      console.error("Error in stream announcement:", e);
     }
   };
 
@@ -502,23 +602,12 @@ const ParticipantPage = () => {
           await initParticipantWebRTC(sessionId, participantId, stream);
           console.log("WebRTC initialized successfully");
           
-          for (let i = 0; i < 3; i++) {
+          for (let i = 0; i < 5; i++) {
             setTimeout(() => {
-              try {
-                const channel = new BroadcastChannel(`live-session-${sessionId}`);
-                channel.postMessage({
-                  type: 'video-stream-info',
-                  id: participantId,
-                  hasStream: true,
-                  hasVideo: true,
-                  trackIds: stream.getTracks().map(t => t.id) || [],
-                  timestamp: Date.now()
-                });
-                setTimeout(() => channel.close(), 500);
-              } catch (e) {
-                console.error(`Error in stream announcement attempt ${i+1}:`, e);
+              if (stream && stream.active) {
+                announceStreamInfo(stream, sessionId, participantId);
               }
-            }, i * 1000);
+            }, i * 800);
           }
         } catch (e) {
           console.error("WebRTC initialization error:", e);
@@ -534,27 +623,17 @@ const ParticipantPage = () => {
         
         const streamAnnouncementInterval = setInterval(() => {
           if (stream && stream.active) {
-            try {
-              const channel = new BroadcastChannel(`live-session-${sessionId}`);
-              const videoTrackSettings = stream.getVideoTracks()[0]?.getSettings() || {};
-              channel.postMessage({
-                type: 'video-stream-info',
-                id: participantId,
-                hasStream: true,
-                hasVideo: true,
-                trackIds: stream.getTracks().map(t => t.id),
-                codecInfo: videoTrackSettings,
-                timestamp: Date.now()
-              });
-              setTimeout(() => channel.close(), 500);
-            } catch (e) {
-              console.error("Error in stream announcement interval:", e);
+            announceStreamInfo(stream, sessionId, participantId);
+            
+            if (Math.random() < 0.1) {
+              diagnoseConnection(sessionId, participantId)
+                .then(result => console.log("Connection diagnostics:", result));
             }
           }
         }, 3000);
         
-        window._streamIntervals = window._streamIntervals || {};
-        window._streamIntervals[participantId] = streamAnnouncementInterval;
+        (window as any)._streamIntervals = (window as any)._streamIntervals || {};
+        (window as any)._streamIntervals[participantId] = streamAnnouncementInterval;
       } else {
         console.log("No stream available, skipping WebRTC setup");
       }
