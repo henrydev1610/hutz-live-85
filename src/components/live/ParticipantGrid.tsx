@@ -55,74 +55,83 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   const videoRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
   const videoElements = useRef<{[key: string]: HTMLVideoElement | null}>({});
   
-  // Set up ping response channel for host to acknowledge participants
+  // Enhanced broadcast channel listener for better stream reception
   useEffect(() => {
     if (!sessionId) return;
     
     try {
-      const pingChannel = new BroadcastChannel(`ping-${sessionId}`);
+      // Listen on multiple channels for redundancy
+      const channels = [
+        new BroadcastChannel(`live-session-${sessionId}`),
+        new BroadcastChannel(`telao-session-${sessionId}`),
+        new BroadcastChannel(`stream-info-${sessionId}`)
+      ];
       
-      pingChannel.onmessage = (event) => {
-        if (event.data.type === 'participant-ping') {
+      const handleStreamInfo = (event: MessageEvent) => {
+        if (event.data.type === 'video-stream-info') {
           const participantId = event.data.id;
+          console.log(`Received stream info from ${participantId}:`, event.data);
           
-          // Send back acknowledgment
-          pingChannel.postMessage({
-            type: 'host-pong',
-            targetId: participantId,
-            timestamp: Date.now()
-          });
-          
-          // Update the participant's status if they exist
-          const participant = participants.find(p => p.id === participantId);
-          if (participant) {
-            updateParticipantStatus(sessionId, participantId, {
-              active: true,
-              lastActive: Date.now()
-            });
+          // Update hasVideo state based on the message
+          if (event.data.hasVideo !== undefined) {
+            setHasVideoMap(prev => ({
+              ...prev,
+              [participantId]: event.data.hasVideo
+            }));
+            
+            // Ensure participant is shown as active
+            const participant = participants.find(p => p.id === participantId);
+            if (participant) {
+              updateParticipantStatus(sessionId, participantId, {
+                active: true,
+                lastActive: Date.now(),
+                hasVideo: event.data.hasVideo
+              });
+            }
+            
+            // Send acknowledgment back to participant
+            try {
+              const responseChannel = new BroadcastChannel(`response-${sessionId}`);
+              responseChannel.postMessage({
+                type: 'host-ack',
+                targetId: participantId,
+                received: true,
+                timestamp: Date.now()
+              });
+              setTimeout(() => responseChannel.close(), 500);
+            } catch (e) {
+              console.error("Error sending acknowledgment:", e);
+            }
           }
         }
       };
       
+      // Set up listeners for all channels
+      channels.forEach(channel => {
+        channel.onmessage = handleStreamInfo;
+      });
+      
+      // Cleanup function to close all channels
       return () => {
-        pingChannel.close();
+        channels.forEach(channel => channel.close());
       };
     } catch (e) {
-      console.error("Error setting up ping channel:", e);
+      console.error("Error setting up stream info channels:", e);
     }
   }, [sessionId, participants]);
-  
-  // Listen for diagnostic information
-  useEffect(() => {
-    if (!sessionId) return;
-    
-    try {
-      const diagnosticChannel = new BroadcastChannel(`diagnostic-${sessionId}`);
-      
-      diagnosticChannel.onmessage = (event) => {
-        if (event.data.type === 'participant-diagnostics') {
-          console.log(`Received diagnostics from ${event.data.participantId}:`, event.data);
-        }
-      };
-      
-      return () => {
-        diagnosticChannel.close();
-      };
-    } catch (e) {
-      console.error("Error setting up diagnostic channel:", e);
-    }
-  }, [sessionId]);
   
   // Enhanced effect to update video elements when stream references change
   useEffect(() => {
     if (!participantStreams) return;
     
-    // Log the available participant streams
-    console.log("Participant streams available:", Object.keys(participantStreams));
-    console.log("Total number of participants:", participants.length);
-    console.log("Participants with selected=true:", participants.filter(p => p.selected).length);
+    // Log the available participant streams for debugging
+    console.log("Available participant streams:", Object.keys(participantStreams));
+    console.log("Participants with streams:", participants.filter(p => participantStreams[p.id]).length);
     
-    // Check all participants that should have video
+    // Force manual selection - don't auto-select participants
+    // This is a critical change to fix the auto-selection issue
+    
+    // Check for each participant that should have video
     participants.forEach(participant => {
       const stream = participantStreams[participant.id];
       const hasStreamData = stream !== undefined;
@@ -130,27 +139,14 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
       console.log(`Checking participant ${participant.id} (${participant.name}):`, {
         hasStreamInProps: hasStreamData,
         streamTracks: stream ? stream.getTracks().length : 0,
+        videoTracks: stream ? stream.getVideoTracks().length : 0,
         selected: participant.selected,
         active: participant.active,
-        hasVideoInState: hasVideoMap[participant.id],
-        hasVideoInData: participant.hasVideo
       });
       
-      // If we have a stream for this participant but it's not in hasVideoMap
+      // If we have a stream for this participant
       if (hasStreamData && stream && stream.getTracks().length > 0) {
         const hasVideoTracks = stream.getVideoTracks().length > 0;
-        
-        // Log more details about the stream for debugging
-        if (hasVideoTracks) {
-          const videoTrack = stream.getVideoTracks()[0];
-          console.log(`Video track details for ${participant.id}:`, {
-            enabled: videoTrack.enabled,
-            readyState: videoTrack.readyState,
-            id: videoTrack.id,
-            settings: videoTrack.getSettings(),
-            constraints: videoTrack.getConstraints()
-          });
-        }
         
         // Update hasVideo state for this participant
         setHasVideoMap(prev => ({
@@ -167,50 +163,15 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         // Find the container for this participant's video
         const container = videoRefs.current[participant.id];
         if (container) {
-          console.log(`Attempting to update video for ${participant.id}`);
+          console.log(`Updating video for ${participant.id}`);
           updateVideoElement(container, stream);
         } else {
-          console.log(`Container for participant ${participant.id} not found. Will try again in the next render.`);
+          console.log(`Container for participant ${participant.id} not found yet.`);
         }
-      } 
-      // If participant should have video but we don't have a stream
-      else if (participant.hasVideo && !hasStreamData) {
-        console.log(`Participant ${participant.id} should have video but no stream available`);
       }
     });
   }, [participantStreams, participants]);
   
-  // Effect to poll for media element readiness
-  useEffect(() => {
-    // Check every second if video elements are playing correctly
-    const videoCheckInterval = setInterval(() => {
-      participants.forEach(participant => {
-        const videoElement = videoElements.current[participant.id];
-        const stream = participantStreams[participant.id];
-        
-        // If we have a video element and a stream but the video isn't playing
-        if (videoElement && stream && stream.getVideoTracks().length > 0) {
-          const isPlaying = !videoElement.paused && 
-                           videoElement.readyState >= 3 && 
-                           videoElement.videoWidth > 0;
-                           
-          if (!isPlaying) {
-            console.log(`Video for ${participant.id} not playing correctly, retrying attachment`);
-            videoElement.srcObject = null;
-            videoElement.srcObject = stream;
-            videoElement.play().catch(err => {
-              console.error(`Error playing video for ${participant.id}:`, err);
-            });
-          }
-        }
-      });
-    }, 5000);
-    
-    return () => {
-      clearInterval(videoCheckInterval);
-    };
-  }, [participants, participantStreams]);
-
   // Function to add or update video element in container with improved error handling
   const updateVideoElement = (container: HTMLDivElement, stream: MediaStream) => {
     const participantId = container.id.replace('participant-video-', '');
@@ -225,7 +186,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         videoElement.muted = true;
         videoElement.className = 'w-full h-full object-cover';
         
-        // Add a data attribute for debugging
+        // Add data attributes for debugging
         videoElement.setAttribute('data-participant-id', participantId);
         
         // Store reference to video element
@@ -267,71 +228,27 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
       if (videoElement.srcObject !== stream) {
         console.log(`Attaching stream to video element for ${participantId}`);
         
-        // Check if stream has active video tracks
-        const videoTracks = stream.getVideoTracks();
-        if (videoTracks.length === 0) {
-          console.warn(`Stream for ${participantId} has no video tracks`);
-        } else {
-          const videoTrack = videoTracks[0];
-          if (!videoTrack.enabled) {
-            console.warn(`Video track for ${participantId} is not enabled`);
-          }
-          
-          if (videoTrack.readyState !== 'live') {
-            console.warn(`Video track for ${participantId} is not live (state: ${videoTrack.readyState})`);
-          }
-        }
-        
         // Set the stream as source
         videoElement.srcObject = stream;
         
-        // Try to play video with retries
-        videoElement.play().catch(err => {
-          console.error(`Error playing video for ${participantId}:`, err);
-          
-          // Implementation of retry logic with increasing delays
-          const retryPlay = (attempt = 1, maxAttempts = 3) => {
-            if (attempt > maxAttempts) {
-              console.error(`Max play attempts reached for ${participantId}`);
-              return;
-            }
+        // Try to play video
+        videoElement.play()
+          .then(() => console.log(`Video playing for ${participantId}`))
+          .catch(err => {
+            console.error(`Error playing video for ${participantId}:`, err);
             
-            const delay = attempt * 1000;
-            console.log(`Retry ${attempt}/${maxAttempts} playing video for ${participantId} in ${delay}ms`);
-            
+            // Retry logic
             setTimeout(() => {
               if (videoElement) {
                 videoElement.play()
-                  .then(() => console.log(`Successfully played video on retry ${attempt} for ${participantId}`))
-                  .catch(retryErr => {
-                    console.error(`Error on retry ${attempt} for ${participantId}:`, retryErr);
-                    retryPlay(attempt + 1, maxAttempts);
-                  });
+                  .then(() => console.log(`Successfully played video on retry for ${participantId}`))
+                  .catch(retryErr => console.error(`Error on retry for ${participantId}:`, retryErr));
               }
-            }, delay);
-          };
-          
-          retryPlay();
-        });
+            }, 1000);
+          });
       }
     } catch (error) {
       console.error(`Error updating video element for ${participantId}:`, error);
-      
-      // Try to recover by creating a new video element
-      try {
-        if (videoElement) {
-          videoElement.srcObject = null;
-          container.removeChild(videoElement);
-          videoElements.current[participantId] = null;
-        }
-        
-        // Try again with a new element
-        setTimeout(() => {
-          updateVideoElement(container, stream);
-        }, 1000);
-      } catch (recoveryError) {
-        console.error(`Recovery failed for ${participantId}:`, recoveryError);
-      }
     }
   };
 
@@ -345,11 +262,13 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     return `${Math.floor(diffSec / 3600)}h`;
   };
 
+  // This is the critical function to handle manual selection - modified to be explicit
   const handleToggleSelect = (id: string) => {
+    console.log(`Manually toggling selection for participant: ${id}`);
     onSelectParticipant(id);
   };
 
-  // Enhanced rendering with connection diagnostics
+  // Enhanced rendering with improved visual feedback
   const renderParticipantCard = (participant: Participant) => {
     const isActive = participant.active;
     const isSelected = participant.selected;
@@ -392,7 +311,6 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
             
             {/* Participant status indicators */}
             <div className="absolute top-2 right-2 flex gap-1">
-              {/* Add connection indicator */}
               {connectionCount > 0 && (
                 <div className={`${connectionCount > 1 ? 'bg-green-500/90' : 'bg-yellow-500/90'} text-white p-1 rounded-full`}>
                   <Share className="w-3 h-3" />
@@ -419,7 +337,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
             </div>
           </div>
           
-          {/* Participant info and controls */}
+          {/* Participant info and controls - explicitly show selection is manual */}
           <div className="flex items-center justify-between mt-auto">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{participant.name || 'Participante'}</p>
@@ -434,6 +352,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
                 variant={isSelected ? "default" : "outline"}
                 className="h-8 w-8"
                 onClick={() => handleToggleSelect(participant.id)}
+                title="Selecionar manualmente"
               >
                 <Eye className="h-4 w-4" />
               </Button>

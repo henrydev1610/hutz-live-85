@@ -1,7 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Participant } from './ParticipantGrid';
 import Draggable from 'react-draggable';
+import { Move } from 'lucide-react';
 
 interface LivePreviewProps {
   qrCodeVisible: boolean;
@@ -38,6 +39,10 @@ const LivePreview: React.FC<LivePreviewProps> = ({
 }) => {
   const [isDraggingQrCode, setIsDraggingQrCode] = useState(false);
   const [isDraggingText, setIsDraggingText] = useState(false);
+  const [isResizingQrCode, setIsResizingQrCode] = useState(false);
+  const [isResizingText, setIsResizingText] = useState(false);
+  const [resizeStartPos, setResizeStartPos] = useState({ x: 0, y: 0 });
+  const [initialSize, setInitialSize] = useState({ width: 0, height: 0 });
   
   // Helper function to update position based on drag event
   const updatePosition = (position: { x: number; y: number; width: number; height: number }, 
@@ -48,6 +53,72 @@ const LivePreview: React.FC<LivePreviewProps> = ({
       y: newPosition.y
     };
   };
+
+  // QR Code resize handlers
+  const handleQrResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizingQrCode(true);
+    setResizeStartPos({ x: e.clientX, y: e.clientY });
+    setInitialSize({ width: qrCodePosition.width, height: qrCodePosition.height });
+  };
+  
+  // Text resize handlers
+  const handleTextResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizingText(true);
+    setResizeStartPos({ x: e.clientX, y: e.clientY });
+    setInitialSize({ width: qrDescriptionPosition.width, height: qrDescriptionPosition.height });
+  };
+  
+  // Global resize handlers
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isResizingQrCode) {
+        const dx = e.clientX - resizeStartPos.x;
+        const dy = e.clientY - resizeStartPos.y;
+        
+        // Calculate new size (maintain aspect ratio for QR)
+        const newWidth = Math.max(80, initialSize.width + dx);
+        const newHeight = Math.max(80, initialSize.width + dx); // Keep square for QR
+        
+        setQrCodePosition(prev => ({
+          ...prev,
+          width: newWidth,
+          height: newHeight
+        }));
+      } else if (isResizingText) {
+        const dx = e.clientX - resizeStartPos.x;
+        const dy = e.clientY - resizeStartPos.y;
+        
+        // Calculate new size
+        const newWidth = Math.max(100, initialSize.width + dx);
+        const newHeight = Math.max(40, initialSize.height + dy);
+        
+        setQrDescriptionPosition(prev => ({
+          ...prev,
+          width: newWidth,
+          height: newHeight
+        }));
+      }
+    };
+    
+    const handleMouseUp = () => {
+      setIsResizingQrCode(false);
+      setIsResizingText(false);
+    };
+    
+    if (isResizingQrCode || isResizingText) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+    
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingQrCode, isResizingText, resizeStartPos, initialSize]);
 
   return (
     <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
@@ -88,7 +159,7 @@ const LivePreview: React.FC<LivePreviewProps> = ({
         ))}
       </div>
       
-      {/* QR Code preview with draggable functionality */}
+      {/* QR Code preview with draggable and resizable functionality */}
       {qrCodeVisible && (
         <Draggable
           bounds="parent"
@@ -98,9 +169,10 @@ const LivePreview: React.FC<LivePreviewProps> = ({
             setQrCodePosition(prev => updatePosition(prev, { x: data.x, y: data.y }));
           }}
           position={{ x: qrCodePosition.x, y: qrCodePosition.y }}
+          disabled={isResizingQrCode}
         >
           <div 
-            className={`absolute bg-white p-1 rounded-lg cursor-move ${isDraggingQrCode ? 'ring-2 ring-primary' : ''}`}
+            className={`absolute bg-white p-1 rounded-lg cursor-move ${isDraggingQrCode || isResizingQrCode ? 'ring-2 ring-primary' : ''}`}
             style={{ 
               width: `${qrCodePosition.width}px`, 
               height: `${qrCodePosition.height}px`,
@@ -117,11 +189,19 @@ const LivePreview: React.FC<LivePreviewProps> = ({
                 QR Code
               </div>
             )}
+            
+            {/* Resize handle */}
+            <div 
+              className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize bg-primary/80 rounded-tl-md flex items-center justify-center"
+              onMouseDown={handleQrResizeStart}
+            >
+              <Move className="h-3 w-3 text-white" />
+            </div>
           </div>
         </Draggable>
       )}
       
-      {/* QR Description with draggable functionality */}
+      {/* QR Description with draggable and resizable functionality */}
       {qrCodeVisible && (
         <Draggable
           bounds="parent"
@@ -131,9 +211,10 @@ const LivePreview: React.FC<LivePreviewProps> = ({
             setQrDescriptionPosition(prev => updatePosition(prev, { x: data.x, y: data.y }));
           }}
           position={{ x: qrDescriptionPosition.x, y: qrDescriptionPosition.y }}
+          disabled={isResizingText}
         >
           <div 
-            className={`absolute cursor-move flex items-center justify-center overflow-hidden ${isDraggingText ? 'ring-2 ring-primary' : ''}`}
+            className={`absolute cursor-move flex items-center justify-center overflow-hidden ${isDraggingText || isResizingText ? 'ring-2 ring-primary' : ''}`}
             style={{ 
               width: `${qrDescriptionPosition.width}px`, 
               height: `${qrDescriptionPosition.height}px`,
@@ -143,6 +224,14 @@ const LivePreview: React.FC<LivePreviewProps> = ({
             }}
           >
             {qrCodeDescription}
+            
+            {/* Resize handle */}
+            <div 
+              className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize bg-primary/80 rounded-tl-md flex items-center justify-center"
+              onMouseDown={handleTextResizeStart}
+            >
+              <Move className="h-3 w-3 text-white" />
+            </div>
           </div>
         </Draggable>
       )}

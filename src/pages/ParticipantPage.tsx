@@ -128,25 +128,55 @@ const ParticipantPage = () => {
     if (isJoined && sessionId && videoStream) {
       const sendVideoStreamInfo = () => {
         try {
-          const channel = new BroadcastChannel(`live-session-${sessionId}`);
-          const backupChannel = new BroadcastChannel(`telao-session-${sessionId}`);
+          const channels = [
+            new BroadcastChannel(`live-session-${sessionId}`),
+            new BroadcastChannel(`telao-session-${sessionId}`),
+            new BroadcastChannel(`stream-info-${sessionId}`)
+          ];
           
           const streamInfo = {
             type: 'video-stream-info',
             id: participantId,
             hasStream: true,
-            hasVideo: true,
-            trackIds: videoStream.getTracks().map(track => track.id),
+            hasVideo: videoStream.getVideoTracks().length > 0,
+            trackIds: videoStream.getTracks().map(track => ({
+              id: track.id,
+              kind: track.kind,
+              enabled: track.enabled,
+              muted: track.muted,
+              readyState: track.readyState
+            })),
+            streamActive: videoStream.active,
+            deviceInfo: {
+              userAgent: navigator.userAgent,
+              platform: navigator.platform
+            },
             timestamp: Date.now()
           };
           
-          channel.postMessage(streamInfo);
-          backupChannel.postMessage(streamInfo);
+          channels.forEach(channel => {
+            channel.postMessage(streamInfo);
+            
+            channel.postMessage({
+              type: 'connection-test',
+              id: participantId,
+              timestamp: Date.now()
+            });
+          });
           
           setTimeout(() => {
-            channel.close();
-            backupChannel.close();
+            channels.forEach(channel => channel.close());
           }, 500);
+          
+          console.log("Sent stream info on all channels:", streamInfo);
+          
+          if (Math.random() < 0.2) {
+            diagnoseConnection(sessionId, participantId)
+              .then(result => console.log("Connection diagnostics:", result));
+            
+            testBroadcastReception(sessionId, participantId)
+              .then(received => console.log("Broadcast reception test:", received ? "Successful" : "Failed"));
+          }
         } catch (e) {
           console.error("Error sending stream info:", e);
         }
@@ -154,9 +184,17 @@ const ParticipantPage = () => {
       
       sendVideoStreamInfo();
       
-      const streamInfoInterval = setInterval(sendVideoStreamInfo, 3000);
+      const streamInfoInterval = setInterval(sendVideoStreamInfo, 2000);
       
-      return () => clearInterval(streamInfoInterval);
+      window._streamIntervals = window._streamIntervals || {};
+      window._streamIntervals[participantId] = streamInfoInterval;
+      
+      return () => {
+        clearInterval(streamInfoInterval);
+        if (window._streamIntervals && window._streamIntervals[participantId]) {
+          delete window._streamIntervals[participantId];
+        }
+      };
     }
   }, [isJoined, sessionId, videoStream, participantId]);
 
@@ -464,7 +502,6 @@ const ParticipantPage = () => {
           await initParticipantWebRTC(sessionId, participantId, stream);
           console.log("WebRTC initialized successfully");
           
-          // Ensure we announce our stream multiple times for better discovery
           for (let i = 0; i < 3; i++) {
             setTimeout(() => {
               try {
@@ -474,7 +511,7 @@ const ParticipantPage = () => {
                   id: participantId,
                   hasStream: true,
                   hasVideo: true,
-                  trackIds: stream?.getTracks().map(t => t.id) || [],
+                  trackIds: stream.getTracks().map(t => t.id) || [],
                   timestamp: Date.now()
                 });
                 setTimeout(() => channel.close(), 500);
@@ -499,7 +536,6 @@ const ParticipantPage = () => {
           if (stream && stream.active) {
             try {
               const channel = new BroadcastChannel(`live-session-${sessionId}`);
-              // Add codec info for debugging
               const videoTrackSettings = stream.getVideoTracks()[0]?.getSettings() || {};
               channel.postMessage({
                 type: 'video-stream-info',
