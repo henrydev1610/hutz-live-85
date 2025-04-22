@@ -10,12 +10,12 @@ import Navbar from "./components/layout/Navbar";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import LightShowPage from "./pages/LightShowPage";
-// Removed TelaoPage import
 import QuizPage from "./pages/QuizPage";
 import LivePage from "./pages/LivePage";
 import NotFound from "./pages/NotFound";
 import ParticipantPage from "./pages/ParticipantPage";
 
+// This component uses the useAuth hook, so it must be rendered inside the AuthProvider
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   
@@ -32,6 +32,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// Create a separate component for routes that uses the useAuth hook
 const AppRoutes = () => {
   const { user, loading } = useAuth();
   
@@ -63,7 +64,6 @@ const AppRoutes = () => {
               </ProtectedRoute>
             } 
           />
-          {/* Removed the /telao route */}
           <Route 
             path="/live" 
             element={
@@ -118,4 +118,3 @@ const App = () => {
 };
 
 export default App;
-
