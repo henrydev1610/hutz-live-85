@@ -42,12 +42,28 @@ const ParticipantGrid = ({
   const displayParticipants = sortedActiveParticipants.filter((participant, index, self) =>
     index === self.findIndex((p) => p.id === participant.id)
   );
+
+  // Effect to update transmission window when participant selection changes
+  useEffect(() => {
+    const transmissionWindow = window.opener;
+    if (transmissionWindow && !transmissionWindow.closed) {
+      transmissionWindow.postMessage({
+        type: 'update-participants',
+        participants
+      }, '*');
+    }
+  }, [participants]);
   
   // Effect to update video elements when streams change
   useEffect(() => {
     console.log("ParticipantGrid: participantStreams updated:", Object.keys(participantStreams));
     
+    // Track which participants have streams
+    const participantsWithStreams = new Set<string>();
+    
     Object.entries(participantStreams).forEach(([participantId, stream]) => {
+      participantsWithStreams.add(participantId);
+      
       const container = videoRefs.current[participantId];
       if (container) {
         updateVideoElement(container, stream);
@@ -63,7 +79,7 @@ const ParticipantGrid = ({
     
     // Check for participants with refs but no streams
     Object.keys(videoRefs.current).forEach(participantId => {
-      if (!participantStreams[participantId] && videoRefs.current[participantId]) {
+      if (!participantsWithStreams.has(participantId) && videoRefs.current[participantId]) {
         const container = videoRefs.current[participantId];
         const videoElement = container?.querySelector('video');
         if (videoElement) {
@@ -113,6 +129,28 @@ const ParticipantGrid = ({
     if (participant.name) return participant.name;
     return `Participante ${participant.id.substring(participant.id.lastIndexOf('-') + 1)}`;
   };
+  
+  // Update transmission window when streams change
+  useEffect(() => {
+    const transmissionWindow = window.opener;
+    if (transmissionWindow && !transmissionWindow.closed) {
+      const selectedParticipants = participants.filter(p => p.selected);
+      
+      selectedParticipants.forEach(participant => {
+        if (participantStreams[participant.id]) {
+          // Notify transmission window about participant stream status
+          const channel = new BroadcastChannel(`live-session-${window.sessionStorage.getItem('currentSessionId')}`);
+          channel.postMessage({
+            type: 'video-stream',
+            participantId: participant.id,
+            stream: { hasStream: true }
+          });
+          
+          setTimeout(() => channel.close(), 100);
+        }
+      });
+    }
+  }, [participantStreams, participants]);
   
   return (
     <div className="space-y-4 w-full max-w-[1200px]">

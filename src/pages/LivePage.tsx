@@ -79,6 +79,9 @@ const LivePage = () => {
 
   useEffect(() => {
     if (sessionId) {
+      // Store the session ID in sessionStorage so it can be accessed from other components
+      window.sessionStorage.setItem('currentSessionId', sessionId);
+      
       // Initialize the host session without activating the camera
       const cleanup = initializeHostSession(sessionId, {
         onParticipantJoin: handleParticipantJoin,
@@ -271,9 +274,19 @@ const LivePage = () => {
   };
 
   const handleParticipantSelect = (id: string) => {
-    setParticipantList(prev => 
-      prev.map(p => p.id === id ? { ...p, selected: !p.selected } : p)
-    );
+    setParticipantList(prev => {
+      const updatedList = prev.map(p => p.id === id ? { ...p, selected: !p.selected } : p);
+      
+      // Notify the transmission window about the change
+      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+        transmissionWindowRef.current.postMessage({
+          type: 'update-participants',
+          participants: updatedList
+        }, '*');
+      }
+      
+      return updatedList;
+    });
   };
 
   const handleParticipantRemove = (id: string) => {
@@ -511,7 +524,7 @@ const LivePage = () => {
               const backupChannel = new BroadcastChannel("telao-session-" + sessionId);
               
               let participantSlots = {};
-              let availableSlots = Array.from({ length: Math.min(participantCount, 100) }, (_, i) => i);
+              let availableSlots = Array.from({ length: Math.min(${participantCount}, 100) }, (_, i) => i);
               let participantStreams = {};
               let activeVideoElements = {};
               
@@ -660,60 +673,41 @@ const LivePage = () => {
                   const { participants } = event.data;
                   console.log('Got participants update:', participants);
                   
-                  participants.forEach(p => {
-                    if (p.selected) {
-                      if (!participantSlots[p.id] && availableSlots.length > 0) {
-                        const slotIndex = availableSlots.shift();
-                        participantSlots[p.id] = slotIndex;
-                        
-                        console.log('Assigned slot', slotIndex, 'to participant', p.id);
-                        
-                        const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                        if (slotElement) {
-                          slotElement.innerHTML = \`
-                            <div style="text-align: center; padding: 10px;">
-                              <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                <circle cx="12" cy="7" r="4"></circle>
-                              </svg>
-                              <div style="margin-top: 5px; font-size: 12px;">\${p.name}</div>
-                            </div>
-                          \`;
-                          
-                          slotElement.dataset.participantId = p.id;
-                        }
-                      }
-                    } else {
-                      if (participantSlots[p.id] !== undefined) {
-                        const slotIndex = participantSlots[p.id];
-                        delete participantSlots[p.id];
-                        availableSlots.push(slotIndex);
-                        
-                        const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                        if (slotElement) {
-                          if (activeVideoElements[slotElement.id]) {
-                            const videoElement = activeVideoElements[slotElement.id];
-                            if (videoElement.srcObject) {
-                              const tracks = videoElement.srcObject.getTracks();
-                              tracks.forEach(track => track.stop());
-                              videoElement.srcObject = null;
-                            }
-                            delete activeVideoElements[slotElement.id];
-                          }
-                          
-                          slotElement.innerHTML = \`
+                  // Track which participants are currently selected
+                  const selectedParticipants = participants.filter(p => p.selected);
+                  
+                  // Ensure participants that are selected get assigned to slots first
+                  selectedParticipants.forEach(p => {
+                    if (!participantSlots[p.id] && availableSlots.length > 0) {
+                      const slotIndex = availableSlots.shift();
+                      participantSlots[p.id] = slotIndex;
+                      
+                      console.log('Assigned slot', slotIndex, 'to selected participant', p.id);
+                      
+                      const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                      if (slotElement) {
+                        slotElement.innerHTML = \`
+                          <div style="text-align: center; padding: 10px;">
                             <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                               <circle cx="12" cy="7" r="4"></circle>
                             </svg>
-                          \`;
-                          
-                          delete slotElement.dataset.participantId;
-                        }
+                            <div style="margin-top: 5px; font-size: 12px;">\${p.name}</div>
+                          </div>
+                        \`;
+                        
+                        slotElement.dataset.participantId = p.id;
+                        
+                        // Send a broadcast to request the video stream again
+                        channel.postMessage({
+                          type: 'request-video-stream',
+                          participantId: p.id
+                        });
                       }
                     }
                   });
                   
+                  // Handle participants that are no longer selected
                   Object.keys(participantSlots).forEach(participantId => {
                     const isStillSelected = participants.some(p => p.id === participantId && p.selected);
                     if (!isStillSelected) {
@@ -772,6 +766,7 @@ const LivePage = () => {
                 }
               }, 2000);
               
+              // Listen for broadcast channel messages
               channel.onmessage = (event) => {
                 const { type, id } = event.data;
                 if (type === 'participant-join') {
@@ -849,6 +844,7 @@ const LivePage = () => {
             qrDescriptionFontSize
           }, '*');
           
+          // Send the initial participant list
           updateTransmissionParticipants();
         }
       }, 500);
@@ -946,7 +942,7 @@ const LivePage = () => {
         id: participantId,
         name: participantName,
         active: true,
-        selected: false,
+        selected: false, // Auto-select new participants for visibility
         hasVideo: true,
         connectedAt: Date.now()
       };
