@@ -225,30 +225,6 @@ const LivePage = () => {
   const [isParticipantGuestVisible] = useState(true);
   const [isParticipantVisitorVisible] = useState(true);
   const [isParticipantUserVisible] = useState(true);
-  const [isParticipantMemberVisible] = useState(true);
-  const [isParticipantSubscriberVisible] = useState(true);
-  const [isParticipantFollowerVisible] = useState(true);
-  const [isParticipantCommenterVisible] = useState(true);
-  const [isParticipantContributorVisible] = useState(true);
-  const [isParticipantEditorVisible] = useState(true);
-  const [isParticipantModeratorVisible] = useState(true);
-  const [isParticipantAdminVisible] = useState(true);
-  const [isParticipantOwnerVisible] = useState(true);
-  const [isParticipantSponsorVisible] = useState(true);
-  const [isParticipantPartnerVisible] = useState(true);
-  const [isParticipantEmployeeVisible] = useState(true);
-  const [isParticipantContractorVisible] = useState(true);
-  const [isParticipantVolunteerVisible] = useState(true);
-  const [isParticipantInternVisible] = useState(true);
-  const [isParticipantTraineeVisible] = useState(true);
-  const [isParticipantApprenticeVisible] = useState(true);
-  const [isParticipantStudentVisible] = useState(true);
-  const [isParticipantTeacherVisible] = useState(true);
-  const [isParticipantProfessorVisible] = useState(true);
-  const [isParticipantAlumniVisible] = useState(true);
-  const [isParticipantGuestVisible] = useState(true);
-  const [isParticipantVisitorVisible] = useState(true);
-  const [isParticipantUserVisible] = useState(true);
   const [
     isParticipantRevokeVisitorVisible
   ] = useState(true);
@@ -597,4 +573,37 @@ const LivePage = () => {
 
   const handleToggleParticipantBanVisibility = () => {
     setIsParticipantBanVisible(!isParticipantBanVisible);
-    updateSession(sessionId
+    updateSession(sessionId, { isParticipantBanVisible: !isParticipantBanVisible });
+  };
+
+  const handleToggleParticipantPromoteVisibility = () => {
+    setIsParticipantPromoteVisible(!isParticipantPromoteVisible);
+    updateSession(sessionId, { isParticipantPromoteVisible: !isParticipantPromoteVisible });
+  };
+
+  const handleToggleParticipantDemoteVisibility = () => {
+    setIsParticipantDemoteVisible(!isParticipantDemoteVisible);
+    updateSession(sessionId, { isParticipantDemoteVisible: !isParticipantDemoteVisible });
+  };
+
+  const handleToggleParticipantGrantControlVisibility = () => {
+    setIsParticipantGrantControlVisible(!isParticipantGrantControlVisible);
+    updateSession(sessionId, { isParticipantGrantControlVisible: !isParticipantGrantControlVisible });
+  };
+
+  const handleToggleParticipantRevokeControlVisibility = () => {
+    setIsParticipantRevokeControlVisible(!isParticipantRevokeControlVisible);
+    updateSession(sessionId, { isParticipantRevokeControlVisible: !isParticipantRevokeControlVisible });
+  };
+
+  const handleToggleParticipantGrantAccessVisibility = () => {
+    setIsParticipantGrantAccessVisible(!isParticipantGrantAccessVisible);
+    updateSession(sessionId, { isParticipantGrantAccessVisible: !isParticipantGrantAccessVisible });
+  };
+
+  const handleToggleParticipantRevokeAccessVisibility = () => {
+    setIsParticipantRevokeAccessVisible(!isParticipantRevokeAccessVisible);
+    updateSession(sessionId, { isParticipantRevokeAccessVisible: !isParticipantRevokeAccessVisible });
+  };
+
+  const handleToggleParticipantGrantAdminVisibility =
