@@ -33,6 +33,9 @@ const LivePage = () => {
     isVisible: isParticipantVisible(p.id)
   }));
 
+  console.log('[LivePage] Selected participants:', selectedParticipants);
+  console.log('[LivePage] Visible participants for preview:', visibleParticipants);
+
   return (
     <div className="container mx-auto px-6 py-8 max-w-7xl">
       <header className="mb-8">

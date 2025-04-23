@@ -1,3 +1,4 @@
+
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import StreamPreview from '@/components/live/StreamPreview';
@@ -35,7 +36,7 @@ const LiveBroadcastPage = () => {
   } = useWebRTC({
     sessionId: sessionId || null,
     onNewParticipant: (participant) => {
-      console.log('[LiveBroadcastPage] New participant joined:', participant);
+      console.log('[LiveBroadcastPage] New participant joined via WebRTC:', participant);
       setBroadcastData(prev => ({
         ...prev,
         participants: [...prev.participants.filter(p => p.id !== participant.id), participant]
@@ -68,6 +69,8 @@ const LiveBroadcastPage = () => {
             stream: existingP?.stream || newP.stream
           };
         });
+        
+        console.log('[LiveBroadcastPage] Merged participants with streams:', mergedParticipants);
         
         return {
           ...prev,
@@ -102,17 +105,20 @@ const LiveBroadcastPage = () => {
             stream: participantData.stream || updatedParticipants[existingParticipantIndex].stream,
             isVisible: participantData.isVisible !== undefined ? participantData.isVisible : updatedParticipants[existingParticipantIndex].isVisible
           };
+          console.log('[LiveBroadcastPage] Updated existing participant:', updatedParticipants[existingParticipantIndex]);
           return { ...prev, participants: updatedParticipants };
         } else {
           // Add new participant
+          const newParticipant = {
+            id: participantData.id,
+            name: participantData.name,
+            stream: participantData.stream || null,
+            isVisible: participantData.isVisible !== undefined ? participantData.isVisible : true
+          };
+          console.log('[LiveBroadcastPage] Added new participant:', newParticipant);
           return {
             ...prev,
-            participants: [...prev.participants, {
-              id: participantData.id,
-              name: participantData.name,
-              stream: participantData.stream || null,
-              isVisible: participantData.isVisible !== undefined ? participantData.isVisible : true
-            }]
+            participants: [...prev.participants, newParticipant]
           };
         }
       });
@@ -181,6 +187,7 @@ const LiveBroadcastPage = () => {
   // Log active participants to help debug
   useEffect(() => {
     console.log('[LiveBroadcastPage] Current participants:', broadcastData.participants);
+    console.log('[LiveBroadcastPage] Visible participants:', broadcastData.participants.filter(p => p.isVisible !== false));
   }, [broadcastData.participants]);
   
   return (

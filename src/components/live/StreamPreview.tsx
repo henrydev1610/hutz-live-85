@@ -44,15 +44,35 @@ const StreamPreview = ({
     
     console.log('[StreamPreview] All participants:', participants);
     console.log('[StreamPreview] Visible participants:', visible);
+    
+    // Debug output to help identify why participants aren't showing
+    if (participants.length > 0 && visible.length === 0) {
+      console.error('[StreamPreview] Warning: There are participants but none are visible!');
+      participants.forEach(p => {
+        console.log(`Participant ${p.id} (${p.name}) visibility status: ${p.isVisible !== false ? 'Should be visible' : 'Hidden'}`);
+        console.log(`Participant ${p.id} has stream:`, !!p.stream);
+      });
+    }
   }, [participants]);
   
   // Attach streams to video elements when they change
   useEffect(() => {
+    console.log('[StreamPreview] Attaching streams to video elements. Participants count:', visibleParticipants.length);
+    
     visibleParticipants.forEach(participant => {
       const videoElement = videoRefs.current[participant.id];
       if (videoElement && participant.stream && videoElement.srcObject !== participant.stream) {
         console.log(`[StreamPreview] Setting stream for ${participant.id}:`, participant.stream);
         videoElement.srcObject = participant.stream;
+        
+        // Force play if needed
+        videoElement.play().catch(err => {
+          console.error(`[StreamPreview] Error playing video for ${participant.id}:`, err);
+        });
+      } else if (!participant.stream) {
+        console.log(`[StreamPreview] No stream available for ${participant.id}`);
+      } else if (!videoElement) {
+        console.log(`[StreamPreview] No video element reference for ${participant.id}`);
       }
     });
   }, [visibleParticipants]);

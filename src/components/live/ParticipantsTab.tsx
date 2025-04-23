@@ -36,6 +36,25 @@ const ParticipantsTab = () => {
     }
   }, []);
 
+  // Debug helper function
+  const debugParticipantStatus = () => {
+    console.log('-------- DEBUG PARTICIPANT STATUS --------');
+    console.log(`Total participants: ${participants.length}`);
+    console.log(`Selected participants: ${selectedParticipants.length}`);
+    
+    selectedParticipants.forEach(p => {
+      const isVisible = isParticipantVisible(p.id);
+      console.log(`Participant ${p.id} (${p.name}): Visible=${isVisible}, HasStream=${!!p.stream}`);
+    });
+    
+    console.log('-----------------------------------------');
+    
+    toast({
+      description: "Informações de debug enviadas para o console",
+      duration: 2000,
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -47,7 +66,10 @@ const ParticipantsTab = () => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={refreshParticipants}
+            onClick={() => {
+              refreshParticipants();
+              debugParticipantStatus();
+            }}
             title="Atualizar lista de participantes"
           >
             <RefreshCcw className="h-4 w-4" />
@@ -100,7 +122,10 @@ const ParticipantsTab = () => {
                           <Button 
                             variant="ghost" 
                             size="icon"
-                            onClick={() => toggleParticipantVisibility(participant.id)}
+                            onClick={() => {
+                              toggleParticipantVisibility(participant.id);
+                              console.log(`Toggled visibility for ${participant.id} to ${!isVisible}`);
+                            }}
                             className="h-6 w-6 hover:bg-white/10"
                           >
                             {isVisible ? (
@@ -123,7 +148,10 @@ const ParticipantsTab = () => {
                           <Button 
                             variant="ghost" 
                             size="icon"
-                            onClick={() => selectParticipant(participant.id)}
+                            onClick={() => {
+                              selectParticipant(participant.id);
+                              console.log(`Selected participant ${participant.id}`);
+                            }}
                             className="h-6 w-6 text-green-500 hover:text-green-400 hover:bg-green-500/10"
                             disabled={selectedParticipants.length >= maxParticipants}
                           >
@@ -169,7 +197,10 @@ const ParticipantsTab = () => {
                   <Button 
                     variant="ghost" 
                     size="icon"
-                    onClick={() => selectParticipant(participant.id)}
+                    onClick={() => {
+                      selectParticipant(participant.id);
+                      console.log(`Selected waiting participant ${participant.id}`);
+                    }}
                     className="h-5 w-5 text-green-500 hover:text-green-400"
                     disabled={selectedParticipants.length >= maxParticipants}
                   >
@@ -180,6 +211,18 @@ const ParticipantsTab = () => {
             </div>
           </ScrollArea>
         </div>
+      )}
+      
+      {/* Debug button - only visible when participants exist but aren't showing */}
+      {participants.length > 0 && selectedParticipants.length > 0 && (
+        <Button 
+          variant="secondary"
+          size="sm"
+          onClick={debugParticipantStatus}
+          className="w-full mt-4"
+        >
+          Verificar status dos participantes
+        </Button>
       )}
     </div>
   );
