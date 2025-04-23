@@ -25,10 +25,10 @@ function App() {
         <Route path="/lightshow" element={<LightShowPage />} />
         <Route path="/quiz" element={<QuizPage />} />
         
-        {/* Live routes wrapped in LiveSessionProvider */}
+        {/* All Live routes wrapped in LiveSessionProvider */}
         <Route path="/live" element={<LiveSessionProvider><LivePage /></LiveSessionProvider>} />
-        <Route path="/live/broadcast/:sessionId" element={<LiveBroadcastPage />} />
-        <Route path="/live/join/:sessionId" element={<LiveJoinPage />} />
+        <Route path="/live/broadcast/:sessionId" element={<LiveSessionProvider><LiveBroadcastPage /></LiveSessionProvider>} />
+        <Route path="/live/join/:sessionId" element={<LiveSessionProvider><LiveJoinPage /></LiveSessionProvider>} />
         
         <Route path="*" element={<NotFound />} />
       </Routes>
