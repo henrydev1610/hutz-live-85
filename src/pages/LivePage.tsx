@@ -11,6 +11,7 @@ import StreamPreview from '@/components/live/StreamPreview';
 import { useLiveSession } from '@/hooks/useLiveSession';
 
 const LivePage = () => {
+  const [initialized, setInitialized] = useState(false);
   const { 
     startBroadcast, 
     stopBroadcast, 
@@ -24,7 +25,8 @@ const LivePage = () => {
     qrCodeFont,
     qrCodeColor,
     sessionId,
-    isParticipantVisible
+    isParticipantVisible,
+    generateSessionId
   } = useLiveSession();
 
   // Filter participants by visibility for preview
@@ -33,8 +35,34 @@ const LivePage = () => {
     isVisible: isParticipantVisible(p.id)
   }));
 
-  console.log('[LivePage] Selected participants:', selectedParticipants);
-  console.log('[LivePage] Visible participants for preview:', visibleParticipants);
+  if (!initialized && !sessionId) {
+    return (
+      <div className="container mx-auto px-6 py-8 max-w-7xl">
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold hutz-gradient-text">Momento Live</h1>
+          <p className="text-white/70 mt-2">
+            Transmissão em tempo real para seus eventos com interação via QR Code.
+          </p>
+        </header>
+        
+        <div className="flex flex-col items-center justify-center space-y-4 mt-12">
+          <p className="text-lg text-white/80">
+            Clique no botão abaixo para iniciar uma nova sessão ao vivo
+          </p>
+          <Button 
+            onClick={() => {
+              generateSessionId();
+              setInitialized(true);
+            }}
+            size="lg"
+            className="hutz-button-accent"
+          >
+            Iniciar Nova Sessão
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-6 py-8 max-w-7xl">

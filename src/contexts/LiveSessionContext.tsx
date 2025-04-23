@@ -1,4 +1,3 @@
-
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useToast } from '@/hooks/use-toast';
@@ -150,7 +149,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       });
     }
     
-    // If broadcast is active, update it with the new participant
     if (isLive && broadcastWindow && !broadcastWindow.closed) {
       broadcastWindow.postMessage({
         type: 'PARTICIPANT_JOINED',
@@ -181,7 +179,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       setVisibleParticipants(prev => new Set([...prev, nextParticipant.id]));
     }
     
-    // If broadcast is active, update it about the participant leaving
     if (isLive && broadcastWindow && !broadcastWindow.closed) {
       broadcastWindow.postMessage({
         type: 'PARTICIPANT_LEFT',
@@ -256,7 +253,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       return newSet;
     });
     
-    // Also signal to the broadcast window that the participant should be removed from view
     if (isLive && broadcastWindow && !broadcastWindow.closed) {
       broadcastWindow.postMessage({
         type: 'PARTICIPANT_VISIBILITY_CHANGED',
@@ -279,7 +275,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       return newSet;
     });
     
-    // Signal to the broadcast window that the participant's visibility has changed
     if (isLive && broadcastWindow && !broadcastWindow.closed) {
       const isVisible = !visibleParticipants.has(id);
       broadcastWindow.postMessage({
@@ -294,14 +289,12 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     return visibleParticipants.has(id);
   };
   
-  // Function to refresh participants list (manually checking if all are properly registered)
   const refreshParticipants = () => {
     console.log('[LiveSessionContext] Manually refreshing participants list');
     toast({
       description: "Atualizando lista de participantes...",
     });
     
-    // Check if we ever received messages from participants
     if (!messageReceivedRef.current) {
       toast({
         title: "Nenhum participante detectado",
@@ -395,7 +388,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     setBroadcastWindow(null);
   };
   
-  // Clean up when component unmounts
   useEffect(() => {
     return () => {
       if (broadcastWindow && !broadcastWindow.closed) {
@@ -404,7 +396,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     };
   }, [broadcastWindow]);
   
-  // Handle incoming messages from participant windows
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (!event.data) return;
@@ -431,8 +422,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
         if (incomingSessionId === sessionId && hasStream) {
           console.log('[LiveSessionContext] Participant stream available:', participantId);
           
-          // Instead of creating a dummy stream, we'll just mark the participant as having a stream
-          // The actual stream will be handled by WebRTC
           setParticipants(prev => 
             prev.map(p => p.id === participantId ? { ...p, stream: p.stream || new MediaStream() } : p)
           );
@@ -466,7 +455,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
             prev.map(p => p.id === participantId ? { ...p, name } : p)
           );
           
-          // Update broadcast if active
           if (isLive && broadcastWindow && !broadcastWindow.closed) {
             broadcastWindow.postMessage({
               type: 'PARTICIPANT_NAME_CHANGED',
@@ -484,13 +472,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       window.removeEventListener('message', handleMessage);
     };
   }, [sessionId, maxParticipants, isLive, broadcastWindow]);
-  
-  // Auto-generate session ID when component mounts if not already set
-  useEffect(() => {
-    if (!sessionId) {
-      generateSessionId();
-    }
-  }, []);
   
   const value = {
     sessionId,
