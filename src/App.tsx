@@ -10,11 +10,8 @@ import Navbar from "./components/layout/Navbar";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import LightShowPage from "./pages/LightShowPage";
-// Removed TelaoPage import
 import QuizPage from "./pages/QuizPage";
-import LivePage from "./pages/LivePage";
 import NotFound from "./pages/NotFound";
-import ParticipantPage from "./pages/ParticipantPage";
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
@@ -63,15 +60,6 @@ const AppRoutes = () => {
               </ProtectedRoute>
             } 
           />
-          {/* Removed the /telao route */}
-          <Route 
-            path="/live" 
-            element={
-              <ProtectedRoute>
-                <LivePage />
-              </ProtectedRoute>
-            } 
-          />
           <Route 
             path="/quiz" 
             element={
@@ -80,15 +68,11 @@ const AppRoutes = () => {
               </ProtectedRoute>
             } 
           />
-          {/* Public route for participants that doesn't require authentication */}
-          <Route path="/participant/:sessionId" element={<ParticipantPage />} />
           <Route path="*" element={<NotFound />} />
         </>
       ) : (
         <>
           <Route path="/auth" element={<Auth />} />
-          {/* Public route for participants that doesn't require authentication */}
-          <Route path="/participant/:sessionId" element={<ParticipantPage />} />
           <Route path="*" element={<Navigate to="/auth" replace />} />
         </>
       )}
@@ -97,7 +81,6 @@ const AppRoutes = () => {
 };
 
 const App = () => {
-  // Create a new QueryClient instance inside the component
   const [queryClient] = useState(() => new QueryClient());
 
   return (
@@ -118,4 +101,3 @@ const App = () => {
 };
 
 export default App;
-
