@@ -1,4 +1,3 @@
-
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useToast } from '@/hooks/use-toast';
@@ -260,9 +259,9 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     },
     setQRCodeText,
     qrCodeFont,
-    setQRCodeFont,
+    setQrCodeFont,
     qrCodeColor,
-    setQRCodeColor,
+    setQrCodeColor,
     
     // Call to Action
     callToAction: {
