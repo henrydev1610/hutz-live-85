@@ -218,8 +218,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       return;
     }
     
-    await initializeHostCamera();
-    
     const newWindow = window.open(
       `/live/broadcast/${sessionId}`,
       'LiveBroadcast',
@@ -247,7 +245,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
         newWindow.postMessage({
           type: 'BROADCAST_DATA',
           payload: {
-            participants: selectedParticipants,
+            participants: selectedParticipants.filter(p => visibleParticipants.has(p.id)),
             layout,
             backgroundColor,
             backgroundImage,

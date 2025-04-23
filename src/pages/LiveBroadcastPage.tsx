@@ -107,7 +107,7 @@ const LiveBroadcastPage = () => {
     <div className="min-h-screen bg-black">
       <div className="fixed inset-0">
         <StreamPreview 
-          participants={broadcastData.participants}
+          participants={broadcastData.participants.filter(p => p.isVisible !== false)}
           layout={broadcastData.layout}
           backgroundColor={broadcastData.backgroundColor}
           backgroundImage={broadcastData.backgroundImage}
