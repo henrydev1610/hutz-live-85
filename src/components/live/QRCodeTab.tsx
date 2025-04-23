@@ -1,4 +1,3 @@
-
 import { useState, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +14,8 @@ const QRCodeTab = () => {
     showQRCode,
     hideQRCode,
     setQRCodeText,
-    setQRCodeFont,
-    setQRCodeColor,
+    setQrCodeFont,
+    setQrCodeColor,
     sessionId,
     qrCode,
     qrCodeText,
@@ -106,7 +105,7 @@ const QRCodeTab = () => {
         
         <div>
           <Label htmlFor="qrcode-font">Fonte do texto</Label>
-          <Select value={qrCodeFont} onValueChange={setQRCodeFont}>
+          <Select value={qrCodeFont} onValueChange={setQrCodeFont}>
             <SelectTrigger id="qrcode-font">
               <SelectValue placeholder="Selecione a fonte" />
             </SelectTrigger>
@@ -128,7 +127,7 @@ const QRCodeTab = () => {
                 key={color}
                 className={`w-full aspect-square rounded-md border ${qrCodeColor === color ? 'border-white' : 'border-transparent'}`}
                 style={{ backgroundColor: color }}
-                onClick={() => setQRCodeColor(color)}
+                onClick={() => setQrCodeColor(color)}
                 aria-label={`Selecionar cor ${color}`}
               />
             ))}
