@@ -6,11 +6,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useState } from "react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { LiveSessionProvider } from "@/contexts/LiveSessionContext";
 import Navbar from "./components/layout/Navbar";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import LightShowPage from "./pages/LightShowPage";
 import QuizPage from "./pages/QuizPage";
+import LivePage from "./pages/LivePage";
+import LiveJoinPage from "./pages/LiveJoinPage";
+import LiveBroadcastPage from "./pages/LiveBroadcastPage";
 import NotFound from "./pages/NotFound";
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -68,11 +72,22 @@ const AppRoutes = () => {
               </ProtectedRoute>
             } 
           />
+          <Route 
+            path="/live" 
+            element={
+              <ProtectedRoute>
+                <LivePage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route path="/live/join/:sessionId" element={<LiveJoinPage />} />
+          <Route path="/live/broadcast/:sessionId" element={<LiveBroadcastPage />} />
           <Route path="*" element={<NotFound />} />
         </>
       ) : (
         <>
           <Route path="/auth" element={<Auth />} />
+          <Route path="/live/join/:sessionId" element={<LiveJoinPage />} />
           <Route path="*" element={<Navigate to="/auth" replace />} />
         </>
       )}
@@ -87,13 +102,15 @@ const App = () => {
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <div className="min-h-screen flex flex-col bg-black">
-              <AppRoutes />
-            </div>
-          </TooltipProvider>
+          <LiveSessionProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <div className="min-h-screen flex flex-col bg-black">
+                <AppRoutes />
+              </div>
+            </TooltipProvider>
+          </LiveSessionProvider>
         </AuthProvider>
       </QueryClientProvider>
     </BrowserRouter>
