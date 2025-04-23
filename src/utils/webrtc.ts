@@ -1,7 +1,5 @@
-
-import { formatParticipantForStore, getUpdatedParticipant } from './sessionUtils';
+import { addParticipantToSession, updateParticipantStatus } from './sessionUtils';
 import { io } from 'socket.io-client';
-import { useParticipantStore } from '@/stores/participantStore';
 
 // Define SocketType interface
 interface SocketType {
@@ -9,7 +7,6 @@ interface SocketType {
   connected: boolean;
   on: (event: string, callback: (...args: any[]) => void) => void;
   emit: (event: string, ...args: any[]) => void;
-  disconnect: () => void;  // Added disconnect method to the interface
 }
 
 const PEER_CONNECTION_CONFIG = {
@@ -171,17 +168,10 @@ export const initHostWebRTC = async (
         console.log(`Received stream info from participant ${data.participantId}:`, data);
         // Update participant status with video info
         if (data.hasStream) {
-          // Use getUpdatedParticipant helper instead of direct store access
-          const { participants, addParticipant } = useParticipantStore.getState();
-          const updatedParticipant = getUpdatedParticipant(
-            participants[data.participantId], 
-            { 
-              id: data.participantId,
-              hasVideo: true,
-              lastActive: Date.now()
-            }
-          );
-          addParticipant(updatedParticipant);
+          updateParticipantStatus(sessionId, data.participantId, { 
+            hasVideo: true,
+            lastActive: Date.now()
+          });
         }
       }
     };
@@ -203,17 +193,11 @@ export const initHostWebRTC = async (
           activeParticipants[data.participantId] = true;
           
           // Update participant in session with video availability info
-          const { participants, addParticipant } = useParticipantStore.getState();
-          const updatedParticipant = getUpdatedParticipant(
-            participants[data.participantId],
-            {
-              id: data.participantId,
-              hasVideo: data.hasVideo || false,
-              active: true,
-              lastActive: Date.now()
-            }
-          );
-          addParticipant(updatedParticipant);
+          updateParticipantStatus(sessionId, data.participantId, {
+            hasVideo: data.hasVideo || false,
+            active: true,
+            lastActive: Date.now()
+          });
           
           // Create peer connection after a short delay to allow participant to initialize
           setTimeout(() => {
@@ -228,17 +212,11 @@ export const initHostWebRTC = async (
           }
           
           // Update participant in session with video info
-          const { participants, addParticipant } = useParticipantStore.getState();
-          const updatedParticipant = getUpdatedParticipant(
-            participants[data.senderId],
-            {
-              id: data.senderId,
-              hasVideo: data.videoTracks > 0,
-              active: true,
-              lastActive: Date.now()
-            }
-          );
-          addParticipant(updatedParticipant);
+          updateParticipantStatus(sessionId, data.senderId, {
+            hasVideo: data.videoTracks > 0,
+            active: true,
+            lastActive: Date.now()
+          });
         }
         else if (data.type === 'offer' && data.targetId === 'host') {
           console.log(`Received offer from participant: ${data.senderId}`);
@@ -406,18 +384,11 @@ export const initHostWebRTC = async (
       // Update participant status based on connection state
       if (activePeerConnections[participantId].iceConnectionState === 'connected' || 
           activePeerConnections[participantId].iceConnectionState === 'completed') {
-        // Use getUpdatedParticipant helper instead of direct store access
-        const { participants, addParticipant } = useParticipantStore.getState();
-        const updatedParticipant = getUpdatedParticipant(
-          participants[participantId], 
-          { 
-            id: participantId,
-            active: true, 
-            lastActive: Date.now(),
-            hasVideo: true
-          }
-        );
-        addParticipant(updatedParticipant);
+        updateParticipantStatus(sessionId, participantId, { 
+          active: true, 
+          lastActive: Date.now(),
+          hasVideo: true
+        });
       }
       else if (activePeerConnections[participantId].iceConnectionState === 'disconnected' || 
                activePeerConnections[participantId].iceConnectionState === 'failed' ||
@@ -462,16 +433,10 @@ export const initHostWebRTC = async (
       }
       
       // Update participant video status
-      const { participants, addParticipant } = useParticipantStore.getState();
-      const updatedParticipant = getUpdatedParticipant(
-        participants[participantId], 
-        { 
-          id: participantId,
-          hasVideo: true,
-          lastActive: Date.now()
-        }
-      );
-      addParticipant(updatedParticipant);
+      updateParticipantStatus(sessionId, participantId, { 
+        hasVideo: true,
+        lastActive: Date.now()
+      });
     };
 
     if (localStream) {
@@ -927,66 +892,132 @@ const createHostPeerConnection = async (sessionId: string, participantId: string
     } catch (e) {
       console.error("Error adding tracks to peer connection:", e);
     }
+  } else {
+    console.warn("No local stream available when creating peer connection");
+  }
+
+  try {
+    const offer = await activePeerConnections['host'].createOffer({
+      offerToReceiveAudio: false,
+      offerToReceiveVideo: true
+    });
+    
+    // Set H.264 codec if available
+    setH264CodecPreference(activePeerConnections['host']);
+    
+    await activePeerConnections['host'].setLocalDescription(offer);
+    
+    if (fallbackModeEnabled) {
+      try {
+        const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
+        channel.postMessage({
+          type: 'offer',
+          senderId: participantId,
+          targetId: 'host',
+          description: activePeerConnections['host'].localDescription,
+          timestamp: Date.now()
+        });
+      } catch (e) {
+        console.error("Error sending offer via broadcast channel:", e);
+      }
+    } else if (socket) {
+      socket.emit('offer', sessionId, activePeerConnections['host'].localDescription);
+    }
+  } catch (e) {
+    console.error('Error creating offer:', e);
   }
 };
 
-// Clean up WebRTC resources for a session
-export const cleanupWebRTC = () => {
-  console.log("Cleaning up WebRTC resources");
-  
-  // Close all peer connections
-  Object.keys(activePeerConnections).forEach(participantId => {
-    if (activePeerConnections[participantId]) {
-      activePeerConnections[participantId].close();
-    }
-  });
-  
-  // Reset state
-  activePeerConnections = {};
-  activeParticipants = {};
-  
-  // Stop all local streams
-  if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
-    localStream = null;
-  }
-  
-  // Close socket connection
-  if (socket) {
-    try {
-      socket.disconnect();
-    } catch (e) {
-      console.error("Error disconnecting socket:", e);
-    }
-    socket = null;
-  }
-};
-
-// Close the WebRTC session
-export const endWebRTC = (sessionId: string) => {
+/**
+ * Ends the WebRTC session
+ */
+export const endWebRTC = (sessionId: string): void => {
   console.log(`Ending WebRTC session: ${sessionId}`);
-  
-  cleanupWebRTC();
-  
-  // Remove from active sessions
+
   if (signalingSessions[sessionId]) {
+    Object.keys(activePeerConnections).forEach(participantId => {
+      closePeerConnection(participantId);
+    });
+
+    if (!fallbackModeEnabled && socket) {
+      socket.emit('leaveSession', sessionId);
+    }
+    
+    // Also notify through broadcast channel if in fallback mode
+    if (fallbackModeEnabled) {
+      try {
+        const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
+        channel.postMessage({ type: 'host-leave', sessionId });
+        setTimeout(() => channel.close(), 1000);
+      } catch (e) {
+        console.error("Error sending leave message via broadcast channel:", e);
+      }
+    }
+    
     delete signalingSessions[sessionId];
   }
-  
-  // Reset session info
-  if (currentSessionId === sessionId) {
+};
+
+/**
+ * Cleans up WebRTC connections for a specific participant or all participants
+ * @param participantId Optional participant ID to clean up only that connection
+ */
+export const cleanupWebRTC = (participantId?: string): void => {
+  // If participantId is provided, only clean up that specific connection
+  if (participantId && activePeerConnections[participantId]) {
+    console.log(`Cleaning up WebRTC connection for participant ${participantId}`);
+    
+    try {
+      // Close the specific peer connection
+      activePeerConnections[participantId].close();
+      delete activePeerConnections[participantId];
+      
+      // Remove the participant from active participants
+      if (activeParticipants[participantId]) {
+        delete activeParticipants[participantId];
+      }
+    } catch (error) {
+      console.error(`Error cleaning up WebRTC connection for ${participantId}:`, error);
+    }
+  } 
+  // If no participantId is provided, clean up all connections
+  else if (!participantId) {
+    console.log('Cleaning up all WebRTC connections');
+    
+    // Close all peer connections
+    Object.keys(activePeerConnections).forEach(id => {
+      try {
+        activePeerConnections[id].close();
+      } catch (error) {
+        console.error(`Error closing peer connection for ${id}:`, error);
+      }
+    });
+    
+    // Reset all state variables
+    activePeerConnections = {};
+    activeParticipants = {};
+    signalingSessions = {};
     currentSessionId = null;
+    localStream = null;
+    onParticipantTrackCallback = null;
+    fallbackModeEnabled = false;
   }
 };
 
-// Close a peer connection
+// Close a specific peer connection
 const closePeerConnection = (participantId: string) => {
   console.log(`Closing peer connection for ${participantId}`);
   if (activePeerConnections[participantId]) {
     activePeerConnections[participantId].close();
     delete activePeerConnections[participantId];
   }
+  delete activeParticipants[participantId];
 };
 
-// Export for testing and diagnostic purposes
-export { activeParticipants };
+// Set callback for participant track event
+export const setOnParticipantTrack = (callback: (participantId: string, track: MediaStreamTrack) => void): void => {
+  onParticipantTrackCallback = callback;
+};
+
+// Export activeParticipants for external use
+export { activeParticipants, mediaStreamEstablished };
