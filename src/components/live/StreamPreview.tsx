@@ -35,62 +35,102 @@ const StreamPreview = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<{[key: string]: HTMLVideoElement | null}>({});
   
-  // Track stream attachment status
-  const [streamStatus, setStreamStatus] = useState<{[key: string]: boolean}>({});
+  // Track stream attachment status with more detailed states
+  const [streamStatus, setStreamStatus] = useState<{[key: string]: 'loading' | 'playing' | 'error' | 'notAvailable'}>({});
   
-  // Debug output for monitoring participants and their streams
+  // Enhanced debug output for monitoring participants and their streams
   useEffect(() => {
     console.log('[StreamPreview] Received participants:', participants.map(p => ({
       id: p.id,
       name: p.name,
       hasStream: !!p.stream,
-      isVisible: p.isVisible
+      streamId: p.stream?.id,
+      isVisible: p.isVisible,
+      videoTracks: p.stream?.getVideoTracks().length || 0,
+      audioTracks: p.stream?.getAudioTracks().length || 0
     })));
   }, [participants]);
 
-  // Attach streams to video elements when they change
+  // Improved stream attachment logic with retries and better error handling
   useEffect(() => {
     console.log('[StreamPreview] Attempting to attach streams...');
     
     participants.forEach(participant => {
+      if (!participant.stream) {
+        console.log(`[StreamPreview] No stream for participant ${participant.id}`);
+        setStreamStatus(prev => ({ ...prev, [participant.id]: 'notAvailable' }));
+        return;
+      }
+      
       const videoElement = videoRefs.current[participant.id];
       
-      if (videoElement && participant.stream) {
-        // Only set stream if it's different from current
-        if (videoElement.srcObject !== participant.stream) {
-          console.log(`[StreamPreview] Attaching stream for ${participant.id}`);
+      if (!videoElement) {
+        console.log(`[StreamPreview] No video element for ${participant.id}, will try again on next render`);
+        return;
+      }
+      
+      // Only set stream if it's different from current or not already playing
+      if (videoElement.srcObject !== participant.stream || 
+          videoElement.paused || 
+          streamStatus[participant.id] === 'error') {
+          
+        console.log(`[StreamPreview] Attaching stream ${participant.stream.id} for ${participant.id}`);
+        setStreamStatus(prev => ({ ...prev, [participant.id]: 'loading' }));
+        
+        try {
+          // Detach any existing stream first
+          if (videoElement.srcObject) {
+            videoElement.srcObject = null;
+          }
+          
+          // Attach the new stream
           videoElement.srcObject = participant.stream;
           
+          // Set up event handlers
           videoElement.onloadedmetadata = () => {
             console.log(`[StreamPreview] Stream loaded for ${participant.id}`);
-            setStreamStatus(prev => ({ ...prev, [participant.id]: true }));
+            
+            // Try to play the video
+            const playPromise = videoElement.play();
+            if (playPromise) {
+              playPromise
+                .then(() => {
+                  console.log(`[StreamPreview] Stream playing for ${participant.id}`);
+                  setStreamStatus(prev => ({ ...prev, [participant.id]: 'playing' }));
+                })
+                .catch(err => {
+                  console.error(`[StreamPreview] Error playing video for ${participant.id}:`, err);
+                  setStreamStatus(prev => ({ ...prev, [participant.id]: 'error' }));
+                  
+                  // Try again after a short delay
+                  setTimeout(() => {
+                    if (videoElement && participant.stream) {
+                      console.log(`[StreamPreview] Retrying playback for ${participant.id}`);
+                      videoElement.play().catch(e => 
+                        console.error(`[StreamPreview] Retry failed for ${participant.id}:`, e)
+                      );
+                    }
+                  }, 1000);
+                });
+            }
           };
           
           videoElement.onplay = () => {
             console.log(`[StreamPreview] Stream playing for ${participant.id}`);
+            setStreamStatus(prev => ({ ...prev, [participant.id]: 'playing' }));
           };
           
           videoElement.onerror = (e) => {
             console.error(`[StreamPreview] Video error for ${participant.id}:`, e);
-            setStreamStatus(prev => ({ ...prev, [participant.id]: false }));
+            setStreamStatus(prev => ({ ...prev, [participant.id]: 'error' }));
           };
-          
-          // Force play if needed
-          videoElement.play().catch(err => {
-            console.error(`[StreamPreview] Error playing video for ${participant.id}:`, err);
-            setStreamStatus(prev => ({ ...prev, [participant.id]: false }));
-          });
-        }
-      } else {
-        if (!videoElement) {
-          console.log(`[StreamPreview] No video element for ${participant.id}`);
-        }
-        if (!participant.stream) {
-          console.log(`[StreamPreview] No stream for ${participant.id}`);
+        } catch (err) {
+          console.error(`[StreamPreview] Error attaching stream for ${participant.id}:`, err);
+          setStreamStatus(prev => ({ ...prev, [participant.id]: 'error' }));
         }
       }
     });
-  }, [participants]);
+  }, [participants, streamStatus]);
 
   // Determine grid layout based on number of visible participants
   const getGridClass = () => {
@@ -139,8 +179,15 @@ const StreamPreview = ({
                   ref={(element) => {
                     if (element) {
                       videoRefs.current[participant.id] = element;
+                      
+                      // If we have a stream but no srcObject yet, set it immediately
                       if (participant.stream && element.srcObject !== participant.stream) {
-                        element.srcObject = participant.stream;
+                        console.log(`[StreamPreview] Setting stream ${participant.stream.id} on mount for ${participant.id}`);
+                        try {
+                          element.srcObject = participant.stream;
+                        } catch (err) {
+                          console.error(`[StreamPreview] Error setting stream on ref for ${participant.id}:`, err);
+                        }
                       }
                     }
                   }}
@@ -155,7 +202,19 @@ const StreamPreview = ({
               <div className="absolute bottom-2 left-2 right-2 bg-black/50 px-2 py-1 text-xs rounded flex justify-between items-center">
                 <span>{participant.name}</span>
                 <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${streamStatus[participant.id] ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                  {/* Enhanced status indicator with different states */}
+                  <span 
+                    className={`h-2 w-2 rounded-full ${
+                      streamStatus[participant.id] === 'playing' 
+                        ? 'bg-green-500' 
+                        : streamStatus[participant.id] === 'loading' 
+                          ? 'bg-yellow-500 animate-pulse' 
+                          : streamStatus[participant.id] === 'error'
+                            ? 'bg-red-500'
+                            : 'bg-gray-500'
+                    }`}
+                    title={streamStatus[participant.id] || 'unknown'}
+                  ></span>
                 </div>
               </div>
             </div>

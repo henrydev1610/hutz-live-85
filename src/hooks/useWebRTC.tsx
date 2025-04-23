@@ -105,7 +105,16 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
         audio: true
       });
       
-      console.log('[useWebRTC] Host camera initialized successfully');
+      console.log('[useWebRTC] Host camera initialized successfully', stream.id);
+      
+      const videoTracks = stream.getVideoTracks();
+      const audioTracks = stream.getAudioTracks();
+      console.log(`[useWebRTC] Video tracks: ${videoTracks.length}, Audio tracks: ${audioTracks.length}`);
+      
+      videoTracks.forEach((track, idx) => {
+        console.log(`[useWebRTC] Video track ${idx} settings:`, track.getSettings());
+      });
+      
       localStreamRef.current = stream;
       setLocalStream(stream);
       setIsHost(true);
@@ -143,17 +152,21 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       };
       
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('[useWebRTC] Participant camera initialized successfully');
+      console.log('[useWebRTC] Participant camera initialized successfully', stream.id);
       
-      stream.getVideoTracks().forEach(track => {
-        const settings = {
-          width: 1280,
-          height: 720,
-          frameRate: 30
-        };
+      const videoTracks = stream.getVideoTracks();
+      const audioTracks = stream.getAudioTracks();
+      console.log(`[useWebRTC] Video tracks: ${videoTracks.length}, Audio tracks: ${audioTracks.length}`);
+      
+      stream.getVideoTracks().forEach((track, idx) => {
+        console.log(`[useWebRTC] Video track ${idx} settings:`, track.getSettings());
         
         try {
-          track.applyConstraints(settings);
+          track.applyConstraints({
+            width: 1280,
+            height: 720,
+            frameRate: 30
+          });
         } catch (e) {
           console.warn('[useWebRTC] Could not apply ideal constraints:', e);
         }
@@ -217,10 +230,18 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       };
       
       peerConnection.ontrack = (event) => {
-        console.log(`[useWebRTC] Received track from ${participantId}:`, event.streams[0]);
+        console.log(`[useWebRTC] Received track from ${participantId}:`, event.streams[0]?.id);
         
         if (onNewParticipant && event.streams[0]) {
           const stream = event.streams[0];
+          
+          const videoTracks = stream.getVideoTracks();
+          const audioTracks = stream.getAudioTracks();
+          console.log(`[useWebRTC] Received stream with ${videoTracks.length} video tracks and ${audioTracks.length} audio tracks`);
+          
+          videoTracks.forEach(track => {
+            console.log(`[useWebRTC] Video track settings:`, track.getSettings());
+          });
           
           stream.getTracks().forEach(track => {
             track.onended = () => {
@@ -228,16 +249,20 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
             };
           });
           
-          onNewParticipant({
+          const participant: Participant = {
             id: participantId,
             name: `Participante ${participantId.substring(0, 5)}`,
-            stream: stream
-          });
+            stream: stream,
+            isVisible: true
+          };
+          
+          console.log(`[useWebRTC] Notifying about new participant with stream:`, participant.id);
+          onNewParticipant(participant);
         }
       };
       
       if (localStreamRef.current) {
-        console.log(`[useWebRTC] Adding local tracks to connection for ${participantId}`);
+        console.log(`[useWebRTC] Adding ${localStreamRef.current.getTracks().length} local tracks to connection for ${participantId}`);
         localStreamRef.current.getTracks().forEach(track => {
           peerConnection.addTrack(track, localStreamRef.current!);
         });
@@ -245,6 +270,7 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       
       const newConnection = { id: participantId, connection: peerConnection };
       setConnections(prev => [...prev, newConnection]);
+      connectionRef.current.push(newConnection);
       
       return peerConnection;
     } catch (error) {
@@ -284,7 +310,7 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       console.error(`[useWebRTC] Error creating offer for ${participantId}:`, err);
       return null;
     }
-  }, [createPeerConnection, setH264Preference]);
+  }, [createPeerConnection]);
   
   const processAnswer = useCallback(async (participantId: string, answer: RTCSessionDescriptionInit) => {
     console.log(`[useWebRTC] Processing answer from ${participantId}`);
@@ -322,11 +348,14 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
   
   const cleanupConnections = useCallback(() => {
     console.log('[useWebRTC] Cleaning up all connections');
-    connections.forEach(({ connection }) => {
+    
+    connections.forEach(({ id, connection }) => {
+      console.log(`[useWebRTC] Closing connection for ${id}`);
       connection.close();
     });
     
     if (localStreamRef.current) {
+      console.log('[useWebRTC] Stopping all local tracks');
       localStreamRef.current.getTracks().forEach(track => {
         track.stop();
       });
