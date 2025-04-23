@@ -34,13 +34,28 @@ const StreamPreview = ({
 }: StreamPreviewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [visibleParticipants, setVisibleParticipants] = useState<Participant[]>([]);
+  const videoRefs = useRef<{[key: string]: HTMLVideoElement | null}>({});
   
   // Filter visible participants whenever the participants array changes
   useEffect(() => {
-    setVisibleParticipants(participants.filter(p => p.isVisible !== false));
-    console.log('[StreamPreview] Participants:', participants);
-    console.log('[StreamPreview] Visible participants:', participants.filter(p => p.isVisible !== false));
+    // Filter out participants that are explicitly marked as not visible
+    const visible = participants.filter(p => p.isVisible !== false);
+    setVisibleParticipants(visible);
+    
+    console.log('[StreamPreview] All participants:', participants);
+    console.log('[StreamPreview] Visible participants:', visible);
   }, [participants]);
+  
+  // Attach streams to video elements when they change
+  useEffect(() => {
+    visibleParticipants.forEach(participant => {
+      const videoElement = videoRefs.current[participant.id];
+      if (videoElement && participant.stream && videoElement.srcObject !== participant.stream) {
+        console.log(`[StreamPreview] Setting stream for ${participant.id}:`, participant.stream);
+        videoElement.srcObject = participant.stream;
+      }
+    });
+  }, [visibleParticipants]);
   
   // Determine grid layout based on number of participants
   const getGridClass = () => {
@@ -86,8 +101,12 @@ const StreamPreview = ({
                   muted
                   className="w-full h-full object-cover"
                   ref={(element) => {
-                    if (element && participant.stream) {
-                      element.srcObject = participant.stream;
+                    if (element) {
+                      videoRefs.current[participant.id] = element;
+                      if (participant.stream && element.srcObject !== participant.stream) {
+                        element.srcObject = participant.stream;
+                        console.log(`[StreamPreview] Setting stream for ${participant.id} in grid:`, participant.stream);
+                      }
                     }
                   }}
                 />

@@ -1,9 +1,11 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Camera, CircleCheck, LogOut, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useWebRTC } from '@/hooks/useWebRTC';
+import { Input } from '@/components/ui/input';
 
 const LiveJoinPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -35,6 +37,7 @@ const LiveJoinPage = () => {
       connectionAttemptedRef.current = true;
       
       try {
+        console.log('[LiveJoinPage] Requesting camera access...');
         const stream = await initializeParticipantCamera();
         if (stream) {
           if (videoRef.current) {
@@ -49,7 +52,7 @@ const LiveJoinPage = () => {
               description: "Conectado à sessão com sucesso!",
             });
             
-            // First, notify parent window about participant joining
+            // Send participant info to parent window
             if (window.opener) {
               console.log('[LiveJoinPage] Sending participant joined message');
               const participantData = {
@@ -72,8 +75,30 @@ const LiveJoinPage = () => {
                 participantId: participantIdRef.current,
                 hasStream: !!stream
               }, '*');
+              
+              // Repeat sending the participant joined message every few seconds to ensure it's received
+              const intervalId = setInterval(() => {
+                if (window.opener && !window.opener.closed) {
+                  console.log('[LiveJoinPage] Resending participant joined message');
+                  window.opener.postMessage({
+                    type: 'PARTICIPANT_JOINED',
+                    sessionId,
+                    participantData: {
+                      ...participantData,
+                      name: participantName // Make sure the current name is sent
+                    }
+                  }, '*');
+                } else {
+                  clearInterval(intervalId);
+                }
+              }, 5000);
             } else {
               console.error('[LiveJoinPage] No opener window found');
+              toast({
+                title: "Erro de conexão",
+                description: "Não foi possível estabelecer comunicação com a sessão",
+                variant: "destructive"
+              });
             }
           }, 1000);
         }
@@ -94,7 +119,19 @@ const LiveJoinPage = () => {
     } else if (!sessionId) {
       navigate('/');
     }
-  }, [sessionId, navigate, toast, initializeParticipantCamera, participantName, isInitializing]);
+  }, [sessionId, navigate, toast, initializeParticipantCamera, isInitializing]);
+
+  // Update name in parent window when changed
+  useEffect(() => {
+    if (connected && window.opener && !window.opener.closed) {
+      window.opener.postMessage({
+        type: 'PARTICIPANT_NAME_CHANGED',
+        sessionId,
+        participantId: participantIdRef.current,
+        name: participantName
+      }, '*');
+    }
+  }, [participantName, connected, sessionId]);
 
   // Ensure video element always shows the same stream reference
   useEffect(() => {
@@ -118,6 +155,25 @@ const LiveJoinPage = () => {
     navigate('/dashboard');
   };
 
+  // Handle beforeunload event to notify parent window when the page is closed
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'PARTICIPANT_LEFT',
+          sessionId,
+          participantId: participantIdRef.current
+        }, '*');
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [sessionId]);
+
   return (
     <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4">
       <div className="max-w-md w-full space-y-6">
@@ -126,6 +182,21 @@ const LiveJoinPage = () => {
           <p className="text-white/70 mt-1">
             Sessão: {sessionId}
           </p>
+        </div>
+        
+        {/* Name input */}
+        <div className="mb-4">
+          <label htmlFor="participant-name" className="block text-sm font-medium text-white/80 mb-1">
+            Seu nome
+          </label>
+          <Input
+            id="participant-name"
+            value={participantName}
+            onChange={(e) => setParticipantName(e.target.value)}
+            className="bg-secondary/30 border border-white/10"
+            placeholder="Digite seu nome"
+            maxLength={30}
+          />
         </div>
         
         {/* Camera view */}

@@ -1,12 +1,14 @@
-
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import StreamPreview from '@/components/live/StreamPreview';
 import { Participant } from '@/types/live';
 import { useWebRTC } from '@/hooks/useWebRTC';
+import { useToast } from '@/hooks/use-toast';
 
 const LiveBroadcastPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const { toast } = useToast();
+  const isInitializedRef = useRef(false);
   
   const [broadcastData, setBroadcastData] = useState({
     participants: [] as Participant[],
@@ -51,23 +53,34 @@ const LiveBroadcastPage = () => {
   // Handle incoming messages from parent window
   const handleMessage = useCallback((event: MessageEvent) => {
     if (!event.data) return;
+    console.log('[LiveBroadcastPage] Received message:', event.data.type);
     
     if (event.data.type === 'BROADCAST_DATA') {
       console.log('[LiveBroadcastPage] Received broadcast data:', event.data.payload);
-      setBroadcastData(prev => ({
-        ...prev,
-        layout: event.data.payload.layout,
-        backgroundColor: event.data.payload.backgroundColor,
-        backgroundImage: event.data.payload.backgroundImage,
-        qrCode: event.data.payload.qrCode,
-        qrCodeText: event.data.payload.qrCodeText,
-        qrCodeFont: event.data.payload.qrCodeFont,
-        qrCodeColor: event.data.payload.qrCodeColor,
-        participants: [
-          ...event.data.payload.participants,
-          ...prev.participants.filter(p => !event.data.payload.participants.some((ep: Participant) => ep.id === p.id))
-        ]
-      }));
+      setBroadcastData(prev => {
+        const newParticipants = [...event.data.payload.participants];
+        
+        // Keep streams from existing participants
+        const mergedParticipants = newParticipants.map(newP => {
+          const existingP = prev.participants.find(p => p.id === newP.id);
+          return {
+            ...newP,
+            stream: existingP?.stream || newP.stream
+          };
+        });
+        
+        return {
+          ...prev,
+          layout: event.data.payload.layout,
+          backgroundColor: event.data.payload.backgroundColor,
+          backgroundImage: event.data.payload.backgroundImage,
+          qrCode: event.data.payload.qrCode,
+          qrCodeText: event.data.payload.qrCodeText,
+          qrCodeFont: event.data.payload.qrCodeFont,
+          qrCodeColor: event.data.payload.qrCodeColor,
+          participants: mergedParticipants
+        };
+      });
     } 
     else if (event.data.type === 'PARTICIPANT_JOINED') {
       console.log('[LiveBroadcastPage] Participant joined via postMessage:', event.data);
@@ -87,7 +100,7 @@ const LiveBroadcastPage = () => {
             ...updatedParticipants[existingParticipantIndex],
             name: participantData.name,
             stream: participantData.stream || updatedParticipants[existingParticipantIndex].stream,
-            isVisible: participantData.isVisible
+            isVisible: participantData.isVisible !== undefined ? participantData.isVisible : updatedParticipants[existingParticipantIndex].isVisible
           };
           return { ...prev, participants: updatedParticipants };
         } else {
@@ -107,9 +120,35 @@ const LiveBroadcastPage = () => {
     else if (event.data.type === 'PARTICIPANT_LEFT') {
       // Handle participant leaving
       const { participantId } = event.data;
+      console.log('[LiveBroadcastPage] Participant left:', participantId);
+      
       setBroadcastData(prev => ({
         ...prev,
         participants: prev.participants.filter(p => p.id !== participantId)
+      }));
+    }
+    else if (event.data.type === 'PARTICIPANT_VISIBILITY_CHANGED') {
+      // Handle participant visibility change
+      const { participantId, isVisible } = event.data;
+      console.log('[LiveBroadcastPage] Participant visibility changed:', participantId, isVisible);
+      
+      setBroadcastData(prev => ({
+        ...prev,
+        participants: prev.participants.map(p => 
+          p.id === participantId ? { ...p, isVisible } : p
+        )
+      }));
+    }
+    else if (event.data.type === 'PARTICIPANT_NAME_CHANGED') {
+      // Handle participant name change
+      const { participantId, name } = event.data;
+      console.log('[LiveBroadcastPage] Participant name changed:', participantId, name);
+      
+      setBroadcastData(prev => ({
+        ...prev,
+        participants: prev.participants.map(p => 
+          p.id === participantId ? { ...p, name } : p
+        )
       }));
     }
   }, []);
@@ -119,8 +158,19 @@ const LiveBroadcastPage = () => {
     
     window.addEventListener('message', handleMessage);
     
-    if (window.opener) {
+    if (window.opener && !isInitializedRef.current) {
+      isInitializedRef.current = true;
       window.opener.postMessage({ type: 'BROADCAST_READY', sessionId }, '*');
+      
+      console.log('[LiveBroadcastPage] Sent BROADCAST_READY message to opener');
+      
+      // Request initial data
+      setTimeout(() => {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage({ type: 'REQUEST_BROADCAST_DATA', sessionId }, '*');
+          console.log('[LiveBroadcastPage] Sent REQUEST_BROADCAST_DATA message to opener');
+        }
+      }, 1000);
     }
     
     return () => {

@@ -1,3 +1,4 @@
+
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useToast } from '@/hooks/use-toast';
@@ -18,6 +19,7 @@ interface LiveSessionContextProps {
   maxParticipants: number;
   toggleParticipantVisibility: (id: string) => void;
   isParticipantVisible: (id: string) => boolean;
+  refreshParticipants: () => void;
   
   // Layout management
   layout: number;
@@ -96,6 +98,8 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   
   const [visibleParticipants, setVisibleParticipants] = useState<Set<string>>(new Set());
   
+  const messageReceivedRef = useRef<boolean>(false);
+  
   const { 
     localStream,
     isConnected,
@@ -112,12 +116,13 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
 
   const handleNewParticipant = (newParticipant: Participant) => {
     console.log('[LiveSessionContext] Adding new participant:', newParticipant);
+    messageReceivedRef.current = true;
     
     setParticipants(prev => {
       const exists = prev.some(p => p.id === newParticipant.id);
       if (exists) {
         return prev.map(p => p.id === newParticipant.id 
-          ? { ...p, stream: newParticipant.stream || p.stream } 
+          ? { ...p, stream: newParticipant.stream || p.stream, name: newParticipant.name || p.name } 
           : p);
       } else {
         return [...prev, newParticipant];
@@ -129,7 +134,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
         const exists = prev.some(p => p.id === newParticipant.id);
         if (exists) {
           return prev.map(p => p.id === newParticipant.id 
-            ? { ...p, stream: newParticipant.stream || p.stream } 
+            ? { ...p, stream: newParticipant.stream || p.stream, name: newParticipant.name || p.name } 
             : p);
         } else {
           return [...prev, newParticipant];
@@ -137,17 +142,51 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       });
       
       setVisibleParticipants(prev => new Set([...prev, newParticipant.id]));
+    } else {
+      setWaitingList(prev => {
+        const exists = prev.some(p => p.id === newParticipant.id);
+        if (exists) return prev;
+        return [...prev, newParticipant];
+      });
+    }
+    
+    // If broadcast is active, update it with the new participant
+    if (isLive && broadcastWindow && !broadcastWindow.closed) {
+      broadcastWindow.postMessage({
+        type: 'PARTICIPANT_JOINED',
+        participantData: {
+          ...newParticipant,
+          isVisible: true
+        }
+      }, '*');
     }
   };
 
   const handleParticipantLeft = (participantId: string) => {
+    console.log('[LiveSessionContext] Participant left:', participantId);
+    
     setParticipants(prev => prev.filter(p => p.id !== participantId));
     setSelectedParticipants(prev => prev.filter(p => p.id !== participantId));
+    setVisibleParticipants(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(participantId);
+      return newSet;
+    });
     
     if (waitingList.length > 0) {
       const nextParticipant = waitingList[0];
       setWaitingList(prev => prev.slice(1));
       setParticipants(prev => [...prev, nextParticipant]);
+      setSelectedParticipants(prev => [...prev, nextParticipant]);
+      setVisibleParticipants(prev => new Set([...prev, nextParticipant.id]));
+    }
+    
+    // If broadcast is active, update it about the participant leaving
+    if (isLive && broadcastWindow && !broadcastWindow.closed) {
+      broadcastWindow.postMessage({
+        type: 'PARTICIPANT_LEFT',
+        participantId
+      }, '*');
     }
   };
   
@@ -159,6 +198,9 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       const url = `${window.location.origin}/live/join/${newId}`;
       const qrCodeDataUrl = await QRCode.toDataURL(url);
       setQrCodeImage(qrCodeDataUrl);
+      toast({
+        description: "QR Code gerado com sucesso!",
+      });
     } catch (error) {
       console.error('Error generating QR code:', error);
       toast({
@@ -172,6 +214,8 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   const selectParticipant = (id: string) => {
     const participant = participants.find(p => p.id === id) || waitingList.find(p => p.id === id);
     if (!participant) return;
+    
+    console.log('[LiveSessionContext] Selecting participant:', participant);
     
     if (selectedParticipants.length < maxParticipants) {
       setSelectedParticipants(prev => {
@@ -203,6 +247,8 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   };
   
   const removeParticipant = (id: string) => {
+    console.log('[LiveSessionContext] Removing participant from selection:', id);
+    
     setSelectedParticipants(prev => prev.filter(p => p.id !== id));
     setVisibleParticipants(prev => {
       const newSet = new Set(prev);
@@ -210,14 +256,19 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       return newSet;
     });
     
-    if (waitingList.length > 0) {
-      const nextParticipant = waitingList[0];
-      setWaitingList(prev => prev.slice(1));
-      setParticipants(prev => [...prev, nextParticipant]);
+    // Also signal to the broadcast window that the participant should be removed from view
+    if (isLive && broadcastWindow && !broadcastWindow.closed) {
+      broadcastWindow.postMessage({
+        type: 'PARTICIPANT_VISIBILITY_CHANGED',
+        participantId: id,
+        isVisible: false
+      }, '*');
     }
   };
   
   const toggleParticipantVisibility = (id: string) => {
+    console.log('[LiveSessionContext] Toggling participant visibility:', id);
+    
     setVisibleParticipants(prev => {
       const newSet = new Set(prev);
       if (newSet.has(id)) {
@@ -227,10 +278,36 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       }
       return newSet;
     });
+    
+    // Signal to the broadcast window that the participant's visibility has changed
+    if (isLive && broadcastWindow && !broadcastWindow.closed) {
+      const isVisible = !visibleParticipants.has(id);
+      broadcastWindow.postMessage({
+        type: 'PARTICIPANT_VISIBILITY_CHANGED',
+        participantId: id,
+        isVisible
+      }, '*');
+    }
   };
   
   const isParticipantVisible = (id: string) => {
     return visibleParticipants.has(id);
+  };
+  
+  // Function to refresh participants list (manually checking if all are properly registered)
+  const refreshParticipants = () => {
+    console.log('[LiveSessionContext] Manually refreshing participants list');
+    toast({
+      description: "Atualizando lista de participantes...",
+    });
+    
+    // Check if we ever received messages from participants
+    if (!messageReceivedRef.current) {
+      toast({
+        title: "Nenhum participante detectado",
+        description: "Verifique se o QR Code foi compartilhado e os participantes estão tentando se conectar.",
+      });
+    }
   };
   
   const showQRCode = () => setQrCodeVisible(true);
@@ -318,6 +395,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     setBroadcastWindow(null);
   };
   
+  // Clean up when component unmounts
   useEffect(() => {
     return () => {
       if (broadcastWindow && !broadcastWindow.closed) {
@@ -326,14 +404,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     };
   }, [broadcastWindow]);
   
-  useEffect(() => {
-    return () => {
-      if (broadcastWindow && !broadcastWindow.closed) {
-        broadcastWindow.close();
-      }
-    };
-  }, []);
-  
+  // Handle incoming messages from participant windows
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (!event.data) return;
@@ -343,6 +414,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
         
         if (incomingSessionId === sessionId) {
           console.log('[LiveSessionContext] Participant joined from QR code:', participantData);
+          messageReceivedRef.current = true;
           
           const newParticipant: Participant = {
             id: participantData.id,
@@ -351,34 +423,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
             isVisible: true
           };
           
-          setParticipants(prev => {
-            if (prev.some(p => p.id === newParticipant.id)) {
-              return prev.map(p => p.id === newParticipant.id ? 
-                { ...p, name: newParticipant.name } : p);
-            }
-            return [...prev, newParticipant];
-          });
-          
-          if (selectedParticipants.length < maxParticipants) {
-            setSelectedParticipants(prev => {
-              if (prev.some(p => p.id === newParticipant.id)) return prev;
-              return [...prev, newParticipant];
-            });
-            
-            setVisibleParticipants(prev => new Set([...prev, newParticipant.id]));
-            
-            if (isLive && broadcastWindow && !broadcastWindow.closed) {
-              broadcastWindow.postMessage({
-                type: 'PARTICIPANT_JOINED',
-                participantData: {
-                  ...newParticipant,
-                  isVisible: true
-                }
-              }, '*');
-            }
-          } else {
-            setWaitingList(prev => [...prev, newParticipant]);
-          }
+          handleNewParticipant(newParticipant);
         }
       } else if (event.data.type === 'PARTICIPANT_STREAM') {
         const { participantId, hasStream, sessionId: incomingSessionId } = event.data;
@@ -386,21 +431,49 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
         if (incomingSessionId === sessionId && hasStream) {
           console.log('[LiveSessionContext] Participant stream available:', participantId);
           
-          const dummyStream = new MediaStream();
-          
+          // Instead of creating a dummy stream, we'll just mark the participant as having a stream
+          // The actual stream will be handled by WebRTC
           setParticipants(prev => 
-            prev.map(p => p.id === participantId ? { ...p, stream: dummyStream } : p)
+            prev.map(p => p.id === participantId ? { ...p, stream: p.stream || new MediaStream() } : p)
           );
           
           setSelectedParticipants(prev => 
-            prev.map(p => p.id === participantId ? { ...p, stream: dummyStream } : p)
+            prev.map(p => p.id === participantId ? { ...p, stream: p.stream || new MediaStream() } : p)
           );
         }
       } else if (event.data.type === 'PARTICIPANT_LEFT') {
         const { participantId, sessionId: incomingSessionId } = event.data;
         
         if (incomingSessionId === sessionId) {
+          console.log('[LiveSessionContext] Participant left:', participantId);
           handleParticipantLeft(participantId);
+        }
+      } else if (event.data.type === 'PARTICIPANT_NAME_CHANGED') {
+        const { participantId, name, sessionId: incomingSessionId } = event.data;
+        
+        if (incomingSessionId === sessionId) {
+          console.log('[LiveSessionContext] Participant name changed:', participantId, name);
+          
+          setParticipants(prev => 
+            prev.map(p => p.id === participantId ? { ...p, name } : p)
+          );
+          
+          setSelectedParticipants(prev => 
+            prev.map(p => p.id === participantId ? { ...p, name } : p)
+          );
+          
+          setWaitingList(prev => 
+            prev.map(p => p.id === participantId ? { ...p, name } : p)
+          );
+          
+          // Update broadcast if active
+          if (isLive && broadcastWindow && !broadcastWindow.closed) {
+            broadcastWindow.postMessage({
+              type: 'PARTICIPANT_NAME_CHANGED',
+              participantId,
+              name
+            }, '*');
+          }
         }
       }
     };
@@ -410,7 +483,14 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [sessionId, participants, maxParticipants, selectedParticipants.length, layout, broadcastWindow, isLive]);
+  }, [sessionId, maxParticipants, isLive, broadcastWindow]);
+  
+  // Auto-generate session ID when component mounts if not already set
+  useEffect(() => {
+    if (!sessionId) {
+      generateSessionId();
+    }
+  }, []);
   
   const value = {
     sessionId,
@@ -424,6 +504,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     maxParticipants,
     toggleParticipantVisibility,
     isParticipantVisible,
+    refreshParticipants,
     
     layout,
     setLayout,

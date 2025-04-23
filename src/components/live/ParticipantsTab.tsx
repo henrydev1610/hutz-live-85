@@ -1,11 +1,13 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { Check, X, Eye, EyeOff } from 'lucide-react';
+import { Check, X, Eye, EyeOff, RefreshCcw } from 'lucide-react';
 import { useLiveSession } from '@/hooks/useLiveSession';
+import { useToast } from '@/hooks/use-toast';
 
 const ParticipantsTab = () => {
+  const { toast } = useToast();
   const { 
     participants, 
     waitingList, 
@@ -16,25 +18,46 @@ const ParticipantsTab = () => {
     toggleParticipantVisibility,
     isParticipantVisible,
     generateSessionId,
-    sessionId
+    sessionId,
+    refreshParticipants
   } = useLiveSession();
   
   console.log('[ParticipantsTab] Current participants:', participants);
   console.log('[ParticipantsTab] Selected participants:', selectedParticipants);
   console.log('[ParticipantsTab] Waiting list:', waitingList);
   
+  // Effect to check session ID on component mount
+  useEffect(() => {
+    if (!sessionId) {
+      toast({
+        description: "Gere um QR Code para iniciar a sessão",
+        duration: 3000,
+      });
+    }
+  }, []);
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">Participantes ({participants.length})</h3>
-        <span className="text-sm text-white/70">
-          {selectedParticipants.length}/{maxParticipants} selecionados
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-white/70">
+            {selectedParticipants.length}/{maxParticipants} selecionados
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={refreshParticipants}
+            title="Atualizar lista de participantes"
+          >
+            <RefreshCcw className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
       
       {participants.length > 0 ? (
         <ScrollArea className="h-[400px] pr-4">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
             {participants.map(participant => {
               const isSelected = selectedParticipants.some(p => p.id === participant.id);
               const isOnline = participant.stream !== null;
@@ -54,6 +77,8 @@ const ParticipantsTab = () => {
                       ref={(element) => {
                         if (element && participant.stream) {
                           element.srcObject = participant.stream;
+                          // Debug output to help identify stream issues
+                          console.log(`[ParticipantsTab] Setting stream for ${participant.id}:`, participant.stream);
                         }
                       }}
                     />
@@ -137,7 +162,7 @@ const ParticipantsTab = () => {
         <div className="mt-4">
           <h4 className="text-sm font-medium mb-2">Fila de espera ({waitingList.length})</h4>
           <ScrollArea className="h-[100px]">
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
               {waitingList.map(participant => (
                 <div key={participant.id} className="text-xs p-2 bg-secondary rounded truncate flex justify-between items-center">
                   <span>{participant.name}</span>
