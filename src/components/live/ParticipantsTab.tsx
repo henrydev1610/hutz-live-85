@@ -14,8 +14,14 @@ const ParticipantsTab = () => {
     selectedParticipants,
     maxParticipants,
     toggleParticipantVisibility,
-    isParticipantVisible
+    isParticipantVisible,
+    generateSessionId,
+    sessionId
   } = useLiveSession();
+  
+  console.log('[ParticipantsTab] Current participants:', participants);
+  console.log('[ParticipantsTab] Selected participants:', selectedParticipants);
+  console.log('[ParticipantsTab] Waiting list:', waitingList);
   
   return (
     <div className="space-y-4">
@@ -110,7 +116,20 @@ const ParticipantsTab = () => {
       ) : (
         <div className="flex flex-col items-center justify-center py-10 text-white/50">
           <p>Nenhum participante conectado</p>
-          <p className="text-sm mt-2">Compartilhe o QR Code para que os participantes se conectem</p>
+          <p className="text-sm mt-2">
+            {!sessionId ? (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={generateSessionId}
+                className="mt-2"
+              >
+                Gerar QR Code para conectar participantes
+              </Button>
+            ) : (
+              "Compartilhe o QR Code para que os participantes se conectem"
+            )}
+          </p>
         </div>
       )}
       
@@ -122,7 +141,15 @@ const ParticipantsTab = () => {
               {waitingList.map(participant => (
                 <div key={participant.id} className="text-xs p-2 bg-secondary rounded truncate flex justify-between items-center">
                   <span>{participant.name}</span>
-                  <span className="h-2 w-2 rounded-full bg-yellow-500"></span>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => selectParticipant(participant.id)}
+                    className="h-5 w-5 text-green-500 hover:text-green-400"
+                    disabled={selectedParticipants.length >= maxParticipants}
+                  >
+                    <Check className="h-3 w-3" />
+                  </Button>
                 </div>
               ))}
             </div>

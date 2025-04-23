@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -50,12 +49,13 @@ const LiveJoinPage = () => {
               description: "Conectado à sessão com sucesso!",
             });
             
-            // Send participant data to parent window if available
+            // First, notify parent window about participant joining
             if (window.opener) {
+              console.log('[LiveJoinPage] Sending participant joined message');
               const participantData = {
                 id: participantIdRef.current,
                 name: participantName,
-                stream: null // We can't send MediaStream via postMessage, will update later
+                stream: null // We can't send MediaStream via postMessage
               };
               
               window.opener.postMessage({
@@ -65,17 +65,15 @@ const LiveJoinPage = () => {
               }, '*');
               
               // Now send a separate message specifically for stream handling
-              // This is needed because we can't send MediaStream in the same message
-              try {
-                window.opener.postMessage({
-                  type: 'PARTICIPANT_STREAM',
-                  sessionId,
-                  participantId: participantIdRef.current,
-                  hasStream: !!stream
-                }, '*');
-              } catch (err) {
-                console.error('Error sending stream notification:', err);
-              }
+              console.log('[LiveJoinPage] Sending participant stream message');
+              window.opener.postMessage({
+                type: 'PARTICIPANT_STREAM',
+                sessionId,
+                participantId: participantIdRef.current,
+                hasStream: !!stream
+              }, '*');
+            } else {
+              console.error('[LiveJoinPage] No opener window found');
             }
           }, 1000);
         }
@@ -91,6 +89,7 @@ const LiveJoinPage = () => {
     };
 
     if (sessionId && !connectionAttemptedRef.current && !isInitializing) {
+      console.log('[LiveJoinPage] Attempting to connect to session:', sessionId);
       requestCamera();
     } else if (!sessionId) {
       navigate('/');
@@ -107,6 +106,7 @@ const LiveJoinPage = () => {
   const handleLeaveSession = () => {
     // Notify that participant has left
     if (window.opener) {
+      console.log('[LiveJoinPage] Sending participant left message');
       window.opener.postMessage({
         type: 'PARTICIPANT_LEFT',
         sessionId,

@@ -102,7 +102,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   } = useWebRTC({
     sessionId,
     onNewParticipant: (participant) => {
-      console.log('New participant joined:', participant);
+      console.log('[LiveSessionContext] New participant joined via WebRTC:', participant);
       handleNewParticipant(participant);
     },
     onParticipantLeft: (participantId) => {
@@ -111,14 +111,33 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   });
 
   const handleNewParticipant = (newParticipant: Participant) => {
+    console.log('[LiveSessionContext] Adding new participant:', newParticipant);
+    
     setParticipants(prev => {
       const exists = prev.some(p => p.id === newParticipant.id);
       if (exists) {
-        return prev.map(p => p.id === newParticipant.id ? newParticipant : p);
+        return prev.map(p => p.id === newParticipant.id 
+          ? { ...p, stream: newParticipant.stream || p.stream } 
+          : p);
       } else {
         return [...prev, newParticipant];
       }
     });
+    
+    if (selectedParticipants.length < maxParticipants) {
+      setSelectedParticipants(prev => {
+        const exists = prev.some(p => p.id === newParticipant.id);
+        if (exists) {
+          return prev.map(p => p.id === newParticipant.id 
+            ? { ...p, stream: newParticipant.stream || p.stream } 
+            : p);
+        } else {
+          return [...prev, newParticipant];
+        }
+      });
+      
+      setVisibleParticipants(prev => new Set([...prev, newParticipant.id]));
+    }
   };
 
   const handleParticipantLeft = (participantId: string) => {
@@ -334,7 +353,8 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
           
           setParticipants(prev => {
             if (prev.some(p => p.id === newParticipant.id)) {
-              return prev.map(p => p.id === newParticipant.id ? { ...p, name: newParticipant.name } : p);
+              return prev.map(p => p.id === newParticipant.id ? 
+                { ...p, name: newParticipant.name } : p);
             }
             return [...prev, newParticipant];
           });
@@ -366,12 +386,14 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
         if (incomingSessionId === sessionId && hasStream) {
           console.log('[LiveSessionContext] Participant stream available:', participantId);
           
+          const dummyStream = new MediaStream();
+          
           setParticipants(prev => 
-            prev.map(p => p.id === participantId ? { ...p, stream: new MediaStream() } : p)
+            prev.map(p => p.id === participantId ? { ...p, stream: dummyStream } : p)
           );
           
           setSelectedParticipants(prev => 
-            prev.map(p => p.id === participantId ? { ...p, stream: new MediaStream() } : p)
+            prev.map(p => p.id === participantId ? { ...p, stream: dummyStream } : p)
           );
         }
       } else if (event.data.type === 'PARTICIPANT_LEFT') {
