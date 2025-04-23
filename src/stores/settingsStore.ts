@@ -36,7 +36,7 @@ interface SettingsState {
   resetSettings: () => void;
 }
 
-const DEFAULT_SETTINGS = {
+const DEFAULT_SETTINGS: SettingsState = {
   layoutMaxParticipants: 4,
   backgroundColor: '#121212',
   backgroundImageUrl: null,
@@ -49,12 +49,21 @@ const DEFAULT_SETTINGS = {
     textColor: "#FFFFFF"
   },
   actionSettings: {
-    type: 'none' as const,
+    type: 'none',
     imageUrl: '',
     couponCode: '',
     linkUrl: '',
     text: ''
-  }
+  },
+
+  // Add placeholder implementations for methods
+  setMaxParticipants: () => {},
+  setBackgroundColor: () => {},
+  setBackgroundImage: () => {},
+  updateQrCode: () => {},
+  toggleQrCodeVisibility: () => {},
+  updateActionSettings: () => {},
+  resetSettings: () => {}
 };
 
 export const useSettingsStore = create<SettingsState>((set) => ({
