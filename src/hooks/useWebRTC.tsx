@@ -24,7 +24,7 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
   const connectionRef = useRef<PeerConnection[]>([]);
   const localStreamRef = useRef<MediaStream | null>(null);
   
-  const rtcConfig = {
+  const rtcConfig: RTCConfiguration = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
@@ -37,10 +37,9 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
         credential: 'openrelayproject'
       }
     ],
-    sdpSemantics: 'unified-plan',
     iceCandidatePoolSize: 10,
-    bundlePolicy: 'max-bundle',
-    rtcpMuxPolicy: 'require'
+    bundlePolicy: 'max-bundle' as RTCBundlePolicy,
+    rtcpMuxPolicy: 'require' as RTCMuxPolicy
   };
 
   const setH264Preference = (sdp: string) => {
