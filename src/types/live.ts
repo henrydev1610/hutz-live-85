@@ -29,3 +29,17 @@ export interface CallToAction {
   text: string | null;
   link: string | null;
 }
+
+export interface WebRTCConnection {
+  id: string;
+  peerConnection: RTCPeerConnection;
+  stream: MediaStream | null;
+}
+
+export interface WebRTCSignalData {
+  type: 'offer' | 'answer' | 'ice-candidate';
+  from: string;
+  to?: string;
+  sessionId: string;
+  payload: any;
+}

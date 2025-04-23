@@ -33,14 +33,14 @@ const ParticipantsTab = () => {
               return (
                 <div 
                   key={participant.id} 
-                  className={`relative rounded-lg overflow-hidden border ${isSelected ? 'border-accent' : 'border-white/10'}`}
+                  className={`relative rounded-lg overflow-hidden border aspect-square ${isSelected ? 'border-accent' : 'border-white/10'}`}
                 >
                   {participant.stream && (
                     <video
                       autoPlay
                       playsInline
                       muted
-                      className="w-full h-32 object-cover bg-black"
+                      className="w-full h-full object-cover bg-black"
                       ref={(element) => {
                         if (element && participant.stream) {
                           element.srcObject = participant.stream;
@@ -48,7 +48,7 @@ const ParticipantsTab = () => {
                       }}
                     />
                   )}
-                  <div className="p-2 bg-secondary/80">
+                  <div className="absolute bottom-0 left-0 right-0 p-2 bg-secondary/80">
                     <div className="flex justify-between items-center">
                       <p className="text-sm truncate">{participant.name}</p>
                       {isSelected ? (

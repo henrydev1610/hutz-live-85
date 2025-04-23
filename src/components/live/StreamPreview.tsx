@@ -36,6 +36,9 @@ const StreamPreview = ({
   const [qrCodeSize, setQrCodeSize] = useState(qrCode.size);
   const [textSize, setTextSize] = useState(16); // Default text size
   const [resizing, setResizing] = useState(false);
+  const [resizeType, setResizeType] = useState<'qr' | 'text' | null>(null);
+  const [startSize, setStartSize] = useState(0);
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
 
   // Calculate grid layout based on number of visible participants
   const getGridTemplate = () => {
@@ -53,71 +56,52 @@ const StreamPreview = ({
   const visibleParticipants = participants.slice(0, layout);
 
   useEffect(() => {
-    const handleResizeMouseUp = () => {
-      if (resizing) {
-        setResizing(false);
+    const handleResizeMouseMove = (e: MouseEvent) => {
+      if (!resizing) return;
+      
+      const deltaX = e.clientX - startPos.x;
+      const deltaY = e.clientY - startPos.y;
+      
+      if (resizeType === 'qr') {
+        const diagonal = Math.max(deltaX, deltaY);
+        setQrCodeSize(Math.max(50, Math.min(400, startSize + diagonal)));
+      } else if (resizeType === 'text') {
+        setTextSize(Math.max(12, Math.min(48, startSize - deltaY * 0.1)));
       }
     };
-
-    document.addEventListener('mouseup', handleResizeMouseUp);
+    
+    const handleResizeMouseUp = () => {
+      setResizing(false);
+      setResizeType(null);
+    };
+    
+    if (resizing) {
+      document.addEventListener('mousemove', handleResizeMouseMove);
+      document.addEventListener('mouseup', handleResizeMouseUp);
+    }
     
     return () => {
+      document.removeEventListener('mousemove', handleResizeMouseMove);
       document.removeEventListener('mouseup', handleResizeMouseUp);
     };
-  }, [resizing]);
-  
+  }, [resizing, resizeType, startSize, startPos]);
+
   const handleQRCodeResize = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setResizing(true);
-    
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startSize = qrCodeSize;
-    
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      if (!resizing) return;
-      
-      const deltaX = moveEvent.clientX - startX;
-      const deltaY = moveEvent.clientY - startY;
-      const diagonal = Math.max(deltaX, deltaY);
-      
-      setQrCodeSize(Math.max(50, Math.min(400, startSize + diagonal)));
-    };
-    
-    const handleMouseUp = () => {
-      setResizing(false);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    setResizeType('qr');
+    setStartSize(qrCodeSize);
+    setStartPos({ x: e.clientX, y: e.clientY });
   };
 
   const handleTextResize = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setResizing(true);
-    
-    const startY = e.clientY;
-    const startSize = textSize;
-    
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      if (!resizing) return;
-      
-      const deltaY = moveEvent.clientY - startY;
-      setTextSize(Math.max(12, Math.min(48, startSize - deltaY * 0.1)));
-    };
-    
-    const handleMouseUp = () => {
-      setResizing(false);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    setResizeType('text');
+    setStartSize(textSize);
+    setStartPos({ x: e.clientX, y: e.clientY });
   };
 
   return (
@@ -147,7 +131,7 @@ const StreamPreview = ({
             >
               <img src={qrCode.image} alt="QR Code" className="w-full h-full" />
               <div 
-                className="absolute right-0 bottom-0 w-6 h-6 bg-white/10 hover:bg-white/30 rounded-bl resize-handle cursor-se-resize"
+                className="absolute right-0 bottom-0 w-6 h-6 bg-white/30 hover:bg-white/60 rounded-bl cursor-se-resize resize-handle"
                 onMouseDown={handleQRCodeResize}
               />
             </div>
@@ -169,7 +153,7 @@ const StreamPreview = ({
             >
               {qrCodeText.text}
               <div 
-                className="absolute right-0 bottom-0 w-5 h-5 bg-white/10 hover:bg-white/30 rounded-bl resize-handle cursor-ns-resize"
+                className="absolute right-0 bottom-0 w-5 h-5 bg-white/30 hover:bg-white/60 rounded-bl resize-handle cursor-ns-resize"
                 onMouseDown={handleTextResize}
               />
             </div>

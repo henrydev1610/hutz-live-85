@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Camera, CircleCheck, LogOut, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useWebRTC } from '@/hooks/useWebRTC';
 
 const LiveJoinPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -11,57 +12,53 @@ const LiveJoinPage = () => {
   const navigate = useNavigate();
   const [cameraPermission, setCameraPermission] = useState<'granted' | 'denied' | 'pending'>('pending');
   const [connected, setConnected] = useState(false);
+  const [participantName, setParticipantName] = useState(`Participante ${Math.floor(Math.random() * 1000)}`);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-
+  
+  const {
+    localStream,
+    isConnected,
+    initializeParticipantCamera
+  } = useWebRTC({
+    sessionId: sessionId || null
+  });
+  
   // Request camera permission on component mount
   useEffect(() => {
     const requestCamera = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: "user" },
-          audio: true 
-        });
-        
-        streamRef.current = stream;
-        
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-        
-        setCameraPermission('granted');
-        
-        // In a real implementation, we would connect to the WebRTC session here
-        // For now, let's simulate a connection with a setTimeout
-        setTimeout(() => {
-          setConnected(true);
-          toast({
-            description: "Conectado à sessão com sucesso!",
-          });
-          
-          // Send stream to parent window if available
-          if (window.opener) {
-            const participantData = {
-              id: `user-${Date.now()}`,
-              name: `Participante ${Math.floor(Math.random() * 1000)}`,
-              stream: stream
-            };
-            
-            // Since we can't send MediaStream directly via postMessage,
-            // in a real implementation, we would use WebRTC to establish
-            // peer connections. For now, we'll just send the connection info
-            window.opener.postMessage({
-              type: 'PARTICIPANT_JOINED',
-              sessionId,
-              participantData: {
-                id: participantData.id,
-                name: participantData.name
-                // Stream would be established via WebRTC
-              }
-            }, '*');
+        const stream = await initializeParticipantCamera();
+        if (stream) {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
           }
-        }, 1500);
-        
+          setCameraPermission('granted');
+          
+          // In a real implementation, we would connect to the WebRTC session here
+          // For now, let's simulate a connection with a timeout
+          setTimeout(() => {
+            setConnected(true);
+            toast({
+              description: "Conectado à sessão com sucesso!",
+            });
+            
+            // Send stream to parent window if available
+            if (window.opener) {
+              const participantData = {
+                id: `user-${Date.now()}`,
+                name: participantName,
+                // In a real implementation, we would establish WebRTC connections
+                // The stream would be sent via WebRTC, not postMessage
+              };
+              
+              window.opener.postMessage({
+                type: 'PARTICIPANT_JOINED',
+                sessionId,
+                participantData
+              }, '*');
+            }
+          }, 1500);
+        }
       } catch (err) {
         console.error('Error accessing camera:', err);
         setCameraPermission('denied');
@@ -78,26 +75,15 @@ const LiveJoinPage = () => {
     } else {
       navigate('/');
     }
-    
-    return () => {
-      // Clean up video stream on unmount
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [sessionId, navigate, toast]);
+  }, [sessionId, navigate, toast, initializeParticipantCamera, participantName]);
 
   const handleLeaveSession = () => {
-    // In a real implementation, we would disconnect from the WebRTC session here
+    // Notify that participant has left
     if (window.opener) {
       window.opener.postMessage({
         type: 'PARTICIPANT_LEFT',
         sessionId
       }, '*');
-    }
-    
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
     }
     
     // Navigate back to dashboard

@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import StreamPreview from '@/components/live/StreamPreview';
 import { Participant } from '@/types/live';
+import { useWebRTC } from '@/hooks/useWebRTC';
 
 const LiveBroadcastPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const [windowTitle, setWindowTitle] = useState('Hutz Live Broadcast');
   
   const [broadcastData, setBroadcastData] = useState({
     participants: [] as Participant[],
@@ -27,13 +27,68 @@ const LiveBroadcastPage = () => {
     qrCodeColor: '#FFFFFF'
   });
   
+  const { 
+    isConnected,
+    connections
+  } = useWebRTC({
+    sessionId: sessionId || null,
+    onNewParticipant: (participant) => {
+      console.log('New participant joined:', participant);
+      setBroadcastData(prev => ({
+        ...prev,
+        participants: [...prev.participants.filter(p => p.id !== participant.id), participant]
+      }));
+    },
+    onParticipantLeft: (participantId) => {
+      console.log('Participant left:', participantId);
+      setBroadcastData(prev => ({
+        ...prev,
+        participants: prev.participants.filter(p => p.id !== participantId)
+      }));
+    }
+  });
+  
   useEffect(() => {
     document.title = `Transmissão - ${sessionId}`;
     
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'BROADCAST_DATA') {
         console.log('Received broadcast data:', event.data.payload);
-        setBroadcastData(event.data.payload);
+        setBroadcastData(prev => ({
+          ...prev,
+          layout: event.data.payload.layout,
+          backgroundColor: event.data.payload.backgroundColor,
+          backgroundImage: event.data.payload.backgroundImage,
+          qrCode: event.data.payload.qrCode,
+          qrCodeText: event.data.payload.qrCodeText,
+          qrCodeFont: event.data.payload.qrCodeFont,
+          qrCodeColor: event.data.payload.qrCodeColor
+        }));
+      } else if (event.data && event.data.type === 'PARTICIPANT_JOINED') {
+        console.log('Participant joined via postMessage:', event.data);
+        // In a real WebRTC implementation, we would establish connections here
+        // For now, we'll simulate adding a participant
+        const { participantData } = event.data;
+        
+        // Create a mock video stream for demo purposes
+        // In a real implementation, this would come from WebRTC
+        const mockVideoStream = new MediaStream();
+        
+        setBroadcastData(prev => ({
+          ...prev,
+          participants: [...prev.participants, {
+            id: participantData.id,
+            name: participantData.name,
+            stream: mockVideoStream
+          }]
+        }));
+      } else if (event.data && event.data.type === 'PARTICIPANT_LEFT') {
+        // Handle participant leaving
+        const { participantId } = event.data;
+        setBroadcastData(prev => ({
+          ...prev,
+          participants: prev.participants.filter(p => p.id !== participantId)
+        }));
       }
     };
     

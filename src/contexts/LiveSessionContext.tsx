@@ -1,7 +1,9 @@
+
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useToast } from '@/hooks/use-toast';
 import { Participant } from '@/types/live';
+import { useWebRTC } from '@/hooks/useWebRTC';
 
 interface LiveSessionContextProps {
   // Session management
@@ -91,6 +93,50 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   const [callToActionText, setCallToActionText] = useState<string | null>(null);
   const [callToActionLink, setCallToActionLink] = useState<string | null>(null);
   
+  // WebRTC integration
+  const { 
+    localStream,
+    isConnected,
+    initializeHostCamera
+  } = useWebRTC({
+    sessionId,
+    onNewParticipant: (participant) => {
+      console.log('New participant joined:', participant);
+      handleNewParticipant(participant);
+    },
+    onParticipantLeft: (participantId) => {
+      handleParticipantLeft(participantId);
+    }
+  });
+
+  // Handle new participant joining
+  const handleNewParticipant = (newParticipant: Participant) => {
+    setParticipants(prev => {
+      // Check if participant already exists
+      const exists = prev.some(p => p.id === newParticipant.id);
+      if (exists) {
+        // Update existing participant
+        return prev.map(p => p.id === newParticipant.id ? newParticipant : p);
+      } else {
+        // Add new participant
+        return [...prev, newParticipant];
+      }
+    });
+  };
+
+  // Handle participant leaving
+  const handleParticipantLeft = (participantId: string) => {
+    setParticipants(prev => prev.filter(p => p.id !== participantId));
+    setSelectedParticipants(prev => prev.filter(p => p.id !== participantId));
+    
+    // Check if any participant from waiting list can be moved
+    if (waitingList.length > 0) {
+      const nextParticipant = waitingList[0];
+      setWaitingList(prev => prev.slice(1));
+      setParticipants(prev => [...prev, nextParticipant]);
+    }
+  };
+  
   const generateSessionId = async () => {
     const newId = Math.random().toString(36).substring(2, 15);
     setSessionId(newId);
@@ -144,7 +190,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     setQrCodeTextState(text);
   };
   
-  const startBroadcast = () => {
+  const startBroadcast = async () => {
     if (!sessionId) {
       toast({
         title: "Sessão não iniciada",
@@ -153,6 +199,9 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       });
       return;
     }
+    
+    // Initialize host camera for WebRTC if not already done
+    await initializeHostCamera();
     
     const newWindow = window.open(
       `/live/broadcast/${sessionId}`,
@@ -170,6 +219,36 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
           setIsLive(false);
           setBroadcastWindow(null);
         }
+      }, 1000);
+      
+      // Send broadcast data to the broadcast window
+      const sendBroadcastData = setInterval(() => {
+        if (newWindow.closed) {
+          clearInterval(sendBroadcastData);
+          return;
+        }
+        
+        newWindow.postMessage({
+          type: 'BROADCAST_DATA',
+          payload: {
+            participants: selectedParticipants,
+            layout,
+            backgroundColor,
+            backgroundImage,
+            qrCode: {
+              visible: qrCodeVisible,
+              image: qrCodeImage,
+              position: qrCodePosition,
+              size: qrCodeSize
+            },
+            qrCodeText: {
+              text: qrCodeText,
+              position: qrCodeTextPosition
+            },
+            qrCodeFont,
+            qrCodeColor
+          }
+        }, '*');
       }, 1000);
     } else {
       toast({
@@ -208,6 +287,45 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     setParticipants(mockParticipants.slice(0, 8));
     setWaitingList(mockParticipants.slice(8));
   }, []);
+  
+  // Handle messages from joined participants
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'PARTICIPANT_JOINED') {
+        const { participantData, sessionId: incomingSessionId } = event.data;
+        
+        // Make sure the session ID matches
+        if (incomingSessionId === sessionId) {
+          console.log('Participant joined:', participantData);
+          
+          const newParticipant: Participant = {
+            id: participantData.id,
+            name: participantData.name,
+            stream: null // Stream will be established via WebRTC
+          };
+          
+          // Add to participants or waiting list
+          if (participants.length < maxParticipants) {
+            setParticipants(prev => [...prev, newParticipant]);
+          } else {
+            setWaitingList(prev => [...prev, newParticipant]);
+          }
+        }
+      } else if (event.data && event.data.type === 'PARTICIPANT_LEFT') {
+        const { participantId, sessionId: incomingSessionId } = event.data;
+        
+        if (incomingSessionId === sessionId) {
+          handleParticipantLeft(participantId);
+        }
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [sessionId, participants, maxParticipants]);
   
   const value = {
     sessionId,
