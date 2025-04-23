@@ -9,6 +9,7 @@ interface SocketType {
   connected: boolean;
   on: (event: string, callback: (...args: any[]) => void) => void;
   emit: (event: string, ...args: any[]) => void;
+  disconnect: () => void;  // Added disconnect method to the interface
 }
 
 const PEER_CONNECTION_CONFIG = {
