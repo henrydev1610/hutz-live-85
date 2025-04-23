@@ -49,7 +49,7 @@ const DEFAULT_SETTINGS = {
     textColor: "#FFFFFF"
   },
   actionSettings: {
-    type: 'none',
+    type: 'none' as const,
     imageUrl: '',
     couponCode: '',
     linkUrl: '',
