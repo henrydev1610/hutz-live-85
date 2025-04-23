@@ -1,5 +1,5 @@
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
 import { Participant } from '@/types/live';
 import Draggable from 'react-draggable';
 
@@ -36,6 +36,17 @@ const StreamPreview = ({
   
   const visibleParticipants = participants.filter(p => p.isVisible !== false);
   
+  // Determine grid layout based on number of participants
+  const getGridClass = () => {
+    const count = visibleParticipants.length;
+    
+    if (count <= 1) return "grid-cols-1";
+    if (count <= 2) return "grid-cols-2";
+    if (count <= 4) return "grid-cols-2";
+    if (count <= 9) return "grid-cols-3";
+    return "grid-cols-4";
+  };
+  
   return (
     <div 
       ref={containerRef}
@@ -47,7 +58,7 @@ const StreamPreview = ({
         backgroundPosition: 'center'
       }}
     >
-      <div className="absolute inset-0 grid grid-cols-4 gap-2 p-4">
+      <div className={`absolute inset-0 grid ${getGridClass()} gap-2 p-4`}>
         {visibleParticipants.map((participant) => (
           <div 
             key={participant.id} 

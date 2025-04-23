@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import StreamPreview from '@/components/live/StreamPreview';
 import { Participant } from '@/types/live';
@@ -48,49 +48,64 @@ const LiveBroadcastPage = () => {
     }
   });
   
+  // Handle incoming messages from parent window
+  const handleMessage = useCallback((event: MessageEvent) => {
+    if (event.data && event.data.type === 'BROADCAST_DATA') {
+      console.log('Received broadcast data:', event.data.payload);
+      setBroadcastData(prev => ({
+        ...prev,
+        layout: event.data.payload.layout,
+        backgroundColor: event.data.payload.backgroundColor,
+        backgroundImage: event.data.payload.backgroundImage,
+        qrCode: event.data.payload.qrCode,
+        qrCodeText: event.data.payload.qrCodeText,
+        qrCodeFont: event.data.payload.qrCodeFont,
+        qrCodeColor: event.data.payload.qrCodeColor
+      }));
+    } else if (event.data && event.data.type === 'PARTICIPANT_JOINED') {
+      console.log('Participant joined via postMessage:', event.data);
+      
+      const { participantData } = event.data;
+      const { id, name, stream } = participantData;
+      
+      setBroadcastData(prev => {
+        // Check if participant already exists
+        const existingParticipantIndex = prev.participants.findIndex(p => p.id === id);
+        
+        if (existingParticipantIndex >= 0) {
+          // Update existing participant
+          const updatedParticipants = [...prev.participants];
+          updatedParticipants[existingParticipantIndex] = {
+            ...updatedParticipants[existingParticipantIndex],
+            name,
+            stream: stream || updatedParticipants[existingParticipantIndex].stream
+          };
+          return { ...prev, participants: updatedParticipants };
+        } else {
+          // Add new participant
+          return {
+            ...prev,
+            participants: [...prev.participants, {
+              id,
+              name,
+              stream: stream || null,
+              isVisible: true
+            }]
+          };
+        }
+      });
+    } else if (event.data && event.data.type === 'PARTICIPANT_LEFT') {
+      // Handle participant leaving
+      const { participantId } = event.data;
+      setBroadcastData(prev => ({
+        ...prev,
+        participants: prev.participants.filter(p => p.id !== participantId)
+      }));
+    }
+  }, []);
+  
   useEffect(() => {
     document.title = `Transmissão - ${sessionId}`;
-    
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'BROADCAST_DATA') {
-        console.log('Received broadcast data:', event.data.payload);
-        setBroadcastData(prev => ({
-          ...prev,
-          layout: event.data.payload.layout,
-          backgroundColor: event.data.payload.backgroundColor,
-          backgroundImage: event.data.payload.backgroundImage,
-          qrCode: event.data.payload.qrCode,
-          qrCodeText: event.data.payload.qrCodeText,
-          qrCodeFont: event.data.payload.qrCodeFont,
-          qrCodeColor: event.data.payload.qrCodeColor
-        }));
-      } else if (event.data && event.data.type === 'PARTICIPANT_JOINED') {
-        console.log('Participant joined via postMessage:', event.data);
-        // In a real WebRTC implementation, we would establish connections here
-        // For now, we'll simulate adding a participant
-        const { participantData } = event.data;
-        
-        // Create a mock video stream for demo purposes
-        // In a real implementation, this would come from WebRTC
-        const mockVideoStream = new MediaStream();
-        
-        setBroadcastData(prev => ({
-          ...prev,
-          participants: [...prev.participants, {
-            id: participantData.id,
-            name: participantData.name,
-            stream: mockVideoStream
-          }]
-        }));
-      } else if (event.data && event.data.type === 'PARTICIPANT_LEFT') {
-        // Handle participant leaving
-        const { participantId } = event.data;
-        setBroadcastData(prev => ({
-          ...prev,
-          participants: prev.participants.filter(p => p.id !== participantId)
-        }));
-      }
-    };
     
     window.addEventListener('message', handleMessage);
     
@@ -101,13 +116,13 @@ const LiveBroadcastPage = () => {
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [sessionId]);
+  }, [sessionId, handleMessage]);
   
   return (
     <div className="min-h-screen bg-black">
       <div className="fixed inset-0">
         <StreamPreview 
-          participants={broadcastData.participants.filter(p => p.isVisible !== false)}
+          participants={broadcastData.participants}
           layout={broadcastData.layout}
           backgroundColor={broadcastData.backgroundColor}
           backgroundImage={broadcastData.backgroundImage}

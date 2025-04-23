@@ -1,8 +1,7 @@
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { useToast } from '@/hooks/use-toast';
 import { Video } from 'lucide-react';
 import ParticipantsTab from '@/components/live/ParticipantsTab';
 import LayoutTab from '@/components/live/LayoutTab';
@@ -12,12 +11,10 @@ import StreamPreview from '@/components/live/StreamPreview';
 import { useLiveSession } from '@/hooks/useLiveSession';
 
 const LivePage = () => {
-  const { toast } = useToast();
   const { 
     startBroadcast, 
     stopBroadcast, 
     isLive, 
-    broadcastWindow,
     selectedParticipants,
     layout,
     backgroundColor,
@@ -26,8 +23,15 @@ const LivePage = () => {
     qrCodeText,
     qrCodeFont,
     qrCodeColor,
-    sessionId
+    sessionId,
+    isParticipantVisible
   } = useLiveSession();
+
+  // Filter participants by visibility for preview
+  const visibleParticipants = selectedParticipants.map(p => ({
+    ...p,
+    isVisible: isParticipantVisible(p.id)
+  }));
 
   return (
     <div className="container mx-auto px-6 py-8 max-w-7xl">
@@ -46,7 +50,7 @@ const LivePage = () => {
           </div>
           <div className="bg-black/50 rounded-lg overflow-hidden shadow-lg h-[500px] relative">
             <StreamPreview 
-              participants={selectedParticipants}
+              participants={visibleParticipants}
               layout={layout}
               backgroundColor={backgroundColor}
               backgroundImage={backgroundImage}

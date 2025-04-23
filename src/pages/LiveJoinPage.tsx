@@ -15,6 +15,7 @@ const LiveJoinPage = () => {
   const [participantName, setParticipantName] = useState(`Participante ${Math.floor(Math.random() * 1000)}`);
   const videoRef = useRef<HTMLVideoElement>(null);
   const connectionAttemptedRef = useRef(false);
+  const participantIdRef = useRef(`user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
   
   const {
     localStream,
@@ -42,21 +43,19 @@ const LiveJoinPage = () => {
           }
           setCameraPermission('granted');
           
-          // In a real implementation, we would connect to the WebRTC session here
-          // For now, let's simulate a connection with a timeout
+          // Notify the parent window that a new participant has joined with their stream
           setTimeout(() => {
             setConnected(true);
             toast({
               description: "Conectado à sessão com sucesso!",
             });
             
-            // Send stream to parent window if available
+            // Send participant data to parent window if available
             if (window.opener) {
               const participantData = {
-                id: `user-${Date.now()}`,
+                id: participantIdRef.current,
                 name: participantName,
-                // In a real implementation, we would establish WebRTC connections
-                // The stream would be sent via WebRTC, not postMessage
+                stream: stream // Now we're passing the actual stream
               };
               
               window.opener.postMessage({
@@ -65,7 +64,7 @@ const LiveJoinPage = () => {
                 participantData
               }, '*');
             }
-          }, 1500);
+          }, 1000);
         }
       } catch (err) {
         console.error('Error accessing camera:', err);
@@ -98,7 +97,7 @@ const LiveJoinPage = () => {
       window.opener.postMessage({
         type: 'PARTICIPANT_LEFT',
         sessionId,
-        participantId: `user-${Date.now()}`
+        participantId: participantIdRef.current
       }, '*');
     }
     

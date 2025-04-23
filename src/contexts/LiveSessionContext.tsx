@@ -1,3 +1,4 @@
+
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useToast } from '@/hooks/use-toast';
@@ -98,8 +99,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   
   const { 
     localStream,
-    isConnected,
-    initializeHostCamera
+    isConnected
   } = useWebRTC({
     sessionId,
     onNewParticipant: (participant) => {
@@ -242,10 +242,16 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
           return;
         }
         
+        // Convert participants with visibility status
+        const visibleSelectedParticipants = selectedParticipants.map(p => ({
+          ...p,
+          isVisible: visibleParticipants.has(p.id)
+        }));
+        
         newWindow.postMessage({
           type: 'BROADCAST_DATA',
           payload: {
-            participants: selectedParticipants.filter(p => visibleParticipants.has(p.id)),
+            participants: visibleSelectedParticipants,
             layout,
             backgroundColor,
             backgroundImage,
@@ -290,16 +296,8 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   }, [broadcastWindow]);
   
   useEffect(() => {
-    const mockParticipants: Participant[] = Array(10)
-      .fill(null)
-      .map((_, i) => ({
-        id: `user-${i + 1}`,
-        name: `Usuário ${i + 1}`,
-        stream: null
-      }));
-      
-    setParticipants(mockParticipants.slice(0, 8));
-    setWaitingList(mockParticipants.slice(8));
+    // We'll handle real participants through the postMessage API
+    // instead of creating mock participants
   }, []);
   
   useEffect(() => {
@@ -308,16 +306,31 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
         const { participantData, sessionId: incomingSessionId } = event.data;
         
         if (incomingSessionId === sessionId) {
-          console.log('Participant joined:', participantData);
+          console.log('Participant joined from QR code:', participantData);
           
           const newParticipant: Participant = {
             id: participantData.id,
             name: participantData.name,
-            stream: null
+            stream: participantData.stream || null
           };
           
-          if (participants.length < maxParticipants) {
-            setParticipants(prev => [...prev, newParticipant]);
+          // Add the participant to our state
+          setParticipants(prev => {
+            const exists = prev.some(p => p.id === newParticipant.id);
+            if (exists) {
+              return prev.map(p => p.id === newParticipant.id ? newParticipant : p);
+            } else {
+              return [...prev, newParticipant];
+            }
+          });
+          
+          // Auto-select the participant if we have room
+          if (selectedParticipants.length < layout) {
+            setSelectedParticipants(prev => {
+              const exists = prev.some(p => p.id === newParticipant.id);
+              return exists ? prev : [...prev, newParticipant];
+            });
+            setVisibleParticipants(prev => new Set([...prev, newParticipant.id]));
           } else {
             setWaitingList(prev => [...prev, newParticipant]);
           }
@@ -336,7 +349,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [sessionId, participants, maxParticipants]);
+  }, [sessionId, participants, maxParticipants, selectedParticipants.length, layout]);
   
   const value = {
     sessionId,
