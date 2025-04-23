@@ -11,9 +11,6 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import LightShowPage from "./pages/LightShowPage";
 import QuizPage from "./pages/QuizPage";
-import LivePage from "./pages/LivePage";
-import BroadcastPage from "./pages/BroadcastPage";
-import ParticipantPage from "./pages/ParticipantPage";
 import NotFound from "./pages/NotFound";
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -71,22 +68,11 @@ const AppRoutes = () => {
               </ProtectedRoute>
             } 
           />
-          <Route 
-            path="/live" 
-            element={
-              <ProtectedRoute>
-                <LivePage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route path="/broadcast" element={<BroadcastPage />} />
-          <Route path="/participant" element={<ParticipantPage />} />
           <Route path="*" element={<NotFound />} />
         </>
       ) : (
         <>
           <Route path="/auth" element={<Auth />} />
-          <Route path="/participant" element={<ParticipantPage />} />
           <Route path="*" element={<Navigate to="/auth" replace />} />
         </>
       )}
@@ -105,7 +91,6 @@ const App = () => {
             <Toaster />
             <Sonner />
             <div className="min-h-screen flex flex-col bg-black">
-              <Navbar />
               <AppRoutes />
             </div>
           </TooltipProvider>
