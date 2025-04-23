@@ -33,27 +33,6 @@ export type Database = {
         }
         Relationships: []
       }
-      sessions: {
-        Row: {
-          created_at: string
-          data: Json
-          id: string
-          last_updated: string
-        }
-        Insert: {
-          created_at?: string
-          data?: Json
-          id: string
-          last_updated?: string
-        }
-        Update: {
-          created_at?: string
-          data?: Json
-          id?: string
-          last_updated?: string
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never
