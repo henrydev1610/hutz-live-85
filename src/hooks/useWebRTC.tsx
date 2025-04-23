@@ -39,7 +39,7 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     ],
     iceCandidatePoolSize: 10,
     bundlePolicy: 'max-bundle' as RTCBundlePolicy,
-    rtcpMuxPolicy: 'require' as RTCMuxPolicy
+    rtcpMuxPolicy: 'require' as RTCRtcpMuxPolicy
   };
 
   const setH264Preference = (sdp: string) => {
