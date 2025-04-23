@@ -1,8 +1,8 @@
-
 export interface Participant {
   id: string;
   name: string;
   stream: MediaStream | null;
+  isVisible?: boolean;
 }
 
 export interface LiveSessionOptions {

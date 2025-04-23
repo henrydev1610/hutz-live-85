@@ -16,6 +16,8 @@ interface LiveSessionContextProps {
   selectParticipant: (id: string) => void;
   removeParticipant: (id: string) => void;
   maxParticipants: number;
+  toggleParticipantVisibility: (id: string) => void;
+  isParticipantVisible: (id: string) => boolean;
   
   // Layout management
   layout: number;
@@ -348,6 +350,8 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     selectParticipant,
     removeParticipant,
     maxParticipants,
+    toggleParticipantVisibility,
+    isParticipantVisible,
     
     layout,
     setLayout,
@@ -388,10 +392,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     isLive,
     startBroadcast,
     stopBroadcast,
-    broadcastWindow,
-    
-    toggleParticipantVisibility,
-    isParticipantVisible
+    broadcastWindow
   };
   
   return (
