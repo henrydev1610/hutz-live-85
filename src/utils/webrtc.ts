@@ -1,3 +1,4 @@
+
 import { formatParticipantForStore, getUpdatedParticipant } from './sessionUtils';
 import { io } from 'socket.io-client';
 import { useParticipantStore } from '@/stores/participantStore';
@@ -922,4 +923,69 @@ const createHostPeerConnection = async (sessionId: string, participantId: string
         console.log(`Adding track to peer connection: ${track.kind} (${track.id}), enabled: ${track.enabled}, readyState: ${track.readyState}`);
         activePeerConnections['host'].addTrack(track, localStream!);
       });
+    } catch (e) {
+      console.error("Error adding tracks to peer connection:", e);
     }
+  }
+};
+
+// Clean up WebRTC resources for a session
+export const cleanupWebRTC = () => {
+  console.log("Cleaning up WebRTC resources");
+  
+  // Close all peer connections
+  Object.keys(activePeerConnections).forEach(participantId => {
+    if (activePeerConnections[participantId]) {
+      activePeerConnections[participantId].close();
+    }
+  });
+  
+  // Reset state
+  activePeerConnections = {};
+  activeParticipants = {};
+  
+  // Stop all local streams
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+    localStream = null;
+  }
+  
+  // Close socket connection
+  if (socket) {
+    try {
+      socket.disconnect();
+    } catch (e) {
+      console.error("Error disconnecting socket:", e);
+    }
+    socket = null;
+  }
+};
+
+// Close the WebRTC session
+export const endWebRTC = (sessionId: string) => {
+  console.log(`Ending WebRTC session: ${sessionId}`);
+  
+  cleanupWebRTC();
+  
+  // Remove from active sessions
+  if (signalingSessions[sessionId]) {
+    delete signalingSessions[sessionId];
+  }
+  
+  // Reset session info
+  if (currentSessionId === sessionId) {
+    currentSessionId = null;
+  }
+};
+
+// Close a peer connection
+const closePeerConnection = (participantId: string) => {
+  console.log(`Closing peer connection for ${participantId}`);
+  if (activePeerConnections[participantId]) {
+    activePeerConnections[participantId].close();
+    delete activePeerConnections[participantId];
+  }
+};
+
+// Export for testing and diagnostic purposes
+export { activeParticipants };
