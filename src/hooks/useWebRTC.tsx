@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Participant } from '@/types/live';
 import { useToast } from '@/hooks/use-toast';
@@ -25,35 +24,37 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
   const connectionRef = useRef<PeerConnection[]>([]);
   const localStreamRef = useRef<MediaStream | null>(null);
   
-  // Enhanced configuration with multiple STUN servers for better connectivity
   const rtcConfig = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
       { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' }
+      { urls: 'stun:stun4.l.google.com:19302' },
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      }
     ],
     sdpSemantics: 'unified-plan',
-    iceCandidatePoolSize: 10
+    iceCandidatePoolSize: 10,
+    bundlePolicy: 'max-bundle',
+    rtcpMuxPolicy: 'require'
   };
-  
-  // Set H.264 codec preference for better compatibility
+
   const setH264Preference = (sdp: string) => {
-    // Split the SDP into lines
     const lines = sdp.split('\r\n');
-    // Find the video media section
     const videoMLineIndex = lines.findIndex(line => line.startsWith('m=video'));
     
     if (videoMLineIndex === -1) {
       return sdp;
     }
     
-    // Find all codec payload types
     let payloadTypes = [];
     for (let i = videoMLineIndex + 1; i < lines.length; i++) {
       if (lines[i].startsWith('m=')) {
-        break; // Next media section
+        break;
       }
       
       if (lines[i].indexOf('a=rtpmap:') === 0) {
@@ -65,7 +66,6 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       }
     }
     
-    // Find H.264 payload types
     const h264Types = payloadTypes
       .filter(pt => pt.line.indexOf('H264') !== -1)
       .map(pt => pt.pt);
@@ -75,22 +75,18 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       return sdp;
     }
     
-    // Reorder payload types in the m=video line to prioritize H.264
     const mLine = lines[videoMLineIndex].split(' ');
-    const mLineFormat = mLine.slice(0, 3); // Keep "m=video <port> <proto>"
+    const mLineFormat = mLine.slice(0, 3);
     let newPayloadOrder = h264Types;
     
-    // Add other payload types
     const otherTypes = mLine.slice(3).filter(pt => !h264Types.includes(pt));
     newPayloadOrder = [...newPayloadOrder, ...otherTypes];
     
-    // Construct new m=video line
     lines[videoMLineIndex] = [...mLineFormat, ...newPayloadOrder].join(' ');
     
     return lines.join('\r\n');
   };
 
-  // Initialize camera for host - with protection against multiple initializations
   const initializeHostCamera = useCallback(async () => {
     if (isInitializing || localStreamRef.current) {
       console.log('[useWebRTC] Camera already initializing or initialized');
@@ -128,7 +124,6 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     }
   }, [isInitializing, toast]);
   
-  // Initialize camera for participant - with protection against multiple initializations
   const initializeParticipantCamera = useCallback(async () => {
     if (isInitializing || localStreamRef.current) {
       console.log('[useWebRTC] Camera already initializing or initialized');
@@ -151,7 +146,6 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       console.log('[useWebRTC] Participant camera initialized successfully');
       
-      // Apply consistent video constraints
       stream.getVideoTracks().forEach(track => {
         const settings = {
           width: 1280,
@@ -183,74 +177,88 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     }
   }, [isInitializing, toast]);
   
-  // Create peer connection with enhanced error handling
   const createPeerConnection = useCallback((participantId: string) => {
     console.log(`[useWebRTC] Creating peer connection for ${participantId}`);
+    
     try {
       const peerConnection = new RTCPeerConnection(rtcConfig);
       
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
           console.log(`[useWebRTC] New ICE candidate for ${participantId}:`, event.candidate);
-          // In a real implementation, this would send the ICE candidate to the remote peer
         }
       };
       
       peerConnection.onconnectionstatechange = () => {
         console.log(`[useWebRTC] Connection state changed for ${participantId}:`, peerConnection.connectionState);
+        
         if (peerConnection.connectionState === 'connected') {
-          console.log(`[useWebRTC] Connection established with ${participantId}`);
+          console.log(`[useWebRTC] Successfully connected to ${participantId}`);
           setIsConnected(true);
         } else if (['failed', 'disconnected', 'closed'].includes(peerConnection.connectionState)) {
           console.log(`[useWebRTC] Connection ${peerConnection.connectionState} with ${participantId}`);
-          // Remove the connection
+          
           setConnections(prev => prev.filter(conn => conn.id !== participantId));
-          connectionRef.current = connectionRef.current.filter(conn => conn.id !== participantId);
           
           if (onParticipantLeft) {
             onParticipantLeft(participantId);
           }
+          
+          if (peerConnection.connectionState === 'disconnected') {
+            console.log(`[useWebRTC] Attempting to reconnect to ${participantId}`);
+            setTimeout(() => {
+              createPeerConnection(participantId);
+            }, 2000);
+          }
         }
+      };
+      
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log(`[useWebRTC] ICE connection state for ${participantId}:`, peerConnection.iceConnectionState);
       };
       
       peerConnection.ontrack = (event) => {
         console.log(`[useWebRTC] Received track from ${participantId}:`, event.streams[0]);
+        
         if (onNewParticipant && event.streams[0]) {
+          const stream = event.streams[0];
+          
+          stream.getTracks().forEach(track => {
+            track.onended = () => {
+              console.log(`[useWebRTC] Track ended for ${participantId}`);
+            };
+          });
+          
           onNewParticipant({
             id: participantId,
             name: `Participante ${participantId.substring(0, 5)}`,
-            stream: event.streams[0]
+            stream: stream
           });
         }
       };
       
-      // Add local stream tracks to the connection if available
       if (localStreamRef.current) {
-        console.log(`[useWebRTC] Adding ${localStreamRef.current.getTracks().length} tracks to connection for ${participantId}`);
+        console.log(`[useWebRTC] Adding local tracks to connection for ${participantId}`);
         localStreamRef.current.getTracks().forEach(track => {
           peerConnection.addTrack(track, localStreamRef.current!);
         });
-      } else {
-        console.warn(`[useWebRTC] No local stream available to add to connection for ${participantId}`);
       }
       
       const newConnection = { id: participantId, connection: peerConnection };
       setConnections(prev => [...prev, newConnection]);
-      connectionRef.current = [...connectionRef.current, newConnection];
       
       return peerConnection;
     } catch (error) {
       console.error(`[useWebRTC] Error creating peer connection for ${participantId}:`, error);
       toast({
-        title: 'Erro de conexão',
-        description: 'Não foi possível criar conexão com o participante.',
-        variant: 'destructive'
+        title: "Erro de conexão",
+        description: "Não foi possível estabelecer conexão com o participante.",
+        variant: "destructive"
       });
       return null;
     }
   }, [onNewParticipant, onParticipantLeft, rtcConfig, toast]);
   
-  // Create offer with H.264 preference
   const createOffer = useCallback(async (participantId: string) => {
     const peerConnection = createPeerConnection(participantId);
     if (!peerConnection) return null;
@@ -262,7 +270,6 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
         offerToReceiveVideo: true
       });
       
-      // Modify SDP to prefer H.264
       if (offer.sdp) {
         offer.sdp = setH264Preference(offer.sdp);
       }
@@ -280,7 +287,6 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     }
   }, [createPeerConnection, setH264Preference]);
   
-  // Process answer from remote peer
   const processAnswer = useCallback(async (participantId: string, answer: RTCSessionDescriptionInit) => {
     console.log(`[useWebRTC] Processing answer from ${participantId}`);
     const peerConnection = connections.find(conn => conn.id === participantId)?.connection;
@@ -298,7 +304,6 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     }
   }, [connections]);
   
-  // Process ICE candidate
   const processIceCandidate = useCallback(async (participantId: string, candidate: RTCIceCandidateInit) => {
     console.log(`[useWebRTC] Processing ICE candidate for ${participantId}`);
     const peerConnection = connections.find(conn => conn.id === participantId)?.connection;
@@ -316,7 +321,6 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     }
   }, [connections]);
   
-  // Clean up connections
   const cleanupConnections = useCallback(() => {
     console.log('[useWebRTC] Cleaning up all connections');
     connections.forEach(({ connection }) => {
@@ -337,7 +341,6 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     setIsInitializing(false);
   }, [connections]);
   
-  // Clean up on unmount
   useEffect(() => {
     return () => {
       cleanupConnections();

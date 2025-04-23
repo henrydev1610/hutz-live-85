@@ -33,65 +33,76 @@ const StreamPreview = ({
   qrCodeColor
 }: StreamPreviewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [visibleParticipants, setVisibleParticipants] = useState<Participant[]>([]);
   const videoRefs = useRef<{[key: string]: HTMLVideoElement | null}>({});
   
-  // Filter visible participants whenever the participants array changes
-  useEffect(() => {
-    // Filter out participants that are explicitly marked as not visible
-    const visible = participants.filter(p => p.isVisible !== false);
-    setVisibleParticipants(visible);
-    
-    console.log('[StreamPreview] All participants:', participants);
-    console.log('[StreamPreview] Visible participants:', visible);
-    
-    // Debug output to help identify why participants aren't showing
-    if (participants.length > 0 && visible.length === 0) {
-      console.error('[StreamPreview] Warning: There are participants but none are visible!');
-      participants.forEach(p => {
-        console.log(`Participant ${p.id} (${p.name}) visibility status: ${p.isVisible !== false ? 'Should be visible' : 'Hidden'}`);
-        console.log(`Participant ${p.id} has stream:`, !!p.stream);
-      });
-    }
-  }, [participants]);
+  // Track stream attachment status
+  const [streamStatus, setStreamStatus] = useState<{[key: string]: boolean}>({});
   
+  // Debug output for monitoring participants and their streams
+  useEffect(() => {
+    console.log('[StreamPreview] Received participants:', participants.map(p => ({
+      id: p.id,
+      name: p.name,
+      hasStream: !!p.stream,
+      isVisible: p.isVisible
+    })));
+  }, [participants]);
+
   // Attach streams to video elements when they change
   useEffect(() => {
-    console.log('[StreamPreview] Attaching streams to video elements. Participants count:', visibleParticipants.length);
+    console.log('[StreamPreview] Attempting to attach streams...');
     
-    visibleParticipants.forEach(participant => {
+    participants.forEach(participant => {
       const videoElement = videoRefs.current[participant.id];
-      if (videoElement && participant.stream && videoElement.srcObject !== participant.stream) {
-        console.log(`[StreamPreview] Setting stream for ${participant.id}:`, participant.stream);
-        videoElement.srcObject = participant.stream;
-        
-        videoElement.onloadedmetadata = () => {
-          console.log(`[StreamPreview] Video element loaded metadata for ${participant.id}`);
-        };
-        
-        // Force play if needed
-        videoElement.play().catch(err => {
-          console.error(`[StreamPreview] Error playing video for ${participant.id}:`, err);
-        });
-      } else if (!participant.stream) {
-        console.log(`[StreamPreview] No stream available for ${participant.id}`);
-      } else if (!videoElement) {
-        console.log(`[StreamPreview] No video element reference for ${participant.id}`);
+      
+      if (videoElement && participant.stream) {
+        // Only set stream if it's different from current
+        if (videoElement.srcObject !== participant.stream) {
+          console.log(`[StreamPreview] Attaching stream for ${participant.id}`);
+          videoElement.srcObject = participant.stream;
+          
+          videoElement.onloadedmetadata = () => {
+            console.log(`[StreamPreview] Stream loaded for ${participant.id}`);
+            setStreamStatus(prev => ({ ...prev, [participant.id]: true }));
+          };
+          
+          videoElement.onplay = () => {
+            console.log(`[StreamPreview] Stream playing for ${participant.id}`);
+          };
+          
+          videoElement.onerror = (e) => {
+            console.error(`[StreamPreview] Video error for ${participant.id}:`, e);
+            setStreamStatus(prev => ({ ...prev, [participant.id]: false }));
+          };
+          
+          // Force play if needed
+          videoElement.play().catch(err => {
+            console.error(`[StreamPreview] Error playing video for ${participant.id}:`, err);
+            setStreamStatus(prev => ({ ...prev, [participant.id]: false }));
+          });
+        }
+      } else {
+        if (!videoElement) {
+          console.log(`[StreamPreview] No video element for ${participant.id}`);
+        }
+        if (!participant.stream) {
+          console.log(`[StreamPreview] No stream for ${participant.id}`);
+        }
       }
     });
-  }, [visibleParticipants]);
-  
-  // Determine grid layout based on number of participants
+  }, [participants]);
+
+  // Determine grid layout based on number of visible participants
   const getGridClass = () => {
-    const count = visibleParticipants.length;
+    const visibleCount = participants.filter(p => p.isVisible !== false).length;
     
-    if (count <= 1) return "grid-cols-1";
-    if (count <= 2) return "grid-cols-2";
-    if (count <= 4) return "grid-cols-2";
-    if (count <= 9) return "grid-cols-3";
+    if (visibleCount <= 1) return "grid-cols-1";
+    if (visibleCount <= 2) return "grid-cols-2";
+    if (visibleCount <= 4) return "grid-cols-2";
+    if (visibleCount <= 9) return "grid-cols-3";
     return "grid-cols-4";
   };
-  
+
   return (
     <div 
       ref={containerRef}
@@ -103,7 +114,7 @@ const StreamPreview = ({
         backgroundPosition: 'center'
       }}
     >
-      {visibleParticipants.length === 0 ? (
+      {participants.length === 0 ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <p className="text-white/50 text-center px-4">
             Nenhum participante visível.
@@ -113,7 +124,7 @@ const StreamPreview = ({
         </div>
       ) : (
         <div className={`absolute inset-0 grid ${getGridClass()} gap-2 p-4`}>
-          {visibleParticipants.map((participant) => (
+          {participants.filter(p => p.isVisible !== false).map((participant) => (
             <div 
               key={participant.id} 
               className="aspect-video relative overflow-hidden rounded bg-black/40"
@@ -130,7 +141,6 @@ const StreamPreview = ({
                       videoRefs.current[participant.id] = element;
                       if (participant.stream && element.srcObject !== participant.stream) {
                         element.srcObject = participant.stream;
-                        console.log(`[StreamPreview] Setting stream for ${participant.id} in grid:`, participant.stream);
                       }
                     }
                   }}
@@ -144,7 +154,9 @@ const StreamPreview = ({
               )}
               <div className="absolute bottom-2 left-2 right-2 bg-black/50 px-2 py-1 text-xs rounded flex justify-between items-center">
                 <span>{participant.name}</span>
-                <span className={`h-2 w-2 rounded-full ${participant.stream ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${streamStatus[participant.id] ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                </div>
               </div>
             </div>
           ))}
