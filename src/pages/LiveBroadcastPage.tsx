@@ -1,16 +1,18 @@
+
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import StreamPreview from '@/components/live/StreamPreview';
+import { Participant } from '@/types/live';
 
 const LiveBroadcastPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [windowTitle, setWindowTitle] = useState('Hutz Live Broadcast');
   
   const [broadcastData, setBroadcastData] = useState({
-    participants: [],
+    participants: [] as Participant[],
     layout: 4,
     backgroundColor: '#000000',
-    backgroundImage: null,
+    backgroundImage: null as string | null,
     qrCode: {
       visible: false,
       image: '',
@@ -30,6 +32,7 @@ const LiveBroadcastPage = () => {
     
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'BROADCAST_DATA') {
+        console.log('Received broadcast data:', event.data.payload);
         setBroadcastData(event.data.payload);
       }
     };

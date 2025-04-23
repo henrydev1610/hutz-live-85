@@ -87,6 +87,7 @@ const QRCodeTab = () => {
                 variant="secondary"
                 onClick={copyJoinLink}
                 className="shrink-0"
+                title="Copiar link"
               >
                 <Copy className="h-4 w-4" />
               </Button>
@@ -159,6 +160,12 @@ const QRCodeTab = () => {
             ))}
           </div>
         </div>
+      </div>
+      
+      <div className="mt-4 border-t border-white/10 pt-4">
+        <p className="text-sm text-white/70">
+          <strong>Dica:</strong> Na tela de transmissão, você pode redimensionar o QR Code e o texto arrastando o canto inferior direito de cada elemento.
+        </p>
       </div>
     </div>
   );

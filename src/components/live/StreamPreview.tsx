@@ -35,6 +35,7 @@ const StreamPreview = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [qrCodeSize, setQrCodeSize] = useState(qrCode.size);
   const [textSize, setTextSize] = useState(16); // Default text size
+  const [resizing, setResizing] = useState(false);
 
   // Calculate grid layout based on number of visible participants
   const getGridTemplate = () => {
@@ -50,23 +51,79 @@ const StreamPreview = ({
   };
   
   const visibleParticipants = participants.slice(0, layout);
+
+  useEffect(() => {
+    const handleResizeMouseUp = () => {
+      if (resizing) {
+        setResizing(false);
+      }
+    };
+
+    document.addEventListener('mouseup', handleResizeMouseUp);
+    
+    return () => {
+      document.removeEventListener('mouseup', handleResizeMouseUp);
+    };
+  }, [resizing]);
   
-  const handleQRCodeResize = (e: React.MouseEvent, direction: string) => {
-    if (e.buttons !== 1) return; // Only resize on left click drag
-    const delta = direction === 'x' ? e.movementX : e.movementY;
-    setQrCodeSize(prev => Math.max(50, Math.min(400, prev + delta)));
+  const handleQRCodeResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizing(true);
+    
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startSize = qrCodeSize;
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!resizing) return;
+      
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+      const diagonal = Math.max(deltaX, deltaY);
+      
+      setQrCodeSize(Math.max(50, Math.min(400, startSize + diagonal)));
+    };
+    
+    const handleMouseUp = () => {
+      setResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
   };
 
   const handleTextResize = (e: React.MouseEvent) => {
-    if (e.buttons !== 1) return;
-    const delta = e.movementY;
-    setTextSize(prev => Math.max(12, Math.min(48, prev - delta * 0.5)));
+    e.preventDefault();
+    e.stopPropagation();
+    setResizing(true);
+    
+    const startY = e.clientY;
+    const startSize = textSize;
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!resizing) return;
+      
+      const deltaY = moveEvent.clientY - startY;
+      setTextSize(Math.max(12, Math.min(48, startSize - deltaY * 0.1)));
+    };
+    
+    const handleMouseUp = () => {
+      setResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
   };
 
   return (
     <div 
       ref={containerRef}
-      className="w-full h-full relative overflow-hidden grid grid-cols-3 gap-4 p-4"
+      className="w-full h-full relative overflow-hidden flex"
       style={{
         backgroundColor: backgroundColor,
         backgroundImage: backgroundImage ? `url(${backgroundImage})` : 'none',
@@ -74,11 +131,11 @@ const StreamPreview = ({
         backgroundPosition: 'center'
       }}
     >
-      {/* Left side - empty or content */}
-      <div className="col-span-1">
+      {/* Left side - QR Code and text - 1/3 of screen */}
+      <div className="w-1/3 p-4 relative">
         {/* QR Code */}
         {qrCode.visible && (
-          <Draggable bounds="parent">
+          <Draggable bounds="parent" cancel=".resize-handle">
             <div 
               className="absolute cursor-move"
               style={{
@@ -90,8 +147,8 @@ const StreamPreview = ({
             >
               <img src={qrCode.image} alt="QR Code" className="w-full h-full" />
               <div 
-                className="absolute right-0 bottom-0 w-4 h-4 cursor-se-resize"
-                onMouseMove={(e) => handleQRCodeResize(e, 'x')}
+                className="absolute right-0 bottom-0 w-6 h-6 bg-white/10 hover:bg-white/30 rounded-bl resize-handle cursor-se-resize"
+                onMouseDown={handleQRCodeResize}
               />
             </div>
           </Draggable>
@@ -99,7 +156,7 @@ const StreamPreview = ({
         
         {/* QR Code Text */}
         {qrCode.visible && qrCodeText.text && (
-          <Draggable bounds="parent">
+          <Draggable bounds="parent" cancel=".resize-handle">
             <div 
               className="absolute px-2 py-1 cursor-move"
               style={{
@@ -112,39 +169,41 @@ const StreamPreview = ({
             >
               {qrCodeText.text}
               <div 
-                className="absolute right-0 bottom-0 w-4 h-4 cursor-ns-resize"
-                onMouseMove={handleTextResize}
+                className="absolute right-0 bottom-0 w-5 h-5 bg-white/10 hover:bg-white/30 rounded-bl resize-handle cursor-ns-resize"
+                onMouseDown={handleTextResize}
               />
             </div>
           </Draggable>
         )}
       </div>
 
-      {/* Right side - Participants grid */}
-      <div className={`col-span-2 grid ${getGridTemplate()} gap-2`}>
-        {visibleParticipants.map((participant) => (
-          <div 
-            key={participant.id} 
-            className="aspect-square relative overflow-hidden rounded bg-black/40"
-          >
-            {participant.stream && (
-              <video
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-                ref={(element) => {
-                  if (element && participant.stream) {
-                    element.srcObject = participant.stream;
-                  }
-                }}
-              />
-            )}
-            <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 text-xs rounded">
-              {participant.name}
+      {/* Right side - Participants grid - 2/3 of screen */}
+      <div className="w-2/3 p-4">
+        <div className={`grid ${getGridTemplate()} gap-3 h-full`}>
+          {visibleParticipants.map((participant) => (
+            <div 
+              key={participant.id} 
+              className="aspect-square relative overflow-hidden rounded bg-black/40"
+            >
+              {participant.stream && (
+                <video
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                  ref={(element) => {
+                    if (element && participant.stream) {
+                      element.srcObject = participant.stream;
+                    }
+                  }}
+                />
+              )}
+              <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 text-xs rounded">
+                {participant.name}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

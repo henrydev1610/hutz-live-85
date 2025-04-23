@@ -20,7 +20,7 @@ const LiveJoinPage = () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ 
           video: { facingMode: "user" },
-          audio: false 
+          audio: true 
         });
         
         streamRef.current = stream;
@@ -32,11 +32,34 @@ const LiveJoinPage = () => {
         setCameraPermission('granted');
         
         // In a real implementation, we would connect to the WebRTC session here
+        // For now, let's simulate a connection with a setTimeout
         setTimeout(() => {
           setConnected(true);
           toast({
             description: "Conectado à sessão com sucesso!",
           });
+          
+          // Send stream to parent window if available
+          if (window.opener) {
+            const participantData = {
+              id: `user-${Date.now()}`,
+              name: `Participante ${Math.floor(Math.random() * 1000)}`,
+              stream: stream
+            };
+            
+            // Since we can't send MediaStream directly via postMessage,
+            // in a real implementation, we would use WebRTC to establish
+            // peer connections. For now, we'll just send the connection info
+            window.opener.postMessage({
+              type: 'PARTICIPANT_JOINED',
+              sessionId,
+              participantData: {
+                id: participantData.id,
+                name: participantData.name
+                // Stream would be established via WebRTC
+              }
+            }, '*');
+          }
         }, 1500);
         
       } catch (err) {
@@ -66,13 +89,18 @@ const LiveJoinPage = () => {
 
   const handleLeaveSession = () => {
     // In a real implementation, we would disconnect from the WebRTC session here
+    if (window.opener) {
+      window.opener.postMessage({
+        type: 'PARTICIPANT_LEFT',
+        sessionId
+      }, '*');
+    }
     
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
     }
     
-    // Show the Call to Action (in a real implementation)
-    // For now just navigate back to dashboard
+    // Navigate back to dashboard
     navigate('/dashboard');
   };
 
