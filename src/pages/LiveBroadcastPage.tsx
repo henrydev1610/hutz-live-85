@@ -33,14 +33,14 @@ const LiveBroadcastPage = () => {
   } = useWebRTC({
     sessionId: sessionId || null,
     onNewParticipant: (participant) => {
-      console.log('New participant joined:', participant);
+      console.log('[LiveBroadcastPage] New participant joined:', participant);
       setBroadcastData(prev => ({
         ...prev,
         participants: [...prev.participants.filter(p => p.id !== participant.id), participant]
       }));
     },
     onParticipantLeft: (participantId) => {
-      console.log('Participant left:', participantId);
+      console.log('[LiveBroadcastPage] Participant left:', participantId);
       setBroadcastData(prev => ({
         ...prev,
         participants: prev.participants.filter(p => p.id !== participantId)
@@ -50,8 +50,10 @@ const LiveBroadcastPage = () => {
   
   // Handle incoming messages from parent window
   const handleMessage = useCallback((event: MessageEvent) => {
-    if (event.data && event.data.type === 'BROADCAST_DATA') {
-      console.log('Received broadcast data:', event.data.payload);
+    if (!event.data) return;
+    
+    if (event.data.type === 'BROADCAST_DATA') {
+      console.log('[LiveBroadcastPage] Received broadcast data:', event.data.payload);
       setBroadcastData(prev => ({
         ...prev,
         layout: event.data.payload.layout,
@@ -60,25 +62,32 @@ const LiveBroadcastPage = () => {
         qrCode: event.data.payload.qrCode,
         qrCodeText: event.data.payload.qrCodeText,
         qrCodeFont: event.data.payload.qrCodeFont,
-        qrCodeColor: event.data.payload.qrCodeColor
+        qrCodeColor: event.data.payload.qrCodeColor,
+        participants: [
+          ...event.data.payload.participants,
+          ...prev.participants.filter(p => !event.data.payload.participants.some((ep: Participant) => ep.id === p.id))
+        ]
       }));
-    } else if (event.data && event.data.type === 'PARTICIPANT_JOINED') {
-      console.log('Participant joined via postMessage:', event.data);
+    } 
+    else if (event.data.type === 'PARTICIPANT_JOINED') {
+      console.log('[LiveBroadcastPage] Participant joined via postMessage:', event.data);
       
       const { participantData } = event.data;
-      const { id, name, stream } = participantData;
+      
+      if (!participantData) return;
       
       setBroadcastData(prev => {
         // Check if participant already exists
-        const existingParticipantIndex = prev.participants.findIndex(p => p.id === id);
+        const existingParticipantIndex = prev.participants.findIndex(p => p.id === participantData.id);
         
         if (existingParticipantIndex >= 0) {
           // Update existing participant
           const updatedParticipants = [...prev.participants];
           updatedParticipants[existingParticipantIndex] = {
             ...updatedParticipants[existingParticipantIndex],
-            name,
-            stream: stream || updatedParticipants[existingParticipantIndex].stream
+            name: participantData.name,
+            stream: participantData.stream || updatedParticipants[existingParticipantIndex].stream,
+            isVisible: participantData.isVisible
           };
           return { ...prev, participants: updatedParticipants };
         } else {
@@ -86,15 +95,16 @@ const LiveBroadcastPage = () => {
           return {
             ...prev,
             participants: [...prev.participants, {
-              id,
-              name,
-              stream: stream || null,
-              isVisible: true
+              id: participantData.id,
+              name: participantData.name,
+              stream: participantData.stream || null,
+              isVisible: participantData.isVisible !== undefined ? participantData.isVisible : true
             }]
           };
         }
       });
-    } else if (event.data && event.data.type === 'PARTICIPANT_LEFT') {
+    } 
+    else if (event.data.type === 'PARTICIPANT_LEFT') {
       // Handle participant leaving
       const { participantId } = event.data;
       setBroadcastData(prev => ({
@@ -117,6 +127,11 @@ const LiveBroadcastPage = () => {
       window.removeEventListener('message', handleMessage);
     };
   }, [sessionId, handleMessage]);
+  
+  // Log active participants to help debug
+  useEffect(() => {
+    console.log('[LiveBroadcastPage] Current participants:', broadcastData.participants);
+  }, [broadcastData.participants]);
   
   return (
     <div className="min-h-screen bg-black">

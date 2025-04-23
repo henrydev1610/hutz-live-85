@@ -1,5 +1,5 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Participant } from '@/types/live';
 import Draggable from 'react-draggable';
 
@@ -33,8 +33,14 @@ const StreamPreview = ({
   qrCodeColor
 }: StreamPreviewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [visibleParticipants, setVisibleParticipants] = useState<Participant[]>([]);
   
-  const visibleParticipants = participants.filter(p => p.isVisible !== false);
+  // Filter visible participants whenever the participants array changes
+  useEffect(() => {
+    setVisibleParticipants(participants.filter(p => p.isVisible !== false));
+    console.log('[StreamPreview] Participants:', participants);
+    console.log('[StreamPreview] Visible participants:', participants.filter(p => p.isVisible !== false));
+  }, [participants]);
   
   // Determine grid layout based on number of participants
   const getGridClass = () => {
@@ -58,38 +64,48 @@ const StreamPreview = ({
         backgroundPosition: 'center'
       }}
     >
-      <div className={`absolute inset-0 grid ${getGridClass()} gap-2 p-4`}>
-        {visibleParticipants.map((participant) => (
-          <div 
-            key={participant.id} 
-            className="aspect-video relative overflow-hidden rounded bg-black/40"
-          >
-            {participant.stream ? (
-              <video
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-                ref={(element) => {
-                  if (element && participant.stream) {
-                    element.srcObject = participant.stream;
-                  }
-                }}
-              />
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <div className="bg-secondary/60 rounded-full p-6">
-                  {participant.name.charAt(0).toUpperCase()}
+      {visibleParticipants.length === 0 ? (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <p className="text-white/50 text-center px-4">
+            Nenhum participante visível.
+            <br />
+            Adicione participantes para iniciar a transmissão.
+          </p>
+        </div>
+      ) : (
+        <div className={`absolute inset-0 grid ${getGridClass()} gap-2 p-4`}>
+          {visibleParticipants.map((participant) => (
+            <div 
+              key={participant.id} 
+              className="aspect-video relative overflow-hidden rounded bg-black/40"
+            >
+              {participant.stream ? (
+                <video
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                  ref={(element) => {
+                    if (element && participant.stream) {
+                      element.srcObject = participant.stream;
+                    }
+                  }}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="bg-secondary/60 rounded-full p-6">
+                    {participant.name.charAt(0).toUpperCase()}
+                  </div>
                 </div>
+              )}
+              <div className="absolute bottom-2 left-2 right-2 bg-black/50 px-2 py-1 text-xs rounded flex justify-between items-center">
+                <span>{participant.name}</span>
+                <span className={`h-2 w-2 rounded-full ${participant.stream ? 'bg-green-500' : 'bg-gray-500'}`}></span>
               </div>
-            )}
-            <div className="absolute bottom-2 left-2 right-2 bg-black/50 px-2 py-1 text-xs rounded flex justify-between items-center">
-              <span>{participant.name}</span>
-              <span className={`h-2 w-2 rounded-full ${participant.stream ? 'bg-green-500' : 'bg-gray-500'}`}></span>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {qrCode.visible && (
         <Draggable bounds="parent">

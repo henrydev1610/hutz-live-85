@@ -55,7 +55,7 @@ const LiveJoinPage = () => {
               const participantData = {
                 id: participantIdRef.current,
                 name: participantName,
-                stream: stream // Now we're passing the actual stream
+                stream: null // We can't send MediaStream via postMessage, will update later
               };
               
               window.opener.postMessage({
@@ -63,6 +63,19 @@ const LiveJoinPage = () => {
                 sessionId,
                 participantData
               }, '*');
+              
+              // Now send a separate message specifically for stream handling
+              // This is needed because we can't send MediaStream in the same message
+              try {
+                window.opener.postMessage({
+                  type: 'PARTICIPANT_STREAM',
+                  sessionId,
+                  participantId: participantIdRef.current,
+                  hasStream: !!stream
+                }, '*');
+              } catch (err) {
+                console.error('Error sending stream notification:', err);
+              }
             }
           }, 1000);
         }
