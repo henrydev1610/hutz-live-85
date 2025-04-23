@@ -14,18 +14,26 @@ const LiveJoinPage = () => {
   const [connected, setConnected] = useState(false);
   const [participantName, setParticipantName] = useState(`Participante ${Math.floor(Math.random() * 1000)}`);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const connectionAttemptedRef = useRef(false);
   
   const {
     localStream,
     isConnected,
+    isInitializing,
     initializeParticipantCamera
   } = useWebRTC({
     sessionId: sessionId || null
   });
   
-  // Request camera permission on component mount
+  // Request camera permission on component mount - but only once
   useEffect(() => {
     const requestCamera = async () => {
+      if (connectionAttemptedRef.current) {
+        return; // Prevent multiple initialization attempts
+      }
+      
+      connectionAttemptedRef.current = true;
+      
       try {
         const stream = await initializeParticipantCamera();
         if (stream) {
@@ -70,19 +78,27 @@ const LiveJoinPage = () => {
       }
     };
 
-    if (sessionId) {
+    if (sessionId && !connectionAttemptedRef.current && !isInitializing) {
       requestCamera();
-    } else {
+    } else if (!sessionId) {
       navigate('/');
     }
-  }, [sessionId, navigate, toast, initializeParticipantCamera, participantName]);
+  }, [sessionId, navigate, toast, initializeParticipantCamera, participantName, isInitializing]);
+
+  // Ensure video element always shows the same stream reference
+  useEffect(() => {
+    if (localStream && videoRef.current) {
+      videoRef.current.srcObject = localStream;
+    }
+  }, [localStream]);
 
   const handleLeaveSession = () => {
     // Notify that participant has left
     if (window.opener) {
       window.opener.postMessage({
         type: 'PARTICIPANT_LEFT',
-        sessionId
+        sessionId,
+        participantId: `user-${Date.now()}`
       }, '*');
     }
     
@@ -124,7 +140,11 @@ const LiveJoinPage = () => {
                   <Button 
                     variant="outline" 
                     className="mt-4"
-                    onClick={() => window.location.reload()}
+                    onClick={() => {
+                      connectionAttemptedRef.current = false;
+                      setCameraPermission('pending');
+                      window.location.reload();
+                    }}
                   >
                     Tentar novamente
                   </Button>

@@ -42,15 +42,8 @@ const StreamPreview = ({
 
   // Calculate grid layout based on number of visible participants
   const getGridTemplate = () => {
-    const count = Math.min(participants.length, layout);
-    if (count <= 1) return 'grid-cols-1';
-    if (count <= 2) return 'grid-cols-2';
-    if (count <= 4) return 'grid-cols-2 grid-rows-2';
-    if (count <= 6) return 'grid-cols-3 grid-rows-2';
-    if (count <= 9) return 'grid-cols-3 grid-rows-3';
-    if (count <= 12) return 'grid-cols-4 grid-rows-3';
-    if (count <= 16) return 'grid-cols-4 grid-rows-4';
-    return 'grid-cols-4 grid-rows-5'; // For 17-20 participants
+    // Always use 4 participants per row for consistency
+    return 'grid-cols-4';
   };
   
   const visibleParticipants = participants.slice(0, layout);
@@ -163,13 +156,13 @@ const StreamPreview = ({
 
       {/* Right side - Participants grid - 2/3 of screen */}
       <div className="w-2/3 p-4">
-        <div className={`grid ${getGridTemplate()} gap-3 h-full`}>
+        <div className={`grid ${getGridTemplate()} gap-2 h-full`}>
           {visibleParticipants.map((participant) => (
             <div 
               key={participant.id} 
               className="aspect-square relative overflow-hidden rounded bg-black/40"
             >
-              {participant.stream && (
+              {participant.stream ? (
                 <video
                   autoPlay
                   playsInline
@@ -181,9 +174,16 @@ const StreamPreview = ({
                     }
                   }}
                 />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="bg-secondary/60 rounded-full p-6">
+                    {participant.name.charAt(0).toUpperCase()}
+                  </div>
+                </div>
               )}
-              <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 text-xs rounded">
-                {participant.name}
+              <div className="absolute bottom-2 left-2 right-2 bg-black/50 px-2 py-1 text-xs rounded flex justify-between items-center">
+                <span>{participant.name}</span>
+                <span className={`h-2 w-2 rounded-full ${participant.stream ? 'bg-green-500' : 'bg-gray-500'}`}></span>
               </div>
             </div>
           ))}

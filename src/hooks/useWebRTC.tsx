@@ -20,8 +20,10 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
   const [connections, setConnections] = useState<PeerConnection[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isHost, setIsHost] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
   
   const connectionRef = useRef<PeerConnection[]>([]);
+  const localStreamRef = useRef<MediaStream | null>(null);
   
   // Configuration with H.264 codec preference
   const rtcConfig = {
@@ -29,7 +31,8 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' }
     ],
-    sdpSemantics: 'unified-plan'
+    sdpSemantics: 'unified-plan',
+    iceCandidatePoolSize: 10
   };
   
   // Set H.264 codec preference
@@ -84,9 +87,16 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     return lines.join('\r\n');
   };
 
-  // Initialize camera for host
+  // Initialize camera for host - with protection against multiple initializations
   const initializeHostCamera = async () => {
+    if (isInitializing || localStreamRef.current) {
+      console.log('Camera already initializing or initialized');
+      return localStreamRef.current;
+    }
+    
     try {
+      setIsInitializing(true);
+      
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
@@ -96,11 +106,14 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
         audio: true
       });
       
+      localStreamRef.current = stream;
       setLocalStream(stream);
       setIsHost(true);
+      setIsInitializing(false);
       return stream;
     } catch (err) {
       console.error('Error accessing media devices:', err);
+      setIsInitializing(false);
       toast({
         title: 'Erro de câmera',
         description: 'Não foi possível acessar a câmera ou microfone.',
@@ -110,23 +123,51 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     }
   };
   
-  // Initialize camera for participant
+  // Initialize camera for participant - with protection against multiple initializations
   const initializeParticipantCamera = async () => {
+    if (isInitializing || localStreamRef.current) {
+      console.log('Camera already initializing or initialized');
+      return localStreamRef.current;
+    }
+    
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      setIsInitializing(true);
+      
+      const constraints = {
         video: {
           width: { ideal: 1280 },
           height: { ideal: 720 },
           facingMode: 'user'
         },
         audio: true
+      };
+      
+      // Add codec preference for browsers that support it
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      // Apply consistent video constraints
+      stream.getVideoTracks().forEach(track => {
+        const settings = {
+          width: 1280,
+          height: 720,
+          frameRate: 30
+        };
+        
+        try {
+          track.applyConstraints(settings);
+        } catch (e) {
+          console.warn('Could not apply ideal constraints:', e);
+        }
       });
       
+      localStreamRef.current = stream;
       setLocalStream(stream);
       setIsHost(false);
+      setIsInitializing(false);
       return stream;
     } catch (err) {
       console.error('Error accessing media devices:', err);
+      setIsInitializing(false);
       toast({
         title: 'Erro de câmera',
         description: 'Não foi possível acessar a câmera ou microfone.',
@@ -177,9 +218,9 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     };
     
     // Add local stream tracks to the connection
-    if (localStream) {
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStreamRef.current!);
       });
     }
     
@@ -253,14 +294,18 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       connection.close();
     });
     
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+      });
+      localStreamRef.current = null;
     }
     
     setConnections([]);
     connectionRef.current = [];
     setLocalStream(null);
     setIsConnected(false);
+    setIsInitializing(false);
   };
   
   // Clean up on unmount
@@ -275,6 +320,7 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     connections,
     isConnected,
     isHost,
+    isInitializing,
     initializeHostCamera,
     initializeParticipantCamera,
     createPeerConnection,

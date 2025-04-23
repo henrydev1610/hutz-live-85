@@ -26,16 +26,17 @@ const ParticipantsTab = () => {
       
       {participants.length > 0 ? (
         <ScrollArea className="h-[400px] pr-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-4 gap-2">
             {participants.map(participant => {
               const isSelected = selectedParticipants.some(p => p.id === participant.id);
+              const isOnline = participant.stream !== null;
               
               return (
                 <div 
                   key={participant.id} 
                   className={`relative rounded-lg overflow-hidden border aspect-square ${isSelected ? 'border-accent' : 'border-white/10'}`}
                 >
-                  {participant.stream && (
+                  {participant.stream ? (
                     <video
                       autoPlay
                       playsInline
@@ -47,10 +48,19 @@ const ParticipantsTab = () => {
                         }
                       }}
                     />
+                  ) : (
+                    <div className="flex items-center justify-center h-full bg-black">
+                      <div className="bg-secondary/60 rounded-full p-4 text-sm">
+                        {participant.name.charAt(0).toUpperCase()}
+                      </div>
+                    </div>
                   )}
                   <div className="absolute bottom-0 left-0 right-0 p-2 bg-secondary/80">
                     <div className="flex justify-between items-center">
-                      <p className="text-sm truncate">{participant.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs truncate">{participant.name}</p>
+                        <span className={`h-2 w-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                      </div>
                       {isSelected ? (
                         <Button 
                           variant="ghost" 
@@ -91,8 +101,9 @@ const ParticipantsTab = () => {
           <ScrollArea className="h-[100px]">
             <div className="grid grid-cols-4 gap-2">
               {waitingList.map(participant => (
-                <div key={participant.id} className="text-xs p-2 bg-secondary rounded truncate">
-                  {participant.name}
+                <div key={participant.id} className="text-xs p-2 bg-secondary rounded truncate flex justify-between items-center">
+                  <span>{participant.name}</span>
+                  <span className="h-2 w-2 rounded-full bg-yellow-500"></span>
                 </div>
               ))}
             </div>
