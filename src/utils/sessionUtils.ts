@@ -1,5 +1,5 @@
 
-import { useParticipantStore } from '@/stores/participantStore';
+import type { Participant } from '@/stores/participantStore';
 
 export interface SessionParticipant {
   id: string;
@@ -8,45 +8,40 @@ export interface SessionParticipant {
   lastActive: number;
 }
 
-// Add a participant to the session
-export const addParticipantToSession = (
-  sessionId: string,
+// Convert SessionParticipant to store Participant format
+export const formatParticipantForStore = (
   participant: SessionParticipant
-): void => {
-  try {
-    const { addParticipant } = useParticipantStore.getState();
-    
-    addParticipant({
-      id: participant.id,
-      hasVideo: participant.hasVideo,
-      active: true,
-      selected: false,
-      lastActive: Date.now()
-    });
-    
-  } catch (error) {
-    console.error('Error adding participant to session:', error);
-  }
+): Participant => {
+  return {
+    id: participant.id,
+    hasVideo: participant.hasVideo,
+    active: true,
+    selected: false,
+    lastActive: Date.now()
+  };
 };
 
-// Update a participant's status
-export const updateParticipantStatus = (
-  sessionId: string,
-  participantId: string,
+// Helper function to safely handle participant updates
+export const getUpdatedParticipant = (
+  currentParticipant: Participant | undefined,
   updates: Partial<SessionParticipant>
-): void => {
-  try {
-    const { participants, addParticipant } = useParticipantStore.getState();
-    
-    if (participants[participantId]) {
-      addParticipant({
-        ...participants[participantId],
-        ...updates,
-        id: participantId,
-        lastActive: Date.now()
-      });
-    }
-  } catch (error) {
-    console.error('Error updating participant status:', error);
+): Participant => {
+  if (!currentParticipant) {
+    // Create new participant if it doesn't exist
+    return {
+      id: updates.id || '',
+      hasVideo: updates.hasVideo || false,
+      active: updates.active || false,
+      selected: false,
+      lastActive: Date.now()
+    };
   }
+
+  // Update existing participant
+  return {
+    ...currentParticipant,
+    ...updates,
+    id: currentParticipant.id, // Always preserve the original ID
+    lastActive: Date.now()
+  };
 };
