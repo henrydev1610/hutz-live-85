@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Check, X, Eye, EyeOff, RefreshCcw } from 'lucide-react';
-import { useLiveSession } from '@/hooks/useLiveSession';
+import { useLiveSession } from '@/contexts/LiveSessionContext';
 import { useToast } from '@/hooks/use-toast';
 
 const ParticipantsTab = () => {

@@ -1,10 +1,9 @@
-
 import { useState, useRef } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { useLiveSession } from '@/hooks/useLiveSession';
+import { useLiveSession } from '@/contexts/LiveSessionContext';
 
 const LayoutTab = () => {
   const inputRef = useRef<HTMLInputElement>(null);

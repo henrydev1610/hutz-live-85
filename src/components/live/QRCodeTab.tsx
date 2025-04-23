@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { QrCode, Link, Copy } from 'lucide-react';
-import { useLiveSession } from '@/hooks/useLiveSession';
+import { useLiveSession } from '@/contexts/LiveSessionContext';
 import { useToast } from '@/hooks/use-toast';
 
 const QRCodeTab = () => {

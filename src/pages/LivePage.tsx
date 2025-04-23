@@ -8,7 +8,7 @@ import LayoutTab from '@/components/live/LayoutTab';
 import QRCodeTab from '@/components/live/QRCodeTab';
 import CallToActionTab from '@/components/live/CallToActionTab';
 import StreamPreview from '@/components/live/StreamPreview';
-import { useLiveSession } from '@/hooks/useLiveSession';
+import { useLiveSession } from '@/contexts/LiveSessionContext';
 
 const LivePage = () => {
   const [initialized, setInitialized] = useState(false);
