@@ -65,6 +65,10 @@ const StreamPreview = ({
         console.log(`[StreamPreview] Setting stream for ${participant.id}:`, participant.stream);
         videoElement.srcObject = participant.stream;
         
+        videoElement.onloadedmetadata = () => {
+          console.log(`[StreamPreview] Video element loaded metadata for ${participant.id}`);
+        };
+        
         // Force play if needed
         videoElement.play().catch(err => {
           console.error(`[StreamPreview] Error playing video for ${participant.id}:`, err);
@@ -116,6 +120,7 @@ const StreamPreview = ({
             >
               {participant.stream ? (
                 <video
+                  id={`video-${participant.id}`}
                   autoPlay
                   playsInline
                   muted

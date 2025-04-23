@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Camera, CircleCheck, LogOut, X } from 'lucide-react';
@@ -31,6 +31,7 @@ const LiveJoinPage = () => {
   useEffect(() => {
     const requestCamera = async () => {
       if (connectionAttemptedRef.current) {
+        console.log('[LiveJoinPage] Connection was already attempted, skipping');
         return; // Prevent multiple initialization attempts
       }
       
@@ -41,6 +42,7 @@ const LiveJoinPage = () => {
         const stream = await initializeParticipantCamera();
         if (stream) {
           if (videoRef.current) {
+            console.log('[LiveJoinPage] Setting stream to video element');
             videoRef.current.srcObject = stream;
           }
           setCameraPermission('granted');
@@ -76,7 +78,7 @@ const LiveJoinPage = () => {
                 hasStream: !!stream
               }, '*');
               
-              // Repeat sending the participant joined message every few seconds to ensure it's received
+              // Use a more frequent interval to ensure messages are received
               const intervalId = setInterval(() => {
                 if (window.opener && !window.opener.closed) {
                   console.log('[LiveJoinPage] Resending participant joined message');
@@ -88,10 +90,18 @@ const LiveJoinPage = () => {
                       name: participantName // Make sure the current name is sent
                     }
                   }, '*');
+                  
+                  // Also resend stream status
+                  window.opener.postMessage({
+                    type: 'PARTICIPANT_STREAM',
+                    sessionId,
+                    participantId: participantIdRef.current,
+                    hasStream: !!stream
+                  }, '*');
                 } else {
                   clearInterval(intervalId);
                 }
-              }, 5000);
+              }, 3000); // More frequent updates
             } else {
               console.error('[LiveJoinPage] No opener window found');
               toast({
@@ -103,7 +113,7 @@ const LiveJoinPage = () => {
           }, 1000);
         }
       } catch (err) {
-        console.error('Error accessing camera:', err);
+        console.error('[LiveJoinPage] Error accessing camera:', err);
         setCameraPermission('denied');
         toast({
           title: "Acesso à câmera negado",
@@ -122,20 +132,24 @@ const LiveJoinPage = () => {
   }, [sessionId, navigate, toast, initializeParticipantCamera, isInitializing]);
 
   // Update name in parent window when changed
-  useEffect(() => {
+  const handleNameChange = useCallback((newName: string) => {
+    setParticipantName(newName);
+    
     if (connected && window.opener && !window.opener.closed) {
+      console.log(`[LiveJoinPage] Sending updated name: ${newName}`);
       window.opener.postMessage({
         type: 'PARTICIPANT_NAME_CHANGED',
         sessionId,
         participantId: participantIdRef.current,
-        name: participantName
+        name: newName
       }, '*');
     }
-  }, [participantName, connected, sessionId]);
+  }, [connected, sessionId]);
 
   // Ensure video element always shows the same stream reference
   useEffect(() => {
-    if (localStream && videoRef.current) {
+    if (localStream && videoRef.current && videoRef.current.srcObject !== localStream) {
+      console.log('[LiveJoinPage] Updating video element with current stream');
       videoRef.current.srcObject = localStream;
     }
   }, [localStream]);
@@ -171,6 +185,15 @@ const LiveJoinPage = () => {
     
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      
+      // Also send a leave message when component unmounts
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'PARTICIPANT_LEFT',
+          sessionId,
+          participantId: participantIdRef.current
+        }, '*');
+      }
     };
   }, [sessionId]);
 
@@ -192,7 +215,7 @@ const LiveJoinPage = () => {
           <Input
             id="participant-name"
             value={participantName}
-            onChange={(e) => setParticipantName(e.target.value)}
+            onChange={(e) => handleNameChange(e.target.value)}
             className="bg-secondary/30 border border-white/10"
             placeholder="Digite seu nome"
             maxLength={30}

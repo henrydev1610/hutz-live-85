@@ -1,4 +1,3 @@
-
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import StreamPreview from '@/components/live/StreamPreview';
@@ -58,29 +57,43 @@ const LiveBroadcastPage = () => {
     
     if (event.data.type === 'BROADCAST_DATA') {
       console.log('[LiveBroadcastPage] Received broadcast data:', event.data.payload);
+      
+      // Ensure we have the latest participant state
+      const incomingParticipants = event.data.payload.participants || [];
+      console.log('[LiveBroadcastPage] Processing incoming participants:', incomingParticipants);
+      
       setBroadcastData(prev => {
-        const newParticipants = [...event.data.payload.participants];
+        // Create a map of existing participants with their streams for reference
+        const existingParticipantMap = new Map();
+        prev.participants.forEach(p => {
+          if (p.stream) {
+            existingParticipantMap.set(p.id, p.stream);
+          }
+        });
         
-        // Keep streams from existing participants
-        const mergedParticipants = newParticipants.map(newP => {
-          const existingP = prev.participants.find(p => p.id === newP.id);
+        // Merge incoming participants with existing stream data
+        const mergedParticipants = incomingParticipants.map(newP => {
+          // Keep the stream if we already have it
+          const existingStream = existingParticipantMap.get(newP.id);
+          
           return {
             ...newP,
-            stream: existingP?.stream || newP.stream
+            stream: existingStream || newP.stream
           };
         });
         
-        console.log('[LiveBroadcastPage] Merged participants with streams:', mergedParticipants);
+        console.log('[LiveBroadcastPage] Merged participants with streams:', 
+          mergedParticipants.map(p => ({ id: p.id, hasStream: !!p.stream, isVisible: p.isVisible })));
         
         return {
           ...prev,
-          layout: event.data.payload.layout,
-          backgroundColor: event.data.payload.backgroundColor,
-          backgroundImage: event.data.payload.backgroundImage,
-          qrCode: event.data.payload.qrCode,
-          qrCodeText: event.data.payload.qrCodeText,
-          qrCodeFont: event.data.payload.qrCodeFont,
-          qrCodeColor: event.data.payload.qrCodeColor,
+          layout: event.data.payload.layout || prev.layout,
+          backgroundColor: event.data.payload.backgroundColor || prev.backgroundColor,
+          backgroundImage: event.data.payload.backgroundImage || prev.backgroundImage,
+          qrCode: event.data.payload.qrCode || prev.qrCode,
+          qrCodeText: event.data.payload.qrCodeText || prev.qrCodeText,
+          qrCodeFont: event.data.payload.qrCodeFont || prev.qrCodeFont,
+          qrCodeColor: event.data.payload.qrCodeColor || prev.qrCodeColor,
           participants: mergedParticipants
         };
       });
@@ -90,7 +103,10 @@ const LiveBroadcastPage = () => {
       
       const { participantData } = event.data;
       
-      if (!participantData) return;
+      if (!participantData) {
+        console.warn('[LiveBroadcastPage] Received PARTICIPANT_JOINED without participant data');
+        return;
+      }
       
       setBroadcastData(prev => {
         // Check if participant already exists
@@ -177,6 +193,17 @@ const LiveBroadcastPage = () => {
           console.log('[LiveBroadcastPage] Sent REQUEST_BROADCAST_DATA message to opener');
         }
       }, 1000);
+      
+      // Set up a periodic request for fresh data
+      const refreshInterval = setInterval(() => {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage({ type: 'REQUEST_BROADCAST_DATA', sessionId }, '*');
+        } else {
+          clearInterval(refreshInterval);
+        }
+      }, 5000);
+      
+      return () => clearInterval(refreshInterval);
     }
     
     return () => {
@@ -187,7 +214,13 @@ const LiveBroadcastPage = () => {
   // Log active participants to help debug
   useEffect(() => {
     console.log('[LiveBroadcastPage] Current participants:', broadcastData.participants);
-    console.log('[LiveBroadcastPage] Visible participants:', broadcastData.participants.filter(p => p.isVisible !== false));
+    console.log('[LiveBroadcastPage] Visible participants:', 
+      broadcastData.participants.filter(p => p.isVisible !== false).map(p => ({
+        id: p.id, 
+        name: p.name, 
+        hasStream: !!p.stream
+      }))
+    );
   }, [broadcastData.participants]);
   
   return (

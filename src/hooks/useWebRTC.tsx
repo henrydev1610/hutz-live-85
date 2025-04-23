@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Participant } from '@/types/live';
 import { useToast } from '@/hooks/use-toast';
 
@@ -25,17 +25,20 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
   const connectionRef = useRef<PeerConnection[]>([]);
   const localStreamRef = useRef<MediaStream | null>(null);
   
-  // Configuration with H.264 codec preference
+  // Enhanced configuration with multiple STUN servers for better connectivity
   const rtcConfig = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' }
     ],
     sdpSemantics: 'unified-plan',
     iceCandidatePoolSize: 10
   };
   
-  // Set H.264 codec preference
+  // Set H.264 codec preference for better compatibility
   const setH264Preference = (sdp: string) => {
     // Split the SDP into lines
     const lines = sdp.split('\r\n');
@@ -88,14 +91,15 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
   };
 
   // Initialize camera for host - with protection against multiple initializations
-  const initializeHostCamera = async () => {
+  const initializeHostCamera = useCallback(async () => {
     if (isInitializing || localStreamRef.current) {
-      console.log('Camera already initializing or initialized');
+      console.log('[useWebRTC] Camera already initializing or initialized');
       return localStreamRef.current;
     }
     
     try {
       setIsInitializing(true);
+      console.log('[useWebRTC] Attempting to initialize host camera');
       
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -106,13 +110,14 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
         audio: true
       });
       
+      console.log('[useWebRTC] Host camera initialized successfully');
       localStreamRef.current = stream;
       setLocalStream(stream);
       setIsHost(true);
       setIsInitializing(false);
       return stream;
     } catch (err) {
-      console.error('Error accessing media devices:', err);
+      console.error('[useWebRTC] Error accessing media devices:', err);
       setIsInitializing(false);
       toast({
         title: 'Erro de câmera',
@@ -121,17 +126,18 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       });
       return null;
     }
-  };
+  }, [isInitializing, toast]);
   
   // Initialize camera for participant - with protection against multiple initializations
-  const initializeParticipantCamera = async () => {
+  const initializeParticipantCamera = useCallback(async () => {
     if (isInitializing || localStreamRef.current) {
-      console.log('Camera already initializing or initialized');
+      console.log('[useWebRTC] Camera already initializing or initialized');
       return localStreamRef.current;
     }
     
     try {
       setIsInitializing(true);
+      console.log('[useWebRTC] Attempting to initialize participant camera');
       
       const constraints = {
         video: {
@@ -142,8 +148,8 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
         audio: true
       };
       
-      // Add codec preference for browsers that support it
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('[useWebRTC] Participant camera initialized successfully');
       
       // Apply consistent video constraints
       stream.getVideoTracks().forEach(track => {
@@ -156,7 +162,7 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
         try {
           track.applyConstraints(settings);
         } catch (e) {
-          console.warn('Could not apply ideal constraints:', e);
+          console.warn('[useWebRTC] Could not apply ideal constraints:', e);
         }
       });
       
@@ -166,7 +172,7 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       setIsInitializing(false);
       return stream;
     } catch (err) {
-      console.error('Error accessing media devices:', err);
+      console.error('[useWebRTC] Error accessing media devices:', err);
       setIsInitializing(false);
       toast({
         title: 'Erro de câmera',
@@ -175,121 +181,144 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
       });
       return null;
     }
-  };
+  }, [isInitializing, toast]);
   
-  // Create peer connection with H.264 preference
-  const createPeerConnection = (participantId: string) => {
-    const peerConnection = new RTCPeerConnection(rtcConfig);
-    
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        // Send the ICE candidate to the remote peer
-        // This would be done through your signaling server
-        console.log('ICE candidate', event.candidate);
-      }
-    };
-    
-    peerConnection.ontrack = (event) => {
-      console.log('Received remote track', event.streams[0]);
-      if (onNewParticipant && event.streams[0]) {
-        onNewParticipant({
-          id: participantId,
-          name: `Participante ${participantId.substring(0, 5)}`,
-          stream: event.streams[0]
-        });
-      }
-    };
-    
-    peerConnection.onconnectionstatechange = () => {
-      console.log('Connection state changed:', peerConnection.connectionState);
-      if (peerConnection.connectionState === 'connected') {
-        setIsConnected(true);
-      } else if (peerConnection.connectionState === 'failed' || 
-                peerConnection.connectionState === 'disconnected' || 
-                peerConnection.connectionState === 'closed') {
-        // Remove the connection
-        setConnections(prev => prev.filter(conn => conn.id !== participantId));
-        connectionRef.current = connectionRef.current.filter(conn => conn.id !== participantId);
-        
-        if (onParticipantLeft) {
-          onParticipantLeft(participantId);
+  // Create peer connection with enhanced error handling
+  const createPeerConnection = useCallback((participantId: string) => {
+    console.log(`[useWebRTC] Creating peer connection for ${participantId}`);
+    try {
+      const peerConnection = new RTCPeerConnection(rtcConfig);
+      
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log(`[useWebRTC] New ICE candidate for ${participantId}:`, event.candidate);
+          // In a real implementation, this would send the ICE candidate to the remote peer
         }
+      };
+      
+      peerConnection.onconnectionstatechange = () => {
+        console.log(`[useWebRTC] Connection state changed for ${participantId}:`, peerConnection.connectionState);
+        if (peerConnection.connectionState === 'connected') {
+          console.log(`[useWebRTC] Connection established with ${participantId}`);
+          setIsConnected(true);
+        } else if (['failed', 'disconnected', 'closed'].includes(peerConnection.connectionState)) {
+          console.log(`[useWebRTC] Connection ${peerConnection.connectionState} with ${participantId}`);
+          // Remove the connection
+          setConnections(prev => prev.filter(conn => conn.id !== participantId));
+          connectionRef.current = connectionRef.current.filter(conn => conn.id !== participantId);
+          
+          if (onParticipantLeft) {
+            onParticipantLeft(participantId);
+          }
+        }
+      };
+      
+      peerConnection.ontrack = (event) => {
+        console.log(`[useWebRTC] Received track from ${participantId}:`, event.streams[0]);
+        if (onNewParticipant && event.streams[0]) {
+          onNewParticipant({
+            id: participantId,
+            name: `Participante ${participantId.substring(0, 5)}`,
+            stream: event.streams[0]
+          });
+        }
+      };
+      
+      // Add local stream tracks to the connection if available
+      if (localStreamRef.current) {
+        console.log(`[useWebRTC] Adding ${localStreamRef.current.getTracks().length} tracks to connection for ${participantId}`);
+        localStreamRef.current.getTracks().forEach(track => {
+          peerConnection.addTrack(track, localStreamRef.current!);
+        });
+      } else {
+        console.warn(`[useWebRTC] No local stream available to add to connection for ${participantId}`);
       }
-    };
-    
-    // Add local stream tracks to the connection
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStreamRef.current!);
+      
+      const newConnection = { id: participantId, connection: peerConnection };
+      setConnections(prev => [...prev, newConnection]);
+      connectionRef.current = [...connectionRef.current, newConnection];
+      
+      return peerConnection;
+    } catch (error) {
+      console.error(`[useWebRTC] Error creating peer connection for ${participantId}:`, error);
+      toast({
+        title: 'Erro de conexão',
+        description: 'Não foi possível criar conexão com o participante.',
+        variant: 'destructive'
       });
+      return null;
     }
-    
-    const newConnection = { id: participantId, connection: peerConnection };
-    setConnections(prev => [...prev, newConnection]);
-    connectionRef.current = [...connectionRef.current, newConnection];
-    
-    return peerConnection;
-  };
+  }, [onNewParticipant, onParticipantLeft, rtcConfig, toast]);
   
   // Create offer with H.264 preference
-  const createOffer = async (participantId: string) => {
+  const createOffer = useCallback(async (participantId: string) => {
     const peerConnection = createPeerConnection(participantId);
+    if (!peerConnection) return null;
     
     try {
+      console.log(`[useWebRTC] Creating offer for ${participantId}`);
       const offer = await peerConnection.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
       });
       
       // Modify SDP to prefer H.264
-      offer.sdp = setH264Preference(offer.sdp || '');
+      if (offer.sdp) {
+        offer.sdp = setH264Preference(offer.sdp);
+      }
       
       await peerConnection.setLocalDescription(offer);
+      console.log(`[useWebRTC] Offer created for ${participantId}:`, offer);
       
       return {
         peerConnection,
         offer
       };
     } catch (err) {
-      console.error('Error creating offer:', err);
+      console.error(`[useWebRTC] Error creating offer for ${participantId}:`, err);
       return null;
     }
-  };
+  }, [createPeerConnection, setH264Preference]);
   
   // Process answer from remote peer
-  const processAnswer = async (participantId: string, answer: RTCSessionDescriptionInit) => {
+  const processAnswer = useCallback(async (participantId: string, answer: RTCSessionDescriptionInit) => {
+    console.log(`[useWebRTC] Processing answer from ${participantId}`);
     const peerConnection = connections.find(conn => conn.id === participantId)?.connection;
     
     if (!peerConnection) {
-      console.error('No peer connection found for participant', participantId);
+      console.error(`[useWebRTC] No peer connection found for ${participantId}`);
       return;
     }
     
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+      console.log(`[useWebRTC] Remote description set for ${participantId}`);
     } catch (err) {
-      console.error('Error setting remote description:', err);
+      console.error(`[useWebRTC] Error setting remote description for ${participantId}:`, err);
     }
-  };
+  }, [connections]);
   
   // Process ICE candidate
-  const processIceCandidate = async (participantId: string, candidate: RTCIceCandidateInit) => {
+  const processIceCandidate = useCallback(async (participantId: string, candidate: RTCIceCandidateInit) => {
+    console.log(`[useWebRTC] Processing ICE candidate for ${participantId}`);
     const peerConnection = connections.find(conn => conn.id === participantId)?.connection;
     
     if (!peerConnection) {
-      console.error('No peer connection found for participant', participantId);
+      console.error(`[useWebRTC] No peer connection found for ${participantId}`);
       return;
     }
     
     try {
       await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      console.log(`[useWebRTC] ICE candidate added for ${participantId}`);
     } catch (err) {
-      console.error('Error adding ICE candidate:', err);
+      console.error(`[useWebRTC] Error adding ICE candidate for ${participantId}:`, err);
     }
-  };
+  }, [connections]);
   
   // Clean up connections
-  const cleanupConnections = () => {
+  const cleanupConnections = useCallback(() => {
+    console.log('[useWebRTC] Cleaning up all connections');
     connections.forEach(({ connection }) => {
       connection.close();
     });
@@ -306,14 +335,14 @@ export const useWebRTC = ({ sessionId, onNewParticipant, onParticipantLeft }: We
     setLocalStream(null);
     setIsConnected(false);
     setIsInitializing(false);
-  };
+  }, [connections]);
   
   // Clean up on unmount
   useEffect(() => {
     return () => {
       cleanupConnections();
     };
-  }, []);
+  }, [cleanupConnections]);
   
   return {
     localStream,
