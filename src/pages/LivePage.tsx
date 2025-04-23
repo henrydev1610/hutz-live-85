@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -25,8 +24,55 @@ const LivePage = () => {
     qrCode,
     qrCodeText,
     qrCodeFont,
-    qrCodeColor
+    qrCodeColor,
+    sessionId
   } = useLiveSession();
+
+  const startBroadcast = () => {
+    if (!sessionId) {
+      toast({
+        title: "Sessão não iniciada",
+        description: "Gere um QR Code para iniciar a sessão",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    const newWindow = window.open(
+      `/live/broadcast/${sessionId}`,
+      'LiveBroadcast',
+      'width=1280,height=720'
+    );
+    
+    if (newWindow) {
+      setBroadcastWindow(newWindow);
+      setIsLive(true);
+      
+      const interval = setInterval(() => {
+        if (broadcastWindow) {
+          broadcastWindow.postMessage({
+            type: 'update',
+            participants: selectedParticipants,
+            layout,
+            backgroundColor,
+            backgroundImage,
+            qrCode,
+            qrCodeText,
+            qrCodeFont,
+            qrCodeColor
+          }, '*');
+        }
+      }, 1000);
+      
+      return () => clearInterval(interval);
+    } else {
+      toast({
+        title: "Erro",
+        description: "Não foi possível abrir a janela de transmissão. Verifique se o bloqueador de pop-ups está desativado.",
+        variant: "destructive"
+      });
+    }
+  };
 
   return (
     <div className="container mx-auto px-6 py-8 max-w-7xl">

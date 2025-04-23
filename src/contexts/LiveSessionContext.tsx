@@ -1,4 +1,3 @@
-
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useToast } from '@/hooks/use-toast';
@@ -93,7 +92,8 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   const [callToActionText, setCallToActionText] = useState<string | null>(null);
   const [callToActionLink, setCallToActionLink] = useState<string | null>(null);
   
-  // WebRTC integration
+  const [visibleParticipants, setVisibleParticipants] = useState<Set<string>>(new Set());
+  
   const { 
     localStream,
     isConnected,
@@ -109,27 +109,21 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     }
   });
 
-  // Handle new participant joining
   const handleNewParticipant = (newParticipant: Participant) => {
     setParticipants(prev => {
-      // Check if participant already exists
       const exists = prev.some(p => p.id === newParticipant.id);
       if (exists) {
-        // Update existing participant
         return prev.map(p => p.id === newParticipant.id ? newParticipant : p);
       } else {
-        // Add new participant
         return [...prev, newParticipant];
       }
     });
   };
 
-  // Handle participant leaving
   const handleParticipantLeft = (participantId: string) => {
     setParticipants(prev => prev.filter(p => p.id !== participantId));
     setSelectedParticipants(prev => prev.filter(p => p.id !== participantId));
     
-    // Check if any participant from waiting list can be moved
     if (waitingList.length > 0) {
       const nextParticipant = waitingList[0];
       setWaitingList(prev => prev.slice(1));
@@ -161,6 +155,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     
     if (selectedParticipants.length < layout) {
       setSelectedParticipants(prev => [...prev, participant]);
+      setVisibleParticipants(prev => new Set([...prev, id]));
       
       if (waitingList.some(p => p.id === id)) {
         setWaitingList(prev => prev.filter(p => p.id !== id));
@@ -175,12 +170,33 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   
   const removeParticipant = (id: string) => {
     setSelectedParticipants(prev => prev.filter(p => p.id !== id));
+    setVisibleParticipants(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(id);
+      return newSet;
+    });
     
     if (waitingList.length > 0) {
       const nextParticipant = waitingList[0];
       setWaitingList(prev => prev.slice(1));
       setParticipants(prev => [...prev, nextParticipant]);
     }
+  };
+  
+  const toggleParticipantVisibility = (id: string) => {
+    setVisibleParticipants(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+  
+  const isParticipantVisible = (id: string) => {
+    return visibleParticipants.has(id);
   };
   
   const showQRCode = () => setQrCodeVisible(true);
@@ -200,7 +216,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       return;
     }
     
-    // Initialize host camera for WebRTC if not already done
     await initializeHostCamera();
     
     const newWindow = window.open(
@@ -221,7 +236,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
         }
       }, 1000);
       
-      // Send broadcast data to the broadcast window
       const sendBroadcastData = setInterval(() => {
         if (newWindow.closed) {
           clearInterval(sendBroadcastData);
@@ -288,23 +302,20 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     setWaitingList(mockParticipants.slice(8));
   }, []);
   
-  // Handle messages from joined participants
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'PARTICIPANT_JOINED') {
         const { participantData, sessionId: incomingSessionId } = event.data;
         
-        // Make sure the session ID matches
         if (incomingSessionId === sessionId) {
           console.log('Participant joined:', participantData);
           
           const newParticipant: Participant = {
             id: participantData.id,
             name: participantData.name,
-            stream: null // Stream will be established via WebRTC
+            stream: null
           };
           
-          // Add to participants or waiting list
           if (participants.length < maxParticipants) {
             setParticipants(prev => [...prev, newParticipant]);
           } else {
@@ -377,7 +388,10 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     isLive,
     startBroadcast,
     stopBroadcast,
-    broadcastWindow
+    broadcastWindow,
+    
+    toggleParticipantVisibility,
+    isParticipantVisible
   };
   
   return (

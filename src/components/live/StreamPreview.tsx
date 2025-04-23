@@ -1,4 +1,3 @@
-
 import { useRef, useEffect, useState } from 'react';
 import { Participant } from '@/types/live';
 import Draggable from 'react-draggable';
@@ -46,8 +45,8 @@ const StreamPreview = ({
     return 'grid-cols-4';
   };
   
-  const visibleParticipants = participants.slice(0, layout);
-
+  const visibleParticipants = participants.filter(p => p.isVisible !== false);
+  
   useEffect(() => {
     const handleResizeMouseMove = (e: MouseEvent) => {
       if (!resizing) return;

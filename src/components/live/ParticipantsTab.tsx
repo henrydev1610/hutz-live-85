@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { Check, X } from 'lucide-react';
+import { Check, X, Eye, EyeOff } from 'lucide-react';
 import { useLiveSession } from '@/hooks/useLiveSession';
 
 const ParticipantsTab = () => {
@@ -12,7 +12,9 @@ const ParticipantsTab = () => {
     selectParticipant, 
     removeParticipant,
     selectedParticipants,
-    maxParticipants
+    maxParticipants,
+    toggleParticipantVisibility,
+    isParticipantVisible
   } = useLiveSession();
   
   return (
@@ -30,6 +32,7 @@ const ParticipantsTab = () => {
             {participants.map(participant => {
               const isSelected = selectedParticipants.some(p => p.id === participant.id);
               const isOnline = participant.stream !== null;
+              const isVisible = isParticipantVisible(participant.id);
               
               return (
                 <div 
@@ -61,26 +64,42 @@ const ParticipantsTab = () => {
                         <p className="text-xs truncate">{participant.name}</p>
                         <span className={`h-2 w-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
                       </div>
-                      {isSelected ? (
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => removeParticipant(participant.id)}
-                          className="h-6 w-6 text-red-500 hover:text-red-400 hover:bg-red-500/10"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      ) : (
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => selectParticipant(participant.id)}
-                          className="h-6 w-6 text-green-500 hover:text-green-400 hover:bg-green-500/10"
-                          disabled={selectedParticipants.length >= maxParticipants}
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {isSelected && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => toggleParticipantVisibility(participant.id)}
+                            className="h-6 w-6 hover:bg-white/10"
+                          >
+                            {isVisible ? (
+                              <Eye className="h-4 w-4" />
+                            ) : (
+                              <EyeOff className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                        {isSelected ? (
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => removeParticipant(participant.id)}
+                            className="h-6 w-6 text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => selectParticipant(participant.id)}
+                            className="h-6 w-6 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+                            disabled={selectedParticipants.length >= maxParticipants}
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
