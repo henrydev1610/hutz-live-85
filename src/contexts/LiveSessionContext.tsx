@@ -39,9 +39,9 @@ interface LiveSessionContextProps {
   };
   setQRCodeText: (text: string) => void;
   qrCodeFont: string;
-  setQRCodeFont: (font: string) => void;
+  setQrCodeFont: (font: string) => void;
   qrCodeColor: string;
-  setQRCodeColor: (color: string) => void;
+  setQrCodeColor: (color: string) => void;
   
   // Call to Action
   callToAction: {
@@ -77,7 +77,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   const [broadcastWindow, setBroadcastWindow] = useState<Window | null>(null);
   const maxParticipants = 50;
   
-  // QR Code state
   const [qrCodeImage, setQrCodeImage] = useState<string>('');
   const [qrCodeVisible, setQrCodeVisible] = useState(false);
   const [qrCodePosition, setQrCodePosition] = useState({ x: 30, y: 30 });
@@ -87,19 +86,16 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   const [qrCodeFont, setQrCodeFont] = useState('Arial');
   const [qrCodeColor, setQrCodeColor] = useState('#FFFFFF');
   
-  // Call to Action state
   const [callToActionType, setCallToActionType] = useState<'image' | 'coupon'>('image');
   const [callToActionImage, setCallToActionImage] = useState<string | null>(null);
   const [callToActionText, setCallToActionText] = useState<string | null>(null);
   const [callToActionLink, setCallToActionLink] = useState<string | null>(null);
   
-  // Generate a unique session ID and QR code
   const generateSessionId = async () => {
     const newId = Math.random().toString(36).substring(2, 15);
     setSessionId(newId);
     
     try {
-      // Generate QR code for the session
       const url = `${window.location.origin}/live/join/${newId}`;
       const qrCodeDataUrl = await QRCode.toDataURL(url);
       setQrCodeImage(qrCodeDataUrl);
@@ -113,7 +109,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     }
   };
   
-  // Participant selection
   const selectParticipant = (id: string) => {
     const participant = [...participants, ...waitingList].find(p => p.id === id);
     if (!participant) return;
@@ -121,7 +116,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     if (selectedParticipants.length < layout) {
       setSelectedParticipants(prev => [...prev, participant]);
       
-      // If participant is in waiting list, move to participants
       if (waitingList.some(p => p.id === id)) {
         setWaitingList(prev => prev.filter(p => p.id !== id));
         setParticipants(prev => [...prev, participant]);
@@ -136,7 +130,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   const removeParticipant = (id: string) => {
     setSelectedParticipants(prev => prev.filter(p => p.id !== id));
     
-    // If there are participants in the waiting list, move one to the participants list
     if (waitingList.length > 0) {
       const nextParticipant = waitingList[0];
       setWaitingList(prev => prev.slice(1));
@@ -144,7 +137,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     }
   };
   
-  // QR Code management
   const showQRCode = () => setQrCodeVisible(true);
   const hideQRCode = () => setQrCodeVisible(false);
   
@@ -152,7 +144,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     setQrCodeTextState(text);
   };
   
-  // Broadcast management
   const startBroadcast = () => {
     if (!sessionId) {
       toast({
@@ -163,7 +154,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       return;
     }
     
-    // Open a new window for the broadcast
     const newWindow = window.open(
       `/live/broadcast/${sessionId}`,
       'LiveBroadcast',
@@ -174,7 +164,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
       setBroadcastWindow(newWindow);
       setIsLive(true);
       
-      // Monitor if window is closed
       const checkWindowClosed = setInterval(() => {
         if (newWindow.closed) {
           clearInterval(checkWindowClosed);
@@ -199,7 +188,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     setBroadcastWindow(null);
   };
   
-  // Clean up on unmount
   useEffect(() => {
     return () => {
       if (broadcastWindow && !broadcastWindow.closed) {
@@ -208,9 +196,7 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     };
   }, [broadcastWindow]);
   
-  // Initialize mock data for demonstration
   useEffect(() => {
-    // This would be replaced with actual WebRTC connections in a real implementation
     const mockParticipants: Participant[] = Array(10)
       .fill(null)
       .map((_, i) => ({
@@ -224,11 +210,9 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
   }, []);
   
   const value = {
-    // Session
     sessionId,
     generateSessionId,
     
-    // Participants
     participants,
     waitingList,
     selectedParticipants,
@@ -236,7 +220,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     removeParticipant,
     maxParticipants,
     
-    // Layout
     layout,
     setLayout,
     backgroundColor,
@@ -244,7 +227,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     backgroundImage,
     setBackgroundImage,
     
-    // QR Code
     qrCode: {
       image: qrCodeImage,
       visible: qrCodeVisible,
@@ -263,7 +245,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     qrCodeColor,
     setQrCodeColor,
     
-    // Call to Action
     callToAction: {
       type: callToActionType,
       image: callToActionImage,
@@ -275,7 +256,6 @@ export const LiveSessionProvider = ({ children }: { children: React.ReactNode })
     setCallToActionText,
     setCallToActionLink,
     
-    // Broadcast
     isLive,
     startBroadcast,
     stopBroadcast,
