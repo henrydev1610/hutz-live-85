@@ -1,9 +1,10 @@
+
 import { useState, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { QrCode } from 'lucide-react';
+import { QrCode, Link, Copy } from 'lucide-react';
 import { useLiveSession } from '@/hooks/useLiveSession';
 import { useToast } from '@/hooks/use-toast';
 
@@ -51,6 +52,14 @@ const QRCodeTab = () => {
     });
   };
 
+  const copyJoinLink = () => {
+    const joinUrl = `${window.location.origin}/live/join/${sessionId}`;
+    navigator.clipboard.writeText(joinUrl);
+    toast({
+      description: "Link copiado para a área de transferência"
+    });
+  };
+
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setQRCodeText(e.target.value);
   };
@@ -59,13 +68,30 @@ const QRCodeTab = () => {
     <div className="space-y-6">
       <div className="flex flex-col items-center space-y-4">
         {sessionId ? (
-          <div className="bg-white p-4 rounded-lg">
-            <img 
-              src={qrCode.image} 
-              alt="QR Code da sessão" 
-              className="w-40 h-40"
-            />
-          </div>
+          <>
+            <div className="bg-white p-4 rounded-lg">
+              <img 
+                src={qrCode.image} 
+                alt="QR Code da sessão" 
+                className="w-40 h-40"
+              />
+            </div>
+            <div className="flex items-center gap-2 w-full">
+              <Input 
+                value={`${window.location.origin}/live/join/${sessionId}`}
+                readOnly
+                className="bg-secondary/60"
+              />
+              <Button
+                size="icon"
+                variant="secondary"
+                onClick={copyJoinLink}
+                className="shrink-0"
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </>
         ) : (
           <div className="flex items-center justify-center w-40 h-40 bg-secondary/60 rounded-lg">
             <QrCode className="w-16 h-16 text-white/30" />

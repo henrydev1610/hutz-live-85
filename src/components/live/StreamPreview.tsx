@@ -1,6 +1,7 @@
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { Participant } from '@/types/live';
+import Draggable from 'react-draggable';
 
 interface StreamPreviewProps {
   participants: Participant[];
@@ -32,7 +33,9 @@ const StreamPreview = ({
   qrCodeColor
 }: StreamPreviewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  
+  const [qrCodeSize, setQrCodeSize] = useState(qrCode.size);
+  const [textSize, setTextSize] = useState(16); // Default text size
+
   // Calculate grid layout based on number of visible participants
   const getGridTemplate = () => {
     const count = Math.min(participants.length, layout);
@@ -43,16 +46,27 @@ const StreamPreview = ({
     if (count <= 9) return 'grid-cols-3 grid-rows-3';
     if (count <= 12) return 'grid-cols-4 grid-rows-3';
     if (count <= 16) return 'grid-cols-4 grid-rows-4';
-    if (count <= 20) return 'grid-cols-5 grid-rows-4';
-    return 'grid-cols-6 grid-rows-4'; // For 21-24 participants
+    return 'grid-cols-4 grid-rows-5'; // For 17-20 participants
   };
   
   const visibleParticipants = participants.slice(0, layout);
   
+  const handleQRCodeResize = (e: React.MouseEvent, direction: string) => {
+    if (e.buttons !== 1) return; // Only resize on left click drag
+    const delta = direction === 'x' ? e.movementX : e.movementY;
+    setQrCodeSize(prev => Math.max(50, Math.min(400, prev + delta)));
+  };
+
+  const handleTextResize = (e: React.MouseEvent) => {
+    if (e.buttons !== 1) return;
+    const delta = e.movementY;
+    setTextSize(prev => Math.max(12, Math.min(48, prev - delta * 0.5)));
+  };
+
   return (
     <div 
       ref={containerRef}
-      className="w-full h-full relative overflow-hidden"
+      className="w-full h-full relative overflow-hidden grid grid-cols-3 gap-4 p-4"
       style={{
         backgroundColor: backgroundColor,
         backgroundImage: backgroundImage ? `url(${backgroundImage})` : 'none',
@@ -60,8 +74,54 @@ const StreamPreview = ({
         backgroundPosition: 'center'
       }}
     >
-      {/* Participants grid */}
-      <div className={`grid ${getGridTemplate()} gap-1 p-2 w-full h-full`}>
+      {/* Left side - empty or content */}
+      <div className="col-span-1">
+        {/* QR Code */}
+        {qrCode.visible && (
+          <Draggable bounds="parent">
+            <div 
+              className="absolute cursor-move"
+              style={{
+                left: qrCode.position.x,
+                top: qrCode.position.y,
+                width: `${qrCodeSize}px`,
+                height: `${qrCodeSize}px`,
+              }}
+            >
+              <img src={qrCode.image} alt="QR Code" className="w-full h-full" />
+              <div 
+                className="absolute right-0 bottom-0 w-4 h-4 cursor-se-resize"
+                onMouseMove={(e) => handleQRCodeResize(e, 'x')}
+              />
+            </div>
+          </Draggable>
+        )}
+        
+        {/* QR Code Text */}
+        {qrCode.visible && qrCodeText.text && (
+          <Draggable bounds="parent">
+            <div 
+              className="absolute px-2 py-1 cursor-move"
+              style={{
+                left: qrCodeText.position.x,
+                top: qrCodeText.position.y,
+                fontFamily: qrCodeFont,
+                color: qrCodeColor,
+                fontSize: `${textSize}px`,
+              }}
+            >
+              {qrCodeText.text}
+              <div 
+                className="absolute right-0 bottom-0 w-4 h-4 cursor-ns-resize"
+                onMouseMove={handleTextResize}
+              />
+            </div>
+          </Draggable>
+        )}
+      </div>
+
+      {/* Right side - Participants grid */}
+      <div className={`col-span-2 grid ${getGridTemplate()} gap-2`}>
         {visibleParticipants.map((participant) => (
           <div 
             key={participant.id} 
@@ -86,38 +146,6 @@ const StreamPreview = ({
           </div>
         ))}
       </div>
-      
-      {/* QR Code */}
-      {qrCode.visible && (
-        <div 
-          className="absolute"
-          style={{
-            left: `${qrCode.position.x}px`,
-            top: `${qrCode.position.y}px`,
-            width: `${qrCode.size}px`,
-            height: `${qrCode.size}px`,
-            cursor: 'move'
-          }}
-        >
-          <img src={qrCode.image} alt="QR Code" className="w-full h-full" />
-        </div>
-      )}
-      
-      {/* QR Code Text */}
-      {qrCode.visible && qrCodeText.text && (
-        <div 
-          className="absolute px-2 py-1 text-center"
-          style={{
-            left: `${qrCodeText.position.x}px`,
-            top: `${qrCodeText.position.y}px`,
-            fontFamily: qrCodeFont,
-            color: qrCodeColor,
-            cursor: 'move'
-          }}
-        >
-          {qrCodeText.text}
-        </div>
-      )}
     </div>
   );
 };
