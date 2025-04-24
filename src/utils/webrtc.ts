@@ -897,8 +897,6 @@ export const initParticipantWebRTC = async (
     logger.error(`No signaling method available`);
     throw new Error("No signaling method available");
   }
-  
-  return;
 };
 
 // Initialize WebRTC connection for a telao session

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -233,7 +232,7 @@ const ParticipantPage = () => {
         setFinalActionTimeLeft((prev) => prev - 1);
       }, 1000);
       
-      setFinalActionTimerId(timerId);
+      setFinalActionTimerId(Number(timerId));
       
       return () => {
         if (timerId) clearInterval(timerId);
