@@ -360,7 +360,8 @@ export const attachStreamToVideo = (
       
       // Last resort: try object URL approach for old browsers
       try {
-        const objectUrl = URL.createObjectURL(stream);
+        // Fix: Cast stream to any to avoid type error
+        const objectUrl = URL.createObjectURL(stream as any);
         videoElement.src = objectUrl;
         videoElement.onloadedmetadata = () => {
           URL.revokeObjectURL(objectUrl);

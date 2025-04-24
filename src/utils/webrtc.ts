@@ -12,7 +12,7 @@ interface SocketType {
   emit: (event: string, ...args: any[]) => void;
 }
 
-const PEER_CONNECTION_CONFIG = {
+const PEER_CONNECTION_CONFIG: RTCConfiguration = {
   iceServers: [
     // Primary STUN servers (Google and common ones)
     { urls: 'stun:stun.l.google.com:19302' },
@@ -80,8 +80,8 @@ const PEER_CONNECTION_CONFIG = {
     }
   ],
   iceCandidatePoolSize: 10,
-  iceTransportPolicy: 'all',
-  sdpSemantics: 'unified-plan'
+  iceTransportPolicy: 'all' as RTCIceTransportPolicy,
+  sdpSemantics: 'unified-plan' as RTCSdpSemantics
 };
 
 let socket: SocketType | null = null;
@@ -185,12 +185,16 @@ export const setVP9CodecPreference = (pc: RTCPeerConnection): void => {
         if (videoTransceiver) {
           videoTransceiver.setCodecPreferences(vp9Codecs);
           logger.info('Set VP9 codec preference successfully');
+          return true; // Return true to indicate success
         }
       }
+      return false; // Return false if we couldn't set VP9 codec
     } catch (e) {
       logger.warn('Error setting VP9 codec preferences:', e);
+      return false;
     }
   }
+  return false;
 };
 
 /**
@@ -199,7 +203,10 @@ export const setVP9CodecPreference = (pc: RTCPeerConnection): void => {
 export const setBestCodecPreference = (pc: RTCPeerConnection): void => {
   // Chrome and Edge work best with VP9
   if (browserType === 'chrome' || browserType === 'edge') {
-    setVP9CodecPreference(pc);
+    const vpResult = setVP9CodecPreference(pc);
+    if (!vpResult) {
+      setH264CodecPreference(pc);
+    }
   } 
   // Firefox works well with H.264
   else if (browserType === 'firefox') {
@@ -211,7 +218,8 @@ export const setBestCodecPreference = (pc: RTCPeerConnection): void => {
   }
   // For other browsers, try both in order
   else {
-    if (!setVP9CodecPreference(pc)) {
+    const vpResult = setVP9CodecPreference(pc);
+    if (!vpResult) {
       setH264CodecPreference(pc);
     }
   }

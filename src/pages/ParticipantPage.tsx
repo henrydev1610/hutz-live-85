@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -82,7 +83,7 @@ const ParticipantPage = () => {
 
   useEffect(() => {
     if (sessionFound && !isJoined && !isJoining && cameraPermission !== null) {
-      autoJoinTimeoutRef.current = window.setTimeout(() => {
+      autoJoinTimeoutRef.current = setTimeout(() => {
         console.log("Auto-joining session...");
         joinSession(false);
       }, 500) as unknown as number;
