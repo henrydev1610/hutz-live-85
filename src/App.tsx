@@ -1,40 +1,121 @@
 
-import { Routes, Route } from 'react-router-dom';
-import { Toaster } from '@/components/ui/sonner';
-import Dashboard from '@/pages/Dashboard';
-import NotFound from '@/pages/NotFound';
-import Index from '@/pages/Index';
-import Login from '@/pages/Login';
-import Auth from '@/pages/Auth';
-import LightShowPage from '@/pages/LightShowPage';
-import QuizPage from '@/pages/QuizPage';
-import LivePage from '@/pages/LivePage';
-import LiveBroadcastPage from '@/pages/LiveBroadcastPage';
-import LiveJoinPage from '@/pages/LiveJoinPage';
-import { AuthProvider } from '@/contexts/AuthContext';
-import { LiveSessionProvider } from '@/contexts/LiveSessionContext';
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useState } from "react";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import Navbar from "./components/layout/Navbar";
+import Auth from "./pages/Auth";
+import Dashboard from "./pages/Dashboard";
+import LightShowPage from "./pages/LightShowPage";
+// Removed TelaoPage import
+import QuizPage from "./pages/QuizPage";
+import LivePage from "./pages/LivePage";
+import NotFound from "./pages/NotFound";
+import ParticipantPage from "./pages/ParticipantPage";
 
-function App() {
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-black">
+      <div className="animate-spin h-8 w-8 border-4 border-accent border-r-transparent rounded-full"></div>
+    </div>;
+  }
+  
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+const AppRoutes = () => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-black">
+      <div className="animate-spin h-8 w-8 border-4 border-accent border-r-transparent rounded-full"></div>
+    </div>;
+  }
+
   return (
-    <AuthProvider>
-      <Routes>
-        <Route path="/" element={<Index />} />
-        <Route path="/auth" element={<Auth />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/lightshow" element={<LightShowPage />} />
-        <Route path="/quiz" element={<QuizPage />} />
-        
-        {/* All Live routes wrapped in LiveSessionProvider */}
-        <Route path="/live" element={<LiveSessionProvider><LivePage /></LiveSessionProvider>} />
-        <Route path="/live/broadcast/:sessionId" element={<LiveSessionProvider><LiveBroadcastPage /></LiveSessionProvider>} />
-        <Route path="/live/join/:sessionId" element={<LiveSessionProvider><LiveJoinPage /></LiveSessionProvider>} />
-        
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-      <Toaster />
-    </AuthProvider>
+    <Routes>
+      {user ? (
+        <>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/auth" element={<Navigate to="/dashboard" replace />} />
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/lightshow" 
+            element={
+              <ProtectedRoute>
+                <LightShowPage />
+              </ProtectedRoute>
+            } 
+          />
+          {/* Removed the /telao route */}
+          <Route 
+            path="/live" 
+            element={
+              <ProtectedRoute>
+                <LivePage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/quiz" 
+            element={
+              <ProtectedRoute>
+                <QuizPage />
+              </ProtectedRoute>
+            } 
+          />
+          {/* Public route for participants that doesn't require authentication */}
+          <Route path="/participant/:sessionId" element={<ParticipantPage />} />
+          <Route path="*" element={<NotFound />} />
+        </>
+      ) : (
+        <>
+          <Route path="/auth" element={<Auth />} />
+          {/* Public route for participants that doesn't require authentication */}
+          <Route path="/participant/:sessionId" element={<ParticipantPage />} />
+          <Route path="*" element={<Navigate to="/auth" replace />} />
+        </>
+      )}
+    </Routes>
   );
-}
+};
+
+const App = () => {
+  // Create a new QueryClient instance inside the component
+  const [queryClient] = useState(() => new QueryClient());
+
+  return (
+    <BrowserRouter>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <div className="min-h-screen flex flex-col bg-black">
+              <AppRoutes />
+            </div>
+          </TooltipProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </BrowserRouter>
+  );
+};
 
 export default App;
+
