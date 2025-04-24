@@ -8,6 +8,7 @@ import { isSessionActive, addParticipantToSession, getSessionFinalAction } from 
 import { initParticipantWebRTC, setLocalStream, cleanupWebRTC } from '@/utils/webrtc';
 import { initializeParticipantSession } from '@/utils/liveStreamUtils';
 import { diagnoseConnection, testBroadcastReception } from '@/utils/connectionDiagnostics';
+import { attachStreamToVideo } from '@/utils/streamUtils';
 
 const ParticipantPage = () => {
   const { toast } = useToast();
@@ -455,43 +456,8 @@ const ParticipantPage = () => {
       ));
       
       if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+        await attachStreamToVideo(videoRef.current, stream, true);
         console.log("Set video element source object successfully");
-        
-        videoRef.current.onloadedmetadata = () => {
-          if (videoRef.current) {
-            videoRef.current.play().catch(playError => {
-              console.error("Error playing video on loadedmetadata:", playError);
-            });
-          }
-        };
-        
-        try {
-          if (videoRef.current.readyState >= 2) {
-            await videoRef.current.play();
-            console.log("Video playback started successfully");
-          }
-        } catch (playError) {
-          console.error("Error playing video:", playError);
-          setTimeout(async () => {
-            try {
-              await videoRef.current?.play();
-              console.log("Video playback started on retry");
-            } catch (retryError) {
-              console.error("Error playing video on retry:", retryError);
-              try {
-                document.addEventListener('click', function tryPlayOnce() {
-                  if (videoRef.current) {
-                    videoRef.current.play().catch(e => console.error("Play on click failed:", e));
-                    document.removeEventListener('click', tryPlayOnce);
-                  }
-                }, {once: true});
-              } catch (e) {
-                console.error("Failed to set up play-on-click handler:", e);
-              }
-            }
-          }, 1000);
-        }
       } else {
         console.warn("Video element ref not available");
       }

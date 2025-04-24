@@ -1,130 +1,166 @@
 
 /**
- * Enhanced logging utility for better debugging
+ * Centralized logging utility for consistent logging across the application
  */
 
-// Log levels
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+// Define log levels
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-// Default log level - can be overridden
-let globalLogLevel: LogLevel = 'info';
+// Interface for our logger instance
+interface Logger {
+  debug: (message: string, ...args: any[]) => void;
+  info: (message: string, ...args: any[]) => void;
+  warn: (message: string, ...args: any[]) => void;
+  error: (message: string, ...args: any[]) => void;
+}
 
-// Determine if we're in development mode
-const isDev = import.meta.env.DEV || window.location.hostname === 'localhost';
-
-// Create colored log styles
-const logStyles = {
-  debug: 'color: #6b7280; font-weight: normal;',
-  info: 'color: #2563eb; font-weight: bold;',
-  warn: 'color: #d97706; font-weight: bold;',
-  error: 'color: #dc2626; font-weight: bold;'
+// Global settings for logging
+const logSettings = {
+  enabledModules: new Set<string>(['default', 'webrtc', 'diagnostics', 'stream']),
+  minLevel: 'info' as LogLevel,
+  persistLogs: true,
+  maxStoredLogs: 100
 };
 
-// Map of numeric priorities for filtering
-const logLevelPriorities: Record<LogLevel, number> = {
-  debug: 0,
-  info: 1,
-  warn: 2,
-  error: 3
-};
+// In-memory log storage
+const logStorage: Array<{
+  timestamp: number;
+  module: string;
+  level: LogLevel;
+  message: string;
+  data?: any;
+}> = [];
 
 /**
- * Set global log level
- * @param level - The log level to set
+ * Creates a logger instance for a specific module
  */
-export const setLogLevel = (level: LogLevel): void => {
-  globalLogLevel = level;
-  console.log(`Log level set to: ${level}`);
-};
-
-/**
- * Creates a named logger instance
- * @param namespace - The namespace for this logger (usually a component or module name)
- * @returns Logger object with methods for each log level
- */
-export const createLogger = (namespace: string) => {
-  const shouldLog = (level: LogLevel): boolean => {
-    return logLevelPriorities[level] >= logLevelPriorities[globalLogLevel];
+export const createLogger = (module: string): Logger => {
+  const isModuleEnabled = () => logSettings.enabledModules.has(module) || 
+                               logSettings.enabledModules.has('*');
+  
+  const isLevelEnabled = (level: LogLevel): boolean => {
+    const levels: Record<LogLevel, number> = {
+      debug: 0,
+      info: 1,
+      warn: 2,
+      error: 3
+    };
+    
+    return levels[level] >= levels[logSettings.minLevel];
   };
   
-  const formatMessage = (level: LogLevel, message: string): string => {
-    return `[${namespace}] ${message}`;
-  };
-
-  return {
-    debug: (message: string, ...args: any[]): void => {
-      if (!shouldLog('debug') && !isDev) return;
-      console.debug(`%c${formatMessage('debug', message)}`, logStyles.debug, ...args);
-    },
+  const log = (level: LogLevel, message: string, ...args: any[]): void => {
+    if (!isModuleEnabled() || !isLevelEnabled(level)) return;
     
-    info: (message: string, ...args: any[]): void => {
-      if (!shouldLog('info') && !isDev) return;
-      console.info(`%c${formatMessage('info', message)}`, logStyles.info, ...args);
-    },
+    const timestamp = Date.now();
+    const formattedMessage = `[${module}] ${message}`;
     
-    warn: (message: string, ...args: any[]): void => {
-      if (!shouldLog('warn')) return;
-      console.warn(`%c${formatMessage('warn', message)}`, logStyles.warn, ...args);
-    },
-    
-    error: (message: string, ...args: any[]): void => {
-      if (!shouldLog('error')) return;
-      console.error(`%c${formatMessage('error', message)}`, logStyles.error, ...args);
-    },
-    
-    /**
-     * Groups related log messages together
-     * @param title - The title for the group
-     * @param level - Log level for the group
-     * @param callback - Function containing grouped log calls
-     */
-    group: (title: string, level: LogLevel, callback: () => void): void => {
-      if (!shouldLog(level) && !isDev) return;
-      console.group(`%c${formatMessage(level, title)}`, logStyles[level]);
-      callback();
-      console.groupEnd();
-    },
-    
-    /**
-     * Logs a performance measurement
-     * @param label - Label for the measurement
-     * @param callback - Function to measure
-     * @returns The result of the callback
-     */
-    measure: async <T>(label: string, callback: () => Promise<T> | T): Promise<T> => {
-      if (!shouldLog('debug') && !isDev) return callback();
-      
-      const start = performance.now();
-      let result: T;
-      
-      try {
-        result = await callback();
-      } catch (error) {
-        const duration = performance.now() - start;
-        console.error(
-          `%c${formatMessage('error', `${label} failed after ${duration.toFixed(2)}ms`)}`, 
-          logStyles.error, 
-          error
-        );
-        throw error;
-      }
-      
-      const duration = performance.now() - start;
-      console.debug(
-        `%c${formatMessage('debug', `${label}: ${duration.toFixed(2)}ms`)}`, 
-        logStyles.debug
-      );
-      
-      return result;
+    // Format based on environment and level
+    switch (level) {
+      case 'debug':
+        console.debug(formattedMessage, ...args);
+        break;
+      case 'info':
+        console.info(formattedMessage, ...args);
+        break;
+      case 'warn':
+        console.warn(formattedMessage, ...args);
+        break;
+      case 'error':
+        console.error(formattedMessage, ...args);
+        break;
     }
+    
+    // Store logs if enabled
+    if (logSettings.persistLogs) {
+      logStorage.push({
+        timestamp,
+        module,
+        level,
+        message,
+        data: args.length > 0 ? args : undefined
+      });
+      
+      // Trim log storage if it exceeds maximum size
+      if (logStorage.length > logSettings.maxStoredLogs) {
+        logStorage.shift();
+      }
+    }
+  };
+  
+  return {
+    debug: (message: string, ...args: any[]) => log('debug', message, ...args),
+    info: (message: string, ...args: any[]) => log('info', message, ...args),
+    warn: (message: string, ...args: any[]) => log('warn', message, ...args),
+    error: (message: string, ...args: any[]) => log('error', message, ...args)
   };
 };
 
-// Export a default logger for general use
-export const logger = createLogger('app');
+/**
+ * Gets stored logs for debugging purposes
+ */
+export const getStoredLogs = (
+  options: { 
+    module?: string; 
+    level?: LogLevel; 
+    since?: number;
+  } = {}
+): typeof logStorage => {
+  let filteredLogs = [...logStorage];
+  
+  if (options.module) {
+    filteredLogs = filteredLogs.filter(log => log.module === options.module);
+  }
+  
+  if (options.level) {
+    filteredLogs = filteredLogs.filter(log => log.level === options.level);
+  }
+  
+  if (options.since) {
+    filteredLogs = filteredLogs.filter(log => log.timestamp >= options.since);
+  }
+  
+  return filteredLogs;
+};
 
-// Enable more detailed logging in development mode
-if (isDev) {
-  setLogLevel('debug');
-  logger.info('Development mode detected - verbose logging enabled');
+/**
+ * Configure logging settings
+ */
+export const configureLogging = (options: {
+  enabledModules?: string[];
+  minLevel?: LogLevel;
+  persistLogs?: boolean;
+  maxStoredLogs?: number;
+}): void => {
+  if (options.enabledModules) {
+    logSettings.enabledModules = new Set(options.enabledModules);
+  }
+  
+  if (options.minLevel) {
+    logSettings.minLevel = options.minLevel;
+  }
+  
+  if (options.persistLogs !== undefined) {
+    logSettings.persistLogs = options.persistLogs;
+  }
+  
+  if (options.maxStoredLogs) {
+    logSettings.maxStoredLogs = options.maxStoredLogs;
+    
+    // Trim existing logs if needed
+    if (logStorage.length > options.maxStoredLogs) {
+      const trimCount = logStorage.length - options.maxStoredLogs;
+      logStorage.splice(0, trimCount);
+    }
+  }
+};
+
+// Enable all modules in development mode for easier debugging
+if (import.meta.env.DEV) {
+  logSettings.enabledModules.add('*');
+  logSettings.minLevel = 'debug';
 }
+
+// Initialize default logger
+const defaultLogger = createLogger('default');
+export default defaultLogger;

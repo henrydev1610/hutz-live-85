@@ -1,5 +1,8 @@
 import { addParticipantToSession, updateParticipantStatus } from './sessionUtils';
 import { io } from 'socket.io-client';
+import { createLogger } from './loggingUtils';
+
+const logger = createLogger('webrtc');
 
 // Define SocketType interface
 interface SocketType {
@@ -11,12 +14,55 @@ interface SocketType {
 
 const PEER_CONNECTION_CONFIG = {
   iceServers: [
+    // Primary STUN servers (Google and common ones)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun.stunprotocol.org:3478' },
     { urls: 'stun:stun.services.mozilla.com:3478' },
-    // Additional TURN servers to help with difficult NAT situations
+    
+    // North America TURN servers
+    {
+      urls: 'turn:north-america.relay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:north-america.relay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:north-america.relay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    
+    // Europe TURN servers for EU participants
+    {
+      urls: 'turn:europe.relay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:europe.relay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    
+    // Asia TURN servers for APAC participants
+    {
+      urls: 'turn:asia.relay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:asia.relay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    
+    // Fallback TURN servers from openrelay.metered.ca
     {
       urls: 'turn:openrelay.metered.ca:80',
       username: 'openrelayproject',
@@ -26,8 +72,16 @@ const PEER_CONNECTION_CONFIG = {
       urls: 'turn:openrelay.metered.ca:443',
       username: 'openrelayproject',
       credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
     }
-  ]
+  ],
+  iceCandidatePoolSize: 10,
+  iceTransportPolicy: 'all',
+  sdpSemantics: 'unified-plan'
 };
 
 let socket: SocketType | null = null;
@@ -37,10 +91,35 @@ let signalingSessions: { [sessionId: string]: boolean } = {};
 let currentSessionId: string | null = null;
 let localStream: MediaStream | null = null;
 let fallbackModeEnabled = false;
+let onParticipantTrackCallback: ((participantId: string, track: MediaStreamTrack) => void) | null = null;
+let browserType: 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera' | 'unknown' = 'unknown';
+let mediaStreamEstablished = false;
+
+// Detect browser type for specialized handling
+const detectBrowser = (): void => {
+  const ua = navigator.userAgent;
+  
+  if (/Firefox\/\d+/.test(ua)) {
+    browserType = 'firefox';
+  } else if (/Edg\/\d+/.test(ua) || /Edge\/\d+/.test(ua)) {
+    browserType = 'edge';
+  } else if (/Chrome\/\d+/.test(ua) && !/Edg\//.test(ua)) {
+    browserType = 'chrome';
+  } else if (/Safari\/\d+/.test(ua) && !/Chrome\/\d+/.test(ua) && !/Chromium\/\d+/.test(ua)) {
+    browserType = 'safari';
+  } else if (/OPR\/\d+/.test(ua) || /Opera\/\d+/.test(ua)) {
+    browserType = 'opera';
+  }
+  
+  logger.info(`Detected browser: ${browserType}`);
+};
+
+// Call browser detection on module load
+detectBrowser();
 
 // Define the enableFallbackMode function that was missing
 const enableFallbackMode = (): void => {
-  console.log("Enabling fallback mode for signaling");
+  logger.info("Enabling fallback mode for signaling");
   fallbackModeEnabled = true;
   
   // Close socket if it exists
@@ -48,7 +127,7 @@ const enableFallbackMode = (): void => {
     try {
       socket.emit('disconnect');
     } catch (e) {
-      console.error("Error disconnecting socket:", e);
+      logger.error("Error disconnecting socket:", e);
     }
     socket = null;
   }
@@ -75,10 +154,65 @@ export const setH264CodecPreference = (pc: RTCPeerConnection): void => {
         
         if (videoTransceiver) {
           videoTransceiver.setCodecPreferences(h264Codecs);
+          logger.info('Set H.264 codec preference successfully');
         }
       }
     } catch (e) {
-      console.warn('Error setting codec preferences:', e);
+      logger.warn('Error setting H.264 codec preferences:', e);
+    }
+  }
+};
+
+/**
+ * Sets codec preference to VP9 if available (better for Chrome)
+ */
+export const setVP9CodecPreference = (pc: RTCPeerConnection): void => {
+  if (RTCRtpTransceiver.prototype.setCodecPreferences && RTCRtpSender.getCapabilities) {
+    try {
+      const capabilities = RTCRtpSender.getCapabilities('video');
+      if (!capabilities) return;
+      
+      const vp9Codecs = capabilities.codecs.filter(codec => 
+        codec.mimeType.toLowerCase() === 'video/vp9'
+      );
+      
+      if (vp9Codecs.length > 0) {
+        const transceivers = pc.getTransceivers();
+        const videoTransceiver = transceivers.find(t => 
+          t.sender && t.sender.track && t.sender.track.kind === 'video'
+        );
+        
+        if (videoTransceiver) {
+          videoTransceiver.setCodecPreferences(vp9Codecs);
+          logger.info('Set VP9 codec preference successfully');
+        }
+      }
+    } catch (e) {
+      logger.warn('Error setting VP9 codec preferences:', e);
+    }
+  }
+};
+
+/**
+ * Sets the best codec preference based on browser
+ */
+export const setBestCodecPreference = (pc: RTCPeerConnection): void => {
+  // Chrome and Edge work best with VP9
+  if (browserType === 'chrome' || browserType === 'edge') {
+    setVP9CodecPreference(pc);
+  } 
+  // Firefox works well with H.264
+  else if (browserType === 'firefox') {
+    setH264CodecPreference(pc);
+  }
+  // Safari also prefers H.264
+  else if (browserType === 'safari') {
+    setH264CodecPreference(pc);
+  }
+  // For other browsers, try both in order
+  else {
+    if (!setVP9CodecPreference(pc)) {
+      setH264CodecPreference(pc);
     }
   }
 };
@@ -90,7 +224,7 @@ const initSocket = (sessionId: string): Promise<void> => {
   return new Promise((resolve, reject) => {
     // Try to use the signaling server if available
     if (!io) {
-      console.warn("Socket.io client not loaded, switching to fallback mode");
+      logger.warn("Socket.io client not loaded, switching to fallback mode");
       enableFallbackMode();
       resolve();
       return;
@@ -98,7 +232,7 @@ const initSocket = (sessionId: string): Promise<void> => {
 
     // Skip if we already have a socket for this session
     if (socket && socket.connected && currentSessionId === sessionId) {
-      console.log('Socket already initialized for this session.');
+      logger.info('Socket already initialized for this session.');
       resolve();
       return;
     }
@@ -107,20 +241,20 @@ const initSocket = (sessionId: string): Promise<void> => {
     try {
       // Fix for "process is not defined" error - use import.meta.env instead
       const serverUrl = import.meta.env.VITE_SIGNALING_SERVER_URL || 'https://signaling.hutz.co';
-      console.log(`Connecting to signaling server at ${serverUrl}...`);
+      logger.info(`Connecting to signaling server at ${serverUrl}...`);
       
       socket = io(serverUrl);
 
       // Set a timeout for connection
       const connectionTimeout = setTimeout(() => {
-        console.warn("Socket connection timeout, switching to fallback mode");
+        logger.warn("Socket connection timeout, switching to fallback mode");
         enableFallbackMode();
         resolve();
       }, 5000);
 
       socket.on('connect', () => {
         clearTimeout(connectionTimeout);
-        console.log('Socket connected:', socket?.id);
+        logger.info('Socket connected:', socket?.id);
         currentSessionId = sessionId;
         socket?.emit('joinSession', sessionId);
         resolve();
@@ -128,24 +262,77 @@ const initSocket = (sessionId: string): Promise<void> => {
 
       socket.on('connect_error', (error: any) => {
         clearTimeout(connectionTimeout);
-        console.error('Socket connection error, switching to fallback mode:', error);
+        logger.error('Socket connection error, switching to fallback mode:', error);
         enableFallbackMode();
         resolve();
       });
 
       socket.on('disconnect', (reason: string) => {
-        console.log('Socket disconnected:', reason);
+        logger.info('Socket disconnected:', reason);
         if (reason === 'io server disconnect' || reason === 'transport close') {
-          console.warn("Permanent disconnection, switching to fallback mode");
+          logger.warn("Permanent disconnection, switching to fallback mode");
           enableFallbackMode();
         }
       });
     } catch (error) {
-      console.error("Error initializing socket:", error);
+      logger.error("Error initializing socket:", error);
       enableFallbackMode();
       resolve();
     }
   });
+};
+
+/**
+ * Set local stream for WebRTC
+ */
+export const setLocalStream = (stream: MediaStream): void => {
+  if (!stream) {
+    logger.warn("Attempted to set null stream");
+    return;
+  }
+  
+  localStream = stream;
+  logger.info("Local stream set with tracks:", stream.getTracks().length);
+  
+  // Update existing peer connections with the new stream
+  Object.entries(activePeerConnections).forEach(([participantId, pc]) => {
+    updatePeerConnectionStream(participantId, pc);
+  });
+};
+
+/**
+ * Updates an existing peer connection with the current stream
+ */
+const updatePeerConnectionStream = (participantId: string, pc: RTCPeerConnection): void => {
+  if (!localStream) {
+    logger.warn(`No local stream available to update peer connection for ${participantId}`);
+    return;
+  }
+  
+  try {
+    // Get existing senders
+    const senders = pc.getSenders();
+    const videoSender = senders.find(sender => sender.track?.kind === 'video');
+    
+    if (videoSender) {
+      // Replace track on existing sender
+      const videoTracks = localStream.getVideoTracks();
+      if (videoTracks.length > 0) {
+        logger.info(`Replacing video track for ${participantId}`);
+        videoSender.replaceTrack(videoTracks[0])
+          .then(() => logger.info(`Successfully replaced video track for ${participantId}`))
+          .catch(e => logger.error(`Failed to replace video track for ${participantId}:`, e));
+      }
+    } else {
+      // Add new tracks
+      localStream.getTracks().forEach(track => {
+        logger.info(`Adding ${track.kind} track for ${participantId}`);
+        pc.addTrack(track, localStream!);
+      });
+    }
+  } catch (e) {
+    logger.error(`Error updating peer connection for ${participantId}:`, e);
+  }
 };
 
 /**
@@ -491,9 +678,6 @@ export const initHostWebRTC = async (
   signalingSessions[sessionId] = true;
 };
 
-let onParticipantTrackCallback: ((participantId: string, track: MediaStreamTrack) => void) | null = null;
-let mediaStreamEstablished = false;
-
 /**
  * Initializes the WebRTC connection for a participant
  */
@@ -502,208 +686,212 @@ export const initParticipantWebRTC = async (
   participantId: string,
   stream: MediaStream
 ): Promise<void> => {
-  localStream = stream;
-  console.log(`Initializing participant WebRTC with stream:`, stream);
-  console.log(`Stream has ${stream.getTracks().length} tracks:`, stream.getTracks().map(t => t.kind));
-
-  // Make sure the stream is active and has tracks
-  if (!stream.active || stream.getTracks().length === 0) {
-    console.warn("Stream provided to initParticipantWebRTC is not active or has no tracks");
-    // Try to recover by refreshing the stream
-    try {
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 },
-          frameRate: { min: 15, ideal: 30 }
-        },
-        audio: false
-      });
-      localStream = newStream;
-      stream = newStream;
-      console.log("Created new stream with", stream.getTracks().length, "tracks");
-    } catch (e) {
-      console.error("Failed to create recovery stream:", e);
-    }
+  if (!stream) {
+    logger.error(`Cannot initialize participant WebRTC without a stream for ${participantId}`);
+    throw new Error("Stream is required");
   }
-
+  
+  // Store the local stream
+  localStream = stream;
+  
+  // Initialize socket first
   await initSocket(sessionId);
+  
+  // Create a peer connection for the participant
+  const pc = new RTCPeerConnection(PEER_CONNECTION_CONFIG);
+  activePeerConnections[participantId] = pc;
 
-  // Set up broadcast channel for more reliable stream information
+  // Set optimal codec preference based on browser
+  setBestCodecPreference(pc);
+  
+  // Browser-specific handling
+  if (browserType === 'safari') {
+    // Safari requires special handling for ICE
+    pc.iceTransportPolicy = 'all'; // use both relay and non-relay candidates
+  }
+  
+  // Add all tracks from the local stream
   try {
-    const streamChannel = new BroadcastChannel(`stream-info-${sessionId}`);
-    
-    // Send detailed stream info every 3 seconds
-    const streamInfoInterval = setInterval(() => {
-      if (stream && stream.active) {
-        streamChannel.postMessage({
-          type: 'participant-stream-info',
-          participantId: participantId,
-          hasStream: true,
-          trackInfo: stream.getTracks().map(track => ({
-            id: track.id,
-            kind: track.kind,
-            enabled: track.enabled,
-            readyState: track.readyState
-          })),
-          timestamp: Date.now()
-        });
-      }
-    }, 3000);
-    
-    // Clean up on unload
-    window.addEventListener('beforeunload', () => {
-      clearInterval(streamInfoInterval);
-      streamChannel.close();
+    stream.getTracks().forEach(track => {
+      pc.addTrack(track, stream);
+      logger.info(`Added ${track.kind} track to peer connection for ${participantId}`);
     });
   } catch (e) {
-    console.warn("BroadcastChannel not supported for stream info:", e);
+    logger.error(`Error adding tracks to peer connection for ${participantId}:`, e);
+    throw e;
   }
 
-  // Set up broadcast channel fallback for signaling
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      if (fallbackModeEnabled) {
+        try {
+          const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
+          channel.postMessage({
+            type: 'candidate',
+            senderId: participantId,
+            targetId: 'host',
+            candidate: event.candidate,
+            timestamp: Date.now()
+          });
+          setTimeout(() => channel.close(), 500);
+        } catch (e) {
+          logger.error(`Error sending ICE candidate via broadcast channel:`, e);
+        }
+      } else {
+        try {
+          socket?.emit('candidate', 'host', event.candidate);
+        } catch (e) {
+          logger.error(`Error sending ICE candidate via socket:`, e);
+        }
+      }
+    }
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    logger.info(`ICE connection state for ${participantId}: ${pc.iceConnectionState}`);
+
+    // If ICE connection fails or disconnects, try to restart it
+    if (pc.iceConnectionState === 'failed') {
+      // Restart ICE if supported
+      try {
+        pc.restartIce();
+        logger.info(`Restarting ICE for ${participantId}`);
+      } catch (e) {
+        logger.error(`Error restarting ICE for ${participantId}:`, e);
+      }
+    } 
+    // If closed, clean up resources
+    else if (pc.iceConnectionState === 'closed') {
+      closePeerConnection(participantId);
+    }
+    // If connected, update status
+    else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+      updateParticipantStatus(sessionId, participantId, { active: true, lastActive: Date.now() });
+    }
+  };
+  
+  // Set up signaling using fallback or socket.io
   if (fallbackModeEnabled) {
-    console.log("Participant using broadcast channel for signaling");
     try {
       const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
       
-      // Announce our joining
+      // Listen for messages from the host
+      channel.onmessage = async (event) => {
+        const { data } = event;
+        
+        if (data.type === 'answer' && data.targetId === participantId) {
+          logger.info(`Received answer from host via broadcast channel`);
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.description));
+          } catch (e) {
+            logger.error(`Error setting remote description:`, e);
+            
+            // Try again with a delay - helps with Safari
+            setTimeout(async () => {
+              try {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.description));
+                logger.info(`Successfully set remote description on retry`);
+              } catch (retryError) {
+                logger.error(`Error setting remote description on retry:`, retryError);
+              }
+            }, 1000);
+          }
+        }
+        else if (data.type === 'candidate' && data.targetId === participantId) {
+          logger.info(`Received ICE candidate from host via broadcast channel`);
+          try {
+            if (data.candidate) {
+              await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
+          } catch (e) {
+            logger.error(`Error adding ICE candidate:`, e);
+          }
+        }
+        else if (data.type === 'host-leave') {
+          logger.info(`Host left via broadcast channel`);
+          cleanupWebRTC();
+        }
+      };
+      
+      // Send a join message to the host
       channel.postMessage({
         type: 'participant-join',
-        participantId: participantId,
+        participantId,
         hasVideo: stream.getVideoTracks().length > 0,
         timestamp: Date.now()
       });
       
-      // Send stream information
+      // Create and send an offer to the host
+      logger.info(`Creating offer for host`);
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: false,
+        offerToReceiveVideo: false,
+        iceRestart: true
+      });
+      
+      await pc.setLocalDescription(offer);
+      
       channel.postMessage({
-        type: 'stream-info',
+        type: 'offer',
         senderId: participantId,
-        hasStream: true,
-        trackCount: stream.getTracks().length,
-        videoTracks: stream.getVideoTracks().length,
+        targetId: 'host',
+        description: offer,
         timestamp: Date.now()
       });
-      
-      // Listen for messages
-      channel.onmessage = async (event) => {
-        const { data } = event;
-        
-        if (data.type === 'offer' && data.targetId === participantId) {
-          console.log(`Received offer from host via broadcast channel`);
-          try {
-            if (!activePeerConnections['host']) {
-              createHostPeerConnection(sessionId, participantId);
-            }
-            await activePeerConnections['host'].setRemoteDescription(new RTCSessionDescription(data.description));
-            const answer = await activePeerConnections['host'].createAnswer();
-            await activePeerConnections['host'].setLocalDescription(answer);
-            
-            // Send answer back via broadcast channel
-            channel.postMessage({
-              type: 'answer',
-              senderId: participantId,
-              targetId: 'host',
-              description: activePeerConnections['host'].localDescription,
-              timestamp: Date.now()
-            });
-          } catch (e) {
-            console.error('Error handling offer via broadcast channel:', e);
-          }
-        }
-        else if (data.type === 'answer' && data.targetId === participantId) {
-          console.log(`Received answer from host via broadcast channel`);
-          try {
-            await activePeerConnections['host'].setRemoteDescription(new RTCSessionDescription(data.description));
-          } catch (e) {
-            console.error('Error handling answer via broadcast channel:', e);
-          }
-        }
-        else if (data.type === 'candidate' && data.targetId === participantId) {
-          console.log(`Received ICE candidate from host via broadcast channel`);
-          try {
-            if (data.candidate) {
-              await activePeerConnections['host'].addIceCandidate(new RTCIceCandidate(data.candidate));
-            }
-          } catch (e) {
-            console.error('Error handling ICE candidate via broadcast channel:', e);
-          }
-        }
-        else if (data.type === 'host-leave') {
-          console.log(`Host left via broadcast channel`);
-          closePeerConnection('host');
-        }
-      };
-      
-      // Create the peer connection with more verbose logging
-      console.log("Creating WebRTC peer connection to host...");
-      createHostPeerConnection(sessionId, participantId);
-      
-      // Keep sending stream info in case host missed it
-      const infoInterval = setInterval(() => {
-        console.log("Sending periodic stream info...");
-        channel.postMessage({
-          type: 'stream-info',
-          senderId: participantId,
-          hasStream: true,
-          trackCount: stream.getTracks().length,
-          videoTracks: stream.getVideoTracks().length,
-          timestamp: Date.now()
-        });
-        
-        // Also attempt to recreate connection if it failed
-        if (activePeerConnections['host']?.iceConnectionState === 'failed' || 
-            activePeerConnections['host']?.iceConnectionState === 'disconnected') {
-          console.log("Detected failed connection, recreating...");
-          closePeerConnection('host');
-          createHostPeerConnection(sessionId, participantId);
-        }
-      }, 5000);
-      
-      // Clean up on window unload
-      window.addEventListener('beforeunload', () => {
-        clearInterval(infoInterval);
-        channel.postMessage({ 
-          type: 'participant-leave', 
-          participantId,
-          timestamp: Date.now()
-        });
-        channel.close();
-      });
     } catch (e) {
-      console.error("Error setting up broadcast channel for signaling:", e);
+      logger.error(`Error setting up WebRTC via broadcast channel:`, e);
+      throw e;
     }
-  }
-
-  // Handle socket events if not in fallback mode
-  if (!fallbackModeEnabled && socket) {
-    socket.on('answer', async (hostId: string, description: RTCSessionDescription) => {
-      console.log(`Received answer from host: ${hostId}`);
-      try {
-        await activePeerConnections[hostId].setRemoteDescription(description);
-      } catch (e) {
-        console.error('Error handling answer:', e);
-      }
-    });
-
-    socket.on('candidate', async (hostId: string, candidate: RTCIceCandidate) => {
-      console.log(`Received candidate from host: ${hostId}`);
-      try {
-        if (candidate) {
-          await activePeerConnections[hostId].addIceCandidate(candidate);
+  } else if (socket) {
+    try {
+      // Send a join message to the host
+      socket.emit('participantJoin', {
+        sessionId,
+        participantId,
+        hasVideo: stream.getVideoTracks().length > 0
+      });
+      
+      // Set up socket listeners
+      socket.on('answer', async (senderId: string, description: RTCSessionDescription) => {
+        if (senderId === 'host') {
+          logger.info(`Received answer from host via socket`);
+          try {
+            await pc.setRemoteDescription(description);
+          } catch (e) {
+            logger.error(`Error setting remote description:`, e);
+          }
         }
-      } catch (e) {
-        console.error('Error handling candidate:', e);
-      }
-    });
-
-    // Send stream info via socket
-    socket.emit('stream-info', participantId, {
-      hasStream: true,
-      trackCount: stream.getTracks().length
-    });
-
-    createHostPeerConnection(sessionId, participantId);
+      });
+      
+      socket.on('candidate', async (senderId: string, candidate: RTCIceCandidate) => {
+        if (senderId === 'host') {
+          logger.info(`Received ICE candidate from host via socket`);
+          try {
+            await pc.addIceCandidate(candidate);
+          } catch (e) {
+            logger.error(`Error adding ICE candidate:`, e);
+          }
+        }
+      });
+      
+      // Create and send an offer to the host
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: false,
+        offerToReceiveVideo: false
+      });
+      
+      await pc.setLocalDescription(offer);
+      socket.emit('offer', 'host', offer);
+    } catch (e) {
+      logger.error(`Error setting up WebRTC via socket:`, e);
+      throw e;
+    }
+  } else {
+    logger.error(`No signaling method available`);
+    throw new Error("No signaling method available");
   }
+  
+  return;
 };
 
 // Initialize WebRTC connection for a telao session
@@ -752,179 +940,20 @@ export const stopScreenShare = (): void => {
   }
 };
 
-// Sets the local stream with additional checks
-export const setLocalStream = (stream: MediaStream): void => {
-  console.log(`Setting local stream with ${stream.getTracks().length} tracks`);
-  
-  // Check if stream is active
-  if (!stream.active) {
-    console.warn("Stream is not active when setting as local stream");
-  }
-  
-  // Log track details
-  stream.getTracks().forEach(track => {
-    console.log(`Track: ${track.kind}, ID: ${track.id}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
-  });
-  
-  localStream = stream;
-  
-  // Update existing peer connections with the new stream
-  Object.keys(activePeerConnections).forEach(peerId => {
-    const pc = activePeerConnections[peerId];
-    
-    // Remove any existing tracks
-    const senders = pc.getSenders();
-    senders.forEach(sender => {
-      if (sender.track) {
-        pc.removeTrack(sender);
-      }
-    });
-    
-    // Add the new tracks
-    stream.getTracks().forEach(track => {
-      pc.addTrack(track, stream);
-    });
-  });
-};
-
-// Create host peer connection with enhanced debugging
-const createHostPeerConnection = async (sessionId: string, participantId: string) => {
-  console.log(`Creating participant->host peer connection`);
-  
-  activePeerConnections['host'] = new RTCPeerConnection(PEER_CONNECTION_CONFIG);
-
-  activePeerConnections['host'].onicecandidate = (event) => {
-    if (event.candidate) {
-      if (fallbackModeEnabled) {
-        try {
-          const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
-          channel.postMessage({
-            type: 'candidate',
-            senderId: participantId,
-            targetId: 'host',
-            candidate: event.candidate,
-            timestamp: Date.now()
-          });
-        } catch (e) {
-          console.error("Error sending ICE candidate via broadcast channel:", e);
-        }
-      } else if (socket) {
-        socket.emit('candidate', sessionId, event.candidate);
-      }
-    }
-  };
-
-  activePeerConnections['host'].oniceconnectionstatechange = () => {
-    console.log(`ICE Connection State Change for Host:`, activePeerConnections['host'].iceConnectionState);
-    
-    // Verify media is flowing when connected
-    if (activePeerConnections['host'].iceConnectionState === 'connected' || 
-        activePeerConnections['host'].iceConnectionState === 'completed') {
-      mediaStreamEstablished = true;
-      console.log("WebRTC peer connection successfully established");
-      
-      // Announce successful connection
-      try {
-        const channel = new BroadcastChannel(`live-session-${sessionId}`);
-        channel.postMessage({
-          type: 'webrtc-connected',
-          participantId: participantId,
-          timestamp: Date.now()
-        });
-        setTimeout(() => channel.close(), 500);
-      } catch (e) {
-        console.error("Error announcing successful connection:", e);
-      }
-    }
-    
-    // Attempt to restart ICE if the connection fails
-    if (activePeerConnections['host'].iceConnectionState === 'failed') {
-      console.log("ICE connection failed, attempting to restart");
-      try {
-        activePeerConnections['host'].restartIce();
-      } catch (e) {
-        console.error("Error restarting ICE:", e);
-      }
-      
-      // Try recreating the peer connection if restart doesn't work
-      setTimeout(() => {
-        if (activePeerConnections['host']?.iceConnectionState === 'failed') {
-          console.log("ICE restart didn't help, recreating connection");
-          closePeerConnection('host');
-          createHostPeerConnection(sessionId, participantId);
-        }
-      }, 5000);
-    }
-    // Close the connection if it's been disconnected for too long
-    else if (activePeerConnections['host'].iceConnectionState === 'disconnected') {
-      setTimeout(() => {
-        if (activePeerConnections['host']?.iceConnectionState === 'disconnected') {
-          console.log("Connection remained disconnected, recreating");
-          closePeerConnection('host');
-          createHostPeerConnection(sessionId, participantId);
-        }
-      }, 5000);
-    }
-    else if (activePeerConnections['host'].iceConnectionState === 'closed') {
-      closePeerConnection('host');
-    }
-  };
-  
-  // Add logging for connection state changes
-  activePeerConnections['host'].onconnectionstatechange = () => {
-    console.log(`Connection State Change for Host:`, activePeerConnections['host'].connectionState);
-  };
-
-  // Log when negotiation is needed
-  activePeerConnections['host'].onnegotiationneeded = () => {
-    console.log("Negotiation needed for host connection");
-  };
-
-  if (localStream) {
-    console.log(`Adding ${localStream.getTracks().length} tracks to peer connection:`, 
-      localStream.getTracks().map(t => `${t.kind} (${t.id}) - enabled: ${t.enabled}, readyState: ${t.readyState}`));
-    
-    try {
-      localStream.getTracks().forEach(track => {
-        console.log(`Adding track to peer connection: ${track.kind} (${track.id}), enabled: ${track.enabled}, readyState: ${track.readyState}`);
-        activePeerConnections['host'].addTrack(track, localStream!);
-      });
-    } catch (e) {
-      console.error("Error adding tracks to peer connection:", e);
-    }
-  } else {
-    console.warn("No local stream available when creating peer connection");
-  }
-
+/**
+ * Close a specific peer connection
+ */
+export const closePeerConnection = (participantId: string): void => {
   try {
-    const offer = await activePeerConnections['host'].createOffer({
-      offerToReceiveAudio: false,
-      offerToReceiveVideo: true
-    });
-    
-    // Set H.264 codec if available
-    setH264CodecPreference(activePeerConnections['host']);
-    
-    await activePeerConnections['host'].setLocalDescription(offer);
-    
-    if (fallbackModeEnabled) {
-      try {
-        const channel = new BroadcastChannel(`webrtc-signaling-${sessionId}`);
-        channel.postMessage({
-          type: 'offer',
-          senderId: participantId,
-          targetId: 'host',
-          description: activePeerConnections['host'].localDescription,
-          timestamp: Date.now()
-        });
-      } catch (e) {
-        console.error("Error sending offer via broadcast channel:", e);
-      }
-    } else if (socket) {
-      socket.emit('offer', sessionId, activePeerConnections['host'].localDescription);
+    if (activePeerConnections[participantId]) {
+      activePeerConnections[participantId].close();
+      delete activePeerConnections[participantId];
+      logger.info(`Closed peer connection for ${participantId}`);
     }
+    
+    delete activeParticipants[participantId];
   } catch (e) {
-    console.error('Error creating offer:', e);
+    logger.error(`Error closing peer connection for ${participantId}:`, e);
   }
 };
 
@@ -959,59 +988,40 @@ export const endWebRTC = (sessionId: string): void => {
 };
 
 /**
- * Cleans up WebRTC connections for a specific participant or all participants
- * @param participantId Optional participant ID to clean up only that connection
+ * Cleanup all WebRTC connections
  */
-export const cleanupWebRTC = (participantId?: string): void => {
-  // If participantId is provided, only clean up that specific connection
-  if (participantId && activePeerConnections[participantId]) {
-    console.log(`Cleaning up WebRTC connection for participant ${participantId}`);
-    
-    try {
-      // Close the specific peer connection
-      activePeerConnections[participantId].close();
-      delete activePeerConnections[participantId];
-      
-      // Remove the participant from active participants
-      if (activeParticipants[participantId]) {
-        delete activeParticipants[participantId];
-      }
-    } catch (error) {
-      console.error(`Error cleaning up WebRTC connection for ${participantId}:`, error);
-    }
-  } 
-  // If no participantId is provided, clean up all connections
-  else if (!participantId) {
-    console.log('Cleaning up all WebRTC connections');
-    
-    // Close all peer connections
-    Object.keys(activePeerConnections).forEach(id => {
+export const cleanupWebRTC = (): void => {
+  try {
+    Object.keys(activePeerConnections).forEach(participantId => {
       try {
-        activePeerConnections[id].close();
-      } catch (error) {
-        console.error(`Error closing peer connection for ${id}:`, error);
+        activePeerConnections[participantId].close();
+      } catch (e) {
+        logger.error(`Error closing connection for ${participantId}:`, e);
       }
     });
     
-    // Reset all state variables
     activePeerConnections = {};
     activeParticipants = {};
-    signalingSessions = {};
+    
+    if (localStream) {
+      localStream.getTracks().forEach(track => {
+        track.stop();
+      });
+      localStream = null;
+    }
+    
+    if (socket) {
+      socket.emit('disconnect');
+      socket = null;
+    }
+    
     currentSessionId = null;
-    localStream = null;
     onParticipantTrackCallback = null;
-    fallbackModeEnabled = false;
+    
+    logger.info(`WebRTC connections cleaned up`);
+  } catch (e) {
+    logger.error(`Error cleaning up WebRTC:`, e);
   }
-};
-
-// Close a specific peer connection
-const closePeerConnection = (participantId: string) => {
-  console.log(`Closing peer connection for ${participantId}`);
-  if (activePeerConnections[participantId]) {
-    activePeerConnections[participantId].close();
-    delete activePeerConnections[participantId];
-  }
-  delete activeParticipants[participantId];
 };
 
 // Set callback for participant track event
