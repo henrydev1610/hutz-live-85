@@ -80,8 +80,7 @@ const PEER_CONNECTION_CONFIG: RTCConfiguration = {
     }
   ],
   iceCandidatePoolSize: 10,
-  iceTransportPolicy: 'all' as RTCIceTransportPolicy,
-  sdpSemantics: 'unified-plan' as RTCSdpSemantics
+  iceTransportPolicy: 'all' as RTCIceTransportPolicy
 };
 
 let socket: SocketType | null = null;
@@ -166,11 +165,11 @@ export const setH264CodecPreference = (pc: RTCPeerConnection): void => {
 /**
  * Sets codec preference to VP9 if available (better for Chrome)
  */
-export const setVP9CodecPreference = (pc: RTCPeerConnection): void => {
+export const setVP9CodecPreference = (pc: RTCPeerConnection): boolean => {
   if (RTCRtpTransceiver.prototype.setCodecPreferences && RTCRtpSender.getCapabilities) {
     try {
       const capabilities = RTCRtpSender.getCapabilities('video');
-      if (!capabilities) return;
+      if (!capabilities) return false;
       
       const vp9Codecs = capabilities.codecs.filter(codec => 
         codec.mimeType.toLowerCase() === 'video/vp9'
@@ -185,10 +184,10 @@ export const setVP9CodecPreference = (pc: RTCPeerConnection): void => {
         if (videoTransceiver) {
           videoTransceiver.setCodecPreferences(vp9Codecs);
           logger.info('Set VP9 codec preference successfully');
-          return true; // Return true to indicate success
+          return true;
         }
       }
-      return false; // Return false if we couldn't set VP9 codec
+      return false;
     } catch (e) {
       logger.warn('Error setting VP9 codec preferences:', e);
       return false;
@@ -712,10 +711,10 @@ export const initParticipantWebRTC = async (
   // Set optimal codec preference based on browser
   setBestCodecPreference(pc);
   
-  // Browser-specific handling
+  // Browser-specific handling for Safari
   if (browserType === 'safari') {
-    // Safari requires special handling for ICE
-    pc.iceTransportPolicy = 'all'; // use both relay and non-relay candidates
+    // Safari requires special handling but we can't directly set policy on pc
+    // We already set the policy in the config
   }
   
   // Add all tracks from the local stream

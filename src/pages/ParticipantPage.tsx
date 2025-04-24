@@ -83,10 +83,10 @@ const ParticipantPage = () => {
 
   useEffect(() => {
     if (sessionFound && !isJoined && !isJoining && cameraPermission !== null) {
-      autoJoinTimeoutRef.current = setTimeout(() => {
+      autoJoinTimeoutRef.current = window.setTimeout(() => {
         console.log("Auto-joining session...");
         joinSession(false);
-      }, 500) as unknown as number;
+      }, 500);
     }
     
     return () => {
@@ -231,7 +231,7 @@ const ParticipantPage = () => {
     if (finalActionOpen && finalActionTimeLeft > 0) {
       const timerId = window.setInterval(() => {
         setFinalActionTimeLeft((prev) => prev - 1);
-      }, 1000) as unknown as number;
+      }, 1000);
       
       setFinalActionTimerId(timerId);
       
