@@ -1,20 +1,20 @@
 
-import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const Index = () => {
   const navigate = useNavigate();
   
   useEffect(() => {
-    // Automatically redirect to dashboard
-    navigate("/dashboard");
+    // Redirect to dashboard on component mount
+    navigate('/dashboard');
   }, [navigate]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary/40">
       <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4 text-white">Momento</h1>
-        <p className="text-xl text-gray-400">Redirecionando para o Dashboard...</p>
+        <h1 className="text-4xl font-bold mb-4 hutz-gradient-text">Hutz Live</h1>
+        <p className="text-xl text-white/70">Carregando...</p>
       </div>
     </div>
   );

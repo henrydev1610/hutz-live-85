@@ -15,20 +15,19 @@ const Dashboard = () => {
           icon={<Bell className="h-10 w-10" />} 
           path="/lightshow" 
         />
-
-        <ModuleCard 
-          title="Momento Live" 
-          description="Crie sessões de video streaming com QR Code, gerenciando participantes em tempo real para transmissões ao vivo."
-          icon={<Video className="h-10 w-10" />} 
-          path="/live" 
-          badge="Melhorado"
-        />
         
         <ModuleCard 
           title="Momento Quiz" 
           description="Crie quizzes interativos para seus eventos, onde os participantes respondem em tempo real."
           icon={<BrainCircuit className="h-10 w-10" />} 
           path="/quiz" 
+        />
+
+        <ModuleCard 
+          title="Momento Live" 
+          description="Transmissão em tempo real para seus eventos com interação via QR Code e participação da audiência."
+          icon={<Video className="h-10 w-10" />} 
+          path="/live" 
         />
       </div>
     </div>
