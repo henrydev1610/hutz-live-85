@@ -92,19 +92,24 @@ export const attachStreamToVideo = async (
       // Try to recover
       setTimeout(() => {
         try {
-          videoElement.srcObject = stream;
-          if (autoPlay) videoElement.play().catch(e => logger.error('Recovery play failed:', e));
+          // Only attempt recovery if the stream is still active
+          if (stream.active && videoElement) {
+            videoElement.srcObject = stream;
+            if (autoPlay) videoElement.play().catch(e => logger.error('Recovery play failed:', e));
+          }
         } catch (e) {
           logger.error('Recovery failed:', e);
         }
-      }, 1000);
+      }, 2000); // Increased from 1000ms to 2000ms for better recovery chances
     };
     
+    // Remove any existing error handlers to prevent duplicates
+    videoElement.removeEventListener('error', errorHandler);
     videoElement.addEventListener('error', errorHandler);
     
     if (autoPlay) {
       try {
-        // Wait for loadedmetadata before playing - increased timeout to 5000ms
+        // Wait for loadedmetadata before playing - increased timeout to 10000ms (10 seconds)
         if (videoElement.readyState < 2) {
           await new Promise<void>((resolve, reject) => {
             const loadHandler = () => {
@@ -120,13 +125,13 @@ export const attachStreamToVideo = async (
             videoElement.addEventListener('loadedmetadata', loadHandler);
             videoElement.addEventListener('error', errorLoadHandler);
             
-            // Timeout in case loadedmetadata never fires - increased from 2000ms to 5000ms
+            // Timeout in case loadedmetadata never fires - increased from 5000ms to 10000ms
             setTimeout(() => {
               videoElement.removeEventListener('loadedmetadata', loadHandler);
               videoElement.removeEventListener('error', errorLoadHandler);
               logger.info('Metadata loading timeout reached, trying to play anyway');
               resolve(); // Resolve anyway to try playing
-            }, 5000);
+            }, 10000);
           });
         }
         
@@ -145,11 +150,13 @@ export const attachStreamToVideo = async (
           // Unmute after a longer delay if allowed
           setTimeout(() => {
             try {
-              videoElement.muted = false;
+              if (videoElement && document.visibilityState === 'visible') {
+                videoElement.muted = false;
+              }
             } catch (unmuteError) {
               logger.error('Error unmuting video:', unmuteError);
             }
-          }, 3000); // Increased from 1000ms to 3000ms
+          }, 5000); // Increased from 3000ms to 5000ms
         } catch (mutedPlayError) {
           logger.error('Error playing muted video:', mutedPlayError);
         }
@@ -172,17 +179,28 @@ export const keepStreamAlive = (
   stream: MediaStream,
   intervalMs: number = 5000
 ): (() => void) => {
+  let isRunning = true;
+  let consecutiveErrors = 0;
+  const maxConsecutiveErrors = 3;
+  
   // Create a function that checks if the video is still playing properly
   const checkVideoStatus = () => {
-    if (!videoElement || !stream) return;
+    if (!isRunning || !videoElement || !stream) return;
     
     try {
+      // Reset error counter on successful checks
+      consecutiveErrors = 0;
+      
       // Check if video playback is frozen or black screen
-      if (videoElement.readyState < 2 || 
-          videoElement.paused || 
-          !stream.active || 
-          stream.getVideoTracks().some(track => !track.enabled || track.muted)) {
-        
+      const hasPlaybackIssue = videoElement.readyState < 2 || 
+                               videoElement.paused || 
+                               !stream.active;
+                               
+      const hasTrackIssue = stream.getVideoTracks().some(track => 
+        !track.enabled || track.muted || track.readyState !== 'live'
+      );
+      
+      if (hasPlaybackIssue || hasTrackIssue) {
         logger.info('Video playback issue detected, attempting recovery');
         
         // Try to get video tracks playing again
@@ -193,15 +211,23 @@ export const keepStreamAlive = (
           }
         });
         
-        // Refresh the connection to the video element
-        if (videoElement.paused) {
+        // Refresh the connection to the video element only if it's paused
+        // or has readyState issues (this avoids unnecessary refreshes)
+        if (videoElement.paused || videoElement.readyState < 2) {
           videoElement.play().catch(e => 
             logger.error('Failed to restart playback:', e)
           );
         }
       }
     } catch (e) {
-      logger.error('Error in keepStreamAlive:', e);
+      consecutiveErrors++;
+      logger.error(`Error in keepStreamAlive (error ${consecutiveErrors}/${maxConsecutiveErrors}):`, e);
+      
+      // If we've had multiple consecutive errors, stop checking to avoid crashing
+      if (consecutiveErrors >= maxConsecutiveErrors) {
+        logger.error('Too many consecutive errors in keepStreamAlive, stopping checks');
+        clearInterval(intervalId);
+      }
     }
   };
 
@@ -210,6 +236,7 @@ export const keepStreamAlive = (
   
   // Return cleanup function
   return () => {
+    isRunning = false;
     window.clearInterval(intervalId);
   };
 };

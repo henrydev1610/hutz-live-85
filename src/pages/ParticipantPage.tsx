@@ -38,7 +38,7 @@ const ParticipantPage = () => {
   const cleanupFunctionRef = useRef<(() => void) | null>(null);
   const autoJoinTimeoutRef = useRef<number | null>(null);
   const cameraStartAttempts = useRef<number>(0);
-  const [autoJoinTimeoutId, setAutoJoinTimeoutId] = useState<number | null>(null);
+  const [autoJoinTimeoutId, setAutoJoinTimeoutId] = useState<NodeJS.Timeout | null>(null);
   const [streamKeepAliveCleanup, setStreamKeepAliveCleanup] = useState<(() => void) | null>(null);
 
   useEffect(() => {
@@ -90,7 +90,7 @@ const ParticipantPage = () => {
       }, 500);
       
       // Store the timeout ID in state to clear it later
-      setAutoJoinTimeoutId(timeoutId);
+      setAutoJoinTimeoutId(timeoutId as unknown as NodeJS.Timeout);
     }
     
     return () => {
