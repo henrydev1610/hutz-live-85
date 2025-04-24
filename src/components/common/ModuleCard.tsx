@@ -2,6 +2,7 @@
 import { ReactNode } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Link } from 'react-router-dom';
 
 interface ModuleCardProps {
@@ -9,9 +10,10 @@ interface ModuleCardProps {
   description: string;
   icon: ReactNode;
   path: string;
+  badge?: string;
 }
 
-const ModuleCard = ({ title, description, icon, path }: ModuleCardProps) => {
+const ModuleCard = ({ title, description, icon, path, badge }: ModuleCardProps) => {
   return (
     <Card className="h-full flex flex-col bg-secondary/40 backdrop-blur-lg border border-white/10 hover:border-white/30 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1">
       <CardHeader className="pb-4">
@@ -20,7 +22,14 @@ const ModuleCard = ({ title, description, icon, path }: ModuleCardProps) => {
             {icon}
           </div>
         </div>
-        <CardTitle className="text-2xl font-bold text-center">{title}</CardTitle>
+        <CardTitle className="text-2xl font-bold text-center relative">
+          {title}
+          {badge && (
+            <Badge variant="secondary" className="ml-2 absolute -top-1 -right-1 bg-accent text-white">
+              {badge}
+            </Badge>
+          )}
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex-grow px-8">
         <CardDescription className="text-white/70 text-center text-lg leading-relaxed">

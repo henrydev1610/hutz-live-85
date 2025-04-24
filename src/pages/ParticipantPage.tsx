@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -28,14 +29,17 @@ const ParticipantPage = () => {
     link?: string;
     coupon?: string;
   } | null>(null);
-  const [finalActionTimerId, setFinalActionTimerId] = useState<NodeJS.Timeout | null>(null);
+  // Fix: Changed NodeJS.Timeout to ReturnType<typeof setTimeout>
+  const [finalActionTimerId, setFinalActionTimerId] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const videoRef = useRef<HTMLVideoElement>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Fix: Changed NodeJS.Timeout to ReturnType<typeof setInterval>
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cleanupFunctionRef = useRef<(() => void) | null>(null);
-  const autoJoinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Fix: Changed NodeJS.Timeout to ReturnType<typeof setTimeout>
+  const autoJoinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraStartAttempts = useRef<number>(0);
 
   useEffect(() => {
