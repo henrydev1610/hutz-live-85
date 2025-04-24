@@ -1,3 +1,4 @@
+
 import { QrCode, ExternalLink, Check, Copy } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,8 +39,10 @@ const QrCodeSettings = ({
 }: QrCodeSettingsProps) => {
   const { toast } = useToast();
 
+  // Enhanced copy function with better cross-browser support
   const copyQrCodeUrl = () => {
-    if (navigator.clipboard) {
+    if (navigator.clipboard && window.isSecureContext) {
+      // For secure contexts where Clipboard API is available
       navigator.clipboard.writeText(qrCodeURL).then(() => {
         toast({
           title: "Link copiado",
@@ -50,6 +53,7 @@ const QrCodeSettings = ({
         fallbackCopy();
       });
     } else {
+      // Fallback for insecure contexts or older browsers
       fallbackCopy();
     }
   };
@@ -59,7 +63,7 @@ const QrCodeSettings = ({
       const textArea = document.createElement("textarea");
       textArea.value = qrCodeURL;
       
-      // Avoid scrolling to bottom
+      // Make it less visible
       textArea.style.position = "fixed";
       textArea.style.top = "0";
       textArea.style.left = "0";
@@ -70,17 +74,22 @@ const QrCodeSettings = ({
       textArea.style.outline = "none";
       textArea.style.boxShadow = "none";
       textArea.style.background = "transparent";
+      textArea.style.opacity = "0";
       
       document.body.appendChild(textArea);
       textArea.focus();
       textArea.select();
       
       try {
-        document.execCommand('copy');
-        toast({
-          title: "Link copiado",
-          description: "URL do QR Code copiado para a área de transferência."
-        });
+        const successful = document.execCommand('copy');
+        if (successful) {
+          toast({
+            title: "Link copiado",
+            description: "URL do QR Code copiado para a área de transferência."
+          });
+        } else {
+          throw new Error("Copy command unsuccessful");
+        }
       } catch (err) {
         console.error("Fallback copy failed:", err);
         toast({
@@ -88,12 +97,55 @@ const QrCodeSettings = ({
           description: "Por favor, selecione e copie o link manualmente.",
           variant: "destructive"
         });
+        
+        // Make the textArea visible for manual copy
+        textArea.style.opacity = "1";
+        textArea.style.width = "80%";
+        textArea.style.height = "auto";
+        textArea.style.padding = "10px";
+        textArea.style.margin = "10px auto";
+        textArea.style.display = "block";
+        textArea.style.background = "#fff";
+        textArea.style.color = "#000";
+        textArea.style.border = "1px solid #ddd";
+        textArea.style.borderRadius = "4px";
+        textArea.style.zIndex = "9999";
+        
+        // Add a close button
+        const closeButton = document.createElement("button");
+        closeButton.textContent = "Fechar";
+        closeButton.style.margin = "10px auto";
+        closeButton.style.padding = "5px 10px";
+        closeButton.style.display = "block";
+        closeButton.onclick = function() {
+          document.body.removeChild(textArea);
+          document.body.removeChild(closeButton);
+        };
+        document.body.appendChild(closeButton);
       }
       
-      document.body.removeChild(textArea);
+      // Remove the textArea after a short delay
+      setTimeout(() => {
+        if (document.body.contains(textArea)) {
+          document.body.removeChild(textArea);
+        }
+      }, 5000);
     } catch (err) {
       console.error("Fallback copy error:", err);
     }
+  };
+
+  // Test URL accessibility
+  const testQrLink = () => {
+    if (!qrCodeURL) return;
+    
+    toast({
+      title: "Verificando link",
+      description: "Abrindo URL do QR Code em uma nova janela..."
+    });
+    
+    // Open in a new window to test
+    window.open(qrCodeURL, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -135,15 +187,26 @@ const QrCodeSettings = ({
               <Label className="text-xs">
                 Link do QR Code:
               </Label>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="h-6 px-2 text-xs"
-                onClick={copyQrCodeUrl}
-              >
-                <Copy className="h-3 w-3 mr-1" />
-                Copiar
-              </Button>
+              <div className="flex gap-1">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 px-2 text-xs"
+                  onClick={copyQrCodeUrl}
+                >
+                  <Copy className="h-3 w-3 mr-1" />
+                  Copiar
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 px-2 text-xs"
+                  onClick={testQrLink}
+                >
+                  <ExternalLink className="h-3 w-3 mr-1" />
+                  Testar
+                </Button>
+              </div>
             </div>
             <div className="text-xs break-all bg-secondary/40 p-2 rounded relative group">
               {qrCodeURL}

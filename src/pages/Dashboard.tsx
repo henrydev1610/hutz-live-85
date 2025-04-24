@@ -21,6 +21,7 @@ const Dashboard = () => {
           description="Crie sessões de video streaming com QR Code, gerenciando participantes em tempo real para transmissões ao vivo."
           icon={<Video className="h-10 w-10" />} 
           path="/live" 
+          badge="Melhorado"
         />
         
         <ModuleCard 

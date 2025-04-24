@@ -55,60 +55,56 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   const [hasVideoMap, setHasVideoMap] = useState<{[key: string]: boolean}>({});
   const [streamConnectionCount, setStreamConnectionCount] = useState<{[key: string]: number}>({});
   const [streamErrors, setStreamErrors] = useState<{[key: string]: string}>({});
+  const [lastStreamUpdate, setLastStreamUpdate] = useState<{[key: string]: number}>({});
   const videoRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
   const videoElements = useRef<{[key: string]: HTMLVideoElement | null}>({});
+  const streamUpdateTimers = useRef<{[key: string]: number}>({});
   
-  // Enhanced broadcast channel listener for better stream reception
+  // Enhanced broadcast channel listener with heartbeat system
   useEffect(() => {
     if (!sessionId) return;
     
+    console.log(`ParticipantGrid initializing for session ${sessionId} with ${participants.length} participants`);
+    
+    const channels = [];
+    
     try {
-      // Listen on multiple channels for redundancy
-      const channels = [
-        new BroadcastChannel(`live-session-${sessionId}`),
-        new BroadcastChannel(`telao-session-${sessionId}`),
-        new BroadcastChannel(`stream-info-${sessionId}`)
-      ];
+      // Set up multiple communication channels for redundancy
+      const streamInfoChannel = new BroadcastChannel(`stream-info-${sessionId}`);
+      const liveSessionChannel = new BroadcastChannel(`live-session-${sessionId}`);
+      const telaoSessionChannel = new BroadcastChannel(`telao-session-${sessionId}`);
       
-      // Also set up localStorage monitoring for Firefox/Opera
-      const storageListener = (event: StorageEvent) => {
-        if (!event.key) return;
+      channels.push(streamInfoChannel, liveSessionChannel, telaoSessionChannel);
+      
+      // Handle stream information through BroadcastChannel
+      const handleStreamInfoMessage = (event: MessageEvent) => {
+        const data = event.data;
+        if (!data || !data.type) return;
         
-        // Check for stream info in storage events
-        if (event.key.startsWith(`stream-info-${sessionId}`)) {
-          try {
-            const data = JSON.parse(event.newValue || "{}");
-            if (data.type === 'video-stream-info') {
-              handleStreamInfo(data);
-            }
-          } catch (e) {
-            console.error("Error parsing storage event stream info:", e);
-          }
+        // Process video stream info messages
+        if (data.type === 'video-stream-info' && data.id) {
+          console.log(`Received stream info for ${data.id}:`, data);
+          processStreamInfo(data);
         }
         
-        // Check for diagnostic data
-        if (event.key.startsWith(`diagnostic-${sessionId}`)) {
-          try {
-            const data = JSON.parse(event.newValue || "{}");
-            if (data.type === 'connection-diagnostics') {
-              console.log("Received diagnostic data via storage:", data);
-              // Update participant browser info if available
-              if (data.participantId && data.browserType) {
-                updateParticipantStatus(sessionId, data.participantId, {
-                  browserType: data.browserType,
-                  lastActive: Date.now()
-                });
-              }
-            }
-          } catch (e) {
-            console.error("Error parsing diagnostic data:", e);
-          }
+        // Process diagnostic messages
+        if (data.type === 'connection-diagnostics' && data.participantId) {
+          console.log(`Received diagnostic data for ${data.participantId}:`, data);
+          updateParticipantBrowserInfo(data);
+        }
+        
+        // Process real-time heartbeats
+        if (data.type === 'participant-heartbeat' && data.participantId) {
+          updateParticipantActivity(data.participantId);
         }
       };
       
-      window.addEventListener('storage', storageListener);
+      // Set up listeners for all channels
+      streamInfoChannel.onmessage = handleStreamInfoMessage;
+      liveSessionChannel.onmessage = handleStreamInfoMessage;
+      telaoSessionChannel.onmessage = handleStreamInfoMessage;
       
-      // Poll localStorage directly for Firefox/Opera (they handle storage events differently)
+      // Set up localStorage polling fallback (for Firefox/Safari compatibility)
       const checkStorageInterval = setInterval(() => {
         try {
           for (let i = 0; i < localStorage.length; i++) {
@@ -116,7 +112,6 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
             if (!key) continue;
             
             if (key.startsWith(`stream-info-${sessionId}`) || 
-                key.startsWith(`test-${sessionId}`) ||
                 key.startsWith(`diagnostic-${sessionId}`)) {
               try {
                 const value = localStorage.getItem(key);
@@ -124,27 +119,17 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
                 
                 const data = JSON.parse(value);
                 
-                // Process various message types
-                if (data.type === 'video-stream-info') {
-                  handleStreamInfo(data);
+                if (data.type === 'video-stream-info' && data.id) {
+                  processStreamInfo(data);
                   // Remove after processing to avoid duplicates
                   localStorage.removeItem(key);
                 }
-                else if (data.type === 'connection-test') {
-                  // Send ack response
-                  const responseKey = `response-${sessionId}-${data.id}-${Date.now()}`;
-                  localStorage.setItem(responseKey, JSON.stringify({
-                    type: 'host-ack',
-                    targetId: data.id,
-                    testId: data.testId,
-                    timestamp: Date.now()
-                  }));
-                  
-                  // Remove test message
+                else if (data.type === 'connection-diagnostics' && data.participantId) {
+                  updateParticipantBrowserInfo(data);
                   localStorage.removeItem(key);
                 }
               } catch (e) {
-                console.warn("Error processing localStorage item:", e);
+                console.warn("Error processing localStorage stream info:", e);
               }
             }
           }
@@ -153,137 +138,224 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         }
       }, 1000);
       
-      const handleStreamInfo = (data: any) => {
-        if (!data || !data.id) return;
-        
-        const participantId = data.id;
-        console.log(`Received stream info from ${participantId}:`, data);
-        
-        // Update hasVideo state based on the message
-        if (data.hasVideo !== undefined) {
-          setHasVideoMap(prev => ({
-            ...prev,
-            [participantId]: data.hasVideo
+      // Periodically request stream updates from participants
+      const requestUpdatesInterval = setInterval(() => {
+        try {
+          // Broadcast request for stream info updates
+          streamInfoChannel.postMessage({
+            type: 'request-stream-info',
+            timestamp: Date.now()
+          });
+          
+          // Also store request in localStorage for browsers that don't support BroadcastChannel
+          const requestKey = `stream-request-${sessionId}-${Date.now()}`;
+          localStorage.setItem(requestKey, JSON.stringify({
+            type: 'request-stream-info',
+            timestamp: Date.now()
           }));
           
-          // Ensure participant is shown as active
-          const participant = participants.find(p => p.id === participantId);
-          if (participant) {
-            const updates: any = {
-              active: true,
-              lastActive: Date.now(),
-              hasVideo: data.hasVideo
-            };
-            
-            // Update browser type if available
-            if (data.deviceInfo?.userAgent) {
-              const ua = data.deviceInfo.userAgent.toLowerCase();
-              if (ua.indexOf('firefox') > -1) {
-                updates.browserType = 'firefox';
-              } else if (ua.indexOf('opr') > -1 || ua.indexOf('opera') > -1) {
-                updates.browserType = 'opera';
-              } else if (ua.indexOf('edge') > -1 || ua.indexOf('edg') > -1) {
-                updates.browserType = 'edge';
-              } else if (ua.indexOf('chrome') > -1) {
-                updates.browserType = 'chrome';
-              } else if (ua.indexOf('safari') > -1) {
-                updates.browserType = 'safari';
-              }
+          // Clean up old request keys
+          setTimeout(() => localStorage.removeItem(requestKey), 5000);
+          
+          // Check for stale streams (no updates for over 10 seconds)
+          const now = Date.now();
+          Object.entries(lastStreamUpdate).forEach(([participantId, lastUpdate]) => {
+            if (now - lastUpdate > 10000) {
+              console.log(`Stream for participant ${participantId} may be stale (last updated ${now - lastUpdate}ms ago)`);
+              
+              // Try to recover by sending another request specifically for this participant
+              streamInfoChannel.postMessage({
+                type: 'request-stream-info',
+                targetId: participantId,
+                timestamp: now
+              });
             }
-            
-            updateParticipantStatus(sessionId, participantId, updates);
-          }
-          
-          // Send acknowledgment back to participant (try both broadcast and storage)
-          try {
-            const responseChannel = new BroadcastChannel(`response-${sessionId}`);
-            responseChannel.postMessage({
-              type: 'host-ack',
-              targetId: participantId,
-              received: true,
-              timestamp: Date.now()
-            });
-            setTimeout(() => responseChannel.close(), 500);
-          } catch (e) {
-            console.error("Error sending broadcast acknowledgment:", e);
-          }
-          
-          // Also store ack in localStorage for Firefox/Opera
-          try {
-            const responseKey = `response-${sessionId}-${participantId}-${Date.now()}`;
-            localStorage.setItem(responseKey, JSON.stringify({
-              type: 'host-ack',
-              targetId: participantId,
-              received: true,
-              timestamp: Date.now()
-            }));
-            setTimeout(() => localStorage.removeItem(responseKey), 10000);
-          } catch (e) {
-            console.error("Error storing localStorage acknowledgment:", e);
-          }
+          });
+        } catch (e) {
+          console.error("Error requesting stream updates:", e);
         }
-      };
+      }, 5000);
       
-      // Set up listeners for all channels
-      channels.forEach(channel => {
-        channel.onmessage = (event) => {
-          if (event.data.type === 'video-stream-info') {
-            handleStreamInfo(event.data);
-          }
-        };
-      });
-      
-      // Cleanup function to close all channels and intervals
+      // Return cleanup function
       return () => {
         channels.forEach(channel => channel.close());
-        window.removeEventListener('storage', storageListener);
         clearInterval(checkStorageInterval);
+        clearInterval(requestUpdatesInterval);
+        
+        // Clear any pending stream update timers
+        Object.values(streamUpdateTimers.current).forEach(
+          timerId => window.clearTimeout(timerId)
+        );
       };
     } catch (e) {
-      console.error("Error setting up stream info channels:", e);
+      console.error("Error setting up stream communication channels:", e);
       
-      // Fallback to pure localStorage approach for Firefox/Opera
+      // If BroadcastChannel setup fails, fall back to pure localStorage approach
       const storageListener = (event: StorageEvent) => {
-        // We need this for browsers that don't support BroadcastChannel
-        if (event.key && event.key.includes(`stream-info-${sessionId}`)) {
-          try {
+        if (!event.key) return;
+        
+        try {
+          if (event.key.startsWith(`stream-info-${sessionId}`)) {
             const data = JSON.parse(event.newValue || "{}");
             if (data.type === 'video-stream-info' && data.id) {
               console.log("Received stream info via localStorage:", data);
-              
-              setHasVideoMap(prev => ({
-                ...prev,
-                [data.id]: data.hasVideo
-              }));
-              
-              // Update participant status
-              updateParticipantStatus(sessionId, data.id, {
-                active: true,
-                lastActive: Date.now(),
-                hasVideo: data.hasVideo
-              });
+              processStreamInfo(data);
             }
-          } catch (error) {
-            console.error("Error handling storage event:", error);
           }
+        } catch (e) {
+          console.error("Error handling storage event:", e);
         }
       };
       
       window.addEventListener('storage', storageListener);
       
+      // Set up periodic localStorage check as a backup
+      const checkStorageInterval = setInterval(() => {
+        try {
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key || !key.startsWith(`stream-info-${sessionId}`)) continue;
+            
+            try {
+              const value = localStorage.getItem(key);
+              if (!value) continue;
+              
+              const data = JSON.parse(value);
+              if (data.type === 'video-stream-info' && data.id) {
+                processStreamInfo(data);
+                localStorage.removeItem(key);
+              }
+            } catch (e) {
+              console.warn("Error processing localStorage item:", e);
+            }
+          }
+        } catch (e) {
+          console.error("Error in localStorage fallback check:", e);
+        }
+      }, 1000);
+      
       return () => {
         window.removeEventListener('storage', storageListener);
+        clearInterval(checkStorageInterval);
       };
     }
   }, [sessionId, participants]);
+  
+  // Process stream info from participants
+  const processStreamInfo = (data: any) => {
+    if (!data || !data.id) return;
+    
+    const participantId = data.id;
+    
+    // Update hasVideo state based on the message
+    if (data.hasVideo !== undefined) {
+      setHasVideoMap(prev => ({
+        ...prev,
+        [participantId]: data.hasVideo
+      }));
+      
+      // Record the last time we got an update for this stream
+      setLastStreamUpdate(prev => ({
+        ...prev,
+        [participantId]: Date.now()
+      }));
+      
+      // Ensure participant is shown as active
+      updateParticipantActivity(participantId, data);
+      
+      // Send acknowledgment back to participant
+      sendStreamAcknowledgment(participantId);
+    }
+  };
+  
+  // Update participant activity status
+  const updateParticipantActivity = (participantId: string, data?: any) => {
+    const participant = participants.find(p => p.id === participantId);
+    if (participant) {
+      const updates: any = {
+        active: true,
+        lastActive: Date.now()
+      };
+      
+      if (data?.hasVideo !== undefined) {
+        updates.hasVideo = data.hasVideo;
+      }
+      
+      updateParticipantStatus(sessionId, participantId, updates);
+    }
+  };
+  
+  // Update participant browser information from diagnostic data
+  const updateParticipantBrowserInfo = (data: any) => {
+    if (!data.participantId) return;
+    
+    const updates: any = {
+      active: true,
+      lastActive: Date.now()
+    };
+    
+    // Update browser type if available
+    if (data.deviceInfo?.userAgent) {
+      const ua = data.deviceInfo.userAgent.toLowerCase();
+      if (ua.indexOf('firefox') > -1) {
+        updates.browserType = 'firefox';
+      } else if (ua.indexOf('opr') > -1 || ua.indexOf('opera') > -1) {
+        updates.browserType = 'opera';
+      } else if (ua.indexOf('edge') > -1 || ua.indexOf('edg') > -1) {
+        updates.browserType = 'edge';
+      } else if (ua.indexOf('chrome') > -1) {
+        updates.browserType = 'chrome';
+      } else if (ua.indexOf('safari') > -1) {
+        updates.browserType = 'safari';
+      }
+    }
+    
+    if (Object.keys(updates).length > 1) {
+      updateParticipantStatus(sessionId, data.participantId, updates);
+    }
+  };
+  
+  // Send stream acknowledgment to participant
+  const sendStreamAcknowledgment = (participantId: string) => {
+    try {
+      // Try both broadcast and storage mechanisms for maximum compatibility
+      try {
+        const responseChannel = new BroadcastChannel(`response-${sessionId}`);
+        responseChannel.postMessage({
+          type: 'host-ack',
+          targetId: participantId,
+          received: true,
+          timestamp: Date.now()
+        });
+        setTimeout(() => responseChannel.close(), 500);
+      } catch (e) {
+        console.error("Error sending broadcast acknowledgment:", e);
+      }
+      
+      // Also store ack in localStorage for Firefox/Safari compatibility
+      try {
+        const responseKey = `response-${sessionId}-${participantId}-${Date.now()}`;
+        localStorage.setItem(responseKey, JSON.stringify({
+          type: 'host-ack',
+          targetId: participantId,
+          received: true,
+          timestamp: Date.now()
+        }));
+        setTimeout(() => localStorage.removeItem(responseKey), 10000);
+      } catch (e) {
+        console.error("Error storing localStorage acknowledgment:", e);
+      }
+    } catch (e) {
+      console.error("Error sending stream acknowledgment:", e);
+    }
+  };
   
   // Enhanced effect to update video elements when stream references change
   useEffect(() => {
     if (!participantStreams) return;
     
     // Log the available participant streams for debugging
-    console.log("Available participant streams:", Object.keys(participantStreams));
-    console.log("Participants with streams:", participants.filter(p => participantStreams[p.id]).length);
+    console.log(`ParticipantGrid: Processing ${Object.keys(participantStreams).length} participant streams`);
     
     // Check for each participant that should have video
     participants.forEach(participant => {
@@ -315,6 +387,12 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
           [participant.id]: (prev[participant.id] || 0) + 1
         }));
         
+        // Record the last time we got an update for this stream
+        setLastStreamUpdate(prev => ({
+          ...prev,
+          [participant.id]: Date.now()
+        }));
+        
         // Clear any previous errors
         setStreamErrors(prev => ({
           ...prev,
@@ -328,6 +406,17 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
           updateVideoElement(container, stream, participant.id);
         } else {
           console.log(`Container for participant ${participant.id} not found yet.`);
+          
+          // Schedule a retry in case the container wasn't ready yet
+          const timerId = window.setTimeout(() => {
+            const container = videoRefs.current[participant.id];
+            if (container) {
+              console.log(`Retry: Updating video for ${participant.id}`);
+              updateVideoElement(container, stream, participant.id);
+            }
+          }, 500);
+          
+          streamUpdateTimers.current[participant.id] = timerId;
         }
       }
     });
@@ -362,23 +451,40 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         // Add event listeners for video with detailed logging
         videoElement.onloadedmetadata = () => {
           console.log(`Video metadata loaded for ${participantId}, dimensions: ${videoElement?.videoWidth}x${videoElement?.videoHeight}`);
-          videoElement?.play().catch(err => {
-            console.error(`Error playing video on metadata load for ${participantId}:`, err);
-            
-            // Track the error
-            setStreamErrors(prev => ({
-              ...prev,
-              [participantId]: `Play error: ${err.message}`
-            }));
-            
-            // Try again with a delay
-            setTimeout(() => {
-              console.log(`Retrying play for ${participantId} after metadata load`);
-              videoElement?.play().catch(e => {
-                console.error(`Retry failed for ${participantId}:`, e);
-              });
-            }, 1000);
-          });
+          videoElement?.play()
+            .then(() => console.log(`Video playing after metadata load for ${participantId}`))
+            .catch(err => {
+              console.error(`Error playing video on metadata load for ${participantId}:`, err);
+              
+              // Track the error
+              setStreamErrors(prev => ({
+                ...prev,
+                [participantId]: `Play error: ${err.message}`
+              }));
+              
+              // Try again with a delay and different play approach
+              setTimeout(() => {
+                if (videoElement) {
+                  // Try with user gesture simulation (works in some browsers)
+                  const playPromise = videoElement.play();
+                  if (playPromise) {
+                    playPromise.catch(e => {
+                      console.error(`Retry failed for ${participantId}:`, e);
+                      // Try with muted first, then unmute (Safari workaround)
+                      videoElement.muted = true;
+                      videoElement.play().then(() => {
+                        // Try to unmute after a short delay
+                        setTimeout(() => {
+                          videoElement.muted = false;
+                        }, 1000);
+                      }).catch(finalErr => {
+                        console.error(`All play attempts failed for ${participantId}:`, finalErr);
+                      });
+                    });
+                  }
+                }
+              }, 1000);
+            });
         };
         
         // Add more event listeners for debugging
@@ -398,6 +504,34 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
             ...prev,
             [participantId]: errorMessage
           }));
+          
+          // Try to recover automatically
+          setTimeout(() => {
+            if (videoElement && container.contains(videoElement)) {
+              console.log(`Attempting to recover from video error for ${participantId}`);
+              
+              // Re-create video element
+              const newVideo = document.createElement('video');
+              newVideo.autoplay = true;
+              newVideo.playsInline = true;
+              newVideo.muted = true;
+              newVideo.className = 'w-full h-full object-cover';
+              newVideo.setAttribute('data-participant-id', participantId);
+              
+              // Setup event listeners
+              setupVideoEventListeners(newVideo, participantId);
+              
+              // Replace old video element
+              container.replaceChild(newVideo, videoElement);
+              videoElements.current[participantId] = newVideo;
+              
+              // Set stream
+              if (stream) {
+                newVideo.srcObject = stream;
+                newVideo.play().catch(err => console.error(`Recovery play failed for ${participantId}:`, err));
+              }
+            }
+          }, 2000);
         };
       }
       
@@ -407,32 +541,8 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         // Set the stream as source
         videoElement.srcObject = stream;
         
-        // Try to play video
-        videoElement.play()
-          .then(() => {
-            console.log(`Video playing for ${participantId}`);
-            // Clear errors when video plays successfully
-            setStreamErrors(prev => ({
-              ...prev,
-              [participantId]: ''
-            }));
-          })
-          .catch(err => {
-            console.error(`Error playing video for ${participantId}:`, err);
-            setStreamErrors(prev => ({
-              ...prev,
-              [participantId]: `Play error: ${err.message}`
-            }));
-            
-            // Retry logic
-            setTimeout(() => {
-              if (videoElement) {
-                videoElement.play()
-                  .then(() => console.log(`Successfully played video on retry for ${participantId}`))
-                  .catch(retryErr => console.error(`Error on retry for ${participantId}:`, retryErr));
-              }
-            }, 1000);
-          });
+        // Try to play video with enhanced error handling
+        playVideoWithFallbacks(videoElement, participantId);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -441,9 +551,113 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         ...prev,
         [participantId]: errorMessage
       }));
+      
+      // Try to recover after a delay
+      setTimeout(() => {
+        try {
+          // Reset the video element completely
+          if (container) {
+            // Remove old video
+            while (container.firstChild) {
+              container.removeChild(container.firstChild);
+            }
+            
+            // Create new video element
+            const newVideo = document.createElement('video');
+            newVideo.autoplay = true;
+            newVideo.playsInline = true;
+            newVideo.muted = true;
+            newVideo.className = 'w-full h-full object-cover';
+            
+            // Set up all event listeners
+            setupVideoEventListeners(newVideo, participantId);
+            
+            // Append to container
+            container.appendChild(newVideo);
+            
+            // Store reference
+            videoElements.current[participantId] = newVideo;
+            
+            // Set stream source
+            if (stream) {
+              newVideo.srcObject = stream;
+              newVideo.play().catch(err => console.error(`Recovery play failed for ${participantId}:`, err));
+            }
+          }
+        } catch (recoveryError) {
+          console.error(`Failed to recover video element for ${participantId}:`, recoveryError);
+        }
+      }, 2000);
     }
   };
+  
+  // Setup all video event listeners
+  const setupVideoEventListeners = (videoElement: HTMLVideoElement, participantId: string) => {
+    videoElement.onloadedmetadata = () => {
+      console.log(`Video metadata loaded for ${participantId}`);
+      videoElement.play().catch(err => {
+        console.error(`Error playing video on metadata load:`, err);
+        // Try different play approaches
+        playVideoWithFallbacks(videoElement, participantId);
+      });
+    };
+    
+    videoElement.oncanplay = () => {
+      console.log(`Video can play for ${participantId}`);
+      setStreamErrors(prev => ({ ...prev, [participantId]: '' }));
+    };
+    
+    videoElement.onerror = () => {
+      const errorMessage = videoElement.error?.message || "Unknown video error";
+      console.error(`Video error for ${participantId}:`, errorMessage);
+      setStreamErrors(prev => ({ ...prev, [participantId]: errorMessage }));
+    };
+  };
+  
+  // Enhanced video playback with multiple fallbacks for different browsers
+  const playVideoWithFallbacks = (videoElement: HTMLVideoElement, participantId: string) => {
+    console.log(`Attempting to play video for ${participantId} with fallbacks`);
+    
+    // First attempt - standard play
+    videoElement.play()
+      .then(() => {
+        console.log(`Video playing for ${participantId}`);
+        setStreamErrors(prev => ({ ...prev, [participantId]: '' }));
+      })
+      .catch(err => {
+        console.error(`Initial play failed for ${participantId}:`, err);
+        
+        // Second attempt - ensure muted (required by some browsers for autoplay)
+        videoElement.muted = true;
+        
+        setTimeout(() => {
+          videoElement.play()
+            .then(() => {
+              console.log(`Video playing (muted) for ${participantId}`);
+              
+              // Try to unmute after user interaction (won't work without interaction)
+              const tryUnmute = () => {
+                videoElement.muted = false;
+                document.removeEventListener('click', tryUnmute);
+              };
+              document.addEventListener('click', tryUnmute);
+            })
+            .catch(err2 => {
+              console.error(`Muted play failed for ${participantId}:`, err2);
+              
+              // Third attempt - try with low volume
+              videoElement.volume = 0.01;
+              setTimeout(() => {
+                videoElement.play()
+                  .then(() => console.log(`Video playing (low volume) for ${participantId}`))
+                  .catch(err3 => console.error(`All play attempts failed for ${participantId}:`, err3));
+              }, 1000);
+            });
+        }, 1000);
+      });
+  };
 
+  // Format time since for display
   const formatTimeSince = (timestamp: number) => {
     const now = Date.now();
     const diffMs = now - timestamp;
@@ -454,7 +668,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     return `${Math.floor(diffSec / 3600)}h`;
   };
 
-  // This is the critical function to handle manual selection - modified to be explicit
+  // Handle manual selection of participants
   const handleToggleSelect = (id: string) => {
     console.log(`Manually toggling selection for participant: ${id}`);
     onSelectParticipant(id);
@@ -578,7 +792,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => onToggleAdminStatus(participant.id)}>
+                    <DropdownMenuItem onClick={() => onToggleAdminStatus && onToggleAdminStatus(participant.id)}>
                       {participant.isAdmin ? (
                         <>
                           <Shield className="mr-2 h-4 w-4 text-destructive" />
