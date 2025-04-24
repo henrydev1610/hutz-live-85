@@ -1,4 +1,3 @@
-
 import { createLogger } from './loggingUtils';
 
 const logger = createLogger('diagnostics');
@@ -237,7 +236,8 @@ const checkWebRTCSupport = (): any => {
     broadcastChannel: typeof BroadcastChannel !== 'undefined',
     h264: false,
     vp8: false,
-    vp9: false
+    vp9: false,
+    mediaStream: 'MediaStream' in window
   };
   
   // Check codec support if applicable
@@ -252,11 +252,6 @@ const checkWebRTCSupport = (): any => {
     } catch (e) {
       logger.error("Error checking codec support:", e);
     }
-  }
-  
-  // Check existing stream
-  if ('MediaStream' in window) {
-    support.mediaStream = true;
   }
   
   return support;
