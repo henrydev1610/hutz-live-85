@@ -8,7 +8,7 @@ import { isSessionActive, addParticipantToSession, getSessionFinalAction } from 
 import { initParticipantWebRTC, setLocalStream, cleanupWebRTC } from '@/utils/webrtc';
 import { initializeParticipantSession } from '@/utils/liveStreamUtils';
 import { diagnoseConnection, testBroadcastReception } from '@/utils/connectionDiagnostics';
-import { attachStreamToVideo } from '@/utils/streamUtils';
+import { attachStreamToVideo, keepStreamAlive } from '@/utils/streamUtils';
 
 const ParticipantPage = () => {
   const { toast } = useToast();
@@ -38,6 +38,8 @@ const ParticipantPage = () => {
   const cleanupFunctionRef = useRef<(() => void) | null>(null);
   const autoJoinTimeoutRef = useRef<number | null>(null);
   const cameraStartAttempts = useRef<number>(0);
+  const [autoJoinTimeoutId, setAutoJoinTimeoutId] = useState<number | null>(null);
+  const [streamKeepAliveCleanup, setStreamKeepAliveCleanup] = useState<(() => void) | null>(null);
 
   useEffect(() => {
     const newParticipantId = `participant-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -82,15 +84,18 @@ const ParticipantPage = () => {
 
   useEffect(() => {
     if (sessionFound && !isJoined && !isJoining && cameraPermission !== null) {
-      autoJoinTimeoutRef.current = window.setTimeout(() => {
+      const timeoutId = window.setTimeout(() => {
         console.log("Auto-joining session...");
         joinSession(false);
       }, 500);
+      
+      // Store the timeout ID in state to clear it later
+      setAutoJoinTimeoutId(timeoutId);
     }
     
     return () => {
-      if (autoJoinTimeoutRef.current) {
-        clearTimeout(autoJoinTimeoutRef.current);
+      if (autoJoinTimeoutId) {
+        clearTimeout(autoJoinTimeoutId);
       }
     };
   }, [sessionFound, isJoined, isJoining, cameraPermission]);
@@ -129,7 +134,7 @@ const ParticipantPage = () => {
       const restartTimeout = setTimeout(() => {
         cameraStartAttempts.current += 1;
         startCamera(true);
-      }, 1000);
+      }, 2000); // Increased from 1000ms to 2000ms
       
       return () => clearTimeout(restartTimeout);
     }
@@ -142,12 +147,24 @@ const ParticipantPage = () => {
             (videoRef.current.readyState < 2 || 
              videoRef.current.paused || 
              videoRef.current.videoWidth === 0)) {
-          console.log("Video not playing properly, restarting camera");
-          startCamera(true);
+          console.log("Video not playing properly, attempting recovery");
+          
+          // First try to restart playback without restarting the camera
+          try {
+            videoRef.current.play();
+            console.log("Attempted to restart playback");
+          } catch (e) {
+            console.error("Error restarting playback:", e);
+            // Only restart camera as last resort
+            if (cameraStartAttempts.current < 3) {
+              startCamera(true);
+            }
+          }
         }
       };
       
-      const videoCheckTimeout = setTimeout(checkVideoPlaying, 2000);
+      // Increase timeout to check video playing from 2000ms to 5000ms
+      const videoCheckTimeout = setTimeout(checkVideoPlaying, 5000);
       return () => clearTimeout(videoCheckTimeout);
     }
   }, [videoStream]);
@@ -432,6 +449,12 @@ const ParticipantPage = () => {
           videoRef.current.srcObject = null;
         }
         setVideoStream(null);
+        
+        // Clean up any existing keep-alive
+        if (streamKeepAliveCleanup) {
+          streamKeepAliveCleanup();
+          setStreamKeepAliveCleanup(null);
+        }
       }
 
       if (videoStream && !forceRestart) {
@@ -458,6 +481,10 @@ const ParticipantPage = () => {
       if (videoRef.current) {
         await attachStreamToVideo(videoRef.current, stream, true);
         console.log("Set video element source object successfully");
+        
+        // Set up stream keep-alive to prevent black screen
+        const cleanup = keepStreamAlive(videoRef.current, stream);
+        setStreamKeepAliveCleanup(cleanup);
       } else {
         console.warn("Video element ref not available");
       }
@@ -568,13 +595,16 @@ const ParticipantPage = () => {
           await initParticipantWebRTC(sessionId, participantId, stream);
           console.log("WebRTC initialized successfully");
           
-          for (let i = 0; i < 5; i++) {
+          // Send stream info multiple times with increased intervals to ensure host receives it
+          const announceIntervals = [800, 1500, 3000, 6000, 10000];
+          announceIntervals.forEach((delay, i) => {
             setTimeout(() => {
               if (stream && stream.active) {
                 announceStreamInfo(stream, sessionId, participantId);
+                console.log(`Sent stream info (attempt ${i+1})`);
               }
-            }, i * 800);
-          }
+            }, delay);
+          });
         } catch (e) {
           console.error("WebRTC initialization error:", e);
           setTimeout(async () => {
@@ -584,9 +614,10 @@ const ParticipantPage = () => {
             } catch (retryError) {
               console.error("WebRTC initialization retry error:", retryError);
             }
-          }, 2000);
+          }, 3000); // Increased from 2000ms to 3000ms
         }
         
+        // Set up a more robust interval for stream announcements
         const streamAnnouncementInterval = setInterval(() => {
           if (stream && stream.active) {
             announceStreamInfo(stream, sessionId, participantId);
@@ -650,6 +681,16 @@ const ParticipantPage = () => {
   };
 
   const cleanupResources = () => {
+    // Clean up keepStreamAlive interval
+    if (streamKeepAliveCleanup) {
+      streamKeepAliveCleanup();
+      setStreamKeepAliveCleanup(null);
+    }
+
+    if (autoJoinTimeoutId) {
+      clearTimeout(autoJoinTimeoutId);
+    }
+
     if (videoStream) {
       videoStream.getTracks().forEach(track => track.stop());
       if (videoRef.current) {

@@ -104,7 +104,7 @@ export const attachStreamToVideo = async (
     
     if (autoPlay) {
       try {
-        // Wait for loadedmetadata before playing
+        // Wait for loadedmetadata before playing - increased timeout to 5000ms
         if (videoElement.readyState < 2) {
           await new Promise<void>((resolve, reject) => {
             const loadHandler = () => {
@@ -120,12 +120,13 @@ export const attachStreamToVideo = async (
             videoElement.addEventListener('loadedmetadata', loadHandler);
             videoElement.addEventListener('error', errorLoadHandler);
             
-            // Timeout in case loadedmetadata never fires
+            // Timeout in case loadedmetadata never fires - increased from 2000ms to 5000ms
             setTimeout(() => {
               videoElement.removeEventListener('loadedmetadata', loadHandler);
               videoElement.removeEventListener('error', errorLoadHandler);
+              logger.info('Metadata loading timeout reached, trying to play anyway');
               resolve(); // Resolve anyway to try playing
-            }, 2000);
+            }, 5000);
           });
         }
         
@@ -141,14 +142,14 @@ export const attachStreamToVideo = async (
           await videoElement.play();
           logger.info('Video playing successfully (muted)');
           
-          // Unmute after a short delay if allowed
+          // Unmute after a longer delay if allowed
           setTimeout(() => {
             try {
               videoElement.muted = false;
             } catch (unmuteError) {
               logger.error('Error unmuting video:', unmuteError);
             }
-          }, 1000);
+          }, 3000); // Increased from 1000ms to 3000ms
         } catch (mutedPlayError) {
           logger.error('Error playing muted video:', mutedPlayError);
         }
@@ -160,4 +161,55 @@ export const attachStreamToVideo = async (
     logger.error('Failed to attach stream to video:', error);
     throw error;
   }
+};
+
+/**
+ * Keep stream alive by periodically checking and refreshing if needed
+ * This helps prevent the black screen issue
+ */
+export const keepStreamAlive = (
+  videoElement: HTMLVideoElement,
+  stream: MediaStream,
+  intervalMs: number = 5000
+): (() => void) => {
+  // Create a function that checks if the video is still playing properly
+  const checkVideoStatus = () => {
+    if (!videoElement || !stream) return;
+    
+    try {
+      // Check if video playback is frozen or black screen
+      if (videoElement.readyState < 2 || 
+          videoElement.paused || 
+          !stream.active || 
+          stream.getVideoTracks().some(track => !track.enabled || track.muted)) {
+        
+        logger.info('Video playback issue detected, attempting recovery');
+        
+        // Try to get video tracks playing again
+        stream.getVideoTracks().forEach(track => {
+          if (!track.enabled) {
+            track.enabled = true;
+            logger.info(`Re-enabled track: ${track.id}`);
+          }
+        });
+        
+        // Refresh the connection to the video element
+        if (videoElement.paused) {
+          videoElement.play().catch(e => 
+            logger.error('Failed to restart playback:', e)
+          );
+        }
+      }
+    } catch (e) {
+      logger.error('Error in keepStreamAlive:', e);
+    }
+  };
+
+  // Set up periodic check
+  const intervalId = window.setInterval(checkVideoStatus, intervalMs);
+  
+  // Return cleanup function
+  return () => {
+    window.clearInterval(intervalId);
+  };
 };
