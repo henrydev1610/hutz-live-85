@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -62,6 +61,9 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   useEffect(() => {
     if (!sessionId) return;
     
+    console.log(`Setting up stream info channels for session ${sessionId}`);
+    console.log(`Current participants: ${participants.length}`, participants);
+    
     try {
       // Listen on multiple channels for redundancy
       const channels = [
@@ -79,6 +81,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
           try {
             const data = JSON.parse(event.newValue || "{}");
             if (data.type === 'video-stream-info') {
+              console.log(`Received stream info via localStorage key ${event.key}:`, data);
               handleStreamInfo(data);
             }
           } catch (e) {
@@ -126,7 +129,9 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
                 
                 // Process various message types
                 if (data.type === 'video-stream-info') {
+                  console.log(`Found video stream info in localStorage key ${key}:`, data);
                   handleStreamInfo(data);
+                  
                   // Remove after processing to avoid duplicates
                   localStorage.removeItem(key);
                 }
@@ -158,6 +163,12 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         
         const participantId = data.id;
         console.log(`Received stream info from ${participantId}:`, data);
+        
+        // Check if this participant is actually in our list
+        const existingParticipant = participants.find(p => p.id === participantId);
+        if (!existingParticipant) {
+          console.log(`Received stream info from unknown participant ${participantId}, might be new or not loaded yet`);
+        }
         
         // Update hasVideo state based on the message
         if (data.hasVideo !== undefined) {
@@ -191,7 +202,10 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
               }
             }
             
+            console.log(`Updating participant ${participantId} status:`, updates);
             updateParticipantStatus(sessionId, participantId, updates);
+          } else {
+            console.log(`Cannot find participant ${participantId} in list to update`);
           }
           
           // Send acknowledgment back to participant (try both broadcast and storage)
@@ -228,6 +242,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
       channels.forEach(channel => {
         channel.onmessage = (event) => {
           if (event.data.type === 'video-stream-info') {
+            console.log(`Received stream info via broadcast channel for ${event.data.id || 'unknown participant'}:`, event.data);
             handleStreamInfo(event.data);
           }
         };
@@ -299,6 +314,11 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         browserType: participant.browserType
       });
       
+      // Create container references for any new participants
+      if (!videoRefs.current[participant.id]) {
+        console.log(`Creating reference placeholder for new participant: ${participant.id}`);
+      }
+      
       // If we have a stream for this participant
       if (hasStreamData && stream && stream.getTracks().length > 0) {
         const hasVideoTracks = stream.getVideoTracks().length > 0;
@@ -324,7 +344,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         // Find the container for this participant's video
         const container = videoRefs.current[participant.id];
         if (container) {
-          console.log(`Updating video for ${participant.id}`);
+          console.log(`Updating video for ${participant.id} with container`, container);
           updateVideoElement(container, stream, participant.id);
         } else {
           console.log(`Container for participant ${participant.id} not found yet.`);
@@ -348,6 +368,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         
         // Add data attributes for debugging
         videoElement.setAttribute('data-participant-id', participantId);
+        videoElement.setAttribute('data-created-at', Date.now().toString());
         
         // Store reference to video element
         videoElements.current[participantId] = videoElement;
@@ -362,23 +383,25 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         // Add event listeners for video with detailed logging
         videoElement.onloadedmetadata = () => {
           console.log(`Video metadata loaded for ${participantId}, dimensions: ${videoElement?.videoWidth}x${videoElement?.videoHeight}`);
-          videoElement?.play().catch(err => {
-            console.error(`Error playing video on metadata load for ${participantId}:`, err);
-            
-            // Track the error
-            setStreamErrors(prev => ({
-              ...prev,
-              [participantId]: `Play error: ${err.message}`
-            }));
-            
-            // Try again with a delay
-            setTimeout(() => {
-              console.log(`Retrying play for ${participantId} after metadata load`);
-              videoElement?.play().catch(e => {
-                console.error(`Retry failed for ${participantId}:`, e);
-              });
-            }, 1000);
-          });
+          if (videoElement) {
+            videoElement.play().catch(err => {
+              console.error(`Error playing video on metadata load for ${participantId}:`, err);
+              
+              // Track the error
+              setStreamErrors(prev => ({
+                ...prev,
+                [participantId]: `Play error: ${err.message}`
+              }));
+              
+              // Try again with a delay
+              setTimeout(() => {
+                console.log(`Retrying play for ${participantId} after metadata load`);
+                videoElement?.play().catch(e => {
+                  console.error(`Retry failed for ${participantId}:`, e);
+                });
+              }, 1000);
+            });
+          }
         };
         
         // Add more event listeners for debugging
@@ -403,6 +426,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
       
       if (videoElement.srcObject !== stream) {
         console.log(`Attaching stream to video element for ${participantId}`);
+        console.log(`Stream info: active=${stream.active}, tracks=${stream.getTracks().length}`);
         
         // Set the stream as source
         videoElement.srcObject = stream;
@@ -416,6 +440,13 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
               ...prev,
               [participantId]: ''
             }));
+            
+            // Mark participant as having video
+            updateParticipantStatus(sessionId, participantId, {
+              hasVideo: true,
+              active: true,
+              lastActive: Date.now()
+            });
           })
           .catch(err => {
             console.error(`Error playing video for ${participantId}:`, err);
@@ -487,9 +518,13 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
               className="absolute inset-0 overflow-hidden"
               ref={el => {
                 videoRefs.current[participant.id] = el;
+                
                 // If we already have a stream for this participant, update the video element
                 if (el && participantStreams[participant.id]) {
+                  console.log(`Setting up video element for ${participant.id} with existing stream`);
                   updateVideoElement(el, participantStreams[participant.id], participant.id);
+                } else if (el) {
+                  console.log(`Video container ready for ${participant.id}, but no stream available yet`);
                 }
               }}
             >

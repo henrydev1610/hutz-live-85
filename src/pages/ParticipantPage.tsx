@@ -28,7 +28,7 @@ const ParticipantPage = () => {
     link?: string;
     coupon?: string;
   } | null>(null);
-  const [finalActionTimerId, setFinalActionTimerId] = useState<NodeJS.Timeout | null>(null);
+  const [finalActionTimerId, setFinalActionTimerId] = useState<NodeJS.Timer | null>(null);
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -128,7 +128,7 @@ const ParticipantPage = () => {
       const restartTimeout = setTimeout(() => {
         cameraStartAttempts.current += 1;
         startCamera(true);
-      }, 1000);
+      }, 2000); // Increased timeout to give more time before restart
       
       return () => clearTimeout(restartTimeout);
     }
@@ -136,17 +136,23 @@ const ParticipantPage = () => {
 
   useEffect(() => {
     if (videoStream && videoRef.current) {
+      // Don't automatically restart the camera, just log the issue
       const checkVideoPlaying = () => {
         if (videoRef.current && 
             (videoRef.current.readyState < 2 || 
              videoRef.current.paused || 
              videoRef.current.videoWidth === 0)) {
-          console.log("Video not playing properly, restarting camera");
-          startCamera(true);
+          console.log("Video not playing properly, attempting to play without restart");
+          
+          // Try to play the video without restarting camera
+          videoRef.current.play().catch(err => {
+            console.warn("Failed to play video:", err);
+            // Only log the error, don't restart camera here
+          });
         }
       };
       
-      const videoCheckTimeout = setTimeout(checkVideoPlaying, 2000);
+      const videoCheckTimeout = setTimeout(checkVideoPlaying, 3000);
       return () => clearTimeout(videoCheckTimeout);
     }
   }, [videoStream]);
@@ -155,17 +161,20 @@ const ParticipantPage = () => {
     if (isJoined && sessionId && videoStream) {
       const sendVideoStreamInfo = () => {
         try {
+          // Use multiple channels for better reliability
           const channels = [
             new BroadcastChannel(`live-session-${sessionId}`),
             new BroadcastChannel(`telao-session-${sessionId}`),
             new BroadcastChannel(`stream-info-${sessionId}`)
           ];
           
+          // Add more detailed information about the stream
           const streamInfo = {
             type: 'video-stream-info',
             id: participantId,
             hasStream: true,
             hasVideo: videoStream.getVideoTracks().length > 0,
+            active: videoStream.active,
             trackIds: videoStream.getTracks().map(track => ({
               id: track.id,
               kind: track.kind,
@@ -178,25 +187,32 @@ const ParticipantPage = () => {
               userAgent: navigator.userAgent,
               platform: navigator.platform
             },
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            // Add visibility state to help debugging
+            visibilityState: document.visibilityState
           };
           
+          // Send on all channels
           channels.forEach(channel => {
             channel.postMessage(streamInfo);
             
+            // Also send a test message
             channel.postMessage({
               type: 'connection-test',
               id: participantId,
+              testId: `test-${Date.now()}`,
               timestamp: Date.now()
             });
           });
           
+          // Close channels after sending to prevent memory leaks
           setTimeout(() => {
             channels.forEach(channel => channel.close());
           }, 500);
           
           console.log("Sent stream info on all channels:", streamInfo);
           
+          // Periodically run diagnostics
           if (Math.random() < 0.2) {
             diagnoseConnection(sessionId, participantId)
               .then(result => console.log("Connection diagnostics:", result));
@@ -209,10 +225,12 @@ const ParticipantPage = () => {
         }
       };
       
+      // Send immediately and then set interval
       sendVideoStreamInfo();
       
       const streamInfoInterval = setInterval(sendVideoStreamInfo, 2000);
       
+      // Store interval for cleanup
       window._streamIntervals = window._streamIntervals || {};
       window._streamIntervals[participantId] = streamInfoInterval;
       
@@ -426,15 +444,27 @@ const ParticipantPage = () => {
   const startCamera = async (forceRestart = false) => {
     try {
       if (forceRestart && videoStream) {
-        videoStream.getTracks().forEach(track => track.stop());
+        console.log("Stopping existing video tracks before restart");
+        videoStream.getTracks().forEach(track => {
+          console.log(`Stopping track: ${track.kind} (${track.id}) readyState=${track.readyState}`);
+          track.stop();
+        });
+        
+        // Only clear the video element's srcObject if we're forcing a restart
         if (videoRef.current) {
           videoRef.current.srcObject = null;
         }
+        
+        // Reset video stream state
         setVideoStream(null);
+        
+        // Small delay to ensure cleanup is complete before restarting
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      if (videoStream && !forceRestart) {
-        console.log("Camera already running, using existing stream");
+      // Skip if we already have a valid stream and aren't forcing restart
+      if (videoStream && !forceRestart && videoStream.active) {
+        console.log("Camera already running with active stream, using existing stream");
         setIsCameraActive(true);
         return videoStream;
       }
@@ -454,6 +484,7 @@ const ParticipantPage = () => {
         `${t.label} (${t.id}): enabled=${t.enabled}, muted=${t.muted}, readyState=${t.readyState}`
       ));
       
+      // Set video element source and play it
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         console.log("Set video element source object successfully");
@@ -473,12 +504,17 @@ const ParticipantPage = () => {
           }
         } catch (playError) {
           console.error("Error playing video:", playError);
+          
+          // Try to play again after a short delay
           setTimeout(async () => {
             try {
-              await videoRef.current?.play();
-              console.log("Video playback started on retry");
+              if (videoRef.current) {
+                await videoRef.current.play();
+                console.log("Video playback started on retry");
+              }
             } catch (retryError) {
               console.error("Error playing video on retry:", retryError);
+              // Set up a click event handler to play on user interaction
               try {
                 document.addEventListener('click', function tryPlayOnce() {
                   if (videoRef.current) {
@@ -496,14 +532,18 @@ const ParticipantPage = () => {
         console.warn("Video element ref not available");
       }
 
+      // Update state with new stream
       setVideoStream(stream);
       setIsCameraActive(true);
       
+      // If already joined, update WebRTC connection with new stream
       if (isJoined && sessionId) {
+        // Announce the new stream to others
         announceStreamInfo(stream, sessionId, participantId);
         
+        // Update WebRTC with the new stream
+        console.log("Updating WebRTC with new camera stream");
         setLocalStream(stream);
-        console.log("Updated WebRTC with new camera stream");
       }
       
       return stream;
@@ -528,8 +568,10 @@ const ParticipantPage = () => {
           id: partId,
           hasStream: true,
           hasVideo: stream.getVideoTracks().length > 0,
+          active: stream.active,
           trackIds: stream.getTracks().map(t => t.id) || [],
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          visibilityState: document.visibilityState
         });
         setTimeout(() => channel.close(), 500);
       } catch (broadcastError) {
@@ -544,7 +586,8 @@ const ParticipantPage = () => {
           hasStream: true,
           hasVideo: stream.getVideoTracks().length > 0,
           trackIds: stream.getTracks().map(t => t.id) || [],
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          visibilityState: document.visibilityState
         }));
         setTimeout(() => localStorage.removeItem(storageKey), 10000);
       } catch (storageError) {

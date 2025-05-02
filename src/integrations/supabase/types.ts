@@ -101,24 +101,30 @@ export type Database = {
           is_active: boolean | null
           last_active: string
           max_participants: number | null
+          owner_id: string | null
           participant_count: number | null
           room_id: string
+          settings: Json | null
         }
         Insert: {
           created_at?: string
           is_active?: boolean | null
           last_active?: string
           max_participants?: number | null
+          owner_id?: string | null
           participant_count?: number | null
           room_id: string
+          settings?: Json | null
         }
         Update: {
           created_at?: string
           is_active?: boolean | null
           last_active?: string
           max_participants?: number | null
+          owner_id?: string | null
           participant_count?: number | null
           room_id?: string
+          settings?: Json | null
         }
         Relationships: []
       }
@@ -128,6 +134,10 @@ export type Database = {
     }
     Functions: {
       cleanup_inactive_rooms: {
+        Args: { max_inactive_hours?: number }
+        Returns: number
+      }
+      cleanup_inactive_rooms_and_participants: {
         Args: { max_inactive_hours?: number }
         Returns: number
       }
