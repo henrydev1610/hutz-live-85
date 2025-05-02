@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,7 @@ const ParticipantPage = () => {
     link?: string;
     coupon?: string;
   } | null>(null);
-  const [finalActionTimerId, setFinalActionTimerId] = useState<NodeJS.Timer | null>(null);
+  const [finalActionTimerId, setFinalActionTimerId] = useState<NodeTimer | null>(null);
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -249,7 +250,7 @@ const ParticipantPage = () => {
         setFinalActionTimeLeft((prev) => prev - 1);
       }, 1000);
       
-      setFinalActionTimerId(timerId);
+      setFinalActionTimerId(timerId as NodeTimer);
       
       return () => {
         if (timerId) clearInterval(timerId);
@@ -769,7 +770,7 @@ const ParticipantPage = () => {
 
   const closeFinalAction = () => {
     if (finalActionTimerId) {
-      clearInterval(finalActionTimerId);
+      clearInterval(finalActionTimerId as number);
       setFinalActionTimerId(null);
     }
     setFinalActionOpen(false);
