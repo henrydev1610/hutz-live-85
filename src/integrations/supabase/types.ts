@@ -33,12 +33,104 @@ export type Database = {
         }
         Relationships: []
       }
+      sessions: {
+        Row: {
+          created_at: string
+          data: Json
+          id: string
+          last_updated: string
+        }
+        Insert: {
+          created_at?: string
+          data?: Json
+          id: string
+          last_updated?: string
+        }
+        Update: {
+          created_at?: string
+          data?: Json
+          id?: string
+          last_updated?: string
+        }
+        Relationships: []
+      }
+      signaling_participants: {
+        Row: {
+          id: string
+          is_connected: boolean | null
+          joined_at: string
+          last_active: string
+          metadata: Json | null
+          peer_id: string
+          room_id: string
+          user_name: string | null
+        }
+        Insert: {
+          id?: string
+          is_connected?: boolean | null
+          joined_at?: string
+          last_active?: string
+          metadata?: Json | null
+          peer_id: string
+          room_id: string
+          user_name?: string | null
+        }
+        Update: {
+          id?: string
+          is_connected?: boolean | null
+          joined_at?: string
+          last_active?: string
+          metadata?: Json | null
+          peer_id?: string
+          room_id?: string
+          user_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signaling_participants_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "signaling_rooms"
+            referencedColumns: ["room_id"]
+          },
+        ]
+      }
+      signaling_rooms: {
+        Row: {
+          created_at: string
+          is_active: boolean | null
+          last_active: string
+          max_participants: number | null
+          participant_count: number | null
+          room_id: string
+        }
+        Insert: {
+          created_at?: string
+          is_active?: boolean | null
+          last_active?: string
+          max_participants?: number | null
+          participant_count?: number | null
+          room_id: string
+        }
+        Update: {
+          created_at?: string
+          is_active?: boolean | null
+          last_active?: string
+          max_participants?: number | null
+          participant_count?: number | null
+          room_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      cleanup_inactive_rooms: {
+        Args: { max_inactive_hours?: number }
+        Returns: number
+      }
     }
     Enums: {
       user_role: "user" | "admin"
