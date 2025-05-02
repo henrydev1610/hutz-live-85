@@ -118,36 +118,69 @@ const LivePage = () => {
 
   const handleParticipantTrack = (participantId: string, track: MediaStreamTrack) => {
     console.log(`Processing track from participant ${participantId}:`, track);
+    console.log(`Track details: kind=${track.kind}, id=${track.id}, enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
+    
+    // Log track settings if available
+    if (track.getSettings) {
+      try {
+        const settings = track.getSettings();
+        console.log(`Track settings: width=${settings.width}, height=${settings.height}, frameRate=${settings.frameRate}`);
+      } catch (e) {
+        console.log("Could not get track settings:", e);
+      }
+    }
     
     setParticipantStreams(prev => {
+      // If we already have a stream for this participant
       if (prev[participantId]) {
         const existingStream = prev[participantId];
         const trackExists = existingStream.getTracks().some(t => t.id === track.id);
         
         if (!trackExists) {
+          console.log(`Adding new track ${track.id} to existing stream for participant ${participantId}`);
           existingStream.addTrack(track);
+          
+          // Check the stream is still valid after adding the track
+          console.log(`Stream for ${participantId} now has ${existingStream.getTracks().length} tracks`);
+          console.log(`Stream active status: ${existingStream.active}`);
+          
           return { ...prev };
         }
+        console.log(`Track ${track.id} already exists in stream for participant ${participantId}`);
         return prev;
       }
       
+      // Create a new stream for this participant
+      console.log(`Creating new stream for participant ${participantId} with track ${track.id}`);
+      const newStream = new MediaStream([track]);
+      
+      console.log(`New stream created with ${newStream.getTracks().length} tracks`);
+      console.log(`Stream active status: ${newStream.active}`);
+      
       return {
         ...prev,
-        [participantId]: new MediaStream([track])
+        [participantId]: newStream
       };
     });
     
+    // Update the participant list to indicate this participant has video
     setParticipantList(prev => 
       prev.map(p => p.id === participantId ? { ...p, hasVideo: true } : p)
     );
     
+    // Forward to transmission window if it's open
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      const channel = new BroadcastChannel(`live-session-${sessionId}`);
-      channel.postMessage({
-        type: 'video-stream',
-        participantId,
-        stream: { hasStream: true }
-      });
+      try {
+        const channel = new BroadcastChannel(`live-session-${sessionId}`);
+        channel.postMessage({
+          type: 'video-stream',
+          participantId,
+          stream: { hasStream: true, trackId: track.id }
+        });
+        setTimeout(() => channel.close(), 500);
+      } catch (e) {
+        console.error("Error sending video stream notification to transmission window:", e);
+      }
     }
   };
 
@@ -215,16 +248,43 @@ const LivePage = () => {
       videoElement.autoplay = true;
       videoElement.playsInline = true;
       videoElement.muted = true;
+      videoElement.setAttribute('playsinline', ''); // Important for iOS Safari
       videoElement.className = 'w-full h-full object-cover';
       container.innerHTML = ''; // Clear any placeholder content
       container.appendChild(videoElement);
       console.log("Created new video element in container:", container.id);
     }
     
+    // Check if we need to update the stream
     if (videoElement.srcObject !== stream) {
+      // Log stream info for debugging
+      console.log(`Setting video source for ${container.id} to stream with ${stream.getTracks().length} tracks`);
+      stream.getTracks().forEach(track => {
+        console.log(`- Track: ${track.kind} (${track.id}), enabled=${track.enabled}, muted=${track.muted}, state=${track.readyState}`);
+        // Log track settings if available
+        if (track.getSettings) {
+          try {
+            const settings = track.getSettings();
+            console.log(`  Settings: width=${settings.width}, height=${settings.height}, frameRate=${settings.frameRate}`);
+          } catch (e) {
+            console.log("  Could not get track settings:", e);
+          }
+        }
+      });
+      
+      // Set the stream and play
       videoElement.srcObject = stream;
-      console.log(`Set video source for ${container.id} to stream with ${stream.getTracks().length} tracks`);
-      videoElement.play().catch(err => console.error('Error playing video:', err));
+      
+      videoElement.play().catch(err => {
+        console.error(`Error playing video in ${container.id}:`, err);
+        
+        // Try again with a delay - sometimes helps with timing issues
+        setTimeout(() => {
+          videoElement.play().catch(retryErr => {
+            console.error(`Error playing video in ${container.id} on retry:`, retryErr);
+          });
+        }, 500);
+      });
     }
   };
 

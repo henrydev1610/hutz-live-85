@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -6,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { Camera, VideoOff, Loader2, X, ChevronRight, CheckSquare } from "lucide-react";
 import { isSessionActive, addParticipantToSession, getSessionFinalAction } from '@/utils/sessionUtils';
-import { initParticipantWebRTC, setLocalStream, cleanupWebRTC } from '@/utils/webrtc';
+import { initParticipantWebRTC, setLocalStream, cleanupWebRTC } from '@/utils/webrtcUtils';
 import { initializeParticipantSession } from '@/utils/liveStreamUtils';
 import { diagnoseConnection, testBroadcastReception } from '@/utils/connectionDiagnostics';
 
@@ -375,15 +374,32 @@ const ParticipantPage = () => {
 
       if (hasVideoDevices) {
         try {
-          const testStream = await navigator.mediaDevices.getUserMedia({ 
+          // Use more compatible constraints for different browsers and devices
+          const constraints = {
             video: {
-              width: { ideal: 1280, min: 320 },
-              height: { ideal: 720, min: 240 },
-              frameRate: { ideal: 30, min: 10 }
+              width: { ideal: 640, min: 320 },  // Lower resolution for better compatibility
+              height: { ideal: 480, min: 240 }, // Lower resolution for better compatibility
+              frameRate: { ideal: 15, min: 8 }  // Lower framerate for better compatibility
             },
             audio: false 
-          });
+          };
+          
+          // Log the constraints we're using
+          console.log("Using camera constraints:", JSON.stringify(constraints));
+          
+          const testStream = await navigator.mediaDevices.getUserMedia(constraints);
           setCameraPermission(true);
+          
+          // Log the capabilities of the camera we got
+          const videoTrack = testStream.getVideoTracks()[0];
+          if (videoTrack) {
+            console.log("Camera track obtained:", {
+              label: videoTrack.label,
+              id: videoTrack.id,
+              constraints: videoTrack.getConstraints ? videoTrack.getConstraints() : "Not available",
+              settings: videoTrack.getSettings ? videoTrack.getSettings() : "Not available"
+            });
+          }
           
           setVideoStream(testStream);
           setIsCameraActive(true);
@@ -412,13 +428,13 @@ const ParticipantPage = () => {
           console.error("Camera permission denied:", error);
           setCameraPermission(false);
           
-          if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+          if ((error as any).name === "NotAllowedError" || (error as any).name === "PermissionDeniedError") {
             toast({
               title: "Permissão negada",
               description: "Você precisa permitir o acesso à câmera para participar.",
               variant: "destructive",
             });
-          } else if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+          } else if ((error as any).name === "NotFoundError" || (error as any).name === "DevicesNotFoundError") {
             toast({
               title: "Câmera não encontrada",
               description: "Não foi possível detectar uma câmera conectada.",
@@ -427,7 +443,7 @@ const ParticipantPage = () => {
           } else {
             toast({
               title: "Erro de câmera",
-              description: `Não foi possível acessar a câmera: ${error.message || error.name}`,
+              description: `Não foi possível acessar a câmera: ${(error as any).message || (error as any).name}`,
               variant: "destructive",
             });
           }
@@ -471,14 +487,18 @@ const ParticipantPage = () => {
       }
 
       console.log("Starting camera with browser-compatible settings...");
-      const stream = await navigator.mediaDevices.getUserMedia({
+      // Use more compatible constraints
+      const constraints = {
         video: {
-          width: { ideal: 1280, min: 320 },
-          height: { ideal: 720, min: 240 },
-          frameRate: { ideal: 30, min: 10 }
+          width: { ideal: 640, min: 320 },  // Lower resolution for better compatibility
+          height: { ideal: 480, min: 240 }, // Lower resolution for better compatibility
+          frameRate: { ideal: 15, min: 8 }  // Lower framerate for better compatibility
         },
         audio: false
-      });
+      };
+      
+      console.log("Using camera constraints:", JSON.stringify(constraints));
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
       console.log("Camera started successfully with tracks:", stream.getTracks().length);
       console.log("Video tracks:", stream.getVideoTracks().map(t => 
@@ -646,6 +666,7 @@ const ParticipantPage = () => {
           await initParticipantWebRTC(sessionId, participantId, stream);
           console.log("WebRTC initialized successfully");
           
+          // Send stream announcements multiple times to increase reliability
           for (let i = 0; i < 5; i++) {
             setTimeout(() => {
               if (stream && stream.active) {
@@ -770,7 +791,7 @@ const ParticipantPage = () => {
 
   const closeFinalAction = () => {
     if (finalActionTimerId) {
-      clearInterval(finalActionTimerId as number);
+      clearInterval(finalActionTimerId as unknown as number);
       setFinalActionTimerId(null);
     }
     setFinalActionOpen(false);

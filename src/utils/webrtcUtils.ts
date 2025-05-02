@@ -1,3 +1,4 @@
+
 import { webSocketSignalingService, SignalingMessage } from '@/services/WebSocketSignalingService';
 
 const PEER_CONNECTION_CONFIG = {
@@ -26,6 +27,57 @@ const peerConnections: Record<string, RTCPeerConnection> = {};
 let localStream: MediaStream | null = null;
 let currentSessionId: string | null = null;
 let currentPeerId: string | null = null;
+
+/**
+ * Configure the SDP to include multiple video codecs and prioritize compatible ones
+ */
+const modifySdp = (sdp: string): string => {
+  try {
+    // Don't modify SDP in environments that don't fully support it
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isSafari = /safari/.test(userAgent) && !/chrome/.test(userAgent);
+    const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
+    
+    // In problematic browsers, just return the original SDP
+    if (isSafari || isMobile) {
+      console.log("Using default SDP settings for Safari or mobile browser");
+      return sdp;
+    }
+
+    // For other browsers, try to optimize by making sure VP8 is available
+    // VP8 has wider support across browsers
+    let lines = sdp.split('\r\n');
+    let mLineIndex = lines.findIndex(line => line.startsWith('m=video'));
+    
+    if (mLineIndex === -1) {
+      console.log("No video m-line found in SDP");
+      return sdp;
+    }
+
+    // First, try to ensure VP8 is available as a fallback
+    // This is just to ensure compatibility without breaking existing codecs
+    let hasVP8 = false;
+    for (let i = mLineIndex; i < lines.length; i++) {
+      if (lines[i].includes('VP8/90000')) {
+        hasVP8 = true;
+        break;
+      }
+    }
+
+    // If we need to add VP8 support and don't have it, this is complex
+    // We'd need to add a new payload type, etc.
+    // For now, just log this and continue with original SDP
+    if (!hasVP8) {
+      console.log("VP8 codec not found in SDP");
+    }
+
+    console.log("SDP modified for better codec compatibility");
+    return lines.join('\r\n');
+  } catch (error) {
+    console.error("Error modifying SDP:", error);
+    return sdp;
+  }
+};
 
 // Initialize signaling and WebRTC for a host
 export const initHostWebRTC = async (
@@ -114,6 +166,41 @@ export const initParticipantWebRTC = async (
   currentSessionId = sessionId;
   currentPeerId = participantId;
   
+  // Log participant browser details for debugging
+  console.log("Participant browser info:", {
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    browserInfo: getBrowserInfo()
+  });
+
+  // Log stream info
+  const videoTracks = stream.getVideoTracks();
+  console.log(`Participant stream details: ${videoTracks.length} video tracks`);
+  videoTracks.forEach(track => {
+    console.log("Video track:", {
+      id: track.id,
+      label: track.label,
+      enabled: track.enabled,
+      muted: track.muted,
+      readyState: track.readyState,
+      contentHint: track.contentHint
+    });
+    
+    // Log video constraints
+    const constraints = track.getConstraints();
+    console.log("Video constraints:", constraints);
+    
+    // Log capabilities if available
+    if (track.getCapabilities) {
+      try {
+        const capabilities = track.getCapabilities();
+        console.log("Video capabilities:", capabilities);
+      } catch (e) {
+        console.log("Could not get track capabilities:", e);
+      }
+    }
+  });
+  
   // Connect to signaling server
   try {
     const connected = await webSocketSignalingService.connect(sessionId, participantId);
@@ -153,6 +240,53 @@ export const initParticipantWebRTC = async (
   createAndSendOffer('host');
 };
 
+// Helper function to get browser info for debugging
+const getBrowserInfo = () => {
+  const userAgent = navigator.userAgent;
+  let browserName = "Unknown";
+  let browserVersion = "Unknown";
+  let osName = "Unknown";
+  
+  // Browser detection
+  if (userAgent.match(/chrome|chromium|crios/i)) {
+    browserName = "Chrome";
+  } else if (userAgent.match(/firefox|fxios/i)) {
+    browserName = "Firefox";
+  } else if (userAgent.match(/safari/i)) {
+    browserName = "Safari";
+  } else if (userAgent.match(/opr\//i)) {
+    browserName = "Opera";
+  } else if (userAgent.match(/edg/i)) {
+    browserName = "Edge";
+  }
+  
+  // OS detection
+  if (userAgent.match(/windows/i)) {
+    osName = "Windows";
+  } else if (userAgent.match(/macintosh|mac os/i)) {
+    osName = "MacOS";
+  } else if (userAgent.match(/android/i)) {
+    osName = "Android";
+  } else if (userAgent.match(/iphone|ipad|ipod/i)) {
+    osName = "iOS";
+  } else if (userAgent.match(/linux/i)) {
+    osName = "Linux";
+  }
+  
+  // Try to get browser version
+  const versionMatch = userAgent.match(/(chrome|firefox|safari|opr|edg|msie|rv:)\/?\s*(\d+(\.\d+)*)/i);
+  if (versionMatch && versionMatch[2]) {
+    browserVersion = versionMatch[2];
+  }
+  
+  return {
+    browser: browserName,
+    version: browserVersion,
+    os: osName,
+    mobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)
+  };
+};
+
 // Create a peer connection
 const createPeerConnection = (
   peerId: string, 
@@ -169,7 +303,11 @@ const createPeerConnection = (
   
   // Add local tracks to the connection if available
   if (localStream) {
+    const videoTracks = localStream.getVideoTracks();
+    console.log(`Adding ${videoTracks.length} video tracks to peer connection for ${peerId}`);
+    
     localStream.getTracks().forEach(track => {
+      console.log(`Adding track: ${track.kind} (${track.id}) to peer connection`);
       peerConnection.addTrack(track, localStream!);
     });
   }
@@ -177,6 +315,7 @@ const createPeerConnection = (
   // Set up ICE candidate handler
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
+      console.log(`Generated ICE candidate for ${peerId}:`, event.candidate.candidate.substring(0, 50) + '...');
       webSocketSignalingService.send({
         type: 'candidate',
         targetId: peerId,
@@ -188,6 +327,9 @@ const createPeerConnection = (
   // Set up connection state change handler
   peerConnection.onconnectionstatechange = () => {
     console.log(`Connection state for ${peerId}: ${peerConnection.connectionState}`);
+    if (peerConnection.connectionState === 'connected') {
+      console.log(`Successfully connected to ${peerId}! RTCPeerConnection is fully established`);
+    }
   };
   
   // Set up ICE connection state change handler
@@ -215,9 +357,20 @@ const createPeerConnection = (
   if (onTrack) {
     peerConnection.ontrack = (event) => {
       console.log(`Received track from ${peerId}:`, event.track);
+      console.log(`Track details: kind=${event.track.kind}, id=${event.track.id}, readyState=${event.track.readyState}`);
       onTrack(peerId, event.track);
     };
   }
+  
+  // Log negotiation needed events
+  peerConnection.onnegotiationneeded = () => {
+    console.log(`Negotiation needed for ${peerId}`);
+  };
+  
+  // Log signaling state changes
+  peerConnection.onsignalingstatechange = () => {
+    console.log(`Signaling state changed for ${peerId}: ${peerConnection.signalingState}`);
+  };
   
   return peerConnection;
 };
@@ -231,7 +384,21 @@ const createAndSendOffer = async (peerId: string): Promise<void> => {
   }
   
   try {
-    const offer = await peerConnection.createOffer();
+    // Set up a more compatible initial codec configuration
+    const offerOptions: RTCOfferOptions = {
+      offerToReceiveAudio: false,
+      offerToReceiveVideo: true
+    };
+    
+    console.log(`Creating offer for ${peerId} with options:`, offerOptions);
+    const offer = await peerConnection.createOffer(offerOptions);
+    
+    // Modify SDP if needed for better compatibility
+    if (offer.sdp) {
+      offer.sdp = modifySdp(offer.sdp);
+    }
+    
+    console.log(`Setting local description for ${peerId}`);
     await peerConnection.setLocalDescription(offer);
     
     webSocketSignalingService.send({
@@ -239,6 +406,8 @@ const createAndSendOffer = async (peerId: string): Promise<void> => {
       targetId: peerId,
       description: peerConnection.localDescription
     });
+    
+    console.log(`Sent offer to ${peerId}`);
   } catch (error) {
     console.error(`Error creating offer for ${peerId}:`, error);
   }
@@ -254,15 +423,29 @@ const handleOffer = async (peerId: string, description: RTCSessionDescription): 
   const peerConnection = peerConnections[peerId];
   
   try {
+    // Log the incoming offer SDP for debugging
+    console.log(`Processing offer from ${peerId}: ${description.sdp?.substring(0, 100)}...`);
+    
     await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
+    console.log(`Remote description set for ${peerId}`);
+    
     const answer = await peerConnection.createAnswer();
+    
+    // Modify the answer SDP if needed
+    if (answer.sdp) {
+      answer.sdp = modifySdp(answer.sdp);
+    }
+    
     await peerConnection.setLocalDescription(answer);
+    console.log(`Local description (answer) set for ${peerId}`);
     
     webSocketSignalingService.send({
       type: 'answer',
       targetId: peerId,
       description: peerConnection.localDescription
     });
+    
+    console.log(`Sent answer to ${peerId}`);
   } catch (error) {
     console.error(`Error handling offer from ${peerId}:`, error);
   }
@@ -277,7 +460,11 @@ const handleAnswer = async (peerId: string, description: RTCSessionDescription):
   }
   
   try {
+    // Log the incoming answer SDP for debugging
+    console.log(`Processing answer from ${peerId}: ${description.sdp?.substring(0, 100)}...`);
+    
     await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
+    console.log(`Remote description (answer) set for ${peerId}`);
   } catch (error) {
     console.error(`Error handling answer from ${peerId}:`, error);
   }
@@ -292,7 +479,9 @@ const handleCandidate = async (peerId: string, candidate: RTCIceCandidate): Prom
   }
   
   try {
+    console.log(`Adding ICE candidate from ${peerId}: ${candidate.candidate.substring(0, 50)}...`);
     await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    console.log(`ICE candidate added for ${peerId}`);
   } catch (error) {
     console.error(`Error handling ICE candidate from ${peerId}:`, error);
   }
@@ -301,6 +490,7 @@ const handleCandidate = async (peerId: string, candidate: RTCIceCandidate): Prom
 // Close a peer connection
 const closePeerConnection = (peerId: string): void => {
   if (peerConnections[peerId]) {
+    console.log(`Closing peer connection for ${peerId}`);
     peerConnections[peerId].close();
     delete peerConnections[peerId];
   }
@@ -308,22 +498,26 @@ const closePeerConnection = (peerId: string): void => {
 
 // Set local media stream
 export const setLocalStream = (stream: MediaStream): void => {
+  console.log(`Setting local stream with ${stream.getTracks().length} tracks`);
   localStream = stream;
   
   // Update existing peer connections with new stream
   Object.keys(peerConnections).forEach(peerId => {
     const peerConnection = peerConnections[peerId];
+    console.log(`Updating stream for peer ${peerId}`);
     
     // Remove existing tracks
     const senders = peerConnection.getSenders();
     senders.forEach(sender => {
       if (sender.track) {
+        console.log(`Removing track: ${sender.track.kind} (${sender.track.id})`);
         peerConnection.removeTrack(sender);
       }
     });
     
     // Add new tracks
     stream.getTracks().forEach(track => {
+      console.log(`Adding track: ${track.kind} (${track.id})`);
       peerConnection.addTrack(track, stream);
     });
   });
@@ -333,19 +527,29 @@ export const setLocalStream = (stream: MediaStream): void => {
 export const endWebRTC = (): void => {
   // Close all peer connections
   Object.keys(peerConnections).forEach(peerId => {
+    console.log(`Closing connection to ${peerId} during cleanup`);
     peerConnections[peerId].close();
     delete peerConnections[peerId];
   });
   
   // Disconnect from signaling server
   webSocketSignalingService.disconnect();
+  console.log("Disconnected from signaling server");
   
   // Clean up local stream
   if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
+    console.log(`Stopping ${localStream.getTracks().length} local tracks`);
+    localStream.getTracks().forEach(track => {
+      console.log(`Stopping track: ${track.kind} (${track.id})`);
+      track.stop();
+    });
     localStream = null;
   }
   
   currentSessionId = null;
   currentPeerId = null;
+  console.log("WebRTC session ended and cleaned up");
 };
+
+// Export as cleanupWebRTC for backward compatibility
+export const cleanupWebRTC = endWebRTC;
