@@ -20,7 +20,7 @@ import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
 import { initHostWebRTC, setOnParticipantTrack } from '@/utils/webrtc';
 import BackButton from '@/components/common/BackButton';
 
-const LivePage = () => {
+const LivePage: React.FC = () => {
   const [participantCount, setParticipantCount] = useState(4);
   const [qrCodeURL, setQrCodeURL] = useState("");
   const [qrCodeVisible, setQrCodeVisible] = useState(false);
