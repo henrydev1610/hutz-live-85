@@ -1,5 +1,4 @@
 
-
 interface Window {
   resetGeneratingState?: () => void;
   _sessionIntervals?: {
@@ -11,7 +10,7 @@ interface Window {
 }
 
 // Fix for Timer vs Timeout type discrepancies
-type NodeTimer = any; // This accommodates both NodeJS.Timeout and number
+type NodeTimer = number | NodeJS.Timeout; // This accommodates both number and NodeJS.Timeout
 
 // Define NodeJS namespace if it doesn't exist to fix Timeout type issues
 declare namespace NodeJS {
@@ -19,4 +18,3 @@ declare namespace NodeJS {
     [Symbol.dispose]?: () => void;
   }
 }
-

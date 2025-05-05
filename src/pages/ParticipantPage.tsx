@@ -250,7 +250,7 @@ const ParticipantPage = () => {
         setFinalActionTimeLeft((prev) => prev - 1);
       }, 1000);
       
-      // Fix: Use the NodeTimer type to ensure compatibility
+      // Set the timer ID with proper type casting to NodeTimer
       setFinalActionTimerId(timerId as NodeTimer);
       
       return () => {
