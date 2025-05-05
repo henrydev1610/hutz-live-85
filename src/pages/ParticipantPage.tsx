@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -250,8 +249,8 @@ const ParticipantPage = () => {
         setFinalActionTimeLeft((prev) => prev - 1);
       }, 1000);
       
-      // Set the timer ID with proper type casting to NodeTimer
-      setFinalActionTimerId(timerId as NodeTimer);
+      // Explicitly cast to NodeTimer to ensure type compatibility
+      setFinalActionTimerId(timerId as unknown as NodeTimer);
       
       return () => {
         if (timerId) clearInterval(timerId);
