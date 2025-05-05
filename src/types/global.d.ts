@@ -1,4 +1,5 @@
 
+
 interface Window {
   resetGeneratingState?: () => void;
   _sessionIntervals?: {
@@ -18,3 +19,4 @@ declare namespace NodeJS {
     [Symbol.dispose]?: () => void;
   }
 }
+

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -249,6 +250,7 @@ const ParticipantPage = () => {
         setFinalActionTimeLeft((prev) => prev - 1);
       }, 1000);
       
+      // Fix: Use the NodeTimer type to ensure compatibility
       setFinalActionTimerId(timerId as NodeTimer);
       
       return () => {
