@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -792,7 +793,12 @@ const ParticipantPage = () => {
 
   const closeFinalAction = () => {
     if (finalActionTimerId) {
-      clearInterval(finalActionTimerId as unknown as number);
+      // Ensure proper type handling when clearing the interval
+      if (typeof finalActionTimerId === 'number') {
+        clearInterval(finalActionTimerId);
+      } else {
+        clearInterval(finalActionTimerId as unknown as number);
+      }
       setFinalActionTimerId(null);
     }
     setFinalActionOpen(false);
@@ -955,6 +961,12 @@ declare global {
     };
     _streamIntervals?: {
       [key: string]: number;
+    };
+    _healthCheckIntervals?: {
+      [key: string]: number;
+    };
+    _fallbackChannels?: {
+      [key: string]: BroadcastChannel;
     };
   }
 }

@@ -7,6 +7,12 @@ interface Window {
   _streamIntervals?: {
     [key: string]: number;
   };
+  _healthCheckIntervals?: {
+    [key: string]: number;
+  };
+  _fallbackChannels?: {
+    [key: string]: BroadcastChannel;
+  };
 }
 
 // Fix for Timer vs Timeout type discrepancies

@@ -5,7 +5,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { 
   User, Video, VideoOff, Crown, Shield, 
   Check, Ban, UserX, MoreVertical, X,
-  Eye, EyeOff, Share, AlertTriangle
+  Eye, EyeOff, Share, AlertTriangle, RefreshCcw
 } from 'lucide-react';
 import { 
   DropdownMenu,
@@ -54,9 +54,13 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   const [hasVideoMap, setHasVideoMap] = useState<{[key: string]: boolean}>({});
   const [streamConnectionCount, setStreamConnectionCount] = useState<{[key: string]: number}>({});
   const [streamErrors, setStreamErrors] = useState<{[key: string]: string}>({});
+  const [streamStats, setStreamStats] = useState<{[key: string]: any}>({});
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const videoRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
   const videoElements = useRef<{[key: string]: HTMLVideoElement | null}>({});
-  
+  const streamRecoveryAttempts = useRef<{[key: string]: number}>({});
+  const MAX_RECOVERY_ATTEMPTS = 3;
+
   // Enhanced broadcast channel listener for better stream reception
   useEffect(() => {
     if (!sessionId) return;
@@ -64,15 +68,19 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     console.log(`Setting up stream info channels for session ${sessionId}`);
     console.log(`Current participants: ${participants.length}`, participants);
     
+    const channels = [];
+    const cleanupFunctions = [];
+    
     try {
       // Listen on multiple channels for redundancy
-      const channels = [
-        new BroadcastChannel(`live-session-${sessionId}`),
-        new BroadcastChannel(`telao-session-${sessionId}`),
-        new BroadcastChannel(`stream-info-${sessionId}`)
-      ];
+      const primaryChannel = new BroadcastChannel(`live-session-${sessionId}`);
+      const secondaryChannel = new BroadcastChannel(`telao-session-${sessionId}`);
+      const infoChannel = new BroadcastChannel(`stream-info-${sessionId}`);
+      const diagnosticChannel = new BroadcastChannel(`diagnostic-${sessionId}`);
       
-      // Also set up localStorage monitoring for Firefox/Opera
+      channels.push(primaryChannel, secondaryChannel, infoChannel, diagnosticChannel);
+      
+      // Also set up localStorage monitoring for Firefox/Opera and fallback mechanisms
       const storageListener = (event: StorageEvent) => {
         if (!event.key) return;
         
@@ -107,9 +115,20 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
             console.error("Error parsing diagnostic data:", e);
           }
         }
+        
+        // Check for fallback WebRTC signaling
+        if (event.key.startsWith(`fallback-${sessionId}`)) {
+          try {
+            console.log(`Received fallback communication via localStorage: ${event.key}`);
+            // Process fallback messages if needed
+          } catch (e) {
+            console.error("Error processing fallback message:", e);
+          }
+        }
       };
       
       window.addEventListener('storage', storageListener);
+      cleanupFunctions.push(() => window.removeEventListener('storage', storageListener));
       
       // Poll localStorage directly for Firefox/Opera (they handle storage events differently)
       const checkStorageInterval = setInterval(() => {
@@ -120,7 +139,8 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
             
             if (key.startsWith(`stream-info-${sessionId}`) || 
                 key.startsWith(`test-${sessionId}`) ||
-                key.startsWith(`diagnostic-${sessionId}`)) {
+                key.startsWith(`diagnostic-${sessionId}`) ||
+                key.startsWith(`fallback-${sessionId}`)) {
               try {
                 const value = localStorage.getItem(key);
                 if (!value) continue;
@@ -157,6 +177,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
           console.error("Error checking localStorage:", e);
         }
       }, 1000);
+      cleanupFunctions.push(() => clearInterval(checkStorageInterval));
       
       const handleStreamInfo = (data: any) => {
         if (!data || !data.id) return;
@@ -176,6 +197,22 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
             ...prev,
             [participantId]: data.hasVideo
           }));
+          
+          // Store stream stats for diagnostics
+          if (data.trackIds || data.streamActive !== undefined) {
+            setStreamStats(prev => ({
+              ...prev,
+              [participantId]: {
+                ...prev[participantId],
+                trackIds: data.trackIds,
+                streamActive: data.streamActive,
+                timestamp: data.timestamp,
+                visibilityState: data.visibilityState,
+                deviceInfo: data.deviceInfo,
+                lastUpdated: Date.now()
+              }
+            }));
+          }
           
           // Ensure participant is shown as active
           const participant = participants.find(p => p.id === participantId);
@@ -244,15 +281,43 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
           if (event.data.type === 'video-stream-info') {
             console.log(`Received stream info via broadcast channel for ${event.data.id || 'unknown participant'}:`, event.data);
             handleStreamInfo(event.data);
+          } else if (event.data.type === 'connection-diagnostics') {
+            console.log(`Received diagnostics via broadcast channel for ${event.data.participantId || 'unknown participant'}:`, event.data);
+            
+            // Update diagnostics information
+            if (event.data.participantId) {
+              setStreamStats(prev => ({
+                ...prev,
+                [event.data.participantId]: {
+                  ...prev[event.data.participantId],
+                  diagnostics: event.data,
+                  lastDiagnosticUpdate: Date.now()
+                }
+              }));
+            }
           }
         };
       });
       
+      // Keep signaling the channel is active
+      const heartbeatInterval = setInterval(() => {
+        try {
+          primaryChannel.postMessage({
+            type: 'host-heartbeat',
+            timestamp: Date.now()
+          });
+        } catch (e) {
+          console.error("Error sending heartbeat:", e);
+        }
+      }, 5000);
+      cleanupFunctions.push(() => clearInterval(heartbeatInterval));
+      
       // Cleanup function to close all channels and intervals
       return () => {
-        channels.forEach(channel => channel.close());
-        window.removeEventListener('storage', storageListener);
-        clearInterval(checkStorageInterval);
+        channels.forEach(channel => {
+          try { channel.close(); } catch (e) { console.error("Error closing channel:", e); }
+        });
+        cleanupFunctions.forEach(fn => fn());
       };
     } catch (e) {
       console.error("Error setting up stream info channels:", e);
@@ -286,11 +351,51 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
       
       window.addEventListener('storage', storageListener);
       
+      // Periodically write host heartbeat to localStorage
+      const heartbeatInterval = setInterval(() => {
+        try {
+          localStorage.setItem(`live-heartbeat-${sessionId}`, Date.now().toString());
+        } catch (e) {
+          console.error("Error setting heartbeat in localStorage:", e);
+        }
+      }, 5000);
+      
       return () => {
         window.removeEventListener('storage', storageListener);
+        clearInterval(heartbeatInterval);
       };
     }
   }, [sessionId, participants]);
+  
+  // Collect WebRTC stats for stream diagnostics
+  const collectStreamStats = async (participantId: string, videoElement: HTMLVideoElement) => {
+    try {
+      const stream = videoElement.srcObject as MediaStream;
+      if (!stream) return;
+      
+      const tracks = stream.getTracks();
+      
+      setStreamStats(prev => ({
+        ...prev,
+        [participantId]: {
+          ...prev[participantId],
+          tracks: tracks.map(t => ({
+            id: t.id,
+            kind: t.kind,
+            enabled: t.enabled,
+            muted: t.muted,
+            readyState: t.readyState
+          })),
+          videoWidth: videoElement.videoWidth,
+          videoHeight: videoElement.videoHeight,
+          videoReadyState: videoElement.readyState,
+          lastStatsUpdate: Date.now()
+        }
+      }));
+    } catch (e) {
+      console.error(`Error collecting stats for ${participantId}:`, e);
+    }
+  };
   
   // Enhanced effect to update video elements when stream references change
   useEffect(() => {
@@ -353,6 +458,19 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     });
   }, [participantStreams, participants]);
   
+  // Schedule periodic stats collection
+  useEffect(() => {
+    const statsInterval = setInterval(() => {
+      Object.entries(videoElements.current).forEach(([participantId, videoElement]) => {
+        if (videoElement && videoElement.srcObject) {
+          collectStreamStats(participantId, videoElement);
+        }
+      });
+    }, 5000);
+    
+    return () => clearInterval(statsInterval);
+  }, []);
+  
   // Function to add or update video element in container with improved error handling
   const updateVideoElement = (container: HTMLDivElement, stream: MediaStream, participantId: string) => {
     let videoElement = videoElements.current[participantId];
@@ -398,6 +516,17 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
                 console.log(`Retrying play for ${participantId} after metadata load`);
                 videoElement?.play().catch(e => {
                   console.error(`Retry failed for ${participantId}:`, e);
+                  
+                  // After failed retry, try to recreate the element with different playback settings
+                  if ((streamRecoveryAttempts.current[participantId] || 0) < MAX_RECOVERY_ATTEMPTS) {
+                    streamRecoveryAttempts.current[participantId] = (streamRecoveryAttempts.current[participantId] || 0) + 1;
+                    console.log(`Recovery attempt ${streamRecoveryAttempts.current[participantId]} for ${participantId}`);
+                    
+                    // Try a different approach after multiple failures
+                    if (streamRecoveryAttempts.current[participantId] >= 2) {
+                      recreateVideoElement(container, stream, participantId);
+                    }
+                  }
                 });
               }, 1000);
             });
@@ -412,6 +541,12 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
             ...prev,
             [participantId]: ''
           }));
+          
+          // Reset recovery attempts counter on success
+          streamRecoveryAttempts.current[participantId] = 0;
+          
+          // Collect initial stats
+          collectStreamStats(participantId, videoElement);
         };
         
         videoElement.onerror = (event) => {
@@ -421,6 +556,16 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
             ...prev,
             [participantId]: errorMessage
           }));
+          
+          // Attempt recovery for video element errors
+          if ((streamRecoveryAttempts.current[participantId] || 0) < MAX_RECOVERY_ATTEMPTS) {
+            streamRecoveryAttempts.current[participantId] = (streamRecoveryAttempts.current[participantId] || 0) + 1;
+            console.log(`Attempting video error recovery for ${participantId} (attempt ${streamRecoveryAttempts.current[participantId]})`);
+            
+            setTimeout(() => {
+              recreateVideoElement(container, stream, participantId);
+            }, 1000);
+          }
         };
       }
       
@@ -441,6 +586,9 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
               [participantId]: ''
             }));
             
+            // Reset recovery attempts counter on success
+            streamRecoveryAttempts.current[participantId] = 0;
+            
             // Mark participant as having video
             updateParticipantStatus(sessionId, participantId, {
               hasVideo: true,
@@ -455,12 +603,25 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
               [participantId]: `Play error: ${err.message}`
             }));
             
-            // Retry logic
+            // Enhanced retry logic with multiple strategies
             setTimeout(() => {
               if (videoElement) {
+                // Try with muted first (browsers often allow muted autoplay)
+                videoElement.muted = true;
+                
                 videoElement.play()
                   .then(() => console.log(`Successfully played video on retry for ${participantId}`))
-                  .catch(retryErr => console.error(`Error on retry for ${participantId}:`, retryErr));
+                  .catch(retryErr => {
+                    console.error(`Error on retry for ${participantId}:`, retryErr);
+                    
+                    // If still failing, try recreating the element
+                    if ((streamRecoveryAttempts.current[participantId] || 0) < MAX_RECOVERY_ATTEMPTS) {
+                      streamRecoveryAttempts.current[participantId] = (streamRecoveryAttempts.current[participantId] || 0) + 1;
+                      console.log(`Trying video element recreation for ${participantId} (attempt ${streamRecoveryAttempts.current[participantId]})`);
+                      
+                      recreateVideoElement(container, stream, participantId);
+                    }
+                  });
               }
             }, 1000);
           });
@@ -472,6 +633,76 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
         ...prev,
         [participantId]: errorMessage
       }));
+      
+      // Attempt recovery after general errors
+      setTimeout(() => {
+        if ((streamRecoveryAttempts.current[participantId] || 0) < MAX_RECOVERY_ATTEMPTS) {
+          streamRecoveryAttempts.current[participantId] = (streamRecoveryAttempts.current[participantId] || 0) + 1;
+          console.log(`Attempting general error recovery for ${participantId} (attempt ${streamRecoveryAttempts.current[participantId]})`);
+          recreateVideoElement(container, stream, participantId);
+        }
+      }, 1000);
+    }
+  };
+
+  // Function to recreate a video element from scratch with different settings
+  const recreateVideoElement = (container: HTMLDivElement, stream: MediaStream, participantId: string) => {
+    try {
+      console.log(`Recreating video element for ${participantId} from scratch`);
+      
+      // Remove existing element
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+      
+      // Delete reference to old element
+      delete videoElements.current[participantId];
+      
+      // Create new element with different settings
+      const newVideo = document.createElement('video');
+      newVideo.autoplay = true;
+      newVideo.playsInline = true;
+      newVideo.muted = true;
+      newVideo.className = 'w-full h-full object-cover';
+      newVideo.setAttribute('data-participant-id', participantId);
+      newVideo.setAttribute('data-created-at', Date.now().toString());
+      newVideo.setAttribute('data-recovery', 'true');
+      
+      // Try with low latency and different video rendering modes
+      newVideo.style.objectFit = 'contain'; // Try different object-fit mode
+      
+      // Store new reference
+      videoElements.current[participantId] = newVideo;
+      
+      // Add to container
+      container.appendChild(newVideo);
+      
+      // Set stream
+      newVideo.srcObject = stream;
+      
+      // Try to play with minimal settings
+      newVideo.onloadedmetadata = () => {
+        console.log(`Recovered video metadata loaded for ${participantId}`);
+        newVideo.play()
+          .then(() => console.log(`Recovered video playing for ${participantId}`))
+          .catch(e => console.error(`Recovered video playback error for ${participantId}:`, e));
+      };
+      
+      newVideo.oncanplay = () => {
+        console.log(`Recovered video can play for ${participantId}`);
+        setStreamErrors(prev => ({ ...prev, [participantId]: '' }));
+      };
+      
+      newVideo.onerror = (e) => {
+        console.error(`Recovered video error for ${participantId}:`, newVideo.error);
+      };
+      
+      // Try playing immediately
+      newVideo.play().catch(e => {
+        console.log(`Initial play for recovered video failed for ${participantId}:`, e);
+      });
+    } catch (e) {
+      console.error(`Error during video element recreation for ${participantId}:`, e);
     }
   };
 
@@ -491,6 +722,30 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     onSelectParticipant(id);
   };
 
+  // Function to manually refresh a participant's video
+  const handleRefreshVideo = (participantId: string) => {
+    console.log(`Manually refreshing video for ${participantId}`);
+    
+    const container = videoRefs.current[participantId];
+    const stream = participantStreams[participantId];
+    
+    if (container && stream) {
+      toast({
+        title: "Atualizando vídeo",
+        description: "Tentando atualizar o vídeo do participante"
+      });
+      
+      // Force recreation of video element
+      recreateVideoElement(container, stream, participantId);
+    } else {
+      toast({
+        title: "Não foi possível atualizar",
+        description: "Stream ou container de vídeo não disponível",
+        variant: "destructive"
+      });
+    }
+  };
+
   // Enhanced rendering with improved visual feedback
   const renderParticipantCard = (participant: Participant) => {
     const isActive = participant.active;
@@ -500,6 +755,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     const connectionCount = streamConnectionCount[participant.id] || 0;
     const streamError = streamErrors[participant.id];
     const browserType = participant.browserType || 'unknown';
+    const diagnosticInfo = streamStats[participant.id] || {};
     
     return (
       <Card 
@@ -538,11 +794,27 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
               </div>
             )}
             
-            {/* Stream error indicator */}
+            {/* Stream error indicator with refresh option */}
             {streamError && (
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/70 p-2 rounded-md">
-                <AlertTriangle className="h-6 w-6 text-yellow-500 mx-auto mb-1" />
-                <p className="text-xs text-center text-white">{streamError.substring(0, 40)}{streamError.length > 40 ? '...' : ''}</p>
+                <div className="flex flex-col items-center">
+                  <AlertTriangle className="h-6 w-6 text-yellow-500 mx-auto mb-1" />
+                  <p className="text-xs text-center text-white mb-2">
+                    {streamError.substring(0, 40)}{streamError.length > 40 ? '...' : ''}
+                  </p>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    className="w-full text-xs h-7"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRefreshVideo(participant.id);
+                    }}
+                  >
+                    <RefreshCcw className="h-3 w-3 mr-1" />
+                    Atualizar
+                  </Button>
+                </div>
               </div>
             )}
             
@@ -601,6 +873,16 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
                 <Eye className="h-4 w-4" />
               </Button>
               
+              <Button
+                size="icon"
+                variant="outline" 
+                className="h-8 w-8"
+                onClick={() => handleRefreshVideo(participant.id)}
+                title="Atualizar vídeo"
+              >
+                <RefreshCcw className="h-4 w-4" />
+              </Button>
+              
               {showAdminControls && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -657,6 +939,20 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
               )}
             </div>
           </div>
+          
+          {/* Advanced diagnostic info (hidden by default) */}
+          {showDiagnostics && diagnosticInfo && (
+            <div className="mt-2 p-2 bg-secondary/30 rounded text-xs overflow-hidden">
+              <p className="font-mono truncate">
+                {diagnosticInfo.videoWidth}x{diagnosticInfo.videoHeight} {diagnosticInfo.tracks?.length || 0} tracks
+              </p>
+              {diagnosticInfo.lastStatsUpdate && (
+                <p className="text-muted-foreground">
+                  Updated {formatTimeSince(diagnosticInfo.lastStatsUpdate)} ago
+                </p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     );
@@ -664,6 +960,19 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-between items-center mb-2">
+        <h3 className="text-lg font-medium">
+          {participants.length} Participantes
+        </h3>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => setShowDiagnostics(!showDiagnostics)}
+        >
+          {showDiagnostics ? 'Ocultar' : 'Mostrar'} diagnósticos
+        </Button>
+      </div>
+      
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {participants.length > 0 ? (
           participants.map(renderParticipantCard)
