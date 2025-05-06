@@ -15,12 +15,13 @@ interface Window {
   };
 }
 
-// Fix for Timer vs Timeout type discrepancies
-type NodeTimer = number | NodeJS.Timeout; // This accommodates both number and NodeJS.Timeout
+// Define NodeTimer as a type that can be either number or NodeJS.Timeout
+type NodeTimer = number | NodeJS.Timeout; 
 
 // Define NodeJS namespace if it doesn't exist to fix Timeout type issues
 declare namespace NodeJS {
   interface Timeout {
+    // Add Symbol.dispose method to match browser timer cleanup API if needed
     [Symbol.dispose]?: () => void;
   }
 }

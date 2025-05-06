@@ -249,8 +249,8 @@ const ParticipantPage = () => {
         setFinalActionTimeLeft((prev) => prev - 1);
       }, 1000);
       
-      // Explicitly cast to NodeTimer to ensure type compatibility
-      setFinalActionTimerId(timerId as NodeTimer);
+      // Use the NodeTimer type from global.d.ts which handles both number and NodeJS.Timeout
+      setFinalActionTimerId(timerId);
       
       return () => {
         if (timerId) clearInterval(timerId);
@@ -792,12 +792,8 @@ const ParticipantPage = () => {
 
   const closeFinalAction = () => {
     if (finalActionTimerId) {
-      // Ensure proper type handling when clearing the interval
-      if (typeof finalActionTimerId === 'number') {
-        clearInterval(finalActionTimerId);
-      } else {
-        clearInterval(finalActionTimerId as unknown as number);
-      }
+      // No need for explicit casting here as NodeTimer is defined to handle both types
+      clearInterval(finalActionTimerId);
       setFinalActionTimerId(null);
     }
     setFinalActionOpen(false);
