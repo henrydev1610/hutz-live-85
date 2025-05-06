@@ -32,9 +32,9 @@ const PEER_CONNECTION_CONFIG = {
     }
   ],
   iceCandidatePoolSize: 10, // Increase candidate pool for better connectivity chances
-  bundlePolicy: 'max-bundle', // Optimize bundle policy
-  rtcpMuxPolicy: 'require', // Require RTCP multiplexing
-  iceTransportPolicy: 'all' // Allow both relay and direct connections
+  bundlePolicy: 'max-bundle' as RTCBundlePolicy, // Explicitly cast to the correct type
+  rtcpMuxPolicy: 'require' as RTCRtcpMuxPolicy, // Explicitly cast to the correct type
+  iceTransportPolicy: 'all' as RTCIceTransportPolicy // Explicitly cast to the correct type
 };
 
 // Keep track of active peer connections
@@ -526,9 +526,9 @@ export const initParticipantWebRTC = async (
     }
   }, 15000);
   
-  // Store interval for cleanup
+  // Store interval for cleanup - cast to NodeTimer for type compatibility
   window._healthCheckIntervals = window._healthCheckIntervals || {};
-  window._healthCheckIntervals[participantId] = connectionHealthCheckInterval;
+  window._healthCheckIntervals[participantId] = connectionHealthCheckInterval as unknown as number;
 };
 
 // Create a peer connection with enhanced error monitoring
@@ -743,10 +743,10 @@ const createPeerConnection = (
     console.log(`ICE gathering state for ${peerId}: ${peerConnection.iceGatheringState}`);
   };
   
-  // Enhanced error handler
-  peerConnection.onerror = (error) => {
-    console.error(`Peer connection error for ${peerId}:`, error);
-  };
+  // Use event listeners for error handling instead of the non-existent onerror property
+  peerConnection.addEventListener('error', (event) => {
+    console.error(`Peer connection error for ${peerId}:`, event);
+  });
   
   return peerConnection;
 };
