@@ -202,9 +202,9 @@ const Timeline = ({
       }
     });
     
-    // Use type assertion to handle the error event
-    wavesurfer.on('error' as keyof WaveSurfer.WaveSurferEvents, (error: any) => {
-      console.error("Error loading audio:", error);
+    // Fix the error event handling by using a proper error handler without type assertion
+    wavesurfer.on('error', (err) => {
+      console.error("Error loading audio:", err);
       setIsAudioLoaded(false);
     });
     

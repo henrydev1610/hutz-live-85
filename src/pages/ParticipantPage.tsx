@@ -28,7 +28,7 @@ const ParticipantPage = () => {
     link?: string;
     coupon?: string;
   } | null>(null);
-  const [finalActionTimerId, setFinalActionTimerId] = useState<NodeTimer | null>(null);
+  const [finalActionTimerId, setFinalActionTimerId] = useState<ReturnType<typeof setInterval> | null>(null);
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -247,7 +247,7 @@ const ParticipantPage = () => {
     if (finalActionOpen && finalActionTimeLeft > 0) {
       const timerId = setInterval(() => {
         setFinalActionTimeLeft((prev) => prev - 1);
-      }, 1000) as unknown as number;
+      }, 1000);
       
       setFinalActionTimerId(timerId);
       
