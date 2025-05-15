@@ -15,9 +15,6 @@ interface Window {
   };
 }
 
-// Define NodeTimer as a type that can be either number or NodeJS.Timeout
-type NodeTimer = number | NodeJS.Timeout; 
-
 // Define NodeJS namespace if it doesn't exist to fix Timeout type issues
 declare namespace NodeJS {
   interface Timeout {
