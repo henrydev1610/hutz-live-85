@@ -1,8 +1,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
-import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline';
+import RegionsPlugin from 'wavesurfer.js/dist/plugin/regions';
+import TimelinePlugin from 'wavesurfer.js/dist/plugin/timeline';
 import { TimelineItem } from '@/types/lightshow';
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -203,7 +203,8 @@ const Timeline = ({
       }
     });
     
-    wavesurfer.on('error', (error) => {
+    // Fix the error event type
+    wavesurfer.on('error' as any, (error: any) => {
       console.error("Error loading audio:", error);
       setIsAudioLoaded(false);
     });
