@@ -247,12 +247,12 @@ const ParticipantPage = () => {
     if (finalActionOpen && finalActionTimeLeft > 0) {
       const timerId = setInterval(() => {
         setFinalActionTimeLeft((prev) => prev - 1);
-      }, 1000) as unknown as NodeTimer;
+      }, 1000) as unknown as number;
       
       setFinalActionTimerId(timerId);
       
       return () => {
-        if (timerId) clearInterval(timerId as number);
+        if (timerId) clearInterval(timerId);
       };
     } else if (finalActionTimeLeft <= 0) {
       closeFinalAction();
@@ -791,7 +791,7 @@ const ParticipantPage = () => {
 
   const closeFinalAction = () => {
     if (finalActionTimerId) {
-      clearInterval(finalActionTimerId as number);
+      clearInterval(finalActionTimerId);
       setFinalActionTimerId(null);
     }
     setFinalActionOpen(false);
