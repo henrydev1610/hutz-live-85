@@ -9,27 +9,163 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      chat_participants: {
+        Row: {
+          chat_id: string
+          id: string
+          joined_at: string
+          user_id: string
+        }
+        Insert: {
+          chat_id: string
+          id?: string
+          joined_at?: string
+          user_id: string
+        }
+        Update: {
+          chat_id?: string
+          id?: string
+          joined_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_participants_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chats: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          description: string | null
+          id: string
+          is_group: boolean
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_group?: boolean
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_group?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      home_office_checks: {
+        Row: {
+          check_time: string
+          id: string
+          notification_sent: boolean
+          response_status: string
+          response_time: string | null
+          user_id: string
+        }
+        Insert: {
+          check_time?: string
+          id?: string
+          notification_sent?: boolean
+          response_status: string
+          response_time?: string | null
+          user_id: string
+        }
+        Update: {
+          check_time?: string
+          id?: string
+          notification_sent?: boolean
+          response_status?: string
+          response_time?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      messages: {
+        Row: {
+          chat_id: string
+          content: string | null
+          created_at: string
+          id: string
+          is_system_message: boolean
+          media_type: string | null
+          media_url: string | null
+          sender_id: string
+        }
+        Insert: {
+          chat_id: string
+          content?: string | null
+          created_at?: string
+          id?: string
+          is_system_message?: boolean
+          media_type?: string | null
+          media_url?: string | null
+          sender_id: string
+        }
+        Update: {
+          chat_id?: string
+          content?: string | null
+          created_at?: string
+          id?: string
+          is_system_message?: boolean
+          media_type?: string | null
+          media_url?: string | null
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
           full_name: string | null
+          home_days: string[] | null
           id: string
           role: Database["public"]["Enums"]["user_role"]
           updated_at: string | null
+          username: string
+          work_model: string | null
         }
         Insert: {
           avatar_url?: string | null
           full_name?: string | null
+          home_days?: string[] | null
           id: string
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string | null
+          username: string
+          work_model?: string | null
         }
         Update: {
           avatar_url?: string | null
           full_name?: string | null
+          home_days?: string[] | null
           id?: string
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string | null
+          username?: string
+          work_model?: string | null
         }
         Relationships: []
       }

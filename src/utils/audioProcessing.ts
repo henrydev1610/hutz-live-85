@@ -1,9 +1,9 @@
-
 import { TimelineItem } from '@/types/lightshow';
 
 /**
  * Generates an ultrasonic audio file with embedded data
  * Uses frequencies between 17.5kHz-19kHz to encode timeline data
+ * Enhanced for better mobile app compatibility and reliable decoding
  */
 export async function generateUltrasonicAudio(
   audioFile: File,
@@ -36,15 +36,21 @@ export async function generateUltrasonicAudio(
     
     console.log(`Audio successfully decoded: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.numberOfChannels} channels, ${audioBuffer.sampleRate}Hz`);
     
-    // Create an offline context for processing
-    console.log("Creating offline audio context...");
+    // Add initial silence for app preparation (2 seconds)
+    const initialSilenceDuration = 2.0; 
+    const totalDuration = audioBuffer.duration + initialSilenceDuration;
+    
+    console.log(`Adding ${initialSilenceDuration}s silence at beginning, total duration: ${totalDuration.toFixed(2)}s`);
+    
+    // Create an offline context for processing with added silence
+    console.log("Creating offline audio context with initial silence...");
     const offlineContext = new OfflineAudioContext({
       numberOfChannels: audioBuffer.numberOfChannels,
-      length: audioBuffer.length,
+      length: Math.ceil(totalDuration * audioBuffer.sampleRate),
       sampleRate: audioBuffer.sampleRate
     });
     
-    // Create sources for original audio and ultrasonic signals
+    // Create source for original audio with delay
     const musicSource = offlineContext.createBufferSource();
     musicSource.buffer = audioBuffer;
     
@@ -56,13 +62,16 @@ export async function generateUltrasonicAudio(
     musicSource.connect(musicGain);
     musicGain.connect(offlineContext.destination);
     
+    // Delay the original audio by initialSilenceDuration seconds
+    musicSource.start(initialSilenceDuration);
+    
     // Create oscillator for ultrasonic carrier wave (18kHz)
     const carrier = offlineContext.createOscillator();
     carrier.frequency.value = 18000; // 18kHz carrier frequency
     
     // Create gain node for the ultrasonic signal
     const ultrasonicGain = offlineContext.createGain();
-    ultrasonicGain.gain.value = 0.05; // Keep ultrasonic signal subtle
+    ultrasonicGain.gain.value = 0.08; // Increased from 0.05 for better detection
     
     // Connect carrier to gain
     carrier.connect(ultrasonicGain);
@@ -71,63 +80,46 @@ export async function generateUltrasonicAudio(
     // Prepare the data for encoding
     console.log("Preparing timeline data for encoding...");
     
-    // Convert timeline items to a minimal representation to avoid circular references
-    const minimalTimelineItems = timelineItems.map(item => {
-      const base = {
-        id: item.id,
-        type: item.type,
-        startTime: item.startTime,
-        duration: item.duration,
-      };
-      
-      // Add type-specific properties with minimal data
-      if (item.type === 'image') {
-        return { 
-          ...base, 
-          imageRef: item.imageUrl ? item.imageUrl.substring(0, 30) + '...' : null
-        };
-      } else if (item.type === 'flashlight') {
-        return { 
-          ...base, 
-          pattern: item.pattern ? {
-            intensity: item.pattern.intensity,
-            blinkRate: item.pattern.blinkRate,
-            color: item.pattern.color
-          } : null
-        };
-      } else if (item.type === 'callToAction') {
-        return {
-          ...base,
-          content: item.content ? {
-            type: item.content.type,
-            hasImage: !!item.content.imageUrl,
-            buttonText: item.content.buttonText,
-            hasExternalUrl: !!item.content.externalUrl,
-            couponCode: item.content.couponCode
-          } : null
-        };
-      }
-      
-      return base;
-    });
+    // Convert timeline items to a more robust format with error correction
+    const enhancedTimelineData = {
+      version: "1.0",
+      metadata: {
+        showName: "MomentoLightShow",
+        duration: audioBuffer.duration,
+        itemCount: timelineItems.length,
+        timestamp: Date.now()
+      },
+      items: compressTimelineItems(timelineItems)
+    };
     
-    // Convert data to binary string safely
+    // Convert data to string safely with error handling
     let binaryData: string;
     try {
-      console.log("Stringifying timeline data...");
-      binaryData = JSON.stringify(minimalTimelineItems);
+      console.log("Stringifying enhanced timeline data...");
+      binaryData = JSON.stringify(enhancedTimelineData);
       console.log(`Successfully stringified timeline data: ${binaryData.length} chars`);
+      
+      // Add CRC checksum to verify data integrity
+      const checksum = calculateCRC(binaryData);
+      binaryData = JSON.stringify({
+        data: enhancedTimelineData,
+        checksum: checksum
+      });
+      
     } catch (jsonError) {
       console.error("JSON stringify error:", jsonError);
       
       // Fallback to even more simplified version
       console.log("Falling back to simplified data structure...");
-      binaryData = JSON.stringify(minimalTimelineItems.map(item => ({
-        id: item.id,
-        type: item.type,
-        startTime: item.startTime,
-        duration: item.duration
-      })));
+      binaryData = JSON.stringify({
+        version: "1.0",
+        items: timelineItems.map(item => ({
+          id: item.id,
+          type: item.type,
+          startTime: item.startTime,
+          duration: item.duration
+        }))
+      });
       console.log(`Using simplified fallback data: ${binaryData.length} chars`);
     }
     
@@ -141,19 +133,23 @@ export async function generateUltrasonicAudio(
     // FSK modulation parameters
     const mark = 18500;  // 18.5kHz for binary 1
     const space = 17500; // 17.5kHz for binary 0
-    const bitsPerSecond = 25; // Slower data rate for better reliability
+    const bitsPerSecond = 20; // Slower data rate for better reliability (reduced from 25)
     
-    // Schedule the data transmission
-    let currentTime = 0;
+    // Current position in the audio timeline
+    let currentTime = 0; 
     
-    // Ensure we have enough time to transmit all data
-    const requiredTime = (binaryArray.length * 8) / bitsPerSecond;
-    console.log(`Required time for data transmission: ${requiredTime.toFixed(2)} seconds`);
+    // ENHANCEMENT 1: Add silent period first (ultrasonic carrier muted)
+    ultrasonicGain.gain.setValueAtTime(0, 0);
+    currentTime = 0.5; // First 0.5 seconds are completely silent for app preparation
+    ultrasonicGain.gain.setValueAtTime(0.08, currentTime);
     
-    // Add preamble for signal detection (alternating pattern)
-    console.log("Adding preamble signal...");
-    const preambleLength = 1; // 1 second preamble
-    for (let i = 0; i < preambleLength * bitsPerSecond; i++) {
+    // ENHANCEMENT 2: Extended preamble with distinct pattern (3 seconds)
+    console.log("Adding extended preamble signal (3s)...");
+    const preambleLength = 3; // 3 second preamble
+    
+    // Start marker - special pattern (10101010 repeated, then 11111111, then 00000000)
+    // This distinct pattern helps the app recognize the start of the data
+    for (let i = 0; i < preambleLength * bitsPerSecond * 0.3; i++) {
       const value = i % 2; // Alternating 0, 1 pattern
       carrier.frequency.setValueAtTime(
         value ? mark : space,
@@ -162,36 +158,138 @@ export async function generateUltrasonicAudio(
       currentTime += 1 / bitsPerSecond;
     }
     
-    // Transmit the actual data
-    console.log("Encoding timeline data into audio frequencies...");
-    binaryArray.forEach((byte, index) => {
-      for (let bit = 0; bit < 8; bit++) {
-        const value = (byte >> bit) & 1;
-        carrier.frequency.setValueAtTime(
-          value ? mark : space,
-          currentTime
-        );
-        currentTime += 1 / bitsPerSecond;
+    // Specific start marker - all 1s
+    for (let i = 0; i < preambleLength * bitsPerSecond * 0.3; i++) {
+      carrier.frequency.setValueAtTime(mark, currentTime);
+      currentTime += 1 / bitsPerSecond;
+    }
+    
+    // Specific end marker - all 0s
+    for (let i = 0; i < preambleLength * bitsPerSecond * 0.3; i++) {
+      carrier.frequency.setValueAtTime(space, currentTime);
+      currentTime += 1 / bitsPerSecond;
+    }
+    
+    // Final alternating pattern to confirm readiness
+    for (let i = 0; i < preambleLength * bitsPerSecond * 0.1; i++) {
+      const value = i % 2;
+      carrier.frequency.setValueAtTime(
+        value ? mark : space,
+        currentTime
+      );
+      currentTime += 1 / bitsPerSecond;
+    }
+    
+    // ENHANCEMENT 3: Duplicate the data for redundancy
+    // We'll transmit the data twice for better reliability
+    const transmitDataWithTimestamp = (startTime: number) => {
+      let localTime = startTime;
+      
+      // Add timestamp sync marker
+      const syncTimestamp = Date.now().toString();
+      const syncData = encoder.encode(syncTimestamp);
+      
+      // Transmit sync marker
+      for (let i = 0; i < syncData.length; i++) {
+        const byte = syncData[i];
+        for (let bit = 0; bit < 8; bit++) {
+          const value = (byte >> bit) & 1;
+          carrier.frequency.setValueAtTime(
+            value ? mark : space,
+            localTime
+          );
+          localTime += 1 / bitsPerSecond;
+        }
       }
       
-      // Add progress logging
-      if (index % 200 === 0) {
-        console.log(`Encoding data: ${Math.round((index / binaryArray.length) * 100)}%`);
+      // Short pause
+      localTime += 0.1;
+      
+      // Transmit the actual data
+      console.log(`Encoding timeline data at position ${localTime.toFixed(2)}s...`);
+      for (let i = 0; i < binaryArray.length; i++) {
+        const byte = binaryArray[i];
+        for (let bit = 0; bit < 8; bit++) {
+          const value = (byte >> bit) & 1;
+          carrier.frequency.setValueAtTime(
+            value ? mark : space,
+            localTime
+          );
+          localTime += 1 / bitsPerSecond;
+        }
+        
+        // Add progress logging
+        if (i % 200 === 0) {
+          console.log(`Encoding data: ${Math.round((i / binaryArray.length) * 100)}%`);
+        }
       }
-    });
+      
+      // Return the updated time position
+      return localTime;
+    };
     
-    // Add postamble for reliable detection
+    // First data transmission
+    currentTime = transmitDataWithTimestamp(currentTime);
+    
+    // ENHANCEMENT 4: Add postamble for reliable detection
     console.log("Adding postamble signal...");
     for (let i = 0; i < 0.5 * bitsPerSecond; i++) {
       carrier.frequency.setValueAtTime(mark, currentTime);
       currentTime += 1 / bitsPerSecond;
     }
     
+    // Add periodic sync markers throughout the audio
+    const audioDuration = initialSilenceDuration + audioBuffer.duration;
+    const syncInterval = 10; // seconds
+    let syncPoint = currentTime + syncInterval;
+    
+    while (syncPoint < audioDuration - 5) { // Don't add sync markers in the last 5 seconds
+      console.log(`Adding sync marker at ${syncPoint.toFixed(2)}s`);
+      
+      // Brief sync pattern
+      for (let i = 0; i < 0.2 * bitsPerSecond; i++) {
+        const value = i % 2;
+        carrier.frequency.setValueAtTime(
+          value ? mark : space,
+          syncPoint
+        );
+        syncPoint += 1 / bitsPerSecond;
+      }
+      
+      // Add timestamp
+      const syncTimestamp = JSON.stringify({
+        t: syncPoint,
+        c: "sync"
+      });
+      
+      const syncBytes = encoder.encode(syncTimestamp);
+      for (let i = 0; i < syncBytes.length; i++) {
+        const byte = syncBytes[i];
+        for (let bit = 0; bit < 8; bit++) {
+          const value = (byte >> bit) & 1;
+          carrier.frequency.setValueAtTime(
+            value ? mark : space,
+            syncPoint
+          );
+          syncPoint += 1 / bitsPerSecond;
+        }
+      }
+      
+      // Move to next sync point
+      syncPoint += syncInterval;
+    }
+    
+    // Second data transmission near the end for redundancy
+    if (audioDuration > 45) { // Only for longer audio files
+      const secondTransmissionTime = audioDuration - 30; // 30 seconds from the end
+      console.log(`Adding second data transmission at ${secondTransmissionTime.toFixed(2)}s`);
+      transmitDataWithTimestamp(secondTransmissionTime);
+    }
+    
     console.log("Starting audio sources...");
     
-    // Start the sources
-    musicSource.start();
-    carrier.start();
+    // Start the carrier source
+    carrier.start(0);
     
     console.log("Starting audio rendering process...");
     
@@ -316,6 +414,72 @@ function audioBufferToWav(buffer: AudioBuffer): Uint8Array {
     console.error("Error in audioBufferToWav:", error);
     throw new Error("Failed to convert audio buffer to WAV");
   }
+}
+
+/**
+ * Compress timeline items to reduce data size while preserving functionality
+ */
+function compressTimelineItems(timelineItems: TimelineItem[]): any[] {
+  return timelineItems.map(item => {
+    const base = {
+      i: item.id.substring(0, 8), // Shortened ID
+      t: item.type.charAt(0),     // Type: 'i' for image, 'f' for flashlight, 'c' for callToAction
+      s: parseFloat(item.startTime.toFixed(2)), // Start time with 2 decimal precision
+      d: parseFloat(item.duration.toFixed(2)),  // Duration with 2 decimal precision
+    };
+    
+    // Add type-specific properties with minimal data
+    if (item.type === 'image') {
+      return { 
+        ...base, 
+        t: 'i',
+        u: item.imageUrl ? item.imageUrl.substring(0, 30) + '...' : null
+      };
+    } else if (item.type === 'flashlight') {
+      return { 
+        ...base,
+        t: 'f', 
+        p: item.pattern ? {
+          i: item.pattern.intensity,
+          b: item.pattern.blinkRate,
+          c: item.pattern.color
+        } : null
+      };
+    } else if (item.type === 'callToAction') {
+      return {
+        ...base,
+        t: 'c',
+        c: item.content ? {
+          t: item.content.type.charAt(0),
+          h: !!item.content.imageUrl,
+          b: item.content.buttonText,
+          u: !!item.content.externalUrl,
+          x: item.content.couponCode
+        } : null
+      };
+    }
+    
+    return base;
+  });
+}
+
+/**
+ * Calculate CRC checksum for data integrity verification
+ */
+function calculateCRC(data: string): number {
+  let crc = 0xFFFF;
+  for (let i = 0; i < data.length; i++) {
+    const code = data.charCodeAt(i);
+    crc ^= (code & 0xFF);
+    for (let j = 0; j < 8; j++) {
+      if (crc & 0x0001) {
+        crc = (crc >> 1) ^ 0xA001;
+      } else {
+        crc = crc >> 1;
+      }
+    }
+  }
+  return crc;
 }
 
 /**
