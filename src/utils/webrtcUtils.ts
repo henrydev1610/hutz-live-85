@@ -1,4 +1,15 @@
-import { webSocketSignalingService, SignalingMessage } from '@/services/WebSocketSignalingService';
+import { signalingService } from '@/services/WebSocketSignalingService';
+
+// Define SignalingMessage interface locally since it's not exported
+interface SignalingMessage {
+  type: string;
+  peerId?: string;
+  senderId?: string;
+  targetId?: string;
+  peers?: string[];
+  description?: RTCSessionDescriptionInit;
+  candidate?: RTCIceCandidateInit;
+}
 
 const PEER_CONNECTION_CONFIG = {
   iceServers: [
@@ -6,7 +17,7 @@ const PEER_CONNECTION_CONFIG = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun.stunprotocol.org:3478' },
+    { urls: 'stun:stunprotocol.org:3478' },
     { urls: 'stun:stun.services.mozilla.com:3478' },
     
     // Enhanced TURN server configuration with multiple options
@@ -185,7 +196,7 @@ const modifySdp = (sdp: string): string => {
       // Find the payload type for H264
       const h264LineIndex = lines.findIndex(line => line.includes('H264/90000'));
       if (h264LineIndex !== -1) {
-        const h264PayloadType = lines[h264LineIndex].split(' ')[0].split(':')[1];
+        const h264PayloadType = lines[h2664LineIndex].split(' ')[0].split(':')[1];
         
         // Modify the m-line to prioritize H264
         const mLine = lines[mLineIndex].split(' ');
@@ -234,19 +245,7 @@ export const initHostWebRTC = async (
   const connectWithRetry = async (): Promise<boolean> => {
     try {
       console.log(`Attempting to connect to signaling server (Attempt ${signalingConnectAttempts + 1}/${MAX_SIGNALING_ATTEMPTS})`);
-      const connected = await webSocketSignalingService.connect(sessionId, currentPeerId);
-      
-      if (!connected) {
-        signalingConnectAttempts++;
-        if (signalingConnectAttempts < MAX_SIGNALING_ATTEMPTS) {
-          console.log(`Connection failed. Retrying in ${signalingConnectAttempts * 1000}ms...`);
-          await new Promise(resolve => setTimeout(resolve, signalingConnectAttempts * 1000));
-          return connectWithRetry();
-        }
-        console.error('Failed to connect to signaling server after multiple attempts');
-        return false;
-      }
-      
+      await signalingService.joinRoom(sessionId, currentPeerId);
       return true;
     } catch (error) {
       console.error('Error connecting to signaling server:', error);
@@ -268,39 +267,37 @@ export const initHostWebRTC = async (
   
   console.log("Successfully connected to signaling server");
   
-  // Set up signaling event handlers
-  webSocketSignalingService.on('user-joined', (message: SignalingMessage) => {
-    if (message.peerId && message.peerId !== currentPeerId) {
-      console.log(`User joined: ${message.peerId}`);
-      handleNewParticipant(message.peerId);
-    }
-  });
-  
-  webSocketSignalingService.on('user-left', (message: SignalingMessage) => {
-    if (message.peerId && message.peerId !== currentPeerId) {
-      console.log(`User left: ${message.peerId}`);
-      closePeerConnection(message.peerId);
-    }
-  });
-  
-  webSocketSignalingService.on('offer', async (message: SignalingMessage) => {
-    if (message.senderId && message.description) {
-      console.log(`Received offer from: ${message.senderId}`);
-      await handleOffer(message.senderId, message.description);
-    }
-  });
-  
-  webSocketSignalingService.on('answer', async (message: SignalingMessage) => {
-    if (message.senderId && message.description) {
-      console.log(`Received answer from: ${message.senderId}`);
-      await handleAnswer(message.senderId, message.description);
-    }
-  });
-  
-  webSocketSignalingService.on('candidate', async (message: SignalingMessage) => {
-    if (message.senderId && message.candidate) {
-      console.log(`Received ICE candidate from: ${message.senderId}`);
-      await handleCandidate(message.senderId, message.candidate);
+  // Set up signaling event handlers using the correct service
+  signalingService.setCallbacks({
+    onUserConnected: (data) => {
+      if (data.userId && data.userId !== currentPeerId) {
+        console.log(`User joined: ${data.userId}`);
+        handleNewParticipant(data.userId);
+      }
+    },
+    onUserDisconnected: (data) => {
+      if (data.userId && data.userId !== currentPeerId) {
+        console.log(`User left: ${data.userId}`);
+        closePeerConnection(data.userId);
+      }
+    },
+    onOffer: async (data) => {
+      if (data.fromUserId && data.offer) {
+        console.log(`Received offer from: ${data.fromUserId}`);
+        await handleOffer(data.fromUserId, data.offer);
+      }
+    },
+    onAnswer: async (data) => {
+      if (data.fromUserId && data.answer) {
+        console.log(`Received answer from: ${data.fromUserId}`);
+        await handleAnswer(data.fromUserId, data.answer);
+      }
+    },
+    onIceCandidate: async (data) => {
+      if (data.fromUserId && data.candidate) {
+        console.log(`Received ICE candidate from: ${data.fromUserId}`);
+        await handleCandidate(data.fromUserId, data.candidate);
+      }
     }
   });
   
@@ -314,7 +311,7 @@ export const initHostWebRTC = async (
   }
 
   // Initialize with existing participants if any
-  webSocketSignalingService.on('peer-list', (message: SignalingMessage) => {
+  signalingService.on('peer-list', (message: SignalingMessage) => {
     if (message.peers && Array.isArray(message.peers)) {
       message.peers.forEach(peerId => {
         console.log(`Existing peer in room: ${peerId}`);
@@ -399,19 +396,7 @@ export const initParticipantWebRTC = async (
   const connectWithRetry = async (): Promise<boolean> => {
     try {
       console.log(`Attempting to connect to signaling server (Attempt ${signalingConnectAttempts + 1}/${MAX_SIGNALING_ATTEMPTS})`);
-      const connected = await webSocketSignalingService.connect(sessionId, participantId);
-      
-      if (!connected) {
-        signalingConnectAttempts++;
-        if (signalingConnectAttempts < MAX_SIGNALING_ATTEMPTS) {
-          console.log(`Connection failed. Retrying in ${signalingConnectAttempts * 1000}ms...`);
-          await new Promise(resolve => setTimeout(resolve, signalingConnectAttempts * 1000));
-          return connectWithRetry();
-        }
-        console.error('Failed to connect to signaling server after multiple attempts');
-        return false;
-      }
-      
+      await signalingService.joinRoom(sessionId, participantId);
       return true;
     } catch (error) {
       console.error('Error connecting to signaling server:', error);
@@ -478,25 +463,25 @@ export const initParticipantWebRTC = async (
   
   console.log("Successfully connected to signaling server");
   
-  // Set up signaling event handlers
-  webSocketSignalingService.on('offer', async (message: SignalingMessage) => {
-    if (message.senderId && message.description) {
-      console.log(`Received offer from: ${message.senderId}`);
-      await handleOffer(message.senderId, message.description);
-    }
-  });
-  
-  webSocketSignalingService.on('answer', async (message: SignalingMessage) => {
-    if (message.senderId && message.description) {
-      console.log(`Received answer from: ${message.senderId}`);
-      await handleAnswer(message.senderId, message.description);
-    }
-  });
-  
-  webSocketSignalingService.on('candidate', async (message: SignalingMessage) => {
-    if (message.senderId && message.candidate) {
-      console.log(`Received ICE candidate from: ${message.senderId}`);
-      await handleCandidate(message.senderId, message.candidate);
+  // Set up signaling event handlers using the correct service
+  signalingService.setCallbacks({
+    onOffer: async (data) => {
+      if (data.fromUserId && data.offer) {
+        console.log(`Received offer from: ${data.fromUserId}`);
+        await handleOffer(data.fromUserId, data.offer);
+      }
+    },
+    onAnswer: async (data) => {
+      if (data.fromUserId && data.answer) {
+        console.log(`Received answer from: ${data.fromUserId}`);
+        await handleAnswer(data.fromUserId, data.answer);
+      }
+    },
+    onIceCandidate: async (data) => {
+      if (data.fromUserId && data.candidate) {
+        console.log(`Received ICE candidate from: ${data.fromUserId}`);
+        await handleCandidate(data.fromUserId, data.candidate);
+      }
     }
   });
   
@@ -587,12 +572,7 @@ const createPeerConnection = (
       
       // Try WebSocket signaling first
       try {
-        webSocketSignalingService.send({
-          type: 'candidate',
-          targetId: peerId,
-          candidate: event.candidate,
-          senderId: currentPeerId
-        });
+        signalingService.sendOffer(event.candidate, peerId);
       } catch (e) {
         console.warn(`WebSocket signaling failed for ICE candidate to ${peerId}, trying fallback:`, e);
         
@@ -780,17 +760,12 @@ const createAndSendOffer = async (peerId: string, iceRestart: boolean = false): 
     console.log(`Setting local description for ${peerId}`);
     await peerConnection.setLocalDescription(offer);
     
-    // Send offer via signaling service with fallback mechanisms
+    // Send offer via signaling service
     try {
-      webSocketSignalingService.send({
-        type: 'offer',
-        targetId: peerId,
-        senderId: currentPeerId,
-        description: peerConnection.localDescription
-      });
+      signalingService.sendOffer(peerConnection.localDescription!, peerId);
       console.log(`Sent offer to ${peerId} via WebSocket`);
     } catch (e) {
-      console.warn(`WebSocket signaling failed for offer to ${peerId}, trying fallback:`, e);
+      console.warn(`WebSocket signaling failed for offer to ${peerId}:`, e);
       
       // Try BroadcastChannel fallback
       try {
@@ -842,11 +817,7 @@ const createAndSendOffer = async (peerId: string, iceRestart: boolean = false): 
         });
         await peerConnection.setLocalDescription(simpleOffer);
         
-        webSocketSignalingService.send({
-          type: 'offer',
-          targetId: peerId,
-          description: peerConnection.localDescription
-        });
+        signalingService.sendOffer(peerConnection.localDescription!, peerId);
         console.log(`Sent simplified offer to ${peerId}`);
       } catch (retryError) {
         console.error(`Retry failed for offer to ${peerId}:`, retryError);
@@ -856,7 +827,7 @@ const createAndSendOffer = async (peerId: string, iceRestart: boolean = false): 
 };
 
 // Handle an incoming offer with enhanced compatibility
-const handleOffer = async (peerId: string, description: RTCSessionDescription): Promise<void> => {
+const handleOffer = async (peerId: string, description: RTCSessionDescriptionInit): Promise<void> => {
   // Create peer connection if it doesn't exist
   if (!peerConnections[peerId]) {
     createPeerConnection(peerId, null);
@@ -890,17 +861,12 @@ const handleOffer = async (peerId: string, description: RTCSessionDescription): 
     await peerConnection.setLocalDescription(answer);
     console.log(`Local description (answer) set for ${peerId}`);
     
-    // Send answer via signaling service with fallback mechanisms
+    // Send answer via signaling service
     try {
-      webSocketSignalingService.send({
-        type: 'answer',
-        targetId: peerId,
-        senderId: currentPeerId,
-        description: peerConnection.localDescription
-      });
+      signalingService.sendAnswer(peerConnection.localDescription!, peerId);
       console.log(`Sent answer to ${peerId} via WebSocket`);
     } catch (e) {
-      console.warn(`WebSocket signaling failed for answer to ${peerId}, trying fallback:`, e);
+      console.warn(`WebSocket signaling failed for answer to ${peerId}:`, e);
       
       // Try BroadcastChannel fallback
       try {
@@ -953,11 +919,7 @@ const handleOffer = async (peerId: string, description: RTCSessionDescription): 
       const simpleAnswer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(simpleAnswer);
       
-      webSocketSignalingService.send({
-        type: 'answer',
-        targetId: peerId,
-        description: peerConnection.localDescription
-      });
+      signalingService.sendAnswer(peerConnection.localDescription!, peerId);
     } catch (recoveryError) {
       console.error(`Recovery attempt failed for ${peerId}:`, recoveryError);
     }
@@ -965,7 +927,7 @@ const handleOffer = async (peerId: string, description: RTCSessionDescription): 
 };
 
 // Handle an incoming answer
-const handleAnswer = async (peerId: string, description: RTCSessionDescription): Promise<void> => {
+const handleAnswer = async (peerId: string, description: RTCSessionDescriptionInit): Promise<void> => {
   const peerConnection = peerConnections[peerId];
   if (!peerConnection) {
     console.error(`No peer connection for ${peerId}`);
@@ -1012,7 +974,7 @@ const handleAnswer = async (peerId: string, description: RTCSessionDescription):
 };
 
 // Handle an incoming ICE candidate with enhanced validation
-const handleCandidate = async (peerId: string, candidate: RTCIceCandidate): Promise<void> => {
+const handleCandidate = async (peerId: string, candidate: RTCIceCandidateInit): Promise<void> => {
   const peerConnection = peerConnections[peerId];
   if (!peerConnection) {
     console.error(`No peer connection for ${peerId}`);
@@ -1124,7 +1086,7 @@ export const endWebRTC = (): void => {
   
   // Disconnect from signaling server
   try {
-    webSocketSignalingService.disconnect();
+    signalingService.disconnect();
     console.log("Disconnected from signaling server");
   } catch (e) {
     console.error("Error disconnecting from signaling server:", e);

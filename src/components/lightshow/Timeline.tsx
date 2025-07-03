@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/plugins/regions';
@@ -203,11 +202,19 @@ const Timeline = ({
       }
     });
     
-    // Fix for the error event handling
-    wavesurfer.once('error', () => {
+    // Handle load errors using decode event instead of error
+    wavesurfer.on('decode', () => {
+      // Audio loaded successfully
+    });
+    
+    // Handle load failure using load event with error handling
+    const handleLoadError = () => {
       console.error("Error loading audio");
       setIsAudioLoaded(false);
-    });
+    };
+    
+    // Add error handling to the load promise
+    wavesurfer.load(audioUrl).catch(handleLoadError);
     
     return () => {
       if (wavesurfer) {
