@@ -65,6 +65,8 @@ const LivePage: React.FC = () => {
   const [participantStreams, setParticipantStreams] = useState<{[id: string]: MediaStream}>({});
   const [localStream, setLocalMediaStream] = useState<MediaStream | null>(null);
 
+  const [apiBaseUrl] = useState(import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001');
+
   useEffect(() => {
     if (participantList.length === 0) {
       const initialParticipants = Array(4).fill(0).map((_, i) => ({
@@ -310,22 +312,45 @@ const LivePage: React.FC = () => {
     }
   };
 
-  const handleGenerateQRCode = () => {
-    const newSessionId = generateSessionId();
-    console.log("Generated new session ID:", newSessionId);
-    setSessionId(newSessionId);
-    
-    const baseURL = window.location.origin;
-    const participantURL = `${baseURL}/participant/${newSessionId}`;
-    
-    setQrCodeURL(participantURL);
-    
-    setParticipantList([]);
-    
-    toast({
-      title: "QR Code gerado",
-      description: "QR Code gerado com sucesso. Compartilhe com os participantes.",
-    });
+  const handleGenerateQRCode = async () => {
+    try {
+      console.log("Generating QR Code via backend API...");
+      
+      const response = await fetch(`${apiBaseUrl}/api/rooms`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log("QR Code data received:", data);
+      
+      // Usar dados do backend
+      setSessionId(data.roomId);
+      setQrCodeURL(data.joinURL);
+      setQrCodeSvg(data.qrDataUrl);
+      
+      // Limpar lista de participantes
+      setParticipantList([]);
+      
+      toast({
+        title: "QR Code gerado",
+        description: "QR Code gerado com sucesso via backend. Compartilhe com os participantes.",
+      });
+      
+    } catch (error) {
+      console.error('Error generating QR code:', error);
+      toast({
+        title: "Erro ao gerar QR Code",
+        description: `Não foi possível gerar o QR Code: ${error.message}`,
+        variant: "destructive"
+      });
+    }
   };
 
   const handleQRCodeToTransmission = () => {
@@ -1030,7 +1055,7 @@ const LivePage: React.FC = () => {
   };
 
   const handleParticipantJoin = (participantId: string) => {
-    console.log("Participant joined:", participantId);
+    console.log("Participant joined via backend:", participantId);
     
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === participantId);
@@ -1057,14 +1082,14 @@ const LivePage: React.FC = () => {
       
       toast({
         title: "Novo participante conectado",
-        description: `${participantName} se conectou à sessão.`,
+        description: `${participantName} se conectou à sessão via backend.`,
       });
       
       const filteredList = prev.filter(p => !p.id.startsWith('placeholder-') || p.active);
       return [...filteredList, newParticipant];
     });
     
-    // Immediately broadcast participant join to transmission window
+    // Notificar janela de transmissão
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
       transmissionWindowRef.current.postMessage({
         type: 'participant-joined',

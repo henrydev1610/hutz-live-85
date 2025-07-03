@@ -43,7 +43,7 @@ const QrCodeSettings = ({
       navigator.clipboard.writeText(qrCodeURL).then(() => {
         toast({
           title: "Link copiado",
-          description: "URL do QR Code copiado para a área de transferência."
+          description: "URL do participante copiado para a área de transferência."
         });
       }).catch(err => {
         console.error("Clipboard error:", err);
@@ -79,7 +79,7 @@ const QrCodeSettings = ({
         document.execCommand('copy');
         toast({
           title: "Link copiado",
-          description: "URL do QR Code copiado para a área de transferência."
+          description: "URL do participante copiado para a área de transferência."
         });
       } catch (err) {
         console.error("Fallback copy failed:", err);
@@ -106,7 +106,7 @@ const QrCodeSettings = ({
             className={qrCodeGenerated ? "border-white/20" : ""}
           >
             <QrCode className="h-4 w-4 mr-2" />
-            {qrCodeGenerated ? "Regenerar QR Code" : "Gerar QR Code"}
+            {qrCodeGenerated ? "Regenerar Sala" : "Criar Nova Sala"}
           </Button>
           
           <Button
@@ -118,22 +118,22 @@ const QrCodeSettings = ({
             {qrCodeVisible ? (
               <>
                 <Check className="h-4 w-4 mr-2" />
-                QR Code Inserido
+                QR Code Ativo
               </>
             ) : (
               <>
                 <ExternalLink className="h-4 w-4 mr-2" />
-                Inserir QR Code
+                Ativar QR Code
               </>
             )}
           </Button>
         </div>
         
         {qrCodeGenerated && (
-          <div className="mt-2">
-            <div className="flex items-center justify-between mb-1">
-              <Label className="text-xs">
-                Link do QR Code:
+          <div className="mt-4 p-4 bg-secondary/20 rounded-lg border border-white/10">
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-sm font-medium text-green-400">
+                ✅ Sala Criada com Sucesso
               </Label>
               <Button 
                 variant="ghost" 
@@ -142,14 +142,16 @@ const QrCodeSettings = ({
                 onClick={copyQrCodeUrl}
               >
                 <Copy className="h-3 w-3 mr-1" />
-                Copiar
+                Copiar Link
               </Button>
             </div>
-            <div className="text-xs break-all bg-secondary/40 p-2 rounded relative group">
+            
+            <div className="text-xs break-all bg-black/40 p-3 rounded border font-mono">
               {qrCodeURL}
-              <div className="absolute inset-0 bg-transparent group-hover:bg-secondary/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={copyQrCodeUrl}>
-                <span className="bg-secondary px-2 py-1 rounded text-xs">Clique para copiar</span>
-              </div>
+            </div>
+            
+            <div className="mt-2 text-xs text-muted-foreground">
+              💡 Compartilhe este link ou o QR Code com os participantes
             </div>
             
             <div className="mt-4 space-y-4">

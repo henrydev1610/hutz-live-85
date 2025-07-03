@@ -1,0 +1,279 @@
+// Armazenamento das conexões e salas
+const connections = new Map(); // socketId -> { roomId, userId, socketRef }
+const rooms = new Map(); // roomId -> Set of socketIds
+
+// Configuração dos servidores STUN/TURN
+const getICEServers = () => {
+  const servers = [];
+  
+  // Servidores STUN
+  if (process.env.STUN_SERVERS) {
+    try {
+      const stunServers = JSON.parse(process.env.STUN_SERVERS);
+      stunServers.forEach(url => {
+        servers.push({ urls: url });
+      });
+    } catch (error) {
+      console.warn('Invalid STUN_SERVERS format, using defaults');
+      servers.push({ urls: 'stun:stun.l.google.com:19302' });
+    }
+  } else {
+    // Servidores STUN padrão
+    servers.push(
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    );
+  }
+  
+  // Servidores TURN (se configurados)
+  if (process.env.TURN_SERVERS) {
+    try {
+      const turnServers = JSON.parse(process.env.TURN_SERVERS);
+      servers.push(...turnServers);
+    } catch (error) {
+      console.warn('Invalid TURN_SERVERS format');
+    }
+  }
+  
+  return servers;
+};
+
+const initializeSocketHandlers = (io) => {
+  io.on('connection', (socket) => {
+    console.log(`🔌 Client connected: ${socket.id}`);
+    
+    // Evento: Entrar na sala
+    socket.on('join-room', (data) => {
+      try {
+        const { roomId, userId } = data;
+        
+        if (!roomId || !userId) {
+          socket.emit('error', { message: 'roomId and userId are required' });
+          return;
+        }
+        
+        console.log(`👤 User ${userId} joining room ${roomId}`);
+        
+        // Armazenar conexão
+        connections.set(socket.id, { roomId, userId, socketRef: socket });
+        
+        // Adicionar à sala
+        if (!rooms.has(roomId)) {
+          rooms.set(roomId, new Set());
+        }
+        rooms.get(roomId).add(socket.id);
+        
+        // Entrar na sala do Socket.IO
+        socket.join(roomId);
+        
+        // Enviar configuração dos servidores ICE
+        socket.emit('ice-servers', { servers: getICEServers() });
+        
+        // Notificar outros participantes
+        socket.to(roomId).emit('user-connected', { 
+          userId,
+          socketId: socket.id,
+          timestamp: Date.now()
+        });
+        
+        // Enviar lista de participantes existentes
+        const participantsInRoom = [];
+        const roomSockets = rooms.get(roomId);
+        
+        if (roomSockets) {
+          roomSockets.forEach(socketId => {
+            const conn = connections.get(socketId);
+            if (conn && socketId !== socket.id) {
+              participantsInRoom.push({
+                userId: conn.userId,
+                socketId: socketId
+              });
+            }
+          });
+        }
+        
+        socket.emit('room-participants', { participants: participantsInRoom });
+        
+        console.log(`✅ User ${userId} joined room ${roomId} (${participantsInRoom.length + 1} total)`);
+        
+      } catch (error) {
+        console.error('Error in join-room:', error);
+        socket.emit('error', { message: 'Failed to join room' });
+      }
+    });
+    
+    // Evento: Oferta WebRTC
+    socket.on('offer', (data) => {
+      try {
+        const { roomId, targetSocketId, offer } = data;
+        const connection = connections.get(socket.id);
+        
+        if (!connection || connection.roomId !== roomId) {
+          socket.emit('error', { message: 'Not in room' });
+          return;
+        }
+        
+        console.log(`📤 Offer from ${connection.userId} to ${targetSocketId}`);
+        
+        // Enviar oferta para socket específico
+        if (targetSocketId) {
+          socket.to(targetSocketId).emit('offer', {
+            offer,
+            fromSocketId: socket.id,
+            fromUserId: connection.userId
+          });
+        } else {
+          // Enviar para toda a sala se não especificar destino
+          socket.to(roomId).emit('offer', {
+            offer,
+            fromSocketId: socket.id,
+            fromUserId: connection.userId
+          });
+        }
+        
+      } catch (error) {
+        console.error('Error in offer:', error);
+        socket.emit('error', { message: 'Failed to send offer' });
+      }
+    });
+    
+    // Evento: Resposta WebRTC
+    socket.on('answer', (data) => {
+      try {
+        const { roomId, targetSocketId, answer } = data;
+        const connection = connections.get(socket.id);
+        
+        if (!connection || connection.roomId !== roomId) {
+          socket.emit('error', { message: 'Not in room' });
+          return;
+        }
+        
+        console.log(`📥 Answer from ${connection.userId} to ${targetSocketId}`);
+        
+        // Enviar resposta para socket específico
+        if (targetSocketId) {
+          socket.to(targetSocketId).emit('answer', {
+            answer,
+            fromSocketId: socket.id,
+            fromUserId: connection.userId
+          });
+        } else {
+          // Enviar para toda a sala se não especificar destino
+          socket.to(roomId).emit('answer', {
+            answer,
+            fromSocketId: socket.id,
+            fromUserId: connection.userId
+          });
+        }
+        
+      } catch (error) {
+        console.error('Error in answer:', error);
+        socket.emit('error', { message: 'Failed to send answer' });
+      }
+    });
+    
+    // Evento: Candidato ICE
+    socket.on('ice', (data) => {
+      try {
+        const { roomId, targetSocketId, candidate } = data;
+        const connection = connections.get(socket.id);
+        
+        if (!connection || connection.roomId !== roomId) {
+          socket.emit('error', { message: 'Not in room' });
+          return;
+        }
+        
+        // Enviar candidato ICE
+        if (targetSocketId) {
+          socket.to(targetSocketId).emit('ice', {
+            candidate,
+            fromSocketId: socket.id,
+            fromUserId: connection.userId
+          });
+        } else {
+          // Enviar para toda a sala se não especificar destino
+          socket.to(roomId).emit('ice', {
+            candidate,
+            fromSocketId: socket.id,
+            fromUserId: connection.userId
+          });
+        }
+        
+      } catch (error) {
+        console.error('Error in ice:', error);
+        socket.emit('error', { message: 'Failed to send ICE candidate' });
+      }
+    });
+    
+    // Evento: Heartbeat/Keep-alive
+    socket.on('heartbeat', (data) => {
+      const connection = connections.get(socket.id);
+      if (connection) {
+        socket.to(connection.roomId).emit('user-heartbeat', {
+          userId: connection.userId,
+          socketId: socket.id,
+          timestamp: Date.now()
+        });
+      }
+    });
+    
+    // Evento: Desconexão
+    socket.on('disconnect', () => {
+      try {
+        const connection = connections.get(socket.id);
+        
+        if (connection) {
+          const { roomId, userId } = connection;
+          
+          console.log(`🔌 User ${userId} disconnecting from room ${roomId}`);
+          
+          // Remover da sala
+          const roomSockets = rooms.get(roomId);
+          if (roomSockets) {
+            roomSockets.delete(socket.id);
+            
+            // Remover sala se estiver vazia
+            if (roomSockets.size === 0) {
+              rooms.delete(roomId);
+              console.log(`🗑️ Empty room ${roomId} removed`);
+            }
+          }
+          
+          // Notificar outros participantes
+          socket.to(roomId).emit('user-disconnected', {
+            userId,
+            socketId: socket.id,
+            timestamp: Date.now()
+          });
+          
+          // Remover conexão
+          connections.delete(socket.id);
+          
+          console.log(`❌ User ${userId} disconnected from room ${roomId}`);
+        }
+        
+      } catch (error) {
+        console.error('Error in disconnect:', error);
+      }
+    });
+    
+    // Evento: Deixar sala manualmente
+    socket.on('leave-room', () => {
+      const connection = connections.get(socket.id);
+      if (connection) {
+        socket.leave(connection.roomId);
+        socket.emit('disconnect'); // Trigger disconnect logic
+      }
+    });
+  });
+  
+  // Log estatísticas periodicamente
+  setInterval(() => {
+    console.log(`📊 Stats: ${connections.size} connections, ${rooms.size} active rooms`);
+  }, 60000); // A cada minuto
+};
+
+module.exports = {
+  initializeSocketHandlers,
+  getICEServers
+};

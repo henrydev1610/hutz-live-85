@@ -1,295 +1,246 @@
 
-import { supabase } from '@/integrations/supabase/client';
+import { io, Socket } from 'socket.io-client';
 
-export interface SignalingMessage {
-  type: string;
-  senderId?: string;
-  targetId?: string;
-  sessionId?: string;
-  description?: RTCSessionDescription;
-  candidate?: RTCIceCandidate;
-  timestamp?: number;
-  [key: string]: any;
-}
-
-export interface SignalingCallback {
-  (message: SignalingMessage): void;
+interface SignalingCallbacks {
+  onOffer?: (data: { offer: RTCSessionDescriptionInit; fromSocketId: string; fromUserId: string }) => void;
+  onAnswer?: (data: { answer: RTCSessionDescriptionInit; fromSocketId: string; fromUserId: string }) => void;
+  onIceCandidate?: (data: { candidate: RTCIceCandidateInit; fromSocketId: string; fromUserId: string }) => void;
+  onUserConnected?: (data: { userId: string; socketId: string; timestamp: number }) => void;
+  onUserDisconnected?: (data: { userId: string; socketId: string; timestamp: number }) => void;
+  onUserHeartbeat?: (data: { userId: string; socketId: string; timestamp: number }) => void;
+  onError?: (data: { message: string }) => void;
 }
 
 class WebSocketSignalingService {
-  private websocket: WebSocket | null = null;
-  private roomId: string | null = null;
-  private peerId: string | null = null;
-  private callbacks: Map<string, SignalingCallback[]> = new Map();
-  private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 10;
-  private reconnectTimeout: number | null = null;
+  private socket: Socket | null = null;
+  private callbacks: SignalingCallbacks = {};
+  private currentRoomId: string | null = null;
+  private currentUserId: string | null = null;
   private heartbeatInterval: number | null = null;
-  private url: string | null = null;
-  private isConnecting: boolean = false;
-  private lastMessageTime: number = 0;
-  
+  private iceServers: RTCIceServer[] = [];
+
   constructor() {
-    // Initialize callbacks map with empty arrays for each event type
-    const eventTypes = ['offer', 'answer', 'candidate', 'user-joined', 'user-left', 'welcome', 'peer-list', 'broadcast', 'error'];
-    eventTypes.forEach(eventType => {
-      this.callbacks.set(eventType, []);
+    this.connect();
+  }
+
+  private connect() {
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+    
+    this.socket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+      timeout: 20000,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
+
+    this.setupEventListeners();
+  }
+
+  private setupEventListeners() {
+    if (!this.socket) return;
+
+    this.socket.on('connect', () => {
+      console.log('✅ Connected to signaling server');
+    });
+
+    this.socket.on('disconnect', () => {
+      console.log('❌ Disconnected from signaling server');
+      this.stopHeartbeat();
+    });
+
+    this.socket.on('connect_error', (error) => {
+      console.error('❌ Connection error:', error);
+    });
+
+    // Receber configuração dos servidores ICE
+    this.socket.on('ice-servers', (data: { servers: RTCIceServer[] }) => {
+      console.log('📡 Received ICE servers:', data.servers);
+      this.iceServers = data.servers;
+    });
+
+    // Eventos WebRTC
+    this.socket.on('offer', (data) => {
+      console.log('📤 Received offer from:', data.fromUserId);
+      this.callbacks.onOffer?.(data);
+    });
+
+    this.socket.on('answer', (data) => {
+      console.log('📥 Received answer from:', data.fromUserId);
+      this.callbacks.onAnswer?.(data);
+    });
+
+    this.socket.on('ice', (data) => {
+      console.log('🧊 Received ICE candidate from:', data.fromUserId);
+      this.callbacks.onIceCandidate?.(data);
+    });
+
+    // Eventos de participantes
+    this.socket.on('user-connected', (data) => {
+      console.log('👤 User connected:', data.userId);
+      this.callbacks.onUserConnected?.(data);
+    });
+
+    this.socket.on('user-disconnected', (data) => {
+      console.log('👤 User disconnected:', data.userId);
+      this.callbacks.onUserDisconnected?.(data);
+    });
+
+    this.socket.on('user-heartbeat', (data) => {
+      this.callbacks.onUserHeartbeat?.(data);
+    });
+
+    this.socket.on('room-participants', (data: { participants: Array<{ userId: string; socketId: string }> }) => {
+      console.log('👥 Room participants:', data.participants);
+    });
+
+    // Eventos de erro
+    this.socket.on('error', (data) => {
+      console.error('❌ Signaling error:', data);
+      this.callbacks.onError?.(data);
     });
   }
-  
-  private getServerUrl(): string {
-    const projectId = "vikhirqxfhmpgbkycwra";
-    // First try connecting to the deployed edge function
-    return `wss://${projectId}.supabase.co/functions/v1/signaling`;
-  }
-  
-  public async connect(roomId: string, peerId: string, userName?: string): Promise<boolean> {
-    if (this.isConnecting) {
-      console.log('Already attempting to connect, ignoring duplicate request');
-      return false;
-    }
-    
-    this.isConnecting = true;
-    
-    if (this.websocket && this.websocket.readyState !== WebSocket.CLOSED) {
-      console.log('WebSocket already connected, closing before reconnect');
-      this.disconnect();
-    }
 
-    this.roomId = roomId;
-    this.peerId = peerId;
-    
-    try {
-      // Store the URL for potential reconnects
-      this.url = this.getServerUrl();
-      
-      // Build connection URL with query parameters
-      const connectionUrl = new URL(this.url);
-      connectionUrl.searchParams.append('room', roomId);
-      connectionUrl.searchParams.append('id', peerId);
-      if (userName) {
-        connectionUrl.searchParams.append('name', userName);
+  // Entrar na sala
+  joinRoom(roomId: string, userId: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.socket) {
+        reject(new Error('Socket not connected'));
+        return;
       }
+
+      this.currentRoomId = roomId;
+      this.currentUserId = userId;
+
+      console.log(`🚪 Joining room ${roomId} as ${userId}`);
       
-      console.log(`Connecting to signaling server at: ${connectionUrl.toString()}`);
-      this.websocket = new WebSocket(connectionUrl.toString());
+      this.socket.emit('join-room', { roomId, userId });
       
-      this.websocket.onopen = () => {
-        console.log(`WebSocket connection established for peer ${peerId} in room ${roomId}`);
-        this.reconnectAttempts = 0;
-        this.isConnecting = false;
-        this.startHeartbeat();
-        
-        // Update room in database
-        this.updateRoomActivity(roomId);
+      // Iniciar heartbeat
+      this.startHeartbeat();
+      
+      // Aguardar confirmação (timeout de 5 segundos)
+      const timeout = setTimeout(() => {
+        reject(new Error('Timeout joining room'));
+      }, 5000);
+
+      const onConnected = () => {
+        clearTimeout(timeout);
+        resolve();
       };
-      
-      this.websocket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          this.lastMessageTime = Date.now();
-          
-          // Call the appropriate callbacks based on message type
-          if (message.type && this.callbacks.has(message.type)) {
-            const typeCallbacks = this.callbacks.get(message.type);
-            if (typeCallbacks && typeCallbacks.length > 0) {
-              typeCallbacks.forEach(callback => callback(message));
-            }
-          }
-          
-          // Special case for heartbeat-ack
-          if (message.type === 'heartbeat-ack') {
-            console.log('Heartbeat acknowledged by server');
-          }
-        } catch (e) {
-          console.error('Error parsing message:', e);
-        }
-      };
-      
-      this.websocket.onclose = (event) => {
-        console.log(`WebSocket connection closed for peer ${peerId} in room ${roomId}. Code: ${event.code}, Reason: ${event.reason}`);
-        this.isConnecting = false;
-        this.stopHeartbeat();
-        
-        // Attempt to reconnect unless this was an intentional close
-        if (!event.wasClean && this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.scheduleReconnect();
-        }
-      };
-      
-      this.websocket.onerror = (event) => {
-        console.error(`WebSocket error:`, event);
-        this.isConnecting = false;
-        
-        // Notify error callbacks
-        if (this.callbacks.has('error')) {
-          const errorCallbacks = this.callbacks.get('error');
-          if (errorCallbacks && errorCallbacks.length > 0) {
-            errorCallbacks.forEach(callback => callback({ type: 'error', error: 'Connection error' }));
-          }
-        }
-        
-        // The connection will close after an error, which will trigger reconnect
-      };
-      
-      // Wait for the connection to establish or fail
-      await new Promise<void>((resolve) => {
-        const checkState = () => {
-          if (this.websocket) {
-            if (this.websocket.readyState === WebSocket.OPEN) {
-              resolve();
-            } else if (this.websocket.readyState === WebSocket.CLOSED) {
-              resolve();
-            } else {
-              setTimeout(checkState, 100);
-            }
-          } else {
-            resolve();
-          }
-        };
-        checkState();
-      });
-      
-      return this.websocket && this.websocket.readyState === WebSocket.OPEN;
-    } catch (error) {
-      console.error('Error establishing WebSocket connection:', error);
-      this.isConnecting = false;
-      return false;
-    }
+
+      this.socket.once('ice-servers', onConnected);
+    });
   }
-  
-  public disconnect(): void {
+
+  // Sair da sala
+  leaveRoom() {
+    if (!this.socket || !this.currentRoomId) return;
+
+    console.log(`🚪 Leaving room ${this.currentRoomId}`);
+    
+    this.socket.emit('leave-room');
     this.stopHeartbeat();
     
-    if (this.websocket) {
-      // Only close if not already closed
-      if (this.websocket.readyState !== WebSocket.CLOSED) {
-        this.websocket.close(1000, 'Disconnected by client');
-      }
-      this.websocket = null;
-    }
-    
-    if (this.reconnectTimeout !== null) {
-      window.clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
+    this.currentRoomId = null;
+    this.currentUserId = null;
   }
-  
-  public isConnected(): boolean {
-    return this.websocket !== null && this.websocket.readyState === WebSocket.OPEN;
-  }
-  
-  public on(type: string, callback: SignalingCallback): void {
-    if (!this.callbacks.has(type)) {
-      this.callbacks.set(type, []);
-    }
+
+  // Enviar oferta WebRTC
+  sendOffer(offer: RTCSessionDescriptionInit, targetSocketId?: string) {
+    if (!this.socket || !this.currentRoomId) return;
+
+    console.log('📤 Sending offer to:', targetSocketId || 'all');
     
-    const callbacks = this.callbacks.get(type);
-    if (callbacks) {
-      callbacks.push(callback);
-    }
+    this.socket.emit('offer', {
+      roomId: this.currentRoomId,
+      targetSocketId,
+      offer
+    });
   }
-  
-  public off(type: string, callback: SignalingCallback): void {
-    if (this.callbacks.has(type)) {
-      const callbacks = this.callbacks.get(type);
-      if (callbacks) {
-        const index = callbacks.indexOf(callback);
-        if (index !== -1) {
-          callbacks.splice(index, 1);
-        }
-      }
-    }
+
+  // Enviar resposta WebRTC
+  sendAnswer(answer: RTCSessionDescriptionInit, targetSocketId?: string) {
+    if (!this.socket || !this.currentRoomId) return;
+
+    console.log('📥 Sending answer to:', targetSocketId || 'all');
+    
+    this.socket.emit('answer', {
+      roomId: this.currentRoomId,
+      targetSocketId,
+      answer
+    });
   }
-  
-  public send(message: SignalingMessage): boolean {
-    if (!this.isConnected()) {
-      console.error('Cannot send message: WebSocket is not connected');
-      return false;
-    }
-    
-    try {
-      // Ensure sender ID is set
-      if (!message.senderId && this.peerId) {
-        message.senderId = this.peerId;
-      }
-      
-      // Add session ID if needed
-      if (!message.sessionId && this.roomId) {
-        message.sessionId = this.roomId;
-      }
-      
-      // Add timestamp
-      message.timestamp = Date.now();
-      
-      this.websocket!.send(JSON.stringify(message));
-      return true;
-    } catch (error) {
-      console.error('Error sending message:', error);
-      return false;
-    }
+
+  // Enviar candidato ICE
+  sendIceCandidate(candidate: RTCIceCandidateInit, targetSocketId?: string) {
+    if (!this.socket || !this.currentRoomId) return;
+
+    this.socket.emit('ice', {
+      roomId: this.currentRoomId,
+      targetSocketId,
+      candidate
+    });
   }
-  
-  private scheduleReconnect(): void {
-    if (this.reconnectTimeout !== null) {
-      window.clearTimeout(this.reconnectTimeout);
-    }
-    
-    this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000); // Exponential backoff, max 30 seconds
-    
-    console.log(`Scheduling reconnect attempt ${this.reconnectAttempts} in ${delay}ms`);
-    
-    this.reconnectTimeout = window.setTimeout(async () => {
-      if (this.roomId && this.peerId) {
-        console.log(`Attempting to reconnect (attempt ${this.reconnectAttempts})`);
-        await this.connect(this.roomId, this.peerId);
-      }
-    }, delay);
+
+  // Configurar callbacks
+  setCallbacks(callbacks: SignalingCallbacks) {
+    this.callbacks = { ...this.callbacks, ...callbacks };
   }
-  
-  private startHeartbeat(): void {
-    this.stopHeartbeat(); // Clear any existing interval
+
+  // Obter servidores ICE
+  getIceServers(): RTCIceServer[] {
+    return this.iceServers.length > 0 ? this.iceServers : [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ];
+  }
+
+  // Iniciar heartbeat
+  private startHeartbeat() {
+    this.stopHeartbeat();
     
     this.heartbeatInterval = window.setInterval(() => {
-      if (this.isConnected()) {
-        this.send({ type: 'heartbeat' });
-      } else {
-        this.stopHeartbeat();
+      if (this.socket && this.currentRoomId) {
+        this.socket.emit('heartbeat', {
+          roomId: this.currentRoomId,
+          userId: this.currentUserId,
+          timestamp: Date.now()
+        });
       }
-    }, 30000); // Send heartbeat every 30 seconds
-    
-    // Also check for stale connections
-    window.setInterval(() => {
-      const now = Date.now();
-      if (this.lastMessageTime > 0 && now - this.lastMessageTime > 90000) { // 90 seconds without messages
-        console.warn('Connection appears stale. Last message received more than 90 seconds ago.');
-        this.disconnect();
-        if (this.roomId && this.peerId) {
-          this.connect(this.roomId, this.peerId);
-        }
-      }
-    }, 30000);
+    }, 5000); // A cada 5 segundos
   }
-  
-  private stopHeartbeat(): void {
-    if (this.heartbeatInterval !== null) {
-      window.clearInterval(this.heartbeatInterval);
+
+  // Parar heartbeat
+  private stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
   }
-  
-  private async updateRoomActivity(roomId: string): Promise<void> {
-    try {
-      await supabase
-        .from('signaling_rooms')
-        .update({ last_active: new Date().toISOString() })
-        .eq('room_id', roomId);
-    } catch (e) {
-      console.error('Error updating room activity:', e);
+
+  // Verificar se está conectado
+  isConnected(): boolean {
+    return this.socket?.connected || false;
+  }
+
+  // Obter ID do socket atual
+  getSocketId(): string | null {
+    return this.socket?.id || null;
+  }
+
+  // Desconectar
+  disconnect() {
+    this.leaveRoom();
+    this.stopHeartbeat();
+    
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
     }
   }
 }
 
-// Export singleton instance
-export const webSocketSignalingService = new WebSocketSignalingService();
+// Instância singleton
+export const signalingService = new WebSocketSignalingService();
+export default signalingService;
