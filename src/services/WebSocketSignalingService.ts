@@ -1,4 +1,6 @@
+
 import { io, Socket } from 'socket.io-client';
+import { httpFallbackService } from './HttpFallbackService';
 
 interface SignalingCallbacks {
   onOffer?: (data: { offer: RTCSessionDescriptionInit; fromSocketId: string; fromUserId: string }) => void;
@@ -7,6 +9,7 @@ interface SignalingCallbacks {
   onUserConnected?: (data: { userId: string; socketId: string; timestamp: number }) => void;
   onUserDisconnected?: (data: { userId: string; socketId: string; timestamp: number }) => void;
   onUserHeartbeat?: (data: { userId: string; socketId: string; timestamp: number }) => void;
+  onParticipantsUpdate?: (participants: any[]) => void;
   onError?: (data: { message: string }) => void;
 }
 
@@ -17,23 +20,23 @@ class WebSocketSignalingService {
   private currentUserId: string | null = null;
   private heartbeatInterval: number | null = null;
   private iceServers: RTCIceServer[] = [];
-  private mockMode = false;
+  private fallbackMode = false;
   private connectionAttempts = 0;
-  private maxConnectionAttempts = 3;
+  private maxConnectionAttempts = 2;
 
   constructor() {
-    this.connect();
+    // Don't auto-connect in constructor to allow manual control
   }
 
   private connect() {
     const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
     
-    console.log(`🔄 Attempting to connect to signaling server: ${socketUrl} (attempt ${this.connectionAttempts + 1})`);
+    console.log(`🔄 Attempting WebSocket connection to: ${socketUrl} (attempt ${this.connectionAttempts + 1})`);
     
     this.socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
-      timeout: 5000, // Reduzir timeout para falhar mais rápido
-      reconnection: false, // Desabilitar reconexão automática
+      timeout: 3000,
+      reconnection: false,
       forceNew: true
     });
 
@@ -44,19 +47,24 @@ class WebSocketSignalingService {
     if (!this.socket) return;
 
     this.socket.on('connect', () => {
-      console.log('✅ Connected to signaling server');
+      console.log('✅ WebSocket connected to signaling server');
       this.connectionAttempts = 0;
-      this.mockMode = false;
+      this.fallbackMode = false;
+      
+      // Stop HTTP fallback if it was running
+      if (httpFallbackService.isPolling()) {
+        httpFallbackService.stopPolling();
+      }
     });
 
     this.socket.on('disconnect', () => {
-      console.log('❌ Disconnected from signaling server');
+      console.log('❌ WebSocket disconnected from signaling server');
       this.stopHeartbeat();
       this.tryFallbackMode();
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('❌ Connection error:', error);
+      console.error('❌ WebSocket connection error:', error);
       this.connectionAttempts++;
       this.tryFallbackMode();
     });
@@ -67,7 +75,6 @@ class WebSocketSignalingService {
       this.iceServers = data.servers;
     });
 
-    // Eventos WebRTC
     this.socket.on('offer', (data) => {
       console.log('📤 Received offer from:', data.fromUserId);
       this.callbacks.onOffer?.(data);
@@ -83,7 +90,6 @@ class WebSocketSignalingService {
       this.callbacks.onIceCandidate?.(data);
     });
 
-    // Eventos de participantes
     this.socket.on('user-connected', (data) => {
       console.log('👤 User connected:', data.userId);
       this.callbacks.onUserConnected?.(data);
@@ -99,10 +105,10 @@ class WebSocketSignalingService {
     });
 
     this.socket.on('room-participants', (data: { participants: Array<{ userId: string; socketId: string }> }) => {
-      console.log('👥 Room participants:', data.participants);
+      console.log('👥 Room participants via WebSocket:', data.participants);
+      this.callbacks.onParticipantsUpdate?.(data.participants);
     });
 
-    // Eventos de erro
     this.socket.on('error', (data) => {
       console.error('❌ Signaling error:', data);
       this.callbacks.onError?.(data);
@@ -110,17 +116,40 @@ class WebSocketSignalingService {
   }
 
   private tryFallbackMode() {
-    if (this.connectionAttempts >= this.maxConnectionAttempts && !this.mockMode) {
-      console.log('🔄 Switching to mock mode for local development');
-      this.mockMode = true;
+    if (this.connectionAttempts >= this.maxConnectionAttempts && !this.fallbackMode) {
+      console.log('🔄 Switching to HTTP fallback mode');
+      this.fallbackMode = true;
       this.iceServers = [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' }
       ];
+      
+      // Start HTTP polling if we have a room
+      if (this.currentRoomId) {
+        this.startHttpFallback();
+      }
     }
   }
 
-  // Entrar na sala
+  private startHttpFallback() {
+    if (!this.currentRoomId) return;
+    
+    console.log('🔄 Starting HTTP fallback for room:', this.currentRoomId);
+    
+    httpFallbackService.setCallbacks({
+      onParticipantsUpdate: (participants) => {
+        console.log('👥 Participants updated via HTTP fallback:', participants);
+        this.callbacks.onParticipantsUpdate?.(participants);
+      },
+      onError: (error) => {
+        console.error('❌ HTTP fallback error:', error);
+        this.callbacks.onError?.({ message: error });
+      }
+    });
+    
+    httpFallbackService.startPolling(this.currentRoomId, 3000);
+  }
+
   joinRoom(roomId: string, userId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.currentRoomId = roomId;
@@ -128,55 +157,64 @@ class WebSocketSignalingService {
 
       console.log(`🚪 Joining room ${roomId} as ${userId}`);
 
-      if (this.mockMode || !this.socket?.connected) {
-        console.log('🔧 Using mock mode - simulating successful connection');
-        setTimeout(() => {
-          resolve();
-        }, 100);
+      // Try WebSocket first
+      if (!this.socket) {
+        this.connect();
+      }
+
+      if (this.fallbackMode || !this.socket) {
+        console.log('🔧 Using HTTP fallback mode immediately');
+        this.startHttpFallback();
+        setTimeout(() => resolve(), 100);
         return;
       }
       
       this.socket.emit('join-room', { roomId, userId });
-      
-      // Iniciar heartbeat
       this.startHeartbeat();
       
-      // Aguardar confirmação (timeout reduzido)
+      // Timeout for WebSocket connection
       const timeout = setTimeout(() => {
-        console.warn('⚠️ Timeout joining room, switching to mock mode');
-        this.mockMode = true;
+        console.warn('⚠️ WebSocket timeout, switching to HTTP fallback');
+        this.fallbackMode = true;
+        this.startHttpFallback();
         resolve();
-      }, 3000); // Reduzido de 5000 para 3000
+      }, 2000);
 
       const onConnected = () => {
         clearTimeout(timeout);
         resolve();
       };
 
-      this.socket.once('ice-servers', onConnected);
+      if (this.socket.connected) {
+        onConnected();
+      } else {
+        this.socket.once('ice-servers', onConnected);
+        this.socket.once('connect', onConnected);
+      }
     });
   }
 
-  // Sair da sala
   leaveRoom() {
     if (!this.currentRoomId) return;
 
     console.log(`🚪 Leaving room ${this.currentRoomId}`);
     
-    if (this.socket?.connected && !this.mockMode) {
+    if (this.socket?.connected && !this.fallbackMode) {
       this.socket.emit('leave-room');
     }
     
-    this.stopHeartbeat();
+    // Stop HTTP fallback
+    httpFallbackService.stopPolling();
     
+    this.stopHeartbeat();
     this.currentRoomId = null;
     this.currentUserId = null;
   }
 
   // Enviar oferta WebRTC
   sendOffer(offer: RTCSessionDescriptionInit, targetSocketId?: string) {
-    if (this.mockMode) {
-      console.log('🔧 Mock mode: offer would be sent to:', targetSocketId || 'all');
+    if (this.fallbackMode) {
+      console.log('🔧 HTTP fallback mode: offer would be sent to:', targetSocketId || 'all');
       return;
     }
 
@@ -191,10 +229,9 @@ class WebSocketSignalingService {
     });
   }
 
-  // Enviar resposta WebRTC
   sendAnswer(answer: RTCSessionDescriptionInit, targetSocketId?: string) {
-    if (this.mockMode) {
-      console.log('🔧 Mock mode: answer would be sent to:', targetSocketId || 'all');
+    if (this.fallbackMode) {
+      console.log('🔧 HTTP fallback mode: answer would be sent to:', targetSocketId || 'all');
       return;
     }
 
@@ -209,10 +246,9 @@ class WebSocketSignalingService {
     });
   }
 
-  // Enviar candidato ICE
   sendIceCandidate(candidate: RTCIceCandidateInit, targetSocketId?: string) {
-    if (this.mockMode) {
-      console.log('🔧 Mock mode: ICE candidate would be sent to:', targetSocketId || 'all');
+    if (this.fallbackMode) {
+      console.log('🔧 HTTP fallback mode: ICE candidate would be sent to:', targetSocketId || 'all');
       return;
     }
 
@@ -225,12 +261,10 @@ class WebSocketSignalingService {
     });
   }
 
-  // Configurar callbacks
   setCallbacks(callbacks: SignalingCallbacks) {
     this.callbacks = { ...this.callbacks, ...callbacks };
   }
 
-  // Obter servidores ICE
   getIceServers(): RTCIceServer[] {
     return this.iceServers.length > 0 ? this.iceServers : [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -238,13 +272,12 @@ class WebSocketSignalingService {
     ];
   }
 
-  // Iniciar heartbeat
   private startHeartbeat() {
     this.stopHeartbeat();
     
     this.heartbeatInterval = window.setInterval(() => {
-      if (this.mockMode) {
-        return; // Não enviar heartbeat em mock mode
+      if (this.fallbackMode) {
+        return;
       }
 
       if (this.socket?.connected && this.currentRoomId) {
@@ -257,7 +290,6 @@ class WebSocketSignalingService {
     }, 5000);
   }
 
-  // Parar heartbeat
   private stopHeartbeat() {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
@@ -265,39 +297,35 @@ class WebSocketSignalingService {
     }
   }
 
-  // Verificar se está conectado
   isConnected(): boolean {
-    return this.mockMode || (this.socket?.connected || false);
+    return this.fallbackMode || (this.socket?.connected || false);
   }
 
-  // Obter ID do socket atual
   getSocketId(): string | null {
-    if (this.mockMode) {
-      return `mock-socket-${Date.now()}`;
+    if (this.fallbackMode) {
+      return `fallback-socket-${Date.now()}`;
     }
     return this.socket?.id || null;
   }
 
-  // Verificar se está em modo mock
-  isMockMode(): boolean {
-    return this.mockMode;
+  isFallbackMode(): boolean {
+    return this.fallbackMode;
   }
 
-  // Desconectar
   disconnect() {
     this.leaveRoom();
     this.stopHeartbeat();
+    httpFallbackService.stopPolling();
     
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
     }
     
-    this.mockMode = false;
+    this.fallbackMode = false;
     this.connectionAttempts = 0;
   }
 }
 
-// Instância singleton
 export const signalingService = new WebSocketSignalingService();
 export default signalingService;
