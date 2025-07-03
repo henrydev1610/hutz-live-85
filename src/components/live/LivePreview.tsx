@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Participant } from './ParticipantGrid';
-import Draggable from 'react-draggable';
+import DraggableWrapper from '@/components/common/DraggableWrapper';
 import { Move } from 'lucide-react';
 
 interface LivePreviewProps {
@@ -43,16 +43,6 @@ const LivePreview: React.FC<LivePreviewProps> = ({
   const [isResizingText, setIsResizingText] = useState(false);
   const [resizeStartPos, setResizeStartPos] = useState({ x: 0, y: 0 });
   const [initialSize, setInitialSize] = useState({ width: 0, height: 0 });
-  
-  // Helper function to update position based on drag event
-  const updatePosition = (position: { x: number; y: number; width: number; height: number }, 
-                          newPosition: { x: number; y: number }) => {
-    return {
-      ...position,
-      x: newPosition.x,
-      y: newPosition.y
-    };
-  };
 
   // QR Code resize handlers
   const handleQrResizeStart = (e: React.MouseEvent) => {
@@ -161,79 +151,81 @@ const LivePreview: React.FC<LivePreviewProps> = ({
       
       {/* QR Code preview with draggable and resizable functionality */}
       {qrCodeVisible && (
-        <Draggable
+        <DraggableWrapper
           bounds="parent"
           onStart={() => setIsDraggingQrCode(true)}
           onStop={(e, data) => {
             setIsDraggingQrCode(false);
-            setQrCodePosition(prev => updatePosition(prev, { x: data.x, y: data.y }));
+            setQrCodePosition(prev => ({
+              ...prev,
+              x: data.x,
+              y: data.y
+            }));
           }}
           position={{ x: qrCodePosition.x, y: qrCodePosition.y }}
           disabled={isResizingQrCode}
+          className={`bg-white p-1 rounded-lg ${isDraggingQrCode || isResizingQrCode ? 'ring-2 ring-primary' : ''}`}
+          style={{ 
+            width: `${qrCodePosition.width}px`, 
+            height: `${qrCodePosition.height}px`,
+          }}
         >
-          <div 
-            className={`absolute bg-white p-1 rounded-lg cursor-move ${isDraggingQrCode || isResizingQrCode ? 'ring-2 ring-primary' : ''}`}
-            style={{ 
-              width: `${qrCodePosition.width}px`, 
-              height: `${qrCodePosition.height}px`,
-            }}
-          >
-            {qrCodeSvg ? (
-              <img 
-                src={qrCodeSvg} 
-                alt="QR Code" 
-                className="w-full h-full object-contain"
-              />
-            ) : (
-              <div className="w-full h-full bg-gray-200 flex items-center justify-center text-gray-500 text-xs">
-                QR Code
-              </div>
-            )}
-            
-            {/* Resize handle */}
-            <div 
-              className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize bg-primary/80 rounded-tl-md flex items-center justify-center"
-              onMouseDown={handleQrResizeStart}
-            >
-              <Move className="h-3 w-3 text-white" />
+          {qrCodeSvg ? (
+            <img 
+              src={qrCodeSvg} 
+              alt="QR Code" 
+              className="w-full h-full object-contain"
+            />
+          ) : (
+            <div className="w-full h-full bg-gray-200 flex items-center justify-center text-gray-500 text-xs">
+              QR Code
             </div>
+          )}
+          
+          {/* Resize handle */}
+          <div 
+            className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize bg-primary/80 rounded-tl-md flex items-center justify-center"
+            onMouseDown={handleQrResizeStart}
+          >
+            <Move className="h-3 w-3 text-white" />
           </div>
-        </Draggable>
+        </DraggableWrapper>
       )}
       
       {/* QR Description with draggable and resizable functionality */}
       {qrCodeVisible && (
-        <Draggable
+        <DraggableWrapper
           bounds="parent"
           onStart={() => setIsDraggingText(true)}
           onStop={(e, data) => {
             setIsDraggingText(false);
-            setQrDescriptionPosition(prev => updatePosition(prev, { x: data.x, y: data.y }));
+            setQrDescriptionPosition(prev => ({
+              ...prev,
+              x: data.x,
+              y: data.y
+            }));
           }}
           position={{ x: qrDescriptionPosition.x, y: qrDescriptionPosition.y }}
           disabled={isResizingText}
+          className={`flex items-center justify-center overflow-hidden ${isDraggingText || isResizingText ? 'ring-2 ring-primary' : ''}`}
+          style={{ 
+            width: `${qrDescriptionPosition.width}px`, 
+            height: `${qrDescriptionPosition.height}px`,
+            color: selectedTextColor,
+            fontFamily: selectedFont,
+            fontSize: `${qrDescriptionFontSize}px`,
+          }}
         >
+          {qrCodeDescription}
+          
+          {/* Resize handle */}
           <div 
-            className={`absolute cursor-move flex items-center justify-center overflow-hidden ${isDraggingText || isResizingText ? 'ring-2 ring-primary' : ''}`}
-            style={{ 
-              width: `${qrDescriptionPosition.width}px`, 
-              height: `${qrDescriptionPosition.height}px`,
-              color: selectedTextColor,
-              fontFamily: selectedFont,
-              fontSize: `${qrDescriptionFontSize}px`,
-            }}
+            className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize bg-primary/80 rounded-tl-md flex items-center justify-center"
+            onMouseDown={handleTextResizeStart}
           >
-            {qrCodeDescription}
-            
-            {/* Resize handle */}
-            <div 
-              className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize bg-primary/80 rounded-tl-md flex items-center justify-center"
-              onMouseDown={handleTextResizeStart}
-            >
-              <Move className="h-3 w-3 text-white" />
-            </div>
+            <Move className="h-3 w-3 text-white" />
           </div>
-        </Draggable>
+        </DraggableWrapper>
       )}
       
       {/* Live indicator */}
