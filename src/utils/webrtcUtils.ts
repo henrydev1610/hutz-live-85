@@ -1,4 +1,4 @@
-import { signalingService } from '@/services/WebSocketSignalingService';
+import signalingService from '@/services/WebSocketSignalingService';
 
 // Define SignalingMessage interface locally since it's not exported
 interface SignalingMessage {
@@ -196,7 +196,7 @@ const modifySdp = (sdp: string): string => {
       // Find the payload type for H264
       const h264LineIndex = lines.findIndex(line => line.includes('H264/90000'));
       if (h264LineIndex !== -1) {
-        const h264PayloadType = lines[h2664LineIndex].split(' ')[0].split(':')[1];
+        const h264PayloadType = lines[h264LineIndex].split(' ')[0].split(':')[1];
         
         // Modify the m-line to prioritize H264
         const mLine = lines[mLineIndex].split(' ');
@@ -310,16 +310,6 @@ export const initHostWebRTC = async (
     createAndSendOffer(participantId);
   }
 
-  // Initialize with existing participants if any
-  signalingService.on('peer-list', (message: SignalingMessage) => {
-    if (message.peers && Array.isArray(message.peers)) {
-      message.peers.forEach(peerId => {
-        console.log(`Existing peer in room: ${peerId}`);
-        handleNewParticipant(peerId);
-      });
-    }
-  });
-  
   // Setup periodic connection health checks
   setInterval(() => {
     Object.entries(peerConnections).forEach(([peerId, connection]) => {
@@ -572,7 +562,7 @@ const createPeerConnection = (
       
       // Try WebSocket signaling first
       try {
-        signalingService.sendOffer(event.candidate, peerId);
+        signalingService.sendIceCandidate(event.candidate, peerId);
       } catch (e) {
         console.warn(`WebSocket signaling failed for ICE candidate to ${peerId}, trying fallback:`, e);
         
