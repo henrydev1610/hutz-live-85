@@ -10,6 +10,8 @@ class WebRTCManager {
   private roomId: string | null = null;
   private isHost: boolean = false;
   private participants: Map<string, any> = new Map();
+  private socketIdToUserId: Map<string, string> = new Map(); // Map socketId to userId
+  private userIdToSocketId: Map<string, string> = new Map(); // Map userId to socketId
   private onStreamCallback: ((participantId: string, stream: MediaStream) => void) | null = null;
 
   constructor() {
@@ -31,7 +33,8 @@ class WebRTCManager {
         onUserConnected: (data) => {
           console.log('👤 New participant connected:', data.userId);
           this.addParticipant(data.userId, data);
-          this.initiateCall(data.userId);
+          // Host initiates call using socketId
+          this.initiateCall(data.socketId);
           toast.success(`Participante ${data.userId} conectado`);
         },
         onUserDisconnected: (data) => {
@@ -77,23 +80,42 @@ class WebRTCManager {
     }
   }
 
-  async initializeAsParticipant(sessionId: string, participantId: string): Promise<void> {
+  async initializeAsParticipant(sessionId: string, participantId: string, stream?: MediaStream): Promise<void> {
     console.log(`👤 Initializing WebRTC as participant for session: ${sessionId}`);
     this.roomId = sessionId;
     this.isHost = false;
 
     try {
-      // Get user media first
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' }, 
-        audio: true 
-      });
-      
-      this.localStream = stream;
-      console.log('📹 Local stream obtained:', stream.getTracks().length, 'tracks');
+      // Use provided stream or get user media
+      if (stream) {
+        this.localStream = stream;
+        console.log('📹 Using provided stream:', stream.getTracks().length, 'tracks');
+      } else {
+        const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'user' }, 
+          audio: true 
+        });
+        
+        this.localStream = mediaStream;
+        console.log('📹 Local stream obtained:', mediaStream.getTracks().length, 'tracks');
+      }
 
       // Set up signaling callbacks
       signalingService.setCallbacks({
+        onUserConnected: (data) => {
+          console.log('🏠 Host connected:', data.userId);
+          // As participant, wait for host to initiate
+        },
+        onParticipantsUpdate: (participants) => {
+          console.log('👥 Participants updated:', participants);
+          // If there are existing participants (host), initiate connection to them
+          participants.forEach(participant => {
+            if (participant.userId !== participantId) {
+              console.log('📞 Initiating connection to existing participant:', participant.userId);
+              this.initiateCall(participant.socketId);
+            }
+          });
+        },
         onOffer: this.handleOffer.bind(this),
         onAnswer: this.handleAnswer.bind(this),
         onIceCandidate: this.handleIceCandidate.bind(this),
@@ -138,22 +160,70 @@ class WebRTCManager {
     
     // Handle incoming stream
     peerConnection.ontrack = (event) => {
-      console.log('📺 Received track from:', participantId, event.streams[0]);
-      if (this.onStreamCallback) {
-        this.onStreamCallback(participantId, event.streams[0]);
+      console.log('📺 Received track from:', participantId, {
+        track: event.track,
+        streams: event.streams,
+        trackKind: event.track.kind,
+        trackId: event.track.id,
+        trackEnabled: event.track.enabled,
+        trackReadyState: event.track.readyState,
+        streamsCount: event.streams.length
+      });
+      
+      if (event.streams && event.streams[0]) {
+        const stream = event.streams[0];
+        console.log('🎥 Stream details:', {
+          participantId,
+          streamId: stream.id,
+          active: stream.active,
+          tracks: stream.getTracks().map(t => ({
+            kind: t.kind,
+            id: t.id,
+            enabled: t.enabled,
+            readyState: t.readyState
+          }))
+        });
+        
+        if (this.onStreamCallback) {
+          // Get the userId from socketId mapping
+          const userId = this.socketIdToUserId.get(participantId) || participantId;
+          console.log('✅ Calling onStreamCallback:', {
+            socketId: participantId,
+            userId: userId,
+            streamId: stream.id
+          });
+          this.onStreamCallback(userId, stream);
+        } else {
+          console.error('❌ No onStreamCallback set for incoming stream from:', participantId);
+        }
+      } else {
+        console.warn('⚠️ No streams in track event from:', participantId);
       }
     };
     
     // Handle ICE candidates
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
+        console.log('🧊 Sending ICE candidate to:', participantId);
         signalingService.sendIceCandidate(participantId, event.candidate);
+      }
+    };
+    
+    // Handle connection state changes
+    peerConnection.onconnectionstatechange = () => {
+      console.log(`🔗 Connection state changed for ${participantId}:`, peerConnection.connectionState);
+      if (peerConnection.connectionState === 'connected') {
+        console.log(`✅ Peer connection established with ${participantId}`);
+      } else if (peerConnection.connectionState === 'failed') {
+        console.error(`❌ Peer connection failed with ${participantId}`);
       }
     };
     
     // Add local stream if available (for participants)
     if (this.localStream) {
+      console.log(`📹 Adding local stream tracks to peer connection for ${participantId}`);
       this.localStream.getTracks().forEach(track => {
+        console.log(`📹 Adding ${track.kind} track to peer connection:`, track.id);
         peerConnection.addTrack(track, this.localStream!);
       });
     }
@@ -164,7 +234,7 @@ class WebRTCManager {
   private async handleOffer(data: any) {
     console.log('📤 Handling offer from:', data.fromUserId);
     
-    const peerConnection = this.createPeerConnection(data.fromUserId);
+    const peerConnection = this.createPeerConnection(data.fromSocketId);
     
     // Set remote description
     await peerConnection.setRemoteDescription(data.offer);
@@ -174,13 +244,13 @@ class WebRTCManager {
     await peerConnection.setLocalDescription(answer);
     
     // Send answer
-    signalingService.sendAnswer(data.fromUserId, answer);
+    signalingService.sendAnswer(data.fromSocketId, answer);
   }
 
   private async handleAnswer(data: any) {
     console.log('📥 Handling answer from:', data.fromUserId);
     
-    const peerConnection = this.peerConnections.get(data.fromUserId);
+    const peerConnection = this.peerConnections.get(data.fromSocketId);
     if (peerConnection) {
       await peerConnection.setRemoteDescription(data.answer);
     }
@@ -189,7 +259,7 @@ class WebRTCManager {
   private async handleIceCandidate(data: any) {
     console.log('🧊 Handling ICE candidate from:', data.fromUserId);
     
-    const peerConnection = this.peerConnections.get(data.fromUserId);
+    const peerConnection = this.peerConnections.get(data.fromSocketId);
     if (peerConnection) {
       await peerConnection.addIceCandidate(data.candidate);
     }
@@ -267,6 +337,7 @@ class WebRTCManager {
   private addParticipant(userId: string, data: any) {
     const participant = {
       id: userId,
+      socketId: data.socketId,
       name: data.userName || `Participante ${userId.substring(0, 4)}`,
       joinedAt: data.timestamp || Date.now(),
       lastActive: Date.now(),
@@ -275,6 +346,18 @@ class WebRTCManager {
       selected: false,
       browserType: data.browserType || 'unknown'
     };
+    
+    console.log('➕ Adding participant:', {
+      userId,
+      socketId: data.socketId,
+      participant
+    });
+    
+    // Update socket mappings
+    if (data.socketId) {
+      this.socketIdToUserId.set(data.socketId, userId);
+      this.userIdToSocketId.set(userId, data.socketId);
+    }
     
     this.participants.set(userId, participant);
     this.notifyParticipantsChanged();
@@ -382,7 +465,7 @@ export const initHostWebRTC = async (sessionId: string) => {
   }
 };
 
-export const initParticipantWebRTC = async (sessionId: string, participantId?: string) => {
+export const initParticipantWebRTC = async (sessionId: string, participantId?: string, stream?: MediaStream) => {
   try {
     console.log('🚀 Initializing participant WebRTC for session:', sessionId);
     
@@ -391,7 +474,7 @@ export const initParticipantWebRTC = async (sessionId: string, participantId?: s
     }
     
     webrtcManager = new WebRTCManager();
-    await webrtcManager.initializeAsParticipant(sessionId, participantId || `participant-${Date.now()}`);
+    await webrtcManager.initializeAsParticipant(sessionId, participantId || `participant-${Date.now()}`, stream);
     
     return { webrtc: webrtcManager };
     

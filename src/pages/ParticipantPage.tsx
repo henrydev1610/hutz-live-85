@@ -193,7 +193,7 @@ const ParticipantPage = () => {
     }
   };
 
-  // Connect to session - now works even if WebRTC fails
+  // Connect to session - now properly connects WebRTC
   const connectToSession = async () => {
     if (!sessionId) {
       toast.error('ID da sessão não encontrado');
@@ -210,38 +210,117 @@ const ParticipantPage = () => {
         throw new Error('Falha ao inicializar mídia');
       }
       
-      // Try to initialize WebRTC, but don't fail if it doesn't work
+      // Initialize WebRTC connection properly
+      console.log('🔗 Establishing WebRTC connection...');
+      await setupParticipantWebRTC(sessionId, participantId, stream);
+      setLocalStream(stream);
+      
+      // Send stream info to host via broadcast channel
       try {
-        console.log('🔗 Attempting WebRTC connection...');
-        await setupParticipantWebRTC(sessionId, participantId, stream);
-        setLocalStream(stream);
-        console.log('✅ WebRTC connected successfully');
-        toast.success('Conectado à sessão com sucesso!');
-      } catch (webrtcError) {
-        console.warn('⚠️ WebRTC connection failed, but media is working:', webrtcError);
-        // Still set the local stream for preview
-        setLocalStream(stream);
-        toast.success('Mídia inicializada! Conexão WebRTC em modo local.');
+        const infoChannel = new BroadcastChannel(`stream-info-${sessionId}`);
+        infoChannel.postMessage({
+          type: 'video-stream-info',
+          id: participantId,
+          hasVideo: stream.getVideoTracks().length > 0,
+          hasAudio: stream.getAudioTracks().length > 0,
+          streamActive: stream.active,
+          trackIds: stream.getTracks().map(t => t.id),
+          timestamp: Date.now(),
+          visibilityState: document.visibilityState,
+          deviceInfo: {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform
+          }
+        });
+        setTimeout(() => infoChannel.close(), 1000);
+        console.log('📡 Stream info sent to host via broadcast channel');
+      } catch (bcError) {
+        console.warn('⚠️ Broadcast channel failed, trying localStorage fallback:', bcError);
+        
+        // Fallback to localStorage for Firefox/Opera
+        try {
+          const streamInfo = {
+            type: 'video-stream-info',
+            id: participantId,
+            hasVideo: stream.getVideoTracks().length > 0,
+            hasAudio: stream.getAudioTracks().length > 0,
+            streamActive: stream.active,
+            trackIds: stream.getTracks().map(t => t.id),
+            timestamp: Date.now(),
+            visibilityState: document.visibilityState,
+            deviceInfo: {
+              userAgent: navigator.userAgent,
+              platform: navigator.platform
+            }
+          };
+          
+          localStorage.setItem(`stream-info-${sessionId}-${participantId}-${Date.now()}`, JSON.stringify(streamInfo));
+          console.log('📡 Stream info sent to host via localStorage');
+        } catch (lsError) {
+          console.error('❌ Both broadcast and localStorage failed:', lsError);
+        }
       }
       
       setIsConnected(true);
       setConnectionStatus('connected');
+      console.log('✅ WebRTC connected successfully');
+      toast.success('Conectado à sessão com sucesso!');
+      
+      // Start periodic heartbeat to maintain connection visibility
+      const heartbeatInterval = setInterval(() => {
+        if (isConnected && stream && stream.active) {
+          try {
+            const infoChannel = new BroadcastChannel(`stream-info-${sessionId}`);
+            infoChannel.postMessage({
+              type: 'video-stream-info',
+              id: participantId,
+              hasVideo: stream.getVideoTracks().length > 0,
+              hasAudio: stream.getAudioTracks().length > 0,
+              streamActive: stream.active,
+              trackIds: stream.getTracks().map(t => t.id),
+              timestamp: Date.now(),
+              visibilityState: document.visibilityState,
+              heartbeat: true
+            });
+            setTimeout(() => infoChannel.close(), 500);
+          } catch (e) {
+            console.warn('Heartbeat broadcast failed:', e);
+          }
+        }
+      }, 5000);
+      
+      // Store interval for cleanup
+      return () => clearInterval(heartbeatInterval);
       
     } catch (error) {
       console.error('❌ Error connecting to session:', error);
       setConnectionStatus('failed');
       setError(error instanceof Error ? error.message : 'Erro desconhecido');
-      toast.error('Falha ao acessar câmera/microfone');
+      toast.error('Falha ao conectar à sessão');
     }
   };
 
-  // Auto-initialize media on component mount
+  // Auto-initialize media and connect to session on component mount
   useEffect(() => {
-    console.log('🚀 ParticipantPage mounted, auto-initializing media...');
-    initializeMedia().catch(error => {
-      console.error('❌ Auto-initialization failed:', error);
-    });
-  }, []);
+    console.log('🚀 ParticipantPage mounted, auto-connecting to session...');
+    
+    // Auto-connect to session immediately when page loads
+    const autoConnect = async () => {
+      try {
+        await connectToSession();
+      } catch (error) {
+        console.error('❌ Auto-connection failed:', error);
+        // Still try to initialize media for preview
+        try {
+          await initializeMedia();
+        } catch (mediaError) {
+          console.error('❌ Fallback media initialization failed:', mediaError);
+        }
+      }
+    };
+    
+    autoConnect();
+  }, [sessionId]); // Re-run if sessionId changes
 
   // Disconnect from session
   const disconnectFromSession = () => {

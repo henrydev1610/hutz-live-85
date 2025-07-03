@@ -75,7 +75,11 @@ const LivePage: React.FC = () => {
         }
       });
 
-      initHostWebRTC(state.sessionId);
+      initHostWebRTC(state.sessionId).then(result => {
+        if (result && result.webrtc) {
+          result.webrtc.setOnStreamCallback(participantManagement.handleParticipantStream);
+        }
+      });
 
       return () => {
         cleanup();

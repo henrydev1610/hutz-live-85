@@ -21,9 +21,9 @@ export const setupParticipantWebRTC = async (
     // Store the local stream globally
     currentLocalStream = stream;
     
-    // Try to initialize WebRTC connection, but don't fail if it doesn't work
+    // Try to initialize WebRTC connection with the stream
     try {
-      const result = await initParticipantWebRTCCore(sessionId);
+      const result = await initParticipantWebRTCCore(sessionId, participantId, stream);
       if (result && result.webrtc) {
         currentWebRTC = result.webrtc;
         console.log('✅ WebRTC connection established successfully');

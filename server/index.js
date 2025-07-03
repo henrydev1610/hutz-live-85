@@ -19,7 +19,8 @@ const allowedOrigins = [
   "http://localhost:8080", // Lovable preview
   "https://id-preview--f728da22-f48a-45b2-91e9-28492d654d7f.lovable.app", // Lovable staging
   /^https:\/\/.*\.lovableproject\.com$/, // Qualquer subdomínio lovableproject.com
-  /^https:\/\/.*\.lovable\.app$/ // Qualquer subdomínio lovable.app
+  /^https:\/\/.*\.lovable\.app$/, // Qualquer subdomínio lovable.app
+  /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/ // UUIDs do Lovable
 ];
 
 const corsOptions = {
