@@ -13,12 +13,40 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 
-// Configurar CORS
+// Configurar CORS com múltiplos origins
+const allowedOrigins = [
+  process.env.FRONTEND_URL || "http://localhost:5173",
+  "http://localhost:8080", // Lovable preview
+  "https://id-preview--f728da22-f48a-45b2-91e9-28492d654d7f.lovable.app", // Lovable staging
+  /^https:\/\/.*\.lovable\.app$/ // Qualquer subdomínio lovable.app
+];
+
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: function (origin, callback) {
+    // Permitir requisições sem origin (aplicações mobile, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    // Verificar se o origin está na lista permitida
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      if (typeof allowedOrigin === 'string') {
+        return origin === allowedOrigin;
+      } else if (allowedOrigin instanceof RegExp) {
+        return allowedOrigin.test(origin);
+      }
+      return false;
+    });
+    
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      console.log(`CORS blocked origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  optionsSuccessStatus: 200 // Para suportar browsers legados
 };
 
 // Middlewares de segurança
@@ -26,13 +54,23 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: false,
 }));
+
+// Aplicar CORS
 app.use(cors(corsOptions));
+
+// Middleware para tratar requisições OPTIONS explicitamente
+app.options('*', cors(corsOptions));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Configurar Socket.IO
+// Configurar Socket.IO com os mesmos origins
 const io = new Server(server, {
-  cors: corsOptions,
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
+  },
   transports: ['websocket', 'polling'],
   pingTimeout: 60000,
   pingInterval: 25000
@@ -63,6 +101,12 @@ if (process.env.REDIS_URL) {
 
 // Inicializar handlers do Socket.IO
 initializeSocketHandlers(io);
+
+// Middleware de log para debug
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path} - Origin: ${req.get('Origin') || 'no-origin'}`);
+  next();
+});
 
 // Rotas da API
 app.use('/api/rooms', roomsRouter);
@@ -98,7 +142,7 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📡 Socket.IO server ready`);
-  console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+  console.log(`🌐 Allowed origins: ${JSON.stringify(allowedOrigins)}`);
   console.log(`💾 Redis: ${process.env.REDIS_URL ? 'Enabled' : 'Disabled'}`);
 });
 
