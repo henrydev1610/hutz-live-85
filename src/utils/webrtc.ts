@@ -10,9 +10,14 @@ class WebRTCManager {
   private roomId: string | null = null;
   private isHost: boolean = false;
   private participants: Map<string, any> = new Map();
+  private onStreamCallback: ((participantId: string, stream: MediaStream) => void) | null = null;
 
   constructor() {
     console.log('🔧 WebRTC Manager initialized');
+  }
+
+  setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
+    this.onStreamCallback = callback;
   }
 
   async initializeAsHost(sessionId: string): Promise<void> {
@@ -26,6 +31,7 @@ class WebRTCManager {
         onUserConnected: (data) => {
           console.log('👤 New participant connected:', data.userId);
           this.addParticipant(data.userId, data);
+          this.initiateCall(data.userId);
           toast.success(`Participante ${data.userId} conectado`);
         },
         onUserDisconnected: (data) => {
@@ -42,7 +48,6 @@ class WebRTCManager {
         onIceCandidate: this.handleIceCandidate.bind(this),
         onError: (error) => {
           console.error('❌ Signaling error:', error);
-          // Don't show error toast for fallback mode
           if (!signalingService.isFallbackMode()) {
             toast.error(`Erro de sinalização: ${error.message}`);
           }
@@ -69,6 +74,124 @@ class WebRTCManager {
       } else {
         throw error;
       }
+    }
+  }
+
+  async initializeAsParticipant(sessionId: string, participantId: string): Promise<void> {
+    console.log(`👤 Initializing WebRTC as participant for session: ${sessionId}`);
+    this.roomId = sessionId;
+    this.isHost = false;
+
+    try {
+      // Get user media first
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'user' }, 
+        audio: true 
+      });
+      
+      this.localStream = stream;
+      console.log('📹 Local stream obtained:', stream.getTracks().length, 'tracks');
+
+      // Set up signaling callbacks
+      signalingService.setCallbacks({
+        onOffer: this.handleOffer.bind(this),
+        onAnswer: this.handleAnswer.bind(this),
+        onIceCandidate: this.handleIceCandidate.bind(this),
+        onError: (error) => {
+          console.error('❌ Participant signaling error:', error);
+        }
+      });
+
+      // Connect to signaling server
+      await signalingService.joinRoom(sessionId, participantId);
+      console.log('✅ Participant connected to signaling server');
+      
+    } catch (error) {
+      console.error('❌ Failed to initialize participant WebRTC:', error);
+      throw error;
+    }
+  }
+
+  private async initiateCall(participantId: string) {
+    console.log(`📞 Initiating call to participant: ${participantId}`);
+    
+    const peerConnection = this.createPeerConnection(participantId);
+    
+    // Create offer
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    
+    // Send offer through signaling
+    signalingService.sendOffer(participantId, offer);
+  }
+
+  private createPeerConnection(participantId: string): RTCPeerConnection {
+    const config = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+    
+    const peerConnection = new RTCPeerConnection(config);
+    this.peerConnections.set(participantId, peerConnection);
+    
+    // Handle incoming stream
+    peerConnection.ontrack = (event) => {
+      console.log('📺 Received track from:', participantId, event.streams[0]);
+      if (this.onStreamCallback) {
+        this.onStreamCallback(participantId, event.streams[0]);
+      }
+    };
+    
+    // Handle ICE candidates
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        signalingService.sendIceCandidate(participantId, event.candidate);
+      }
+    };
+    
+    // Add local stream if available (for participants)
+    if (this.localStream) {
+      this.localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, this.localStream!);
+      });
+    }
+    
+    return peerConnection;
+  }
+
+  private async handleOffer(data: any) {
+    console.log('📤 Handling offer from:', data.fromUserId);
+    
+    const peerConnection = this.createPeerConnection(data.fromUserId);
+    
+    // Set remote description
+    await peerConnection.setRemoteDescription(data.offer);
+    
+    // Create answer
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    
+    // Send answer
+    signalingService.sendAnswer(data.fromUserId, answer);
+  }
+
+  private async handleAnswer(data: any) {
+    console.log('📥 Handling answer from:', data.fromUserId);
+    
+    const peerConnection = this.peerConnections.get(data.fromUserId);
+    if (peerConnection) {
+      await peerConnection.setRemoteDescription(data.answer);
+    }
+  }
+
+  private async handleIceCandidate(data: any) {
+    console.log('🧊 Handling ICE candidate from:', data.fromUserId);
+    
+    const peerConnection = this.peerConnections.get(data.fromUserId);
+    if (peerConnection) {
+      await peerConnection.addIceCandidate(data.candidate);
     }
   }
 
@@ -202,21 +325,6 @@ class WebRTCManager {
     this.notifyParticipantsChanged();
   }
 
-  private async handleOffer(data: any) {
-    console.log('📤 Handling offer from:', data.fromUserId);
-    // WebRTC offer handling logic would go here
-  }
-
-  private async handleAnswer(data: any) {
-    console.log('📥 Handling answer from:', data.fromUserId);
-    // WebRTC answer handling logic would go here
-  }
-
-  private async handleIceCandidate(data: any) {
-    console.log('🧊 Handling ICE candidate from:', data.fromUserId);
-    // ICE candidate handling logic would go here
-  }
-
   cleanup() {
     console.log('🧹 Cleaning up WebRTC manager');
     
@@ -274,7 +382,7 @@ export const initHostWebRTC = async (sessionId: string) => {
   }
 };
 
-export const initParticipantWebRTC = async (sessionId: string) => {
+export const initParticipantWebRTC = async (sessionId: string, participantId?: string) => {
   try {
     console.log('🚀 Initializing participant WebRTC for session:', sessionId);
     
@@ -283,21 +391,19 @@ export const initParticipantWebRTC = async (sessionId: string) => {
     }
     
     webrtcManager = new WebRTCManager();
-    
-    // For participants, we mainly need signaling
-    signalingService.setCallbacks({
-      onError: (error) => {
-        console.error('❌ Participant signaling error:', error);
-      }
-    });
-    
-    await signalingService.joinRoom(sessionId, `participant-${Date.now()}`);
+    await webrtcManager.initializeAsParticipant(sessionId, participantId || `participant-${Date.now()}`);
     
     return { webrtc: webrtcManager };
     
   } catch (error) {
     console.error('Failed to initialize participant WebRTC:', error);
     throw error;
+  }
+};
+
+export const setStreamCallback = (callback: (participantId: string, stream: MediaStream) => void) => {
+  if (webrtcManager) {
+    webrtcManager.setOnStreamCallback(callback);
   }
 };
 

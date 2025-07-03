@@ -18,6 +18,7 @@ const allowedOrigins = [
   process.env.FRONTEND_URL || "http://localhost:5173",
   "http://localhost:8080", // Lovable preview
   "https://id-preview--f728da22-f48a-45b2-91e9-28492d654d7f.lovable.app", // Lovable staging
+  /^https:\/\/.*\.lovableproject\.com$/, // Qualquer subdomínio lovableproject.com
   /^https:\/\/.*\.lovable\.app$/ // Qualquer subdomínio lovable.app
 ];
 

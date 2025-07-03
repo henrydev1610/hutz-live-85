@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
 import { addParticipantToSession } from '@/utils/sessionUtils';
+import { setStreamCallback } from '@/utils/webrtc';
 
 interface UseParticipantManagementProps {
   participantList: Participant[];
@@ -25,6 +26,29 @@ export const useParticipantManagement = ({
 }: UseParticipantManagementProps) => {
   const { toast } = useToast();
 
+  // Set up WebRTC stream callback
+  useEffect(() => {
+    const handleParticipantStream = (participantId: string, stream: MediaStream) => {
+      console.log('📹 Received stream from participant:', participantId, stream);
+      
+      setParticipantStreams(prev => ({
+        ...prev,
+        [participantId]: stream
+      }));
+      
+      setParticipantList(prev => 
+        prev.map(p => p.id === participantId ? { ...p, hasVideo: true, active: true } : p)
+      );
+      
+      toast({
+        title: "Vídeo recebido",
+        description: `Stream de vídeo recebido do participante ${participantId}`,
+      });
+    };
+    
+    setStreamCallback(handleParticipantStream);
+  }, [setParticipantStreams, setParticipantList, toast]);
+
   useEffect(() => {
     if (participantList.length === 0) {
       const initialParticipants = Array(4).fill(0).map((_, i) => ({
@@ -41,9 +65,18 @@ export const useParticipantManagement = ({
   }, [participantList.length, setParticipantList]);
 
   useEffect(() => {
+    console.log('🔍 Available participant streams:', Object.keys(participantStreams));
+    console.log('🔍 Participants with streams:', Object.keys(participantStreams).length);
+    
     Object.entries(participantStreams).forEach(([participantId, stream]) => {
       const participant = participantList.find(p => p.id === participantId);
       if (participant) {
+        console.log(`📹 Processing stream for participant ${participantId}:`, {
+          hasVideo: participant.hasVideo,
+          selected: participant.selected,
+          streamTracks: stream.getTracks().length
+        });
+        
         if (participant.selected) {
           const previewContainer = document.getElementById(`preview-participant-video-${participantId}`);
           updateVideoElement(previewContainer, stream);
