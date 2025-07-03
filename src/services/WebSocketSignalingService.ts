@@ -1,6 +1,5 @@
 
 import { io, Socket } from 'socket.io-client';
-import { toast } from 'sonner';
 
 interface SignalingCallbacks {
   onUserConnected?: (data: any) => void;
