@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,7 @@ const ParticipantPage = () => {
     try {
       console.log('Requesting user media with constraints:', constraints);
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('Successfully obtained user media:', stream.getTracks().map(t => ({ kind: t.kind, label: t.label })));
+      console.log('Successfully obtained user media:', stream.getTracks().map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled })));
       return stream;
     } catch (error) {
       console.error('Error getting user media:', error);
@@ -63,14 +64,18 @@ const ParticipantPage = () => {
       setIsConnecting(true);
       setError(null);
       
-      // Try to get video first, then fallback to audio only
+      // Try to get video and audio first
       let stream = await getUserMedia({ 
         video: { 
           width: { ideal: 1280 },
           height: { ideal: 720 },
           frameRate: { ideal: 30 }
         }, 
-        audio: true 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
       
       if (!stream) {
@@ -92,20 +97,35 @@ const ParticipantPage = () => {
       setHasVideo(videoTracks.length > 0);
       setHasAudio(audioTracks.length > 0);
       
+      console.log(`Media initialized - Video: ${videoTracks.length > 0}, Audio: ${audioTracks.length > 0}`);
+      
       // Set initial enabled states
-      videoTracks.forEach(track => track.enabled = isVideoEnabled);
-      audioTracks.forEach(track => track.enabled = isAudioEnabled);
+      videoTracks.forEach(track => {
+        track.enabled = isVideoEnabled;
+        console.log(`Video track enabled: ${track.enabled}`);
+      });
+      audioTracks.forEach(track => {
+        track.enabled = isAudioEnabled;
+        console.log(`Audio track enabled: ${track.enabled}`);
+      });
       
       // Display local video
-      if (localVideoRef.current && videoTracks.length > 0) {
+      if (localVideoRef.current && stream) {
         localVideoRef.current.srcObject = stream;
+        // Ensure video plays
+        try {
+          await localVideoRef.current.play();
+          console.log('✅ Local video is playing');
+        } catch (playError) {
+          console.warn('Video play failed:', playError);
+        }
       }
       
-      console.log('Media initialized successfully');
+      console.log('✅ Media initialized successfully');
       return stream;
       
     } catch (error) {
-      console.error('Error initializing media:', error);
+      console.error('❌ Error initializing media:', error);
       setError(error instanceof Error ? error.message : 'Erro desconhecido ao inicializar mídia');
       throw error;
     } finally {
@@ -141,7 +161,7 @@ const ParticipantPage = () => {
       toast.success('Conectado à sessão com sucesso!');
       
     } catch (error) {
-      console.error('Error connecting to session:', error);
+      console.error('❌ Error connecting to session:', error);
       setConnectionStatus('failed');
       setError(error instanceof Error ? error.message : 'Erro desconhecido');
       toast.error('Falha ao conectar à sessão');
@@ -155,6 +175,7 @@ const ParticipantPage = () => {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => {
           track.stop();
+          console.log(`Stopped ${track.kind} track`);
         });
         localStreamRef.current = null;
       }
@@ -162,8 +183,14 @@ const ParticipantPage = () => {
       if (screenStreamRef.current) {
         screenStreamRef.current.getTracks().forEach(track => {
           track.stop();
+          console.log(`Stopped screen ${track.kind} track`);
         });
         screenStreamRef.current = null;
+      }
+      
+      // Clear video element
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
       }
       
       // End WebRTC session
@@ -178,7 +205,7 @@ const ParticipantPage = () => {
       toast.success('Desconectado da sessão');
       
     } catch (error) {
-      console.error('Error disconnecting:', error);
+      console.error('❌ Error disconnecting:', error);
       toast.error('Erro ao desconectar');
     }
   };
@@ -187,10 +214,15 @@ const ParticipantPage = () => {
   const toggleVideo = () => {
     if (localStreamRef.current) {
       const videoTracks = localStreamRef.current.getVideoTracks();
+      const newEnabled = !isVideoEnabled;
+      
       videoTracks.forEach(track => {
-        track.enabled = !isVideoEnabled;
+        track.enabled = newEnabled;
+        console.log(`Video track enabled: ${track.enabled}`);
       });
-      setIsVideoEnabled(!isVideoEnabled);
+      
+      setIsVideoEnabled(newEnabled);
+      console.log(`Video toggled: ${newEnabled ? 'ON' : 'OFF'}`);
     }
   };
 
@@ -198,10 +230,15 @@ const ParticipantPage = () => {
   const toggleAudio = () => {
     if (localStreamRef.current) {
       const audioTracks = localStreamRef.current.getAudioTracks();
+      const newEnabled = !isAudioEnabled;
+      
       audioTracks.forEach(track => {
-        track.enabled = !isAudioEnabled;
+        track.enabled = newEnabled;
+        console.log(`Audio track enabled: ${track.enabled}`);
       });
-      setIsAudioEnabled(!isAudioEnabled);
+      
+      setIsAudioEnabled(newEnabled);
+      console.log(`Audio toggled: ${newEnabled ? 'ON' : 'OFF'}`);
     }
   };
 
@@ -245,6 +282,11 @@ const ParticipantPage = () => {
           setLocalStream(screenStream);
           setHasScreenShare(true);
           
+          // Update video element
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = screenStream;
+          }
+          
           // Handle screen share end
           screenStream.getVideoTracks()[0].onended = () => {
             toggleScreenShare();
@@ -269,13 +311,6 @@ const ParticipantPage = () => {
       disconnectFromSession();
     };
   }, []);
-
-  // Auto-connect on mount if sessionId is available
-  useEffect(() => {
-    if (sessionId && !isConnected && connectionStatus === 'disconnected') {
-      connectToSession();
-    }
-  }, [sessionId]);
 
   const getConnectionStatusColor = () => {
     switch (connectionStatus) {
@@ -350,11 +385,13 @@ const ParticipantPage = () => {
                 className="w-full h-full object-cover"
               />
               
-              {!hasVideo && (
+              {(!hasVideo || !isVideoEnabled) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
                   <div className="text-center text-white">
                     <CameraOff className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm opacity-75">Câmera desabilitada</p>
+                    <p className="text-sm opacity-75">
+                      {!hasVideo ? 'Câmera não disponível' : 'Câmera desabilitada'}
+                    </p>
                   </div>
                 </div>
               )}
