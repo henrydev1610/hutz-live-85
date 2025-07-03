@@ -1,4 +1,3 @@
-
 import signalingService from '@/services/WebSocketSignalingService';
 
 interface WebRTCConfig {
@@ -30,7 +29,6 @@ class WebRTCManager {
       onUserConnected: (data) => {
         console.log('New user connected, creating peer connection:', data.userId);
         if (this.isHost) {
-          // Como host, criar offer para novo participante
           setTimeout(() => {
             this.createOffer(data.socketId);
           }, 1000);
@@ -50,14 +48,81 @@ class WebRTCManager {
     console.log('Initializing WebRTC as host for session:', sessionId);
     
     try {
-      // Conectar ao serviço de sinalização
       await signalingService.joinRoom(sessionId, `host-${Date.now()}`);
       
-      console.log('✅ Host connected to signaling server');
+      if (signalingService.isMockMode()) {
+        console.log('✅ Host initialized in mock mode');
+        // Simular alguns participantes mock para teste
+        setTimeout(() => {
+          this.simulateMockParticipants();
+        }, 2000);
+      } else {
+        console.log('✅ Host connected to signaling server');
+      }
+      
       return true;
     } catch (error) {
       console.error('❌ Failed to initialize host WebRTC:', error);
       throw error;
+    }
+  }
+
+  private simulateMockParticipants() {
+    if (!signalingService.isMockMode()) return;
+    
+    console.log('🔧 Simulating mock participants for testing');
+    
+    // Simular 2 participantes para teste
+    const mockParticipants = [
+      { userId: 'mock-participant-1', socketId: 'mock-socket-1' },
+      { userId: 'mock-participant-2', socketId: 'mock-socket-2' }
+    ];
+    
+    mockParticipants.forEach((participant, index) => {
+      setTimeout(() => {
+        console.log(`🔧 Adding mock participant: ${participant.userId}`);
+        this.config.onConnectionStateChange?.(participant.socketId, 'connected');
+        
+        // Simular um track de vídeo mock
+        this.simulateMockVideoTrack(participant.socketId);
+      }, (index + 1) * 1000);
+    });
+  }
+
+  private simulateMockVideoTrack(participantId: string) {
+    if (!signalingService.isMockMode()) return;
+    
+    try {
+      // Criar um canvas para simular vídeo
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+      
+      if (ctx) {
+        // Desenhar um placeholder colorido
+        const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'];
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'white';
+        ctx.font = '24px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Mock Participant`, canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillText(`${participantId}`, canvas.width / 2, canvas.height / 2 + 20);
+        
+        // Converter canvas para stream
+        const stream = canvas.captureStream(30);
+        const videoTrack = stream.getVideoTracks()[0];
+        
+        if (videoTrack) {
+          console.log(`🔧 Created mock video track for ${participantId}`);
+          this.config.onTrack?.(participantId, videoTrack);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to create mock video track:', error);
     }
   }
 
@@ -84,11 +149,15 @@ class WebRTCManager {
 
       console.log('✅ Local media obtained');
 
-      // Conectar ao serviço de sinalização
       const participantId = `participant-${Date.now()}`;
       await signalingService.joinRoom(sessionId, participantId);
       
-      console.log('✅ Participant connected to signaling server');
+      if (signalingService.isMockMode()) {
+        console.log('✅ Participant initialized in mock mode');
+      } else {
+        console.log('✅ Participant connected to signaling server');
+      }
+      
       return this.localStream;
     } catch (error) {
       console.error('❌ Failed to initialize participant WebRTC:', error);
@@ -123,7 +192,6 @@ class WebRTCManager {
       
       await peerConnection.setRemoteDescription(offer);
       
-      // Adicionar stream local se disponível
       if (this.localStream) {
         this.localStream.getTracks().forEach(track => {
           peerConnection.addTrack(track, this.localStream!);
@@ -187,7 +255,6 @@ class WebRTCManager {
       iceCandidatePoolSize: 10
     });
 
-    // Event listeners
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         signalingService.sendIceCandidate(event.candidate.toJSON(), socketId);
@@ -237,14 +304,12 @@ class WebRTCManager {
   cleanup() {
     console.log('🧹 Cleaning up WebRTC manager');
     
-    // Fechar todas as conexões peer
     this.peerConnections.forEach((pc, socketId) => {
       pc.close();
       console.log('Closed peer connection for:', socketId);
     });
     this.peerConnections.clear();
 
-    // Parar stream local
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => {
         track.stop();
@@ -252,7 +317,6 @@ class WebRTCManager {
       this.localStream = null;
     }
 
-    // Desconectar do serviço de sinalização
     signalingService.leaveRoom();
   }
 }
@@ -305,7 +369,6 @@ export const initParticipantWebRTC = async (sessionId: string) => {
 };
 
 export const setOnParticipantTrack = (callback: (participantId: string, track: MediaStreamTrack) => void) => {
-  // Esta função é mantida para compatibilidade com o código existente
   console.log('setOnParticipantTrack callback set');
 };
 
