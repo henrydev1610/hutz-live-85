@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -6,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Camera, CameraOff, Mic, MicOff, Phone, PhoneOff, Settings, Monitor, MonitorOff } from "lucide-react";
 import { toast } from "sonner";
-import { initParticipantWebRTC, setLocalStream, endWebRTC } from '@/utils/webrtcUtils';
+import { initializeParticipantWebRTC, setLocalStream, endWebRTC } from '@/utils/webrtcUtils';
 
 const ParticipantPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -152,7 +151,7 @@ const ParticipantPage = () => {
       
       // Initialize WebRTC
       console.log('Initializing WebRTC connection...');
-      await initParticipantWebRTC(sessionId, participantId, stream);
+      await initializeParticipantWebRTC(sessionId, participantId, stream);
       
       setLocalStream(stream);
       setIsConnected(true);

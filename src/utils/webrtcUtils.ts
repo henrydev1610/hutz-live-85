@@ -1,12 +1,12 @@
 
-import { initParticipantWebRTC, initHostWebRTC, cleanupWebRTC } from './webrtc';
+import { initParticipantWebRTC as initParticipantWebRTCCore, initHostWebRTC, cleanupWebRTC } from './webrtc';
 
 // Global state for WebRTC
 let currentWebRTC: any = null;
 let currentLocalStream: MediaStream | null = null;
 
 // Initialize participant WebRTC
-export const initParticipantWebRTC = async (
+export const initializeParticipantWebRTC = async (
   sessionId: string, 
   participantId: string, 
   stream: MediaStream
@@ -18,7 +18,7 @@ export const initParticipantWebRTC = async (
     currentLocalStream = stream;
     
     // Initialize WebRTC connection
-    const result = await initParticipantWebRTC(sessionId);
+    const result = await initParticipantWebRTCCore(sessionId);
     currentWebRTC = result.webrtc;
     
     console.log('✅ Participant WebRTC initialized successfully');
