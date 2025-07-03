@@ -17,7 +17,7 @@ import TextSettings from '@/components/live/TextSettings';
 import QrCodeSettings from '@/components/live/QrCodeSettings';
 import { generateSessionId, addParticipantToSession } from '@/utils/sessionUtils';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
-import { initHostWebRTC, setOnParticipantTrack } from '@/utils/webrtc';
+import { initHostWebRTC } from '@/utils/webrtc';
 import BackButton from '@/components/common/BackButton';
 
 const LivePage: React.FC = () => {
@@ -103,11 +103,8 @@ const LivePage: React.FC = () => {
         }
       });
 
-      // Initialize WebRTC without camera for host
-      initHostWebRTC(sessionId, (participantId, track) => {
-        console.log(`Received track from participant ${participantId}:`, track);
-        handleParticipantTrack(participantId, track);
-      });
+      // Initialize WebRTC for host (without the callback parameter)
+      initHostWebRTC(sessionId);
 
       return () => {
         cleanup();
