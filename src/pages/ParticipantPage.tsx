@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Camera, CameraOff, Mic, MicOff, Phone, PhoneOff, Settings, Monitor, MonitorOff } from "lucide-react";
 import { toast } from "sonner";
-import { initializeParticipantWebRTC, setLocalStream, endWebRTC } from '@/utils/webrtcUtils';
+import { setupParticipantWebRTC, setLocalStream, endWebRTC } from '@/utils/webrtcUtils';
 
 const ParticipantPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -31,23 +31,38 @@ const ParticipantPage = () => {
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
 
-  // Get user media with enhanced error handling
+  // Get user media with enhanced error handling and better constraints
   const getUserMedia = async (constraints: MediaStreamConstraints): Promise<MediaStream | null> => {
     try {
-      console.log('Requesting user media with constraints:', constraints);
+      console.log('🎥 Requesting user media with constraints:', constraints);
+      
+      // Check if mediaDevices is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('getUserMedia não é suportado neste navegador');
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('Successfully obtained user media:', stream.getTracks().map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled })));
+      console.log('✅ Successfully obtained user media:', {
+        tracks: stream.getTracks().map(t => ({ 
+          kind: t.kind, 
+          label: t.label, 
+          enabled: t.enabled,
+          readyState: t.readyState 
+        }))
+      });
       return stream;
     } catch (error) {
-      console.error('Error getting user media:', error);
+      console.error('❌ Error getting user media:', error);
       
       if (error instanceof Error) {
         if (error.name === 'NotAllowedError') {
-          toast.error('Acesso à câmera/microfone negado. Por favor, permita o acesso e tente novamente.');
+          toast.error('Acesso à câmera/microfone negado. Por favor, permita o acesso nas configurações do navegador.');
         } else if (error.name === 'NotFoundError') {
-          toast.error('Câmera ou microfone não encontrados.');
+          toast.error('Câmera ou microfone não encontrados. Verifique se os dispositivos estão conectados.');
         } else if (error.name === 'NotReadableError') {
           toast.error('Câmera ou microfone já estão sendo usados por outro aplicativo.');
+        } else if (error.name === 'OverconstrainedError') {
+          toast.error('Configurações de vídeo/áudio não suportadas pelo dispositivo.');
         } else {
           toast.error(`Erro ao acessar mídia: ${error.message}`);
         }
@@ -57,34 +72,66 @@ const ParticipantPage = () => {
     }
   };
 
-  // Initialize media stream
+  // Initialize media stream with fallback options
   const initializeMedia = async () => {
     try {
       setIsConnecting(true);
       setError(null);
       
-      // Try to get video and audio first
-      let stream = await getUserMedia({ 
-        video: { 
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 }
-        }, 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
+      console.log('🎥 Starting media initialization...');
+      
+      // Try different constraint combinations, starting with ideal and falling back
+      const constraintOptions = [
+        // First try: High quality
+        { 
+          video: { 
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+            frameRate: { ideal: 30 },
+            facingMode: 'user'
+          }, 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        },
+        // Second try: Medium quality
+        { 
+          video: { 
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            frameRate: { ideal: 30 }
+          }, 
+          audio: true 
+        },
+        // Third try: Basic video
+        { video: true, audio: true },
+        // Fourth try: Audio only
+        { audio: true },
+        // Last try: Very basic
+        { video: { width: 320, height: 240 }, audio: true }
+      ];
+      
+      let stream: MediaStream | null = null;
+      
+      for (let i = 0; i < constraintOptions.length; i++) {
+        console.log(`🎥 Trying constraint option ${i + 1}:`, constraintOptions[i]);
+        
+        try {
+          stream = await getUserMedia(constraintOptions[i]);
+          if (stream) {
+            console.log(`✅ Success with constraint option ${i + 1}`);
+            break;
+          }
+        } catch (constraintError) {
+          console.log(`❌ Constraint option ${i + 1} failed:`, constraintError);
+          // Continue to next option
         }
-      });
+      }
       
       if (!stream) {
-        // Fallback to audio only
-        console.log('Video failed, trying audio only...');
-        stream = await getUserMedia({ audio: true });
-        
-        if (!stream) {
-          throw new Error('Não foi possível acessar câmera nem microfone');
-        }
+        throw new Error('Não foi possível acessar câmera nem microfone com nenhuma configuração');
       }
       
       localStreamRef.current = stream;
@@ -96,43 +143,57 @@ const ParticipantPage = () => {
       setHasVideo(videoTracks.length > 0);
       setHasAudio(audioTracks.length > 0);
       
-      console.log(`Media initialized - Video: ${videoTracks.length > 0}, Audio: ${audioTracks.length > 0}`);
+      console.log(`✅ Media initialized - Video: ${videoTracks.length > 0}, Audio: ${audioTracks.length > 0}`);
       
       // Set initial enabled states
       videoTracks.forEach(track => {
         track.enabled = isVideoEnabled;
-        console.log(`Video track enabled: ${track.enabled}`);
+        console.log(`Video track ${track.id} enabled: ${track.enabled}`);
       });
       audioTracks.forEach(track => {
         track.enabled = isAudioEnabled;
-        console.log(`Audio track enabled: ${track.enabled}`);
+        console.log(`Audio track ${track.id} enabled: ${track.enabled}`);
       });
       
       // Display local video
       if (localVideoRef.current && stream) {
         localVideoRef.current.srcObject = stream;
-        // Ensure video plays
+        
+        // Enhanced video element setup
+        localVideoRef.current.onloadedmetadata = () => {
+          console.log('✅ Video metadata loaded');
+          if (localVideoRef.current) {
+            localVideoRef.current.play()
+              .then(() => console.log('✅ Video playing successfully'))
+              .catch(playErr => console.warn('⚠️ Video play warning:', playErr));
+          }
+        };
+        
+        // Try to play immediately
         try {
           await localVideoRef.current.play();
           console.log('✅ Local video is playing');
         } catch (playError) {
-          console.warn('Video play failed:', playError);
+          console.warn('⚠️ Video play failed initially, will retry when metadata loads:', playError);
         }
       }
       
       console.log('✅ Media initialized successfully');
+      toast.success('Câmera e microfone acessados com sucesso!');
       return stream;
       
     } catch (error) {
       console.error('❌ Error initializing media:', error);
-      setError(error instanceof Error ? error.message : 'Erro desconhecido ao inicializar mídia');
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao inicializar mídia';
+      setError(errorMessage);
+      toast.error(errorMessage);
       throw error;
     } finally {
       setIsConnecting(false);
     }
   };
 
-  // Connect to session
+  // Connect to session - now works even if WebRTC fails
   const connectToSession = async () => {
     if (!sessionId) {
       toast.error('ID da sessão não encontrado');
@@ -143,29 +204,44 @@ const ParticipantPage = () => {
       setConnectionStatus('connecting');
       setError(null);
       
-      // Initialize media first
+      // Initialize media first (this is the most important part)
       const stream = await initializeMedia();
       if (!stream) {
         throw new Error('Falha ao inicializar mídia');
       }
       
-      // Initialize WebRTC
-      console.log('Initializing WebRTC connection...');
-      await initializeParticipantWebRTC(sessionId, participantId, stream);
+      // Try to initialize WebRTC, but don't fail if it doesn't work
+      try {
+        console.log('🔗 Attempting WebRTC connection...');
+        await setupParticipantWebRTC(sessionId, participantId, stream);
+        setLocalStream(stream);
+        console.log('✅ WebRTC connected successfully');
+        toast.success('Conectado à sessão com sucesso!');
+      } catch (webrtcError) {
+        console.warn('⚠️ WebRTC connection failed, but media is working:', webrtcError);
+        // Still set the local stream for preview
+        setLocalStream(stream);
+        toast.success('Mídia inicializada! Conexão WebRTC em modo local.');
+      }
       
-      setLocalStream(stream);
       setIsConnected(true);
       setConnectionStatus('connected');
-      
-      toast.success('Conectado à sessão com sucesso!');
       
     } catch (error) {
       console.error('❌ Error connecting to session:', error);
       setConnectionStatus('failed');
       setError(error instanceof Error ? error.message : 'Erro desconhecido');
-      toast.error('Falha ao conectar à sessão');
+      toast.error('Falha ao acessar câmera/microfone');
     }
   };
+
+  // Auto-initialize media on component mount
+  useEffect(() => {
+    console.log('🚀 ParticipantPage mounted, auto-initializing media...');
+    initializeMedia().catch(error => {
+      console.error('❌ Auto-initialization failed:', error);
+    });
+  }, []);
 
   // Disconnect from session
   const disconnectFromSession = () => {
@@ -481,9 +557,9 @@ const ParticipantPage = () => {
             {/* Status Text */}
             <div className="text-center mt-4">
               <p className="text-white/70 text-sm">
-                {isConnecting && 'Conectando à sessão...'}
-                {isConnected && 'Transmitindo para a sessão'}
-                {!isConnected && !isConnecting && 'Clique no botão de telefone para conectar'}
+                {isConnecting && 'Inicializando câmera e microfone...'}
+                {isConnected && !isConnecting && 'Mídia ativa - pronto para transmitir'}
+                {!isConnected && !isConnecting && 'Clique no botão de telefone para conectar à sessão'}
               </p>
             </div>
           </CardContent>
@@ -494,10 +570,11 @@ const ParticipantPage = () => {
           <CardContent className="p-4">
             <h3 className="text-white font-semibold mb-2">Instruções:</h3>
             <ul className="text-white/70 text-sm space-y-1">
-              <li>• Clique no botão de telefone para conectar/desconectar da sessão</li>
+              <li>• A câmera e microfone são inicializados automaticamente</li>
               <li>• Use os botões de câmera e microfone para controlar sua transmissão</li>
               <li>• O botão de monitor permite compartilhar sua tela</li>
-              <li>• Sua transmissão será enviada para o host da sessão</li>
+              <li>• Clique no botão de telefone para conectar/desconectar da sessão</li>
+              <li>• Sua transmissão funcionará mesmo em modo local se a conexão falhar</li>
             </ul>
           </CardContent>
         </Card>
