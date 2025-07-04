@@ -11,6 +11,7 @@ class WebRTCManager {
   private isHost: boolean = false;
   private participants: Map<string, any> = new Map();
   private onStreamCallback: ((participantId: string, stream: MediaStream) => void) | null = null;
+  private onParticipantJoinCallback: ((participantId: string) => void) | null = null;
 
   constructor() {
     console.log('🔧 WebRTC Manager initialized');
@@ -19,6 +20,11 @@ class WebRTCManager {
   setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
     this.onStreamCallback = callback;
     console.log('📞 Stream callback set');
+  }
+
+  setOnParticipantJoinCallback(callback: (participantId: string) => void) {
+    this.onParticipantJoinCallback = callback;
+    console.log('👤 Participant join callback set');
   }
 
   async initializeAsHost(sessionId: string): Promise<void> {
@@ -33,7 +39,11 @@ class WebRTCManager {
           console.log('👤 New participant connected:', data);
           const participantId = data.userId || data.id || data.socketId;
           this.addParticipant(participantId, data);
-          // Host waits for participant to initiate
+          
+          // Immediately notify the UI about the new participant
+          if (this.onParticipantJoinCallback) {
+            this.onParticipantJoinCallback(participantId);
+          }
         },
         onUserDisconnected: (data) => {
           console.log('👤 Participant disconnected:', data);
@@ -49,20 +59,17 @@ class WebRTCManager {
         onIceCandidate: this.handleIceCandidate.bind(this),
         onError: (error) => {
           console.error('❌ Signaling error:', error);
-          // Don't show toast for validation errors
           if (!error.message?.includes('TypeID') && !error.message?.includes('UserMessageID')) {
             toast.error(`Erro de sinalização: ${error.message}`);
           }
         }
       });
 
-      // Connect to signaling server
       await signalingService.joinRoom(sessionId, `host-${Date.now()}`);
       console.log('✅ Host connected to signaling server');
       
     } catch (error) {
       console.error('❌ Failed to initialize host WebRTC:', error);
-      // Continue in fallback mode
       console.log('⚠️ Operating in fallback mode');
     }
   }
@@ -73,7 +80,6 @@ class WebRTCManager {
     this.isHost = false;
 
     try {
-      // Use provided stream or get user media
       if (stream) {
         this.localStream = stream;
         console.log('📹 Using provided stream:', stream.getTracks().length, 'tracks');
@@ -87,25 +93,22 @@ class WebRTCManager {
         console.log('📹 Local stream obtained:', mediaStream.getTracks().length, 'tracks');
       }
 
-      // Set up signaling callbacks
       signalingService.setCallbacks({
         onUserConnected: (data) => {
           console.log('🏠 Host or participant connected:', data);
-          // Participant initiates connection to host
           const hostId = data.userId || data.id || data.socketId;
           if (hostId !== participantId) {
             console.log('📞 Participant initiating call to host:', hostId);
-            setTimeout(() => this.initiateCall(hostId), 1000);
+            setTimeout(() => this.initiateCall(hostId), 500);
           }
         },
         onParticipantsUpdate: (participants) => {
           console.log('👥 Participants updated:', participants);
-          // Connect to existing participants
           participants.forEach(participant => {
             const pId = participant.userId || participant.id || participant.socketId;
             if (pId !== participantId && !this.peerConnections.has(pId)) {
               console.log('📞 Connecting to existing participant:', pId);
-              setTimeout(() => this.initiateCall(pId), 1000);
+              setTimeout(() => this.initiateCall(pId), 500);
             }
           });
         },
@@ -117,7 +120,6 @@ class WebRTCManager {
         }
       });
 
-      // Connect to signaling server
       await signalingService.joinRoom(sessionId, participantId);
       console.log('✅ Participant connected to signaling server');
       
@@ -133,11 +135,9 @@ class WebRTCManager {
     try {
       const peerConnection = this.createPeerConnection(participantId);
       
-      // Create offer
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
       
-      // Send offer through signaling
       signalingService.sendOffer(participantId, offer);
       console.log('📤 Offer sent to:', participantId);
     } catch (error) {
@@ -156,7 +156,6 @@ class WebRTCManager {
     const peerConnection = new RTCPeerConnection(config);
     this.peerConnections.set(participantId, peerConnection);
     
-    // Handle incoming stream
     peerConnection.ontrack = (event) => {
       console.log('📺 Received track from:', participantId, event.track.kind);
       
@@ -168,16 +167,20 @@ class WebRTCManager {
           tracks: stream.getTracks().length
         });
         
+        // Immediately call the stream callback
         if (this.onStreamCallback) {
-          console.log('✅ Calling onStreamCallback for:', participantId);
+          console.log('✅ Calling onStreamCallback immediately for:', participantId);
           this.onStreamCallback(participantId, stream);
-        } else {
-          console.error('❌ No onStreamCallback set');
+        }
+        
+        // Also trigger participant join if not already done
+        if (this.onParticipantJoinCallback) {
+          console.log('👤 Triggering participant join for:', participantId);
+          this.onParticipantJoinCallback(participantId);
         }
       }
     };
     
-    // Handle ICE candidates
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         console.log('🧊 Sending ICE candidate to:', participantId);
@@ -185,14 +188,24 @@ class WebRTCManager {
       }
     };
     
-    // Handle connection state changes
     peerConnection.onconnectionstatechange = () => {
       console.log(`🔗 Connection state for ${participantId}:`, peerConnection.connectionState);
       if (peerConnection.connectionState === 'connected') {
         console.log(`✅ Peer connection established with ${participantId}`);
+        
+        // Double-check if we have a stream to display
+        const receivers = peerConnection.getReceivers();
+        receivers.forEach(receiver => {
+          if (receiver.track && receiver.track.readyState === 'live') {
+            console.log('🔄 Re-triggering stream callback for connected peer:', participantId);
+            const streams = receiver.track.kind === 'video' ? [new MediaStream([receiver.track])] : [];
+            if (streams.length > 0 && this.onStreamCallback) {
+              this.onStreamCallback(participantId, streams[0]);
+            }
+          }
+        });
       } else if (peerConnection.connectionState === 'failed') {
         console.error(`❌ Peer connection failed with ${participantId}`);
-        // Retry connection
         setTimeout(() => {
           if (peerConnection.connectionState === 'failed') {
             this.retryConnection(participantId);
@@ -201,7 +214,6 @@ class WebRTCManager {
       }
     };
     
-    // Add local stream if available
     if (this.localStream) {
       console.log(`📹 Adding local stream to peer connection for ${participantId}`);
       this.localStream.getTracks().forEach(track => {
@@ -221,7 +233,6 @@ class WebRTCManager {
       this.peerConnections.delete(participantId);
     }
     
-    // Retry after a short delay
     setTimeout(() => {
       this.initiateCall(participantId);
     }, 1000);
@@ -234,14 +245,11 @@ class WebRTCManager {
     const peerConnection = this.createPeerConnection(participantId);
     
     try {
-      // Set remote description
       await peerConnection.setRemoteDescription(data.offer);
       
-      // Create answer
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       
-      // Send answer
       signalingService.sendAnswer(participantId, answer);
       console.log('📥 Answer sent to:', participantId);
     } catch (error) {
@@ -301,6 +309,11 @@ class WebRTCManager {
       
       this.participants.set(participantId, participantData);
       console.log(`📝 Updated participant: ${participantId}`);
+      
+      // Trigger participant join callback for each participant
+      if (this.onParticipantJoinCallback) {
+        this.onParticipantJoinCallback(participantId);
+      }
     });
     
     this.notifyParticipantsChanged();
@@ -433,6 +446,12 @@ export const initParticipantWebRTC = async (sessionId: string, participantId?: s
 export const setStreamCallback = (callback: (participantId: string, stream: MediaStream) => void) => {
   if (webrtcManager) {
     webrtcManager.setOnStreamCallback(callback);
+  }
+};
+
+export const setParticipantJoinCallback = (callback: (participantId: string) => void) => {
+  if (webrtcManager) {
+    webrtcManager.setOnParticipantJoinCallback(callback);
   }
 };
 

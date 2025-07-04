@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
 import { addParticipantToSession } from '@/utils/sessionUtils';
-import { setStreamCallback } from '@/utils/webrtc';
+import { setStreamCallback, setParticipantJoinCallback } from '@/utils/webrtc';
 
 interface UseParticipantManagementProps {
   participantList: Participant[];
@@ -33,7 +33,7 @@ export const useParticipantManagement = ({
       tracks: stream.getTracks().length
     });
     
-    // Update participant streams
+    // Update participant streams immediately
     setParticipantStreams(prev => {
       const updated = {
         ...prev,
@@ -43,51 +43,17 @@ export const useParticipantManagement = ({
       return updated;
     });
     
-    // Update participant list
+    // Update participant list to mark as having video
     setParticipantList(prev => {
-      let updated = [...prev];
-      let participantFound = false;
-      
-      // Update existing participant
-      updated = updated.map(p => {
+      const updated = prev.map(p => {
         if (p.id === participantId) {
-          participantFound = true;
-          console.log(`✅ Updating existing participant ${participantId} with video stream`);
+          console.log(`✅ Updating participant ${participantId} with video stream`);
           return { ...p, hasVideo: true, active: true, lastActive: Date.now() };
         }
         return p;
       });
       
-      // If participant not found, replace a placeholder
-      if (!participantFound) {
-        console.log('⚠️ Participant not found, looking for placeholder to replace');
-        const placeholderIndex = updated.findIndex(p => p.id.startsWith('placeholder-') && !p.active);
-        if (placeholderIndex !== -1) {
-          console.log(`🔄 Replacing placeholder at index ${placeholderIndex} with participant ${participantId}`);
-          updated[placeholderIndex] = {
-            id: participantId,
-            name: `Participante ${participantId.substring(0, 8)}`,
-            joinedAt: Date.now(),
-            lastActive: Date.now(),
-            active: true,
-            selected: true,
-            hasVideo: true
-          };
-        } else {
-          // Add new participant if no placeholder available
-          console.log('➕ Adding new participant:', participantId);
-          updated.push({
-            id: participantId,
-            name: `Participante ${participantId.substring(0, 8)}`,
-            joinedAt: Date.now(),
-            lastActive: Date.now(),
-            active: true,
-            selected: true,
-            hasVideo: true
-          });
-        }
-      }
-      
+      console.log('📝 Updated participant list:', updated.filter(p => p.active).length, 'active participants');
       return updated;
     });
     
@@ -101,6 +67,76 @@ export const useParticipantManagement = ({
     setTimeout(() => {
       updateVideoElements(participantId, stream);
     }, 100);
+  };
+
+  const handleParticipantJoin = (participantId: string) => {
+    console.log("🚀 Participant joined via WebRTC:", participantId);
+    
+    setParticipantList(prev => {
+      const exists = prev.some(p => p.id === participantId);
+      if (exists) {
+        return prev.map(p => p.id === participantId ? { 
+          ...p, 
+          active: true, 
+          lastActive: Date.now(), 
+          connectedAt: Date.now() 
+        } : p);
+      }
+      
+      // Find placeholder to replace
+      const placeholderIndex = prev.findIndex(p => p.id.startsWith('placeholder-') && !p.active);
+      if (placeholderIndex !== -1) {
+        const updated = [...prev];
+        updated[placeholderIndex] = {
+          id: participantId,
+          name: `Participante ${participantId.substring(0, 8)}`,
+          joinedAt: Date.now(),
+          lastActive: Date.now(),
+          active: true,
+          selected: false,
+          hasVideo: false,
+          connectedAt: Date.now()
+        };
+        console.log(`🔄 Replaced placeholder at index ${placeholderIndex} with participant ${participantId}`);
+        return updated;
+      }
+      
+      // Add new participant if no placeholder
+      const participantName = `Participante ${participantId.substring(0, 8)}`;
+      const newParticipant = {
+        id: participantId,
+        name: participantName,
+        joinedAt: Date.now(),
+        lastActive: Date.now(),
+        active: true,
+        selected: false,
+        hasVideo: false,
+        connectedAt: Date.now()
+      };
+      
+      if (sessionId) {
+        addParticipantToSession(sessionId, participantId, participantName);
+      }
+      
+      toast({
+        title: "Novo participante conectado",
+        description: `${participantName} se conectou à sessão.`,
+      });
+      
+      console.log(`➕ Added new participant: ${participantId}`);
+      return [...prev, newParticipant];
+    });
+    
+    // Update transmission window
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      transmissionWindowRef.current.postMessage({
+        type: 'participant-joined',
+        id: participantId,
+        sessionId
+      }, '*');
+    }
+    
+    setTimeout(updateTransmissionParticipants, 500);
   };
 
   const updateVideoElements = (participantId: string, stream: MediaStream) => {
@@ -176,7 +212,6 @@ export const useParticipantManagement = ({
       
       videoElement.play().catch(err => {
         console.error(`Error playing video in ${container.id}:`, err);
-        // Retry after a short delay
         setTimeout(() => {
           videoElement.play().catch(retryErr => {
             console.error(`Error playing video in ${container.id} on retry:`, retryErr);
@@ -186,14 +221,14 @@ export const useParticipantManagement = ({
     }
   };
 
-  // Set up WebRTC stream callback
+  // Set up WebRTC callbacks
   useEffect(() => {
-    console.log('🔧 Setting up WebRTC stream callback');
+    console.log('🔧 Setting up WebRTC callbacks');
     setStreamCallback(handleParticipantStream);
+    setParticipantJoinCallback(handleParticipantJoin);
     
-    // Cleanup function
     return () => {
-      console.log('🧹 Cleaning up WebRTC stream callback');
+      console.log('🧹 Cleaning up WebRTC callbacks');
     };
   }, []);
 
@@ -286,74 +321,6 @@ export const useParticipantManagement = ({
       delete updated[id];
       return updated;
     });
-  };
-
-  const handleParticipantJoin = (participantId: string) => {
-    console.log("Participant joined via WebRTC:", participantId);
-    
-    setParticipantList(prev => {
-      const exists = prev.some(p => p.id === participantId);
-      if (exists) {
-        return prev.map(p => p.id === participantId ? { 
-          ...p, 
-          active: true, 
-          lastActive: Date.now(), 
-          connectedAt: Date.now() 
-        } : p);
-      }
-      
-      // Find placeholder to replace
-      const placeholderIndex = prev.findIndex(p => p.id.startsWith('placeholder-') && !p.active);
-      if (placeholderIndex !== -1) {
-        const updated = [...prev];
-        updated[placeholderIndex] = {
-          id: participantId,
-          name: `Participante ${participantId.substring(0, 8)}`,
-          joinedAt: Date.now(),
-          lastActive: Date.now(),
-          active: true,
-          selected: false,
-          hasVideo: false,
-          connectedAt: Date.now()
-        };
-        return updated;
-      }
-      
-      // Add new participant if no placeholder
-      const participantName = `Participante ${participantId.substring(0, 8)}`;
-      const newParticipant = {
-        id: participantId,
-        name: participantName,
-        joinedAt: Date.now(),
-        lastActive: Date.now(),
-        active: true,
-        selected: false,
-        hasVideo: false,
-        connectedAt: Date.now()
-      };
-      
-      if (sessionId) {
-        addParticipantToSession(sessionId, participantId, participantName);
-      }
-      
-      toast({
-        title: "Novo participante conectado",
-        description: `${participantName} se conectou à sessão.`,
-      });
-      
-      return [...prev, newParticipant];
-    });
-    
-    // Update transmission window
-    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      transmissionWindowRef.current.postMessage({
-        type: 'participant-joined',
-        id: participantId,
-        sessionId
-      }, '*');
-    }
-    
-    setTimeout(updateTransmissionParticipants, 500);
   };
 
   // Keep existing handleParticipantTrack method for compatibility
