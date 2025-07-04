@@ -1,3 +1,4 @@
+
 import { useRef, useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 
@@ -516,8 +517,8 @@ export const useTransmissionWindow = () => {
       const updateQRPositions = (data: any) => {
         if (!newWindow.document) return;
         
-        const qrCodeElement = newWindow.document.querySelector('.qr-code');
-        const qrDescriptionElement = newWindow.document.querySelector('.qr-description');
+        const qrCodeElement = newWindow.document.querySelector('.qr-code') as HTMLElement;
+        const qrDescriptionElement = newWindow.document.querySelector('.qr-description') as HTMLElement;
         
         if (qrCodeElement) {
           qrCodeElement.style.left = data.qrCodePosition.x + 'px';
