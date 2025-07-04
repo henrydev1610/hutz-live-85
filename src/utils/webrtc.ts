@@ -12,6 +12,8 @@ class WebRTCManager {
   private participants: Map<string, any> = new Map();
   private onStreamCallback: ((participantId: string, stream: MediaStream) => void) | null = null;
   private onParticipantJoinCallback: ((participantId: string) => void) | null = null;
+  private connectionRetries: Map<string, number> = new Map();
+  private maxRetries = 3;
 
   constructor() {
     console.log('🔧 WebRTC Manager initialized');
@@ -33,17 +35,21 @@ class WebRTCManager {
     this.isHost = true;
 
     try {
-      // Set up signaling callbacks
+      // Set up signaling callbacks with immediate response
       signalingService.setCallbacks({
         onUserConnected: (data) => {
           console.log('👤 New participant connected:', data);
           const participantId = data.userId || data.id || data.socketId;
           this.addParticipant(participantId, data);
           
-          // Immediately notify the UI about the new participant
+          // Immediately notify UI and start WebRTC handshake
           if (this.onParticipantJoinCallback) {
+            console.log('🚀 Immediately calling participant join callback for:', participantId);
             this.onParticipantJoinCallback(participantId);
           }
+          
+          // Start heartbeat to maintain connection
+          this.startHeartbeat(participantId);
         },
         onUserDisconnected: (data) => {
           console.log('👤 Participant disconnected:', data);
@@ -99,7 +105,8 @@ class WebRTCManager {
           const hostId = data.userId || data.id || data.socketId;
           if (hostId !== participantId) {
             console.log('📞 Participant initiating call to host:', hostId);
-            setTimeout(() => this.initiateCall(hostId), 500);
+            // Immediate call initiation with retry logic
+            this.initiateCallWithRetry(hostId);
           }
         },
         onParticipantsUpdate: (participants) => {
@@ -108,7 +115,7 @@ class WebRTCManager {
             const pId = participant.userId || participant.id || participant.socketId;
             if (pId !== participantId && !this.peerConnections.has(pId)) {
               console.log('📞 Connecting to existing participant:', pId);
-              setTimeout(() => this.initiateCall(pId), 500);
+              this.initiateCallWithRetry(pId);
             }
           });
         },
@@ -129,27 +136,46 @@ class WebRTCManager {
     }
   }
 
+  private async initiateCallWithRetry(participantId: string, retryCount: number = 0) {
+    try {
+      console.log(`📞 Initiating call to: ${participantId} (attempt ${retryCount + 1})`);
+      await this.initiateCall(participantId);
+    } catch (error) {
+      console.error(`❌ Call initiation failed (attempt ${retryCount + 1}):`, error);
+      
+      if (retryCount < this.maxRetries) {
+        const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
+        console.log(`🔄 Retrying call in ${delay}ms...`);
+        setTimeout(() => {
+          this.initiateCallWithRetry(participantId, retryCount + 1);
+        }, delay);
+      } else {
+        console.error(`❌ Max retries reached for participant: ${participantId}`);
+      }
+    }
+  }
+
   private async initiateCall(participantId: string) {
     console.log(`📞 Initiating call to: ${participantId}`);
     
-    try {
-      const peerConnection = this.createPeerConnection(participantId);
-      
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      
-      signalingService.sendOffer(participantId, offer);
-      console.log('📤 Offer sent to:', participantId);
-    } catch (error) {
-      console.error('❌ Failed to initiate call:', error);
-    }
+    const peerConnection = this.createPeerConnection(participantId);
+    
+    const offer = await peerConnection.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true
+    });
+    await peerConnection.setLocalDescription(offer);
+    
+    signalingService.sendOffer(participantId, offer);
+    console.log('📤 Offer sent to:', participantId);
   }
 
   private createPeerConnection(participantId: string): RTCPeerConnection {
     const config = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
       ]
     };
     
@@ -167,16 +193,21 @@ class WebRTCManager {
           tracks: stream.getTracks().length
         });
         
-        // Immediately call the stream callback
+        // CRITICAL: Immediately call the stream callback
         if (this.onStreamCallback) {
-          console.log('✅ Calling onStreamCallback immediately for:', participantId);
-          this.onStreamCallback(participantId, stream);
+          console.log('✅ IMMEDIATE stream callback for:', participantId);
+          // Use setTimeout to ensure UI update happens immediately
+          setTimeout(() => {
+            this.onStreamCallback!(participantId, stream);
+          }, 0);
         }
         
-        // Also trigger participant join if not already done
-        if (this.onParticipantJoinCallback) {
-          console.log('👤 Triggering participant join for:', participantId);
-          this.onParticipantJoinCallback(participantId);
+        // Also ensure participant join is called
+        if (this.onParticipantJoinCallback && !this.participants.has(participantId)) {
+          console.log('👤 Ensuring participant join for:', participantId);
+          setTimeout(() => {
+            this.onParticipantJoinCallback!(participantId);
+          }, 0);
         }
       }
     };
@@ -189,29 +220,39 @@ class WebRTCManager {
     };
     
     peerConnection.onconnectionstatechange = () => {
-      console.log(`🔗 Connection state for ${participantId}:`, peerConnection.connectionState);
-      if (peerConnection.connectionState === 'connected') {
+      const state = peerConnection.connectionState;
+      console.log(`🔗 Connection state for ${participantId}:`, state);
+      
+      if (state === 'connected') {
         console.log(`✅ Peer connection established with ${participantId}`);
+        this.connectionRetries.delete(participantId);
         
-        // Double-check if we have a stream to display
+        // Ensure we have the stream displayed
         const receivers = peerConnection.getReceivers();
         receivers.forEach(receiver => {
           if (receiver.track && receiver.track.readyState === 'live') {
-            console.log('🔄 Re-triggering stream callback for connected peer:', participantId);
-            const streams = receiver.track.kind === 'video' ? [new MediaStream([receiver.track])] : [];
-            if (streams.length > 0 && this.onStreamCallback) {
-              this.onStreamCallback(participantId, streams[0]);
+            console.log('🔄 Verifying stream for connected peer:', participantId);
+            if (receiver.track.kind === 'video') {
+              const stream = new MediaStream([receiver.track]);
+              if (this.onStreamCallback) {
+                console.log('🎥 Re-calling stream callback for verification:', participantId);
+                this.onStreamCallback(participantId, stream);
+              }
             }
           }
         });
-      } else if (peerConnection.connectionState === 'failed') {
-        console.error(`❌ Peer connection failed with ${participantId}`);
-        setTimeout(() => {
-          if (peerConnection.connectionState === 'failed') {
-            this.retryConnection(participantId);
-          }
-        }, 2000);
+      } else if (state === 'failed' || state === 'disconnected') {
+        console.error(`❌ Peer connection ${state} with ${participantId}`);
+        this.handleConnectionFailure(participantId);
       }
+    };
+    
+    peerConnection.onicegatheringstatechange = () => {
+      console.log(`🧊 ICE gathering state for ${participantId}:`, peerConnection.iceGatheringState);
+    };
+    
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log(`🧊 ICE connection state for ${participantId}:`, peerConnection.iceConnectionState);
     };
     
     if (this.localStream) {
@@ -225,17 +266,40 @@ class WebRTCManager {
     return peerConnection;
   }
 
-  private retryConnection(participantId: string) {
-    console.log(`🔄 Retrying connection to: ${participantId}`);
-    const existingConnection = this.peerConnections.get(participantId);
-    if (existingConnection) {
-      existingConnection.close();
-      this.peerConnections.delete(participantId);
-    }
+  private handleConnectionFailure(participantId: string) {
+    const retryCount = this.connectionRetries.get(participantId) || 0;
     
-    setTimeout(() => {
-      this.initiateCall(participantId);
-    }, 1000);
+    if (retryCount < this.maxRetries) {
+      console.log(`🔄 Retrying connection to ${participantId} (attempt ${retryCount + 1})`);
+      this.connectionRetries.set(participantId, retryCount + 1);
+      
+      // Clean up existing connection
+      const existingConnection = this.peerConnections.get(participantId);
+      if (existingConnection) {
+        existingConnection.close();
+        this.peerConnections.delete(participantId);
+      }
+      
+      // Retry after delay
+      setTimeout(() => {
+        this.initiateCallWithRetry(participantId, retryCount);
+      }, 2000);
+    } else {
+      console.error(`❌ Max retries reached for participant: ${participantId}`);
+      this.connectionRetries.delete(participantId);
+    }
+  }
+
+  private startHeartbeat(participantId: string) {
+    const heartbeatInterval = setInterval(() => {
+      const connection = this.peerConnections.get(participantId);
+      if (connection && connection.connectionState === 'connected') {
+        console.log(`💓 Heartbeat for ${participantId}: connected`);
+      } else if (!connection) {
+        console.log(`💓 Heartbeat stopped for ${participantId}: no connection`);
+        clearInterval(heartbeatInterval);
+      }
+    }, 5000);
   }
 
   private async handleOffer(data: any) {
@@ -346,6 +410,8 @@ class WebRTCManager {
       this.peerConnections.get(participantId)?.close();
       this.peerConnections.delete(participantId);
     }
+    
+    this.connectionRetries.delete(participantId);
   }
 
   private notifyParticipantsChanged() {
@@ -385,6 +451,7 @@ class WebRTCManager {
       pc.close();
     });
     this.peerConnections.clear();
+    this.connectionRetries.clear();
     
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => {

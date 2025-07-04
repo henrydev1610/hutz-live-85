@@ -26,55 +26,66 @@ export const useParticipantManagement = ({
   const { toast } = useToast();
 
   const handleParticipantStream = (participantId: string, stream: MediaStream) => {
-    console.log('📹 handleParticipantStream called:', {
-      participantId,
+    console.log('🎥 CRITICAL: handleParticipantStream called for:', participantId);
+    console.log('🎥 Stream details:', {
       streamId: stream.id,
       active: stream.active,
-      tracks: stream.getTracks().length
+      tracks: stream.getTracks().length,
+      videoTracks: stream.getVideoTracks().length,
+      audioTracks: stream.getAudioTracks().length
     });
     
-    // Update participant streams immediately
+    // IMMEDIATE stream update
     setParticipantStreams(prev => {
       const updated = {
         ...prev,
         [participantId]: stream
       };
-      console.log('📦 Updated participant streams:', Object.keys(updated));
+      console.log('✅ IMMEDIATE stream update for:', participantId);
+      console.log('📦 Total streams now:', Object.keys(updated).length);
       return updated;
     });
     
-    // Update participant list to mark as having video
+    // IMMEDIATE participant list update
     setParticipantList(prev => {
       const updated = prev.map(p => {
         if (p.id === participantId) {
-          console.log(`✅ Updating participant ${participantId} with video stream`);
-          return { ...p, hasVideo: true, active: true, lastActive: Date.now() };
+          console.log(`✅ IMMEDIATE participant update: ${participantId} now has video`);
+          return { 
+            ...p, 
+            hasVideo: true, 
+            active: true, 
+            lastActive: Date.now(),
+            connectedAt: Date.now()
+          };
         }
         return p;
       });
       
-      console.log('📝 Updated participant list:', updated.filter(p => p.active).length, 'active participants');
+      console.log('📝 Updated participant list - active participants:', 
+        updated.filter(p => p.active && p.hasVideo).length);
       return updated;
     });
     
-    // Show success toast
+    // Show toast notification
     toast({
-      title: "Vídeo recebido",
-      description: `Stream de vídeo recebido do participante ${participantId.substring(0, 8)}`,
+      title: "Vídeo conectado!",
+      description: `Participante ${participantId.substring(0, 8)} está transmitindo`,
     });
     
-    // Update video elements immediately
+    // IMMEDIATE video element update
     setTimeout(() => {
-      updateVideoElements(participantId, stream);
-    }, 100);
+      updateVideoElementsImmediately(participantId, stream);
+    }, 0);
   };
 
   const handleParticipantJoin = (participantId: string) => {
-    console.log("🚀 Participant joined via WebRTC:", participantId);
+    console.log("🚀 CRITICAL: Participant joined:", participantId);
     
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === participantId);
       if (exists) {
+        console.log(`🔄 Updating existing participant: ${participantId}`);
         return prev.map(p => p.id === participantId ? { 
           ...p, 
           active: true, 
@@ -87,9 +98,10 @@ export const useParticipantManagement = ({
       const placeholderIndex = prev.findIndex(p => p.id.startsWith('placeholder-') && !p.active);
       if (placeholderIndex !== -1) {
         const updated = [...prev];
+        const participantName = `Participante ${participantId.substring(0, 8)}`;
         updated[placeholderIndex] = {
           id: participantId,
-          name: `Participante ${participantId.substring(0, 8)}`,
+          name: participantName,
           joinedAt: Date.now(),
           lastActive: Date.now(),
           active: true,
@@ -97,11 +109,22 @@ export const useParticipantManagement = ({
           hasVideo: false,
           connectedAt: Date.now()
         };
-        console.log(`🔄 Replaced placeholder at index ${placeholderIndex} with participant ${participantId}`);
+        console.log(`✅ Replaced placeholder at index ${placeholderIndex} with ${participantId}`);
+        
+        // Add to session
+        if (sessionId) {
+          addParticipantToSession(sessionId, participantId, participantName);
+        }
+        
+        toast({
+          title: "Participante conectado",
+          description: `${participantName} entrou na sessão`,
+        });
+        
         return updated;
       }
       
-      // Add new participant if no placeholder
+      // Add new participant if no placeholder available
       const participantName = `Participante ${participantId.substring(0, 8)}`;
       const newParticipant = {
         id: participantId,
@@ -119,15 +142,15 @@ export const useParticipantManagement = ({
       }
       
       toast({
-        title: "Novo participante conectado",
-        description: `${participantName} se conectou à sessão.`,
+        title: "Novo participante",
+        description: `${participantName} se conectou`,
       });
       
       console.log(`➕ Added new participant: ${participantId}`);
       return [...prev, newParticipant];
     });
     
-    // Update transmission window
+    // Update transmission window immediately
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
       transmissionWindowRef.current.postMessage({
         type: 'participant-joined',
@@ -136,27 +159,36 @@ export const useParticipantManagement = ({
       }, '*');
     }
     
-    setTimeout(updateTransmissionParticipants, 500);
+    // Update transmission participants
+    setTimeout(() => {
+      updateTransmissionParticipants();
+    }, 100);
   };
 
-  const updateVideoElements = (participantId: string, stream: MediaStream) => {
-    console.log('🎥 Updating video elements for participant:', participantId);
+  const updateVideoElementsImmediately = (participantId: string, stream: MediaStream) => {
+    console.log('🎬 IMMEDIATE video update for:', participantId);
     
     // Update preview video
     const previewContainer = document.getElementById(`preview-participant-video-${participantId}`);
     if (previewContainer) {
+      console.log('📹 Updating preview video for:', participantId);
       updateVideoElement(previewContainer, stream);
+    } else {
+      console.log('⚠️ Preview container not found for:', participantId);
     }
     
     // Update grid video
     const gridContainer = document.getElementById(`participant-video-${participantId}`);
     if (gridContainer) {
+      console.log('📹 Updating grid video for:', participantId);
       updateVideoElement(gridContainer, stream);
+    } else {
+      console.log('⚠️ Grid container not found for:', participantId);
     }
     
     // Update transmission window
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      console.log(`📤 Sending stream to transmission window for participant ${participantId}`);
+      console.log(`📤 Sending stream to transmission window for: ${participantId}`);
       
       transmissionWindowRef.current.postMessage({
         type: 'video-stream',
@@ -164,73 +196,68 @@ export const useParticipantManagement = ({
         hasStream: true,
         timestamp: Date.now()
       }, '*');
-      
-      // Update video in transmission window
-      setTimeout(() => {
-        if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-          const transmissionDoc = transmissionWindowRef.current.document;
-          if (transmissionDoc) {
-            const slots = transmissionDoc.querySelectorAll('[id^="participant-slot-"]');
-            for (let slot of slots) {
-              const video = slot.querySelector('video');
-              if (video && video.dataset.participantId === participantId) {
-                console.log(`✅ Updating transmission video for ${participantId}`);
-                video.srcObject = stream;
-                video.play().catch(e => console.error('Play error:', e));
-                break;
-              }
-            }
-          }
-        }
-      }, 200);
     }
   };
 
   const updateVideoElement = (container: HTMLElement, stream: MediaStream) => {
     if (!container) {
-      console.warn("Video container not found");
+      console.warn("❌ Video container not found");
       return;
     }
+    
+    console.log('🎬 Updating video element in container:', container.id);
     
     let videoElement = container.querySelector('video') as HTMLVideoElement;
     
     if (!videoElement) {
+      console.log('📹 Creating new video element for:', container.id);
       videoElement = document.createElement('video');
       videoElement.autoplay = true;
       videoElement.playsInline = true;
       videoElement.muted = true;
       videoElement.setAttribute('playsinline', '');
       videoElement.className = 'w-full h-full object-cover';
+      
+      // Clear container and add video
       container.innerHTML = '';
       container.appendChild(videoElement);
-      console.log("Created new video element in container:", container.id);
     }
     
+    // Set stream and play
     if (videoElement.srcObject !== stream) {
-      console.log(`Setting video source for ${container.id}`);
+      console.log('✅ Setting stream for video element:', container.id);
       videoElement.srcObject = stream;
       
-      videoElement.play().catch(err => {
-        console.error(`Error playing video in ${container.id}:`, err);
-        setTimeout(() => {
-          videoElement.play().catch(retryErr => {
-            console.error(`Error playing video in ${container.id} on retry:`, retryErr);
-          });
-        }, 500);
-      });
+      // Ensure video plays
+      const playPromise = videoElement.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          console.log('✅ Video playing successfully for:', container.id);
+        }).catch(err => {
+          console.error(`❌ Video play failed for ${container.id}:`, err);
+          // Retry after a short delay
+          setTimeout(() => {
+            videoElement.play().catch(retryErr => {
+              console.error(`❌ Video retry failed for ${container.id}:`, retryErr);
+            });
+          }, 500);
+        });
+      }
     }
   };
 
-  // Set up WebRTC callbacks
+  // Set up WebRTC callbacks immediately
   useEffect(() => {
-    console.log('🔧 Setting up WebRTC callbacks');
+    console.log('🔧 Setting up IMMEDIATE WebRTC callbacks');
+    
+    // Set callbacks immediately
     setStreamCallback(handleParticipantStream);
     setParticipantJoinCallback(handleParticipantJoin);
     
     return () => {
       console.log('🧹 Cleaning up WebRTC callbacks');
     };
-  }, []);
+  }, [sessionId]); // Depend on sessionId to ensure callbacks are set when session is ready
 
   // Initialize placeholder participants
   useEffect(() => {
@@ -249,15 +276,15 @@ export const useParticipantManagement = ({
     }
   }, [participantList.length, setParticipantList]);
 
-  // Update video elements when streams change
+  // Monitor stream changes and update videos immediately
   useEffect(() => {
-    console.log('🔍 Processing participant streams:', Object.keys(participantStreams).length);
+    console.log('🔍 Monitoring participant streams:', Object.keys(participantStreams).length);
     
     Object.entries(participantStreams).forEach(([participantId, stream]) => {
       const participant = participantList.find(p => p.id === participantId);
-      if (participant && participant.hasVideo) {
-        console.log(`📹 Processing stream for participant ${participantId}`);
-        updateVideoElements(participantId, stream);
+      if (participant && participant.active) {
+        console.log(`📹 Ensuring video display for active participant: ${participantId}`);
+        updateVideoElementsImmediately(participantId, stream);
       }
     });
   }, [participantList, participantStreams, transmissionWindowRef]);
@@ -276,7 +303,6 @@ export const useParticipantManagement = ({
         // If selecting and we have a stream, send it
         const participant = updatedList.find(p => p.id === id);
         if (participant?.selected && participantStreams[id]) {
-          const stream = participantStreams[id];
           console.log(`📹 Participant ${id} selected, updating transmission`);
           
           setTimeout(() => {
