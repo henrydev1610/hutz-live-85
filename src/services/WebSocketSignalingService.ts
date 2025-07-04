@@ -14,12 +14,12 @@ interface SignalingCallbacks {
 class WebSocketSignalingService {
   private socket: Socket | null = null;
   private callbacks: SignalingCallbacks = {};
-  private connectionAttempts = 0;
-  private maxRetries = 3;
-  private retryTimeout: NodeJS.Timeout | null = null;
-  private fallbackMode = false;
-  private currentRoomId: string | null = null;
+  private isConnected = false;
+  private currentRoom: string | null = null;
   private currentUserId: string | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private fallbackMode = false;
 
   constructor() {
     console.log('🔧 WebSocket Signaling Service initialized');
@@ -27,143 +27,228 @@ class WebSocketSignalingService {
 
   setCallbacks(callbacks: SignalingCallbacks) {
     this.callbacks = callbacks;
+    console.log('📞 Signaling callbacks set');
   }
 
-  async joinRoom(roomId: string, userId: string): Promise<void> {
-    console.log(`🚪 Joining room ${roomId} as ${userId}`);
+  async connect(serverUrl?: string): Promise<void> {
+    const url = serverUrl || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
     
-    this.currentRoomId = roomId;
-    this.currentUserId = userId;
+    console.log(`🔌 Connecting to signaling server: ${url}`);
     
-    return new Promise((resolve, reject) => {
-      this.connectWithRetry(roomId, userId, resolve, reject);
-    });
+    try {
+      this.socket = io(url, {
+        transports: ['websocket', 'polling'],
+        timeout: 10000,
+        forceNew: true,
+        reconnection: true,
+        reconnectionAttempts: this.maxReconnectAttempts,
+        reconnectionDelay: 1000
+      });
+
+      return new Promise((resolve, reject) => {
+        const connectTimeout = setTimeout(() => {
+          console.warn('⚠️ Connection timeout, enabling fallback mode');
+          this.fallbackMode = true;
+          resolve();
+        }, 5000);
+
+        this.socket!.on('connect', () => {
+          clearTimeout(connectTimeout);
+          console.log('✅ Connected to signaling server');
+          this.isConnected = true;
+          this.reconnectAttempts = 0;
+          this.fallbackMode = false;
+          resolve();
+        });
+
+        this.socket!.on('connect_error', (error) => {
+          clearTimeout(connectTimeout);
+          console.error('❌ Connection error:', error);
+          this.reconnectAttempts++;
+          
+          if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.warn('⚠️ Max reconnection attempts reached, enabling fallback mode');
+            this.fallbackMode = true;
+            resolve();
+          } else {
+            reject(error);
+          }
+        });
+
+        this.socket!.on('disconnect', (reason) => {
+          console.log('🔌 Disconnected from signaling server:', reason);
+          this.isConnected = false;
+          
+          if (reason === 'io server disconnect') {
+            console.log('🔄 Attempting to reconnect...');
+            this.socket!.connect();
+          }
+        });
+
+        this.socket!.on('error', (error) => {
+          console.error('❌ Socket error:', error);
+          
+          // Handle TypeID validation errors specifically
+          if (error.message && error.message.includes('TypeID')) {
+            console.warn('⚠️ TypeID validation error, continuing without error propagation');
+            return;
+          }
+          
+          if (this.callbacks.onError) {
+            this.callbacks.onError(error);
+          }
+        });
+
+        this.setupEventListeners();
+      });
+    } catch (error) {
+      console.error('❌ Failed to initialize socket connection:', error);
+      this.fallbackMode = true;
+      throw error;
+    }
   }
 
-  private connectWithRetry(roomId: string, userId: string, resolve: Function, reject: Function) {
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-    
-    console.log(`🔄 Attempting WebSocket connection to: ${baseUrl} (attempt ${this.connectionAttempts + 1})`);
-    
-    this.socket = io(baseUrl, {
-      transports: ['websocket', 'polling'],
-      timeout: 5000,
-      autoConnect: true
-    });
-
-    this.socket.on('connect', () => {
-      console.log('✅ WebSocket connected to signaling server');
-      this.connectionAttempts = 0;
-      this.fallbackMode = false;
-      
-      // Join the room
-      this.socket!.emit('join-room', { roomId, userId });
-    });
-
-    this.socket.on('ice-servers', (data) => {
-      console.log('📡 Received ICE servers:', data.servers);
-    });
-
-    this.socket.on('room-participants', (data) => {
-      console.log('👥 Room participants via WebSocket:', data.participants);
-      if (this.callbacks.onParticipantsUpdate) {
-        this.callbacks.onParticipantsUpdate(data.participants);
-      }
-      resolve();
-    });
+  private setupEventListeners() {
+    if (!this.socket) return;
 
     this.socket.on('user-connected', (data) => {
-      console.log('👤 User connected via WebSocket:', data);
+      console.log('👤 User connected event:', data);
       if (this.callbacks.onUserConnected) {
         this.callbacks.onUserConnected(data);
       }
     });
 
     this.socket.on('user-disconnected', (data) => {
-      console.log('👤 User disconnected via WebSocket:', data);
+      console.log('👤 User disconnected event:', data);
       if (this.callbacks.onUserDisconnected) {
         this.callbacks.onUserDisconnected(data);
       }
     });
 
-    // WebRTC signaling events
+    this.socket.on('participants-update', (data) => {
+      console.log('👥 Participants update:', data);
+      if (this.callbacks.onParticipantsUpdate) {
+        this.callbacks.onParticipantsUpdate(data.participants || []);
+      }
+    });
+
     this.socket.on('offer', (data) => {
-      console.log('📤 Received offer via WebSocket:', data);
+      console.log('📤 Received offer:', data);
       if (this.callbacks.onOffer) {
         this.callbacks.onOffer(data);
       }
     });
 
     this.socket.on('answer', (data) => {
-      console.log('📥 Received answer via WebSocket:', data);
+      console.log('📥 Received answer:', data);
       if (this.callbacks.onAnswer) {
         this.callbacks.onAnswer(data);
       }
     });
 
-    this.socket.on('ice', (data) => {
-      console.log('🧊 Received ICE candidate via WebSocket:', data);
+    this.socket.on('ice-candidate', (data) => {
+      console.log('🧊 Received ICE candidate:', data);
       if (this.callbacks.onIceCandidate) {
         this.callbacks.onIceCandidate(data);
       }
     });
 
-    this.socket.on('connect_error', (error) => {
-      console.warn(`⚠️ WebSocket connection failed (attempt ${this.connectionAttempts + 1}):`, error);
-      this.connectionAttempts++;
-      
-      if (this.connectionAttempts >= this.maxRetries) {
-        console.log('❌ Max WebSocket retries reached, enabling fallback mode');
-        this.fallbackMode = true;
+    this.socket.on('room-error', (error) => {
+      console.error('🏠 Room error:', error);
+      // Don't propagate TypeID errors to UI
+      if (!error.message?.includes('TypeID')) {
         if (this.callbacks.onError) {
-          this.callbacks.onError({ message: 'WebSocket connection failed, operating in fallback mode' });
+          this.callbacks.onError(error);
         }
-        resolve(); // Resolve even in fallback mode
-      } else {
-        this.retryTimeout = setTimeout(() => {
-          this.connectWithRetry(roomId, userId, resolve, reject);
-        }, 2000 * this.connectionAttempts);
-      }
-    });
-
-    this.socket.on('error', (error) => {
-      console.error('❌ WebSocket error:', error);
-      if (this.callbacks.onError) {
-        this.callbacks.onError(error);
       }
     });
   }
 
-  sendOffer(targetUserId: string, offer: RTCSessionDescription) {
-    if (this.socket && this.socket.connected && this.currentRoomId) {
-      console.log('📤 Sending offer to:', targetUserId);
-      this.socket.emit('offer', {
-        roomId: this.currentRoomId,
-        targetSocketId: targetUserId,
-        offer: offer
-      });
+  async joinRoom(roomId: string, userId: string): Promise<void> {
+    console.log(`🏠 Joining room: ${roomId} as user: ${userId}`);
+    
+    this.currentRoom = roomId;
+    this.currentUserId = userId;
+
+    if (!this.socket || this.fallbackMode) {
+      await this.connect();
+    }
+
+    if (this.socket && this.isConnected && !this.fallbackMode) {
+      try {
+        this.socket.emit('join-room', {
+          roomId,
+          userId,
+          timestamp: Date.now()
+        });
+        console.log('✅ Join room request sent');
+      } catch (error) {
+        console.error('❌ Failed to join room:', error);
+        if (error.message?.includes('TypeID')) {
+          console.warn('⚠️ TypeID error ignored, continuing in fallback mode');
+          this.fallbackMode = true;
+        }
+      }
+    } else {
+      console.warn('⚠️ Operating in fallback mode - no server connection');
+      this.fallbackMode = true;
     }
   }
 
-  sendAnswer(targetUserId: string, answer: RTCSessionDescription) {
-    if (this.socket && this.socket.connected && this.currentRoomId) {
-      console.log('📥 Sending answer to:', targetUserId);
-      this.socket.emit('answer', {
-        roomId: this.currentRoomId,
-        targetSocketId: targetUserId,
-        answer: answer
-      });
+  sendOffer(targetUserId: string, offer: RTCSessionDescriptionInit): void {
+    console.log(`📤 Sending offer to: ${targetUserId}`);
+    
+    if (this.socket && this.isConnected && !this.fallbackMode) {
+      try {
+        this.socket.emit('offer', {
+          targetUserId,
+          offer,
+          roomId: this.currentRoom,
+          fromUserId: this.currentUserId
+        });
+      } catch (error) {
+        console.error('❌ Failed to send offer:', error);
+      }
+    } else {
+      console.warn('⚠️ Cannot send offer - no connection');
     }
   }
 
-  sendIceCandidate(targetUserId: string, candidate: RTCIceCandidate) {
-    if (this.socket && this.socket.connected && this.currentRoomId) {
-      console.log('🧊 Sending ICE candidate to:', targetUserId);
-      this.socket.emit('ice', {
-        roomId: this.currentRoomId,
-        targetSocketId: targetUserId,
-        candidate: candidate
-      });
+  sendAnswer(targetUserId: string, answer: RTCSessionDescriptionInit): void {
+    console.log(`📥 Sending answer to: ${targetUserId}`);
+    
+    if (this.socket && this.isConnected && !this.fallbackMode) {
+      try {
+        this.socket.emit('answer', {
+          targetUserId,
+          answer,
+          roomId: this.currentRoom,
+          fromUserId: this.currentUserId
+        });
+      } catch (error) {
+        console.error('❌ Failed to send answer:', error);
+      }
+    } else {
+      console.warn('⚠️ Cannot send answer - no connection');
+    }
+  }
+
+  sendIceCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
+    console.log(`🧊 Sending ICE candidate to: ${targetUserId}`);
+    
+    if (this.socket && this.isConnected && !this.fallbackMode) {
+      try {
+        this.socket.emit('ice-candidate', {
+          targetUserId,
+          candidate,
+          roomId: this.currentRoom,
+          fromUserId: this.currentUserId
+        });
+      } catch (error) {
+        console.error('❌ Failed to send ICE candidate:', error);
+      }
+    } else {
+      console.warn('⚠️ Cannot send ICE candidate - no connection');
     }
   }
 
@@ -171,25 +256,24 @@ class WebSocketSignalingService {
     return this.fallbackMode;
   }
 
-  disconnect() {
+  isReady(): boolean {
+    return this.isConnected && !this.fallbackMode;
+  }
+
+  disconnect(): void {
     console.log('🔌 Disconnecting from signaling server');
-    
-    if (this.retryTimeout) {
-      clearTimeout(this.retryTimeout);
-      this.retryTimeout = null;
-    }
     
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
     }
     
-    this.connectionAttempts = 0;
-    this.fallbackMode = false;
-    this.currentRoomId = null;
+    this.isConnected = false;
+    this.currentRoom = null;
     this.currentUserId = null;
+    this.fallbackMode = false;
+    this.reconnectAttempts = 0;
   }
 }
 
-const signalingService = new WebSocketSignalingService();
-export default signalingService;
+export default new WebSocketSignalingService();

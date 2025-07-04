@@ -1,4 +1,3 @@
-
 import { useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
@@ -31,22 +30,10 @@ export const useParticipantManagement = ({
       participantId,
       streamId: stream.id,
       active: stream.active,
-      tracks: stream.getTracks().map(t => ({
-        kind: t.kind,
-        id: t.id,
-        enabled: t.enabled,
-        readyState: t.readyState
-      }))
+      tracks: stream.getTracks().length
     });
     
-    // Find if this participant exists in our list
-    const existingParticipant = participantList.find(p => p.id === participantId);
-    console.log('🔍 Existing participant lookup:', {
-      participantId,
-      found: !!existingParticipant,
-      existingParticipant
-    });
-    
+    // Update participant streams
     setParticipantStreams(prev => {
       const updated = {
         ...prev,
@@ -56,18 +43,24 @@ export const useParticipantManagement = ({
       return updated;
     });
     
+    // Update participant list
     setParticipantList(prev => {
-      const updated = prev.map(p => {
+      let updated = [...prev];
+      let participantFound = false;
+      
+      // Update existing participant
+      updated = updated.map(p => {
         if (p.id === participantId) {
-          console.log(`✅ Updating participant ${participantId} with video stream`);
-          return { ...p, hasVideo: true, active: true };
+          participantFound = true;
+          console.log(`✅ Updating existing participant ${participantId} with video stream`);
+          return { ...p, hasVideo: true, active: true, lastActive: Date.now() };
         }
         return p;
       });
       
-      // If participant not found, it might be a placeholder - update the first inactive one
-      if (!existingParticipant) {
-        console.log('⚠️ Participant not found in list, looking for placeholder to update');
+      // If participant not found, replace a placeholder
+      if (!participantFound) {
+        console.log('⚠️ Participant not found, looking for placeholder to replace');
         const placeholderIndex = updated.findIndex(p => p.id.startsWith('placeholder-') && !p.active);
         if (placeholderIndex !== -1) {
           console.log(`🔄 Replacing placeholder at index ${placeholderIndex} with participant ${participantId}`);
@@ -80,110 +73,90 @@ export const useParticipantManagement = ({
             selected: true,
             hasVideo: true
           };
+        } else {
+          // Add new participant if no placeholder available
+          console.log('➕ Adding new participant:', participantId);
+          updated.push({
+            id: participantId,
+            name: `Participante ${participantId.substring(0, 8)}`,
+            joinedAt: Date.now(),
+            lastActive: Date.now(),
+            active: true,
+            selected: true,
+            hasVideo: true
+          });
         }
       }
       
       return updated;
     });
     
+    // Show success toast
     toast({
       title: "Vídeo recebido",
-      description: `Stream de vídeo recebido do participante ${participantId}`,
+      description: `Stream de vídeo recebido do participante ${participantId.substring(0, 8)}`,
     });
+    
+    // Update video elements immediately
+    setTimeout(() => {
+      updateVideoElements(participantId, stream);
+    }, 100);
   };
 
-  // Set up WebRTC stream callback
-  useEffect(() => {
-    setStreamCallback(handleParticipantStream);
-  }, [setParticipantStreams, setParticipantList, toast]);
-
-  useEffect(() => {
-    if (participantList.length === 0) {
-      const initialParticipants = Array(4).fill(0).map((_, i) => ({
-        id: `placeholder-${i}`,
-        name: `Participante ${i + 1}`,
-        joinedAt: Date.now(),
-        lastActive: Date.now(),
-        active: false,
-        selected: false,
-        hasVideo: false
-      }));
-      setParticipantList(initialParticipants);
-    }
-  }, [participantList.length, setParticipantList]);
-
-  useEffect(() => {
-    console.log('🔍 Available participant streams:', Object.keys(participantStreams));
-    console.log('🔍 Participants with streams:', Object.keys(participantStreams).length);
+  const updateVideoElements = (participantId: string, stream: MediaStream) => {
+    console.log('🎥 Updating video elements for participant:', participantId);
     
-    Object.entries(participantStreams).forEach(([participantId, stream]) => {
-      const participant = participantList.find(p => p.id === participantId);
-      if (participant) {
-        console.log(`📹 Processing stream for participant ${participantId}:`, {
-          hasVideo: participant.hasVideo,
-          selected: participant.selected,
-          streamTracks: stream.getTracks().length
-        });
-        
-        if (participant.selected) {
-          const previewContainer = document.getElementById(`preview-participant-video-${participantId}`);
-          updateVideoElement(previewContainer, stream);
-          
-          // Send stream to transmission window
-          if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-            console.log(`📤 Sending stream to transmission window for participant ${participantId}`);
-            
-            // First notify about the stream
-            transmissionWindowRef.current.postMessage({
-              type: 'video-stream',
-              participantId: participantId,
-              hasStream: true,
-              timestamp: Date.now()
-            }, '*');
-            
-            // Then update the video element in the transmission window
-            setTimeout(() => {
-              if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-                const transmissionDoc = transmissionWindowRef.current.document;
-                if (transmissionDoc) {
-                  // Find existing video element or create slot
-                  const existingVideo = transmissionDoc.querySelector(`[data-participant-id="${participantId}"]`);
-                  if (existingVideo && existingVideo instanceof HTMLVideoElement) {
-                    console.log(`✅ Found existing video element for ${participantId}, updating stream`);
-                    existingVideo.srcObject = stream;
-                    existingVideo.play().catch(e => console.error('Play error:', e));
-                  } else {
-                    // Try to find the slot by searching all participant slots
-                    const slots = transmissionDoc.querySelectorAll('[id^="participant-slot-"]');
-                    for (let slot of slots) {
-                      const video = slot.querySelector('video');
-                      if (video && video.dataset.participantId === participantId) {
-                        console.log(`✅ Found video in slot for ${participantId}, updating stream`);
-                        video.srcObject = stream;
-                        video.play().catch(e => console.error('Play error:', e));
-                        break;
-                      }
-                    }
-                  }
-                }
+    // Update preview video
+    const previewContainer = document.getElementById(`preview-participant-video-${participantId}`);
+    if (previewContainer) {
+      updateVideoElement(previewContainer, stream);
+    }
+    
+    // Update grid video
+    const gridContainer = document.getElementById(`participant-video-${participantId}`);
+    if (gridContainer) {
+      updateVideoElement(gridContainer, stream);
+    }
+    
+    // Update transmission window
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      console.log(`📤 Sending stream to transmission window for participant ${participantId}`);
+      
+      transmissionWindowRef.current.postMessage({
+        type: 'video-stream',
+        participantId: participantId,
+        hasStream: true,
+        timestamp: Date.now()
+      }, '*');
+      
+      // Update video in transmission window
+      setTimeout(() => {
+        if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+          const transmissionDoc = transmissionWindowRef.current.document;
+          if (transmissionDoc) {
+            const slots = transmissionDoc.querySelectorAll('[id^="participant-slot-"]');
+            for (let slot of slots) {
+              const video = slot.querySelector('video');
+              if (video && video.dataset.participantId === participantId) {
+                console.log(`✅ Updating transmission video for ${participantId}`);
+                video.srcObject = stream;
+                video.play().catch(e => console.error('Play error:', e));
+                break;
               }
-            }, 100);
+            }
           }
         }
-        
-        const gridContainer = document.getElementById(`participant-video-${participantId}`);
-        updateVideoElement(gridContainer, stream);
-      }
-    });
-  }, [participantList, participantStreams, transmissionWindowRef]);
+      }, 200);
+    }
+  };
 
-  const updateVideoElement = (container: HTMLElement | null, stream: MediaStream) => {
+  const updateVideoElement = (container: HTMLElement, stream: MediaStream) => {
     if (!container) {
       console.warn("Video container not found");
       return;
     }
     
-    let videoElement = container.querySelector('video');
+    let videoElement = container.querySelector('video') as HTMLVideoElement;
     
     if (!videoElement) {
       videoElement = document.createElement('video');
@@ -198,16 +171,12 @@ export const useParticipantManagement = ({
     }
     
     if (videoElement.srcObject !== stream) {
-      console.log(`Setting video source for ${container.id} to stream with ${stream.getTracks().length} tracks`);
-      stream.getTracks().forEach(track => {
-        console.log(`- Track: ${track.kind} (${track.id}), enabled=${track.enabled}, muted=${track.muted}, state=${track.readyState}`);
-      });
-      
+      console.log(`Setting video source for ${container.id}`);
       videoElement.srcObject = stream;
       
       videoElement.play().catch(err => {
         console.error(`Error playing video in ${container.id}:`, err);
-        
+        // Retry after a short delay
         setTimeout(() => {
           videoElement.play().catch(retryErr => {
             console.error(`Error playing video in ${container.id} on retry:`, retryErr);
@@ -217,94 +186,74 @@ export const useParticipantManagement = ({
     }
   };
 
-  const handleParticipantTrack = (participantId: string, track: MediaStreamTrack) => {
-    console.log(`Processing track from participant ${participantId}:`, track);
+  // Set up WebRTC stream callback
+  useEffect(() => {
+    console.log('🔧 Setting up WebRTC stream callback');
+    setStreamCallback(handleParticipantStream);
     
-    setParticipantStreams(prev => {
-      if (prev[participantId]) {
-        const existingStream = prev[participantId];
-        const trackExists = existingStream.getTracks().some(t => t.id === track.id);
-        
-        if (!trackExists) {
-          console.log(`Adding new track ${track.id} to existing stream for participant ${participantId}`);
-          existingStream.addTrack(track);
-          return { ...prev };
-        }
-        console.log(`Track ${track.id} already exists in stream for participant ${participantId}`);
-        return prev;
-      }
-      
-      console.log(`Creating new stream for participant ${participantId} with track ${track.id}`);
-      const newStream = new MediaStream([track]);
-      
-      return {
-        ...prev,
-        [participantId]: newStream
-      };
-    });
-    
-    setParticipantList(prev => 
-      prev.map(p => p.id === participantId ? { ...p, hasVideo: true } : p)
-    );
-    
-    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      try {
-        const channel = new BroadcastChannel(`live-session-${sessionId}`);
-        channel.postMessage({
-          type: 'video-stream',
-          participantId,
-          stream: { hasStream: true, trackId: track.id }
-        });
-        setTimeout(() => channel.close(), 500);
-      } catch (e) {
-        console.error("Error sending video stream notification to transmission window:", e);
-      }
+    // Cleanup function
+    return () => {
+      console.log('🧹 Cleaning up WebRTC stream callback');
+    };
+  }, []);
+
+  // Initialize placeholder participants
+  useEffect(() => {
+    if (participantList.length === 0) {
+      console.log('🎭 Initializing placeholder participants');
+      const initialParticipants = Array(4).fill(0).map((_, i) => ({
+        id: `placeholder-${i}`,
+        name: `Participante ${i + 1}`,
+        joinedAt: Date.now(),
+        lastActive: Date.now(),
+        active: false,
+        selected: false,
+        hasVideo: false
+      }));
+      setParticipantList(initialParticipants);
     }
-  };
+  }, [participantList.length, setParticipantList]);
+
+  // Update video elements when streams change
+  useEffect(() => {
+    console.log('🔍 Processing participant streams:', Object.keys(participantStreams).length);
+    
+    Object.entries(participantStreams).forEach(([participantId, stream]) => {
+      const participant = participantList.find(p => p.id === participantId);
+      if (participant && participant.hasVideo) {
+        console.log(`📹 Processing stream for participant ${participantId}`);
+        updateVideoElements(participantId, stream);
+      }
+    });
+  }, [participantList, participantStreams, transmissionWindowRef]);
 
   const handleParticipantSelect = (id: string) => {
     setParticipantList(prev => {
       const updatedList = prev.map(p => p.id === id ? { ...p, selected: !p.selected } : p);
       
+      // Update transmission window
       if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
         transmissionWindowRef.current.postMessage({
           type: 'update-participants',
           participants: updatedList
         }, '*');
         
-        // If selecting and we have a stream, send it to transmission window
+        // If selecting and we have a stream, send it
         const participant = updatedList.find(p => p.id === id);
         if (participant?.selected && participantStreams[id]) {
           const stream = participantStreams[id];
-          console.log(`📹 Participant ${id} selected, sending stream to transmission window`);
+          console.log(`📹 Participant ${id} selected, updating transmission`);
           
-          // Notify about stream availability
-          transmissionWindowRef.current.postMessage({
-            type: 'video-stream',
-            participantId: id,
-            hasStream: true,
-            timestamp: Date.now()
-          }, '*');
-          
-          // Update video element directly
           setTimeout(() => {
             if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-              const transmissionDoc = transmissionWindowRef.current.document;
-              if (transmissionDoc) {
-                // Find slot for this participant
-                const slots = transmissionDoc.querySelectorAll('[id^="participant-slot-"]');
-                for (let slot of slots) {
-                  const video = slot.querySelector('video');
-                  if (video && video.dataset.participantId === id) {
-                    console.log(`✅ Updating stream for selected participant ${id}`);
-                    video.srcObject = stream;
-                    video.play().catch(e => console.error('Play error:', e));
-                    break;
-                  }
-                }
-              }
+              transmissionWindowRef.current.postMessage({
+                type: 'video-stream',
+                participantId: id,
+                hasStream: true,
+                timestamp: Date.now()
+              }, '*');
             }
-          }, 200);
+          }, 100);
         }
       }
       
@@ -316,13 +265,13 @@ export const useParticipantManagement = ({
     setParticipantList(prev => {
       const newList = prev.filter(p => p.id !== id);
       
-      const nextId = `placeholder-${prev.length}`;
-      const now = Date.now();
+      // Add a new placeholder
+      const nextId = `placeholder-${Date.now()}`;
       const newParticipant = {
         id: nextId,
         name: `Participante ${newList.length + 1}`,
-        joinedAt: now,
-        lastActive: now,
+        joinedAt: Date.now(),
+        lastActive: Date.now(),
         active: false,
         selected: false,
         hasVideo: false
@@ -330,28 +279,57 @@ export const useParticipantManagement = ({
       
       return [...newList, newParticipant];
     });
+    
+    // Remove stream
+    setParticipantStreams(prev => {
+      const updated = { ...prev };
+      delete updated[id];
+      return updated;
+    });
   };
 
   const handleParticipantJoin = (participantId: string) => {
-    console.log("Participant joined via backend:", participantId);
+    console.log("Participant joined via WebRTC:", participantId);
     
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === participantId);
       if (exists) {
-        return prev.map(p => p.id === participantId ? { ...p, active: true, hasVideo: true, lastActive: Date.now(), connectedAt: Date.now() } : p);
+        return prev.map(p => p.id === participantId ? { 
+          ...p, 
+          active: true, 
+          lastActive: Date.now(), 
+          connectedAt: Date.now() 
+        } : p);
       }
       
-      const participantName = `Participante ${prev.filter(p => !p.id.startsWith('placeholder-')).length + 1}`;
-      const now = Date.now();
+      // Find placeholder to replace
+      const placeholderIndex = prev.findIndex(p => p.id.startsWith('placeholder-') && !p.active);
+      if (placeholderIndex !== -1) {
+        const updated = [...prev];
+        updated[placeholderIndex] = {
+          id: participantId,
+          name: `Participante ${participantId.substring(0, 8)}`,
+          joinedAt: Date.now(),
+          lastActive: Date.now(),
+          active: true,
+          selected: false,
+          hasVideo: false,
+          connectedAt: Date.now()
+        };
+        return updated;
+      }
+      
+      // Add new participant if no placeholder
+      const participantName = `Participante ${participantId.substring(0, 8)}`;
       const newParticipant = {
         id: participantId,
         name: participantName,
-        joinedAt: now,
-        lastActive: now,
+        joinedAt: Date.now(),
+        lastActive: Date.now(),
         active: true,
-        selected: true,
-        hasVideo: true,
-        connectedAt: now
+        selected: false,
+        hasVideo: false,
+        connectedAt: Date.now()
       };
       
       if (sessionId) {
@@ -360,13 +338,13 @@ export const useParticipantManagement = ({
       
       toast({
         title: "Novo participante conectado",
-        description: `${participantName} se conectou à sessão via backend.`,
+        description: `${participantName} se conectou à sessão.`,
       });
       
-      const filteredList = prev.filter(p => !p.id.startsWith('placeholder-') || p.active);
-      return [...filteredList, newParticipant];
+      return [...prev, newParticipant];
     });
     
+    // Update transmission window
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
       transmissionWindowRef.current.postMessage({
         type: 'participant-joined',
@@ -376,6 +354,37 @@ export const useParticipantManagement = ({
     }
     
     setTimeout(updateTransmissionParticipants, 500);
+  };
+
+  // Keep existing handleParticipantTrack method for compatibility
+  const handleParticipantTrack = (participantId: string, track: MediaStreamTrack) => {
+    console.log(`📺 Processing track from participant ${participantId}:`, track.kind);
+    
+    setParticipantStreams(prev => {
+      if (prev[participantId]) {
+        const existingStream = prev[participantId];
+        const trackExists = existingStream.getTracks().some(t => t.id === track.id);
+        
+        if (!trackExists) {
+          console.log(`Adding new track ${track.id} to existing stream`);
+          existingStream.addTrack(track);
+          return { ...prev };
+        }
+        return prev;
+      }
+      
+      console.log(`Creating new stream for participant ${participantId}`);
+      const newStream = new MediaStream([track]);
+      
+      return {
+        ...prev,
+        [participantId]: newStream
+      };
+    });
+    
+    setParticipantList(prev => 
+      prev.map(p => p.id === participantId ? { ...p, hasVideo: true, active: true } : p)
+    );
   };
 
   return {
