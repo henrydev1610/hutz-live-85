@@ -1,47 +1,45 @@
 
 import signalingService from '@/services/WebSocketSignalingService';
-import { toast } from 'sonner';
 import { ConnectionHandler } from './ConnectionHandler';
 import { SignalingHandler } from './SignalingHandler';
+import { ParticipantManager } from './ParticipantManager';
+import { WebRTCCallbacks } from './WebRTCCallbacks';
+import { MEDIA_CONSTRAINTS } from './WebRTCConfig';
 
 export class WebRTCManager {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private localStream: MediaStream | null = null;
   private roomId: string | null = null;
   private isHost: boolean = false;
-  private participants: Map<string, any> = new Map();
-  private onStreamCallback: ((participantId: string, stream: MediaStream) => void) | null = null;
-  private onParticipantJoinCallback: ((participantId: string) => void) | null = null;
   private connectionHandler: ConnectionHandler;
   private signalingHandler: SignalingHandler;
+  private participantManager: ParticipantManager;
+  private callbacksManager: WebRTCCallbacks;
 
   constructor() {
     console.log('🔧 WebRTC Manager initialized');
+    this.participantManager = new ParticipantManager();
+    this.callbacksManager = new WebRTCCallbacks();
     this.connectionHandler = new ConnectionHandler(this.peerConnections, () => this.localStream);
-    this.signalingHandler = new SignalingHandler(this.peerConnections, this.participants);
+    this.signalingHandler = new SignalingHandler(this.peerConnections, new Map());
     
     // Bind callbacks
     this.connectionHandler.setStreamCallback((participantId, stream) => {
-      if (this.onStreamCallback) {
-        this.onStreamCallback(participantId, stream);
-      }
+      this.callbacksManager.triggerStreamCallback(participantId, stream);
     });
     
     this.connectionHandler.setParticipantJoinCallback((participantId) => {
-      if (this.onParticipantJoinCallback) {
-        this.onParticipantJoinCallback(participantId);
-      }
+      this.callbacksManager.triggerParticipantJoinCallback(participantId);
     });
   }
 
   setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
-    this.onStreamCallback = callback;
-    console.log('📞 Stream callback set');
+    this.callbacksManager.setOnStreamCallback(callback);
   }
 
   setOnParticipantJoinCallback(callback: (participantId: string) => void) {
-    this.onParticipantJoinCallback = callback;
-    console.log('👤 Participant join callback set');
+    this.callbacksManager.setOnParticipantJoinCallback(callback);
+    this.participantManager.setOnParticipantJoinCallback(callback);
   }
 
   async initializeAsHost(sessionId: string): Promise<void> {
@@ -50,38 +48,29 @@ export class WebRTCManager {
     this.isHost = true;
 
     try {
-      signalingService.setCallbacks({
-        onUserConnected: (data) => {
+      this.callbacksManager.setupHostCallbacks(
+        (data) => {
           console.log('👤 New participant connected:', data);
           const participantId = data.userId || data.id || data.socketId;
-          this.addParticipant(participantId, data);
+          this.participantManager.addParticipant(participantId, data);
           
-          if (this.onParticipantJoinCallback) {
-            console.log('🚀 Immediately calling participant join callback for:', participantId);
-            this.onParticipantJoinCallback(participantId);
-          }
-          
+          this.callbacksManager.triggerParticipantJoinCallback(participantId);
           this.connectionHandler.startHeartbeat(participantId);
         },
-        onUserDisconnected: (data) => {
+        (data) => {
           console.log('👤 Participant disconnected:', data);
           const participantId = data.userId || data.id || data.socketId;
-          this.removeParticipant(participantId);
+          this.participantManager.removeParticipant(participantId);
+          this.removeParticipantConnection(participantId);
         },
-        onParticipantsUpdate: (participants) => {
+        (participants) => {
           console.log('👥 Participants list updated:', participants);
-          this.updateParticipantsList(participants);
+          this.participantManager.updateParticipantsList(participants);
         },
-        onOffer: this.signalingHandler.handleOffer.bind(this.signalingHandler),
-        onAnswer: this.signalingHandler.handleAnswer.bind(this.signalingHandler),
-        onIceCandidate: this.signalingHandler.handleIceCandidate.bind(this.signalingHandler),
-        onError: (error) => {
-          console.error('❌ Signaling error:', error);
-          if (!error.message?.includes('TypeID') && !error.message?.includes('UserMessageID')) {
-            toast.error(`Erro de sinalização: ${error.message}`);
-          }
-        }
-      });
+        this.signalingHandler.handleOffer.bind(this.signalingHandler),
+        this.signalingHandler.handleAnswer.bind(this.signalingHandler),
+        this.signalingHandler.handleIceCandidate.bind(this.signalingHandler)
+      );
 
       await signalingService.joinRoom(sessionId, `host-${Date.now()}`);
       console.log('✅ Host connected to signaling server');
@@ -102,17 +91,14 @@ export class WebRTCManager {
         this.localStream = stream;
         console.log('📹 Using provided stream:', stream.getTracks().length, 'tracks');
       } else {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'user' }, 
-          audio: true 
-        });
-        
+        const mediaStream = await navigator.mediaDevices.getUserMedia(MEDIA_CONSTRAINTS);
         this.localStream = mediaStream;
         console.log('📹 Local stream obtained:', mediaStream.getTracks().length, 'tracks');
       }
 
-      signalingService.setCallbacks({
-        onUserConnected: (data) => {
+      this.callbacksManager.setupParticipantCallbacks(
+        participantId,
+        (data) => {
           console.log('🏠 Host or participant connected:', data);
           const hostId = data.userId || data.id || data.socketId;
           if (hostId !== participantId) {
@@ -120,7 +106,7 @@ export class WebRTCManager {
             this.connectionHandler.initiateCallWithRetry(hostId);
           }
         },
-        onParticipantsUpdate: (participants) => {
+        (participants) => {
           console.log('👥 Participants updated:', participants);
           participants.forEach(participant => {
             const pId = participant.userId || participant.id || participant.socketId;
@@ -130,13 +116,10 @@ export class WebRTCManager {
             }
           });
         },
-        onOffer: this.signalingHandler.handleOffer.bind(this.signalingHandler),
-        onAnswer: this.signalingHandler.handleAnswer.bind(this.signalingHandler),
-        onIceCandidate: this.signalingHandler.handleIceCandidate.bind(this.signalingHandler),
-        onError: (error) => {
-          console.error('❌ Participant signaling error:', error);
-        }
-      });
+        this.signalingHandler.handleOffer.bind(this.signalingHandler),
+        this.signalingHandler.handleAnswer.bind(this.signalingHandler),
+        this.signalingHandler.handleIceCandidate.bind(this.signalingHandler)
+      );
 
       await signalingService.joinRoom(sessionId, participantId);
       console.log('✅ Participant connected to signaling server');
@@ -147,93 +130,20 @@ export class WebRTCManager {
     }
   }
 
-  private updateParticipantsList(participants: any[]) {
-    console.log('🔄 Updating participants list with:', participants);
-    
-    this.participants.clear();
-    
-    participants.forEach(participant => {
-      const participantId = participant.userId || participant.id || participant.socketId;
-      const participantData = {
-        id: participantId,
-        name: participant.userName || participant.name || `Participante ${participantId?.substring(0, 4) || 'Unknown'}`,
-        joinedAt: participant.joinedAt || Date.now(),
-        lastActive: participant.lastActive || Date.now(),
-        active: participant.active !== false,
-        hasVideo: participant.hasVideo || false,
-        selected: false,
-        browserType: participant.browserType || 'unknown'
-      };
-      
-      this.participants.set(participantId, participantData);
-      console.log(`📝 Updated participant: ${participantId}`);
-      
-      if (this.onParticipantJoinCallback) {
-        this.onParticipantJoinCallback(participantId);
-      }
-    });
-    
-    this.notifyParticipantsChanged();
-  }
-
-  private addParticipant(participantId: string, data: any) {
-    const participant = {
-      id: participantId,
-      name: data.userName || `Participante ${participantId.substring(0, 4)}`,
-      joinedAt: data.timestamp || Date.now(),
-      lastActive: Date.now(),
-      active: true,
-      hasVideo: false,
-      selected: false,
-      browserType: data.browserType || 'unknown'
-    };
-    
-    console.log('➕ Adding participant:', participantId);
-    this.participants.set(participantId, participant);
-    this.notifyParticipantsChanged();
-  }
-
-  private removeParticipant(participantId: string) {
-    if (this.participants.has(participantId)) {
-      this.participants.delete(participantId);
-      this.notifyParticipantsChanged();
-    }
-    
+  private removeParticipantConnection(participantId: string) {
     if (this.peerConnections.has(participantId)) {
       this.peerConnections.get(participantId)?.close();
       this.peerConnections.delete(participantId);
     }
-    
     this.connectionHandler.clearRetries(participantId);
   }
 
-  private notifyParticipantsChanged() {
-    const participantsList = Array.from(this.participants.values());
-    console.log('📢 Notifying participants change:', participantsList.length);
-    
-    window.dispatchEvent(new CustomEvent('participants-updated', {
-      detail: { participants: participantsList }
-    }));
-  }
-
   getParticipants() {
-    return Array.from(this.participants.values());
+    return this.participantManager.getParticipants();
   }
 
   selectParticipant(participantId: string) {
-    console.log(`👁️ Selecting participant: ${participantId}`);
-    
-    this.participants.forEach(participant => {
-      participant.selected = false;
-    });
-    
-    const participant = this.participants.get(participantId);
-    if (participant) {
-      participant.selected = true;
-      console.log(`✅ Participant ${participantId} selected`);
-    }
-    
-    this.notifyParticipantsChanged();
+    this.participantManager.selectParticipant(participantId);
   }
 
   cleanup() {
@@ -254,7 +164,7 @@ export class WebRTCManager {
       this.localStream = null;
     }
     
-    this.participants.clear();
+    this.participantManager.cleanup();
     signalingService.disconnect();
     
     this.roomId = null;
