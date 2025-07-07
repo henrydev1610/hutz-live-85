@@ -13,6 +13,13 @@ interface SignalingCallbacks {
   onError?: (error: any) => void;
 }
 
+// Type for Socket.IO error objects that may have additional properties
+interface SocketIOError extends Error {
+  description?: string;
+  context?: any;
+  type?: string;
+}
+
 class WebSocketSignalingService {
   private socket: Socket | null = null;
   private callbacks: SignalingCallbacks = {};
@@ -33,13 +40,13 @@ class WebSocketSignalingService {
   }
 
   async connect(serverUrl?: string): Promise<void> {
-    // Usar a URL correta do servidor Node.js
+    // Use correct Node.js server URL
     const url = serverUrl || 'http://localhost:3001';
     
     console.log(`🔌 Connecting to signaling server: ${url}`);
     
     try {
-      // Desconectar socket anterior se existir
+      // Disconnect previous socket if exists
       if (this.socket) {
         this.socket.disconnect();
         this.socket = null;
@@ -47,14 +54,16 @@ class WebSocketSignalingService {
 
       this.socket = io(url, {
         transports: ['websocket', 'polling'],
-        timeout: 10000,
+        timeout: 15000,
         forceNew: true,
         reconnection: true,
         reconnectionAttempts: this.maxReconnectAttempts,
-        reconnectionDelay: 1000,
-        // Adicionar configurações específicas para evitar CORS
+        reconnectionDelay: 2000,
+        reconnectionDelayMax: 5000,
+        // CORS configuration
         withCredentials: false,
-        autoConnect: true
+        autoConnect: true,
+        upgrade: true
       });
 
       return new Promise((resolve, reject) => {
@@ -62,7 +71,7 @@ class WebSocketSignalingService {
           console.warn('⚠️ Connection timeout, enabling fallback mode');
           this.fallbackMode = true;
           resolve();
-        }, 8000);
+        }, 12000);
 
         this.socket!.on('connect', () => {
           clearTimeout(connectTimeout);
@@ -73,14 +82,14 @@ class WebSocketSignalingService {
           resolve();
         });
 
-        this.socket!.on('connect_error', (error) => {
+        this.socket!.on('connect_error', (error: SocketIOError) => {
           clearTimeout(connectTimeout);
           console.error('❌ Connection error:', error);
           console.error('Error details:', {
             message: error.message,
-            description: error.description,
-            context: error.context,
-            type: error.type
+            description: error.description || 'No description',
+            context: error.context || 'No context',
+            type: error.type || 'No type'
           });
           
           this.reconnectAttempts++;
@@ -88,13 +97,13 @@ class WebSocketSignalingService {
           if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             console.warn('⚠️ Max reconnection attempts reached, enabling fallback mode');
             this.fallbackMode = true;
-            resolve(); // Não rejeitar para permitir fallback
+            resolve(); // Don't reject to allow fallback
           } else {
             console.log(`🔄 Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
-            // Não rejeitar ainda, deixar o Socket.IO tentar reconectar
+            // Don't reject yet, let Socket.IO try to reconnect
             setTimeout(() => {
               if (!this.isConnected && this.reconnectAttempts < this.maxReconnectAttempts) {
-                resolve(); // Resolver em fallback se ainda não conectou
+                resolve(); // Resolve in fallback if still not connected
               }
             }, 3000);
           }
@@ -110,7 +119,7 @@ class WebSocketSignalingService {
           }
         });
 
-        this.socket!.on('error', (error) => {
+        this.socket!.on('error', (error: SocketIOError) => {
           console.error('❌ Socket error:', error);
           
           // Handle TypeID validation errors specifically
@@ -130,7 +139,7 @@ class WebSocketSignalingService {
       console.error('❌ Failed to initialize socket connection:', error);
       this.fallbackMode = true;
       console.log('⚠️ Continuing in fallback mode');
-      // Não lançar erro para permitir que a aplicação continue
+      // Don't throw error to allow application to continue
     }
   }
 
@@ -221,7 +230,7 @@ class WebSocketSignalingService {
     this.currentRoom = roomId;
     this.currentUserId = userId;
 
-    // Tentar conectar se não estiver conectado
+    // Try to connect if not connected
     if (!this.socket || !this.isConnected) {
       console.log('🔄 Socket not connected, attempting to connect...');
       await this.connect();
@@ -236,7 +245,7 @@ class WebSocketSignalingService {
           timestamp: Date.now()
         });
         console.log('✅ Join room request sent successfully');
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Failed to join room:', error);
         if (error.message?.includes('TypeID')) {
           console.warn('⚠️ TypeID error ignored, continuing in fallback mode');
