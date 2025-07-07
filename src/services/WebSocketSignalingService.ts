@@ -1,5 +1,6 @@
 
 import { io, Socket } from 'socket.io-client';
+import { getWebSocketURL } from '@/utils/connectionUtils';
 
 interface SignalingCallbacks {
   onUserConnected?: (data: any) => void;
@@ -64,7 +65,7 @@ class WebSocketSignalingService {
   }
 
   async connect(serverUrl?: string): Promise<void> {
-    const url = serverUrl || 'http://localhost:3001';
+    const url = serverUrl || getWebSocketURL();
     
     this.resetConnectionMetrics();
     console.log(`🔌 UNIFIED: Starting connection to ${url} (Mobile: ${this.isMobile}, Attempt: ${this.reconnectAttempts + 1})`);

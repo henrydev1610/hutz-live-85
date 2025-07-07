@@ -1,4 +1,6 @@
 
+import { getApiBaseURL } from '@/utils/connectionUtils';
+
 interface ParticipantInfo {
   id: string;
   name: string;
@@ -24,7 +26,7 @@ class HttpFallbackService {
   } = {};
 
   constructor() {
-    this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    this.baseUrl = import.meta.env.VITE_API_URL || getApiBaseURL();
   }
 
   async getRoomInfo(roomId: string): Promise<RoomInfo | null> {

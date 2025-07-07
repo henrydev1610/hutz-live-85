@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import { getWebSocketURL } from '@/utils/connectionUtils';
 
 interface MobileSignalingCallbacks {
   onConnected?: () => void;
@@ -40,7 +41,7 @@ class MobileWebSocketService {
   }
 
   private async _doConnect(serverUrl?: string): Promise<void> {
-    const url = serverUrl || 'http://localhost:3001';
+    const url = serverUrl || getWebSocketURL();
     
     console.log(`📱 MOBILE: Starting connection to ${url}`);
     
