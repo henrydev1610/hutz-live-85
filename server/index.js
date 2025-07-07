@@ -17,6 +17,7 @@ const server = http.createServer(app);
 const allowedOrigins = [
   process.env.FRONTEND_URL || "http://localhost:5173",
   "http://localhost:8080", // Lovable preview
+  "http://192.168.18.17:5173", // Rede local - IP da máquina
   "https://id-preview--f728da22-f48a-45b2-91e9-28492d654d7f.lovable.app", // Lovable staging
   /^https:\/\/.*\.lovableproject\.com$/, // Qualquer subdomínio lovableproject.com
   /^https:\/\/.*\.lovable\.app$/, // Qualquer subdomínio lovable.app
@@ -140,9 +141,12 @@ app.use((err, req, res, next) => {
 // Configurar porta
 const PORT = process.env.PORT || 3001;
 
-// Iniciar servidor
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+// Iniciar servidor - configurar para aceitar conexões de qualquer IP
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on 0.0.0.0:${PORT}`);
+  console.log(`🌐 Accessible at:`);
+  console.log(`   - Local: http://localhost:${PORT}`);
+  console.log(`   - Network: http://192.168.18.17:${PORT}`);
   console.log(`📡 Socket.IO server ready`);
   console.log(`🌐 Allowed origins: ${JSON.stringify(allowedOrigins)}`);
   console.log(`💾 Redis: ${process.env.REDIS_URL ? 'Enabled' : 'Disabled'}`);
