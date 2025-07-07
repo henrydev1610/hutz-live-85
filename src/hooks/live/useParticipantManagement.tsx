@@ -51,7 +51,6 @@ export const useParticipantManagement = ({
   useEffect(() => {
     console.log('🔧 Setting up IMMEDIATE WebRTC callbacks');
     
-    // Set callbacks immediately
     setStreamCallback(handleParticipantStream);
     setParticipantJoinCallback(handleParticipantJoin);
     
@@ -90,7 +89,7 @@ export const useParticipantManagement = ({
     }
   }, [participantList.length, setParticipantList]);
 
-  // Monitor stream changes and update videos immediately
+  // CRITICAL: Enhanced stream monitoring with DOM-ready checks
   useEffect(() => {
     console.log('🔍 CRITICAL Stream Monitor:', {
       totalStreams: Object.keys(participantStreams).length,
@@ -98,55 +97,69 @@ export const useParticipantManagement = ({
       realParticipants: participantList.filter(p => !p.id.startsWith('placeholder-')).length
     });
     
-    Object.entries(participantStreams).forEach(([participantId, stream]) => {
-      console.log(`📹 Processing stream for participant: ${participantId}`, {
-        streamActive: stream.active,
-        trackCount: stream.getTracks().length,
-        videoTracks: stream.getVideoTracks().length,
-        audioTracks: stream.getAudioTracks().length
+    // Wait for DOM to be ready before processing streams
+    const processStreams = () => {
+      Object.entries(participantStreams).forEach(([participantId, stream]) => {
+        console.log(`📹 Processing stream for participant: ${participantId}`, {
+          streamActive: stream.active,
+          trackCount: stream.getTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length
+        });
+        
+        const participant = participantList.find(p => p.id === participantId);
+        if (participant) {
+          console.log(`✅ Found participant ${participantId}, updating video display`);
+          
+          // Ensure participant is marked correctly BEFORE updating video
+          setParticipantList(prev => prev.map(p => 
+            p.id === participantId 
+              ? { ...p, hasVideo: true, active: true, lastActive: Date.now() }
+              : p
+          ));
+          
+          // Delay video update to ensure participant list is updated
+          setTimeout(() => {
+            updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
+          }, 100);
+          
+        } else {
+          console.warn(`⚠️ Stream received for unknown participant: ${participantId}`);
+          
+          // Add new real participant for this stream
+          const newParticipant: Participant = {
+            id: participantId,
+            name: `Participante ${participantId.substring(0, 8)}`,
+            joinedAt: Date.now(),
+            lastActive: Date.now(),
+            active: true,
+            selected: false,
+            hasVideo: true
+          };
+          
+          console.log(`➕ Adding new real participant: ${participantId}`);
+          setParticipantList(prev => [...prev, newParticipant]);
+          
+          // Update video display after adding participant
+          setTimeout(() => {
+            updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
+          }, 200);
+        }
       });
-      
-      const participant = participantList.find(p => p.id === participantId);
-      if (participant) {
-        console.log(`✅ Found participant ${participantId}, updating video display`);
-        updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
-        
-        // Ensure participant is marked as having video
-        setParticipantList(prev => prev.map(p => 
-          p.id === participantId 
-            ? { ...p, hasVideo: true, active: true, lastActive: Date.now() }
-            : p
-        ));
-      } else {
-        console.warn(`⚠️ Stream received for unknown participant: ${participantId}`);
-        
-        // Add new real participant for this stream
-        const newParticipant: Participant = {
-          id: participantId,
-          name: `Participante ${participantId.substring(0, 8)}`,
-          joinedAt: Date.now(),
-          lastActive: Date.now(),
-          active: true,
-          selected: false,
-          hasVideo: true
-        };
-        
-        console.log(`➕ Adding new real participant: ${participantId}`);
-        setParticipantList(prev => [...prev, newParticipant]);
-        
-        // Update video display
-        setTimeout(() => {
-          updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
-        }, 100);
-      }
-    });
+    };
+
+    // Process streams when DOM is ready
+    if (document.readyState === 'complete') {
+      processStreams();
+    } else {
+      window.addEventListener('load', processStreams);
+      return () => window.removeEventListener('load', processStreams);
+    }
   }, [participantList, participantStreams, transmissionWindowRef, updateVideoElementsImmediately, setParticipantList]);
 
-  // Add test connection function
   const testConnection = () => {
     console.log('🧪 Testing WebRTC connection...');
     
-    // Create a test participant
     const testParticipant: Participant = {
       id: `test-${Date.now()}`,
       name: 'Participante Teste',
@@ -158,20 +171,16 @@ export const useParticipantManagement = ({
     };
     
     setParticipantList(prev => {
-      // Remove any existing test participants
       const filtered = prev.filter(p => !p.id.startsWith('test-'));
       return [...filtered, testParticipant];
     });
     
-    // Try to get user media for testing
     navigator.mediaDevices.getUserMedia({ video: true, audio: false })
       .then(stream => {
         console.log('✅ Test stream obtained:', stream.getTracks().length, 'tracks');
         
-        // Simulate receiving this stream
         handleParticipantStream(testParticipant.id, stream);
         
-        // Clean up test after 10 seconds
         setTimeout(() => {
           stream.getTracks().forEach(track => track.stop());
           setParticipantList(prev => prev.filter(p => p.id !== testParticipant.id));

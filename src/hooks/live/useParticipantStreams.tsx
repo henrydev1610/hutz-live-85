@@ -39,7 +39,7 @@ export const useParticipantStreams = ({
       return updated;
     });
     
-    // IMMEDIATE participant list update
+    // IMMEDIATE participant list update with forced DOM refresh
     setParticipantList(prev => {
       const updated = prev.map(p => {
         if (p.id === participantId) {
@@ -57,6 +57,13 @@ export const useParticipantStreams = ({
       
       console.log('📝 Updated participant list - active participants:', 
         updated.filter(p => p.active && p.hasVideo).length);
+      
+      // Force DOM update immediately after state change
+      setTimeout(() => {
+        console.log('🔄 Forcing video update after participant list change');
+        updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
+      }, 50);
+      
       return updated;
     });
     
@@ -66,10 +73,14 @@ export const useParticipantStreams = ({
       description: `Participante ${participantId.substring(0, 8)} está transmitindo`,
     });
     
-    // IMMEDIATE video element update
-    setTimeout(() => {
-      updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
-    }, 0);
+    // Multiple update attempts to ensure video displays
+    const updateAttempts = [0, 100, 300, 500, 1000];
+    updateAttempts.forEach((delay, index) => {
+      setTimeout(() => {
+        console.log(`🔄 Video update attempt ${index + 1}/5 for ${participantId}`);
+        updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
+      }, delay);
+    });
   }, [setParticipantStreams, setParticipantList, toast, updateVideoElementsImmediately, transmissionWindowRef]);
 
   const handleParticipantTrack = useCallback((participantId: string, track: MediaStreamTrack) => {

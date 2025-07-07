@@ -31,32 +31,29 @@ export const useVideoElementManagement = () => {
       console.log('✅ Video element created and added to container');
     }
     
-    // CRITICAL FIX: Force stream update and immediate play
+    // Force stream update and immediate play
     console.log('🔗 Setting stream on video element');
     videoElement.srcObject = stream;
     
     // Force video to show immediately
     const attemptPlay = async () => {
       try {
-        // Ensure video is visible
         videoElement.style.display = 'block';
         videoElement.style.opacity = '1';
         
         await videoElement.play();
         console.log(`✅ Video playing successfully for: ${container.id}`);
         
-        // Force a layout recalculation to ensure video appears
+        // Force visibility
         container.style.transform = 'translateZ(0)';
         setTimeout(() => {
           container.style.transform = '';
         }, 100);
         
-        // Verify video is actually displaying
+        // Verify video is displaying
         setTimeout(() => {
           if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
             console.log(`📐 Video dimensions confirmed: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
-            
-            // Force container to show the video
             container.style.background = 'transparent';
             if (container.parentElement) {
               container.parentElement.style.background = 'transparent';
@@ -68,8 +65,6 @@ export const useVideoElementManagement = () => {
         
       } catch (err) {
         console.error(`❌ Video play failed for ${container.id}:`, err);
-        
-        // Retry once more
         setTimeout(() => {
           videoElement.play().catch(retryErr => {
             console.error('❌ Video play retry failed:', retryErr);
@@ -78,39 +73,21 @@ export const useVideoElementManagement = () => {
       }
     };
     
-    // Start play attempt immediately
     attemptPlay();
     
-    // Enhanced event listeners
     videoElement.onloadedmetadata = () => {
-      console.log(`📊 Video metadata loaded for ${container.id}:`, {
-        width: videoElement.videoWidth,
-        height: videoElement.videoHeight,
-        duration: videoElement.duration
-      });
-      
-      // Force another play attempt after metadata loads
+      console.log(`📊 Video metadata loaded for ${container.id}`);
       attemptPlay();
     };
     
     videoElement.oncanplay = () => {
       console.log(`🎯 Video can play for ${container.id}`);
-      
-      // Ensure container is visible when video can play
       container.style.visibility = 'visible';
       container.style.opacity = '1';
     };
     
     videoElement.onerror = (event) => {
       console.error(`❌ Video error for ${container.id}:`, videoElement.error);
-    };
-
-    videoElement.onloadstart = () => {
-      console.log(`🎬 Video load started for ${container.id}`);
-    };
-
-    videoElement.onloadeddata = () => {
-      console.log(`📊 Video data loaded for ${container.id}`);
     };
   }, []);
 
@@ -125,40 +102,56 @@ export const useVideoElementManagement = () => {
       videoTracks: stream.getVideoTracks().length
     });
     
-    // Force immediate DOM query with multiple attempts
-    const updateWithRetry = (attempt = 1, maxAttempts = 5) => {
+    // Enhanced retry logic with better container detection
+    const updateWithRetry = (attempt = 1, maxAttempts = 10) => {
       console.log(`🔍 Attempt ${attempt}/${maxAttempts} to find video containers for:`, participantId);
       
-      // Update preview video
-      const previewContainer = document.getElementById(`preview-participant-video-${participantId}`) as HTMLElement;
-      if (previewContainer) {
-        console.log('📹 Updating preview video for:', participantId);
-        updateVideoElement(previewContainer, stream);
-      } else {
-        console.log('⚠️ Preview container not found for:', participantId);
-      }
-      
-      // Update grid video  
-      const gridContainer = document.getElementById(`participant-video-${participantId}`) as HTMLElement;
-      if (gridContainer) {
-        console.log('📹 Updating grid video for:', participantId);
-        updateVideoElement(gridContainer, stream);
-      } else {
-        console.log('⚠️ Grid container not found for:', participantId);
+      // Wait for DOM to be ready
+      requestAnimationFrame(() => {
+        // Multiple container search strategies
+        const containers = [
+          document.getElementById(`preview-participant-video-${participantId}`),
+          document.getElementById(`participant-video-${participantId}`),
+          document.querySelector(`[data-participant-id="${participantId}"]`),
+          // Look for any video container that might match
+          ...Array.from(document.querySelectorAll('[id*="participant-video"]')).filter(el => 
+            el.id.includes(participantId.substring(0, 8))
+          )
+        ].filter(Boolean) as HTMLElement[];
         
-        // Try alternative selectors
-        const alternativeContainer = document.querySelector(`[data-participant-id="${participantId}"]`) as HTMLElement;
-        if (alternativeContainer) {
-          console.log('📹 Found alternative container for:', participantId);
-          updateVideoElement(alternativeContainer, stream);
+        let foundAny = false;
+        
+        containers.forEach((container, index) => {
+          if (container) {
+            console.log(`📹 Found container ${index + 1} for ${participantId}:`, container.id);
+            updateVideoElement(container, stream);
+            foundAny = true;
+          }
+        });
+        
+        // If no containers found and we have attempts left, retry
+        if (!foundAny && attempt < maxAttempts) {
+          console.log(`🔄 No containers found, retrying in ${attempt * 100}ms (attempt ${attempt + 1})`);
+          setTimeout(() => updateWithRetry(attempt + 1, maxAttempts), attempt * 100);
+        } else if (!foundAny) {
+          console.error(`❌ CRITICAL: No video containers found for participant ${participantId} after ${maxAttempts} attempts`);
+          
+          // Force create a container if none exists
+          const gridContainer = document.querySelector('.participant-grid, [class*="grid"]');
+          if (gridContainer) {
+            console.log('🆘 Creating emergency video container');
+            const emergencyContainer = document.createElement('div');
+            emergencyContainer.id = `participant-video-${participantId}`;
+            emergencyContainer.className = 'aspect-video bg-black rounded-lg overflow-hidden relative';
+            emergencyContainer.setAttribute('data-participant-id', participantId);
+            
+            gridContainer.appendChild(emergencyContainer);
+            updateVideoElement(emergencyContainer, stream);
+          }
+        } else {
+          console.log(`✅ Successfully updated ${containers.length} video container(s) for:`, participantId);
         }
-      }
-      
-      // If containers not found and we have attempts left, retry
-      if (!previewContainer && !gridContainer && attempt < maxAttempts) {
-        console.log(`🔄 Retrying container search in 200ms (attempt ${attempt + 1})`);
-        setTimeout(() => updateWithRetry(attempt + 1, maxAttempts), 200);
-      }
+      });
     };
     
     // Start immediate update
