@@ -2,6 +2,73 @@
 import { useCallback } from 'react';
 
 export const useVideoElementManagement = () => {
+  const createVideoElement = useCallback((container: HTMLElement, stream: MediaStream) => {
+    console.log('🎬 Creating video element in container:', container.id);
+    
+    // Remove any existing video elements
+    const existingVideos = container.querySelectorAll('video');
+    existingVideos.forEach(video => video.remove());
+    
+    // Clear container content
+    container.innerHTML = '';
+    
+    // Create new video element
+    const videoElement = document.createElement('video');
+    videoElement.autoplay = true;
+    videoElement.playsInline = true;
+    videoElement.muted = true;
+    videoElement.controls = false;
+    videoElement.setAttribute('playsinline', 'true');
+    videoElement.className = 'w-full h-full object-cover';
+    videoElement.style.display = 'block';
+    videoElement.style.width = '100%';
+    videoElement.style.height = '100%';
+    
+    // Set stream immediately
+    videoElement.srcObject = stream;
+    
+    // Add to container
+    container.appendChild(videoElement);
+    
+    // Force play with error handling
+    const attemptPlay = async () => {
+      try {
+        await videoElement.play();
+        console.log(`✅ Video playing successfully in: ${container.id}`);
+        container.style.background = 'transparent';
+      } catch (error) {
+        console.error(`❌ Video play failed in ${container.id}:`, error);
+        // Retry after short delay
+        setTimeout(() => {
+          videoElement.play().catch(retryError => 
+            console.error('❌ Video play retry failed:', retryError)
+          );
+        }, 500);
+      }
+    };
+    
+    // Handle video events
+    videoElement.onloadedmetadata = () => {
+      console.log(`📊 Video metadata loaded for ${container.id}`);
+      attemptPlay();
+    };
+    
+    videoElement.oncanplay = () => {
+      console.log(`🎯 Video can play for ${container.id}`);
+      container.style.visibility = 'visible';
+      container.style.opacity = '1';
+    };
+    
+    videoElement.onerror = (event) => {
+      console.error(`❌ Video error in ${container.id}:`, videoElement.error);
+    };
+    
+    // Start playing
+    attemptPlay();
+    
+    return videoElement;
+  }, []);
+
   const updateVideoElement = useCallback((container: HTMLElement, stream: MediaStream) => {
     if (!container) {
       console.warn("❌ Video container not found");
@@ -18,80 +85,103 @@ export const useVideoElementManagement = () => {
     
     if (!videoElement) {
       console.log('📹 Creating new video element for:', container.id);
-      videoElement = document.createElement('video');
-      videoElement.autoplay = true;
-      videoElement.playsInline = true;
-      videoElement.muted = true;
-      videoElement.setAttribute('playsinline', '');
-      videoElement.className = 'w-full h-full object-cover';
+      videoElement = createVideoElement(container, stream);
+    } else {
+      console.log('🔗 Updating existing video element stream');
+      videoElement.srcObject = stream;
       
-      container.innerHTML = '';
-      container.appendChild(videoElement);
-      
-      console.log('✅ Video element created and added to container');
-    }
-    
-    // Force stream update and immediate play
-    console.log('🔗 Setting stream on video element');
-    videoElement.srcObject = stream;
-    
-    // Force video to show immediately
-    const attemptPlay = async () => {
-      try {
-        videoElement.style.display = 'block';
-        videoElement.style.opacity = '1';
-        
-        await videoElement.play();
-        console.log(`✅ Video playing successfully for: ${container.id}`);
-        
-        // Force visibility
-        container.style.transform = 'translateZ(0)';
-        setTimeout(() => {
-          container.style.transform = '';
-        }, 100);
-        
-        // Verify video is displaying
-        setTimeout(() => {
-          if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-            console.log(`📐 Video dimensions confirmed: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
-            container.style.background = 'transparent';
-            if (container.parentElement) {
-              container.parentElement.style.background = 'transparent';
-            }
-          } else {
-            console.warn(`⚠️ Video playing but no dimensions for: ${container.id}`);
-          }
-        }, 1000);
-        
-      } catch (err) {
+      // Force play
+      videoElement.play().catch(err => {
         console.error(`❌ Video play failed for ${container.id}:`, err);
+      });
+    }
+  }, [createVideoElement]);
+
+  const findVideoContainers = useCallback((participantId: string) => {
+    // Wait for DOM to be ready
+    return new Promise<HTMLElement[]>((resolve) => {
+      const searchContainers = () => {
+        const containers: HTMLElement[] = [];
+        
+        // Multiple search strategies
+        const selectors = [
+          `#preview-participant-video-${participantId}`,
+          `#participant-video-${participantId}`,
+          `[data-participant-id="${participantId}"]`,
+          `.participant-video-${participantId}`,
+          // Generic participant containers
+          '[id*="participant-video"]',
+          '[class*="participant-video"]',
+          '.participant-grid [class*="rounded"]',
+          '.participant-grid > div'
+        ];
+        
+        selectors.forEach(selector => {
+          try {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(el => {
+              const htmlEl = el as HTMLElement;
+              if (htmlEl && !containers.includes(htmlEl)) {
+                // Check if this container is related to our participant
+                if (selector.includes(participantId) || 
+                    htmlEl.id.includes(participantId) || 
+                    htmlEl.getAttribute('data-participant-id') === participantId) {
+                  containers.push(htmlEl);
+                }
+              }
+            });
+          } catch (e) {
+            // Ignore selector errors
+          }
+        });
+        
+        return containers;
+      };
+      
+      const containers = searchContainers();
+      if (containers.length > 0) {
+        resolve(containers);
+      } else {
+        // Wait a bit and try again
         setTimeout(() => {
-          videoElement.play().catch(retryErr => {
-            console.error('❌ Video play retry failed:', retryErr);
-          });
-        }, 500);
+          const retryContainers = searchContainers();
+          resolve(retryContainers);
+        }, 100);
       }
-    };
-    
-    attemptPlay();
-    
-    videoElement.onloadedmetadata = () => {
-      console.log(`📊 Video metadata loaded for ${container.id}`);
-      attemptPlay();
-    };
-    
-    videoElement.oncanplay = () => {
-      console.log(`🎯 Video can play for ${container.id}`);
-      container.style.visibility = 'visible';
-      container.style.opacity = '1';
-    };
-    
-    videoElement.onerror = (event) => {
-      console.error(`❌ Video error for ${container.id}:`, videoElement.error);
-    };
+    });
   }, []);
 
-  const updateVideoElementsImmediately = useCallback((
+  const createEmergencyContainer = useCallback((participantId: string) => {
+    console.log('🆘 Creating emergency video container for:', participantId);
+    
+    // Find a parent container to add our video to
+    const possibleParents = [
+      document.querySelector('.participant-grid'),
+      document.querySelector('[class*="grid"]'),
+      document.querySelector('.live-preview'),
+      document.querySelector('[class*="preview"]'),
+      document.body
+    ];
+    
+    for (const parent of possibleParents) {
+      if (parent) {
+        const emergencyContainer = document.createElement('div');
+        emergencyContainer.id = `participant-video-${participantId}`;
+        emergencyContainer.className = 'aspect-video bg-gray-800 rounded-lg overflow-hidden relative';
+        emergencyContainer.setAttribute('data-participant-id', participantId);
+        emergencyContainer.style.minHeight = '200px';
+        emergencyContainer.style.minWidth = '300px';
+        
+        parent.appendChild(emergencyContainer);
+        console.log('✅ Emergency container created:', emergencyContainer.id);
+        return emergencyContainer;
+      }
+    }
+    
+    return null;
+  }, []);
+
+  const updateVideoElementsImmediately = useCallback(async (
     participantId: string, 
     stream: MediaStream, 
     transmissionWindowRef: React.MutableRefObject<Window | null>
@@ -99,86 +189,60 @@ export const useVideoElementManagement = () => {
     console.log('🎬 IMMEDIATE video update for:', participantId, {
       streamId: stream.id,
       trackCount: stream.getTracks().length,
-      videoTracks: stream.getVideoTracks().length
+      videoTracks: stream.getVideoTracks().length,
+      active: stream.active
     });
     
-    // Enhanced retry logic with better container detection
-    const updateWithRetry = (attempt = 1, maxAttempts = 10) => {
-      console.log(`🔍 Attempt ${attempt}/${maxAttempts} to find video containers for:`, participantId);
-      
-      // Wait for DOM to be ready
-      requestAnimationFrame(() => {
-        // Multiple container search strategies
-        const containers = [
-          document.getElementById(`preview-participant-video-${participantId}`),
-          document.getElementById(`participant-video-${participantId}`),
-          document.querySelector(`[data-participant-id="${participantId}"]`),
-          // Look for any video container that might match
-          ...Array.from(document.querySelectorAll('[id*="participant-video"]')).filter(el => 
-            el.id.includes(participantId.substring(0, 8))
-          )
-        ].filter(Boolean) as HTMLElement[];
-        
-        let foundAny = false;
-        
-        containers.forEach((container, index) => {
-          if (container) {
-            console.log(`📹 Found container ${index + 1} for ${participantId}:`, container.id);
-            updateVideoElement(container, stream);
-            foundAny = true;
-          }
-        });
-        
-        // If no containers found and we have attempts left, retry
-        if (!foundAny && attempt < maxAttempts) {
-          console.log(`🔄 No containers found, retrying in ${attempt * 100}ms (attempt ${attempt + 1})`);
-          setTimeout(() => updateWithRetry(attempt + 1, maxAttempts), attempt * 100);
-        } else if (!foundAny) {
-          console.error(`❌ CRITICAL: No video containers found for participant ${participantId} after ${maxAttempts} attempts`);
-          
-          // Force create a container if none exists
-          const gridContainer = document.querySelector('.participant-grid, [class*="grid"]');
-          if (gridContainer) {
-            console.log('🆘 Creating emergency video container');
-            const emergencyContainer = document.createElement('div');
-            emergencyContainer.id = `participant-video-${participantId}`;
-            emergencyContainer.className = 'aspect-video bg-black rounded-lg overflow-hidden relative';
-            emergencyContainer.setAttribute('data-participant-id', participantId);
-            
-            gridContainer.appendChild(emergencyContainer);
-            updateVideoElement(emergencyContainer, stream);
-          }
-        } else {
-          console.log(`✅ Successfully updated ${containers.length} video container(s) for:`, participantId);
-        }
-      });
-    };
-    
-    // Start immediate update
-    updateWithRetry();
-    
-    // Update transmission window
-    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      console.log(`📤 Sending stream to transmission window for: ${participantId}`);
-      
-      transmissionWindowRef.current.postMessage({
-        type: 'video-stream',
-        participantId: participantId,
-        hasStream: true,
-        timestamp: Date.now(),
-        streamInfo: {
-          id: stream.id,
-          active: stream.active,
-          trackCount: stream.getTracks().length
-        }
-      }, '*');
-    } else {
-      console.log('⚠️ Transmission window not available');
+    if (!stream.active || stream.getVideoTracks().length === 0) {
+      console.warn('⚠️ Stream is not active or has no video tracks');
+      return;
     }
-  }, [updateVideoElement]);
+    
+    try {
+      // Find existing containers
+      const containers = await findVideoContainers(participantId);
+      
+      if (containers.length === 0) {
+        console.warn(`⚠️ No containers found for ${participantId}, creating emergency container`);
+        const emergencyContainer = createEmergencyContainer(participantId);
+        if (emergencyContainer) {
+          updateVideoElement(emergencyContainer, stream);
+        }
+      } else {
+        console.log(`📹 Found ${containers.length} container(s) for ${participantId}`);
+        containers.forEach((container, index) => {
+          console.log(`🎯 Updating container ${index + 1}:`, container.id || container.className);
+          updateVideoElement(container, stream);
+        });
+      }
+      
+      // Update transmission window
+      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+        console.log(`📤 Sending stream to transmission window for: ${participantId}`);
+        
+        transmissionWindowRef.current.postMessage({
+          type: 'video-stream',
+          participantId: participantId,
+          hasStream: true,
+          timestamp: Date.now(),
+          streamInfo: {
+            id: stream.id,
+            active: stream.active,
+            trackCount: stream.getTracks().length,
+            videoTracks: stream.getVideoTracks().length
+          }
+        }, '*');
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to update video elements:', error);
+    }
+  }, [findVideoContainers, createEmergencyContainer, updateVideoElement]);
 
   return {
     updateVideoElement,
-    updateVideoElementsImmediately
+    updateVideoElementsImmediately,
+    createVideoElement,
+    findVideoContainers
   };
 };

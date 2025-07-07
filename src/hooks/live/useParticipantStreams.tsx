@@ -28,6 +28,12 @@ export const useParticipantStreams = ({
       audioTracks: stream.getAudioTracks().length
     });
     
+    // Validate stream
+    if (!stream.active || stream.getVideoTracks().length === 0) {
+      console.warn('⚠️ Received inactive stream or stream without video tracks');
+      return;
+    }
+    
     // IMMEDIATE stream update
     setParticipantStreams(prev => {
       const updated = {
@@ -56,18 +62,43 @@ export const useParticipantStreams = ({
         return p;
       });
       
+      // If participant doesn't exist, add them
+      const existingParticipant = updated.find(p => p.id === participantId);
+      if (!existingParticipant) {
+        console.log(`➕ Adding new participant: ${participantId}`);
+        updated.push({
+          id: participantId,
+          name: `Participante ${participantId.substring(0, 8)}`,
+          joinedAt: Date.now(),
+          lastActive: Date.now(),
+          active: true,
+          selected: true, // AUTO-SELECT new participants
+          hasVideo: true
+        });
+      }
+      
       console.log('📝 Updated participant list - selected participants:', 
         updated.filter(p => p.selected && p.hasVideo).length);
       
       return updated;
     });
     
-    // CRITICAL: Immediately send to transmission window
-    setTimeout(() => {
-      console.log('📤 CRITICAL: Sending stream to transmission window');
-      sendStreamToTransmission(participantId, stream, transmissionWindowRef);
-      updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
-    }, 100);
+    // CRITICAL: Immediately update video elements and send to transmission
+    const updateVideo = async () => {
+      console.log('📤 CRITICAL: Updating video elements and sending to transmission');
+      
+      // Force DOM to update first
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      try {
+        await updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
+        sendStreamToTransmission(participantId, stream, transmissionWindowRef);
+      } catch (error) {
+        console.error('❌ Failed to update video elements:', error);
+      }
+    };
+    
+    updateVideo();
     
     // Show toast notification
     toast({
@@ -76,17 +107,21 @@ export const useParticipantStreams = ({
     });
     
     // Multiple update attempts to ensure video displays
-    const updateAttempts = [200, 500, 1000, 2000];
+    const updateAttempts = [200, 500, 1000];
     updateAttempts.forEach((delay, index) => {
-      setTimeout(() => {
+      setTimeout(async () => {
         console.log(`🔄 Stream transmission attempt ${index + 1}/${updateAttempts.length} for ${participantId}`);
-        sendStreamToTransmission(participantId, stream, transmissionWindowRef);
-        updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
+        try {
+          await updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
+          sendStreamToTransmission(participantId, stream, transmissionWindowRef);
+        } catch (error) {
+          console.error(`❌ Update attempt ${index + 1} failed:`, error);
+        }
       }, delay);
     });
   }, [setParticipantStreams, setParticipantList, toast, updateVideoElementsImmediately, transmissionWindowRef]);
 
-  // NEW: Enhanced function to send streams to transmission window
+  // Enhanced function to send streams to transmission window
   const sendStreamToTransmission = (
     participantId: string, 
     stream: MediaStream, 
@@ -151,8 +186,9 @@ export const useParticipantStreams = ({
           existingStream.addTrack(track);
           
           // Send updated stream to transmission
-          setTimeout(() => {
+          setTimeout(async () => {
             sendStreamToTransmission(participantId, existingStream, transmissionWindowRef);
+            await updateVideoElementsImmediately(participantId, existingStream, transmissionWindowRef);
           }, 100);
           
           return { ...prev };
@@ -163,9 +199,10 @@ export const useParticipantStreams = ({
       console.log(`Creating new stream for participant ${participantId}`);
       const newStream = new MediaStream([track]);
       
-      // Send new stream to transmission
-      setTimeout(() => {
+      // Send new stream to transmission and update video elements
+      setTimeout(async () => {
         sendStreamToTransmission(participantId, newStream, transmissionWindowRef);
+        await updateVideoElementsImmediately(participantId, newStream, transmissionWindowRef);
       }, 100);
       
       return {
@@ -183,7 +220,7 @@ export const useParticipantStreams = ({
         selected: true // AUTO-SELECT
       } : p)
     );
-  }, [setParticipantStreams, setParticipantList, transmissionWindowRef]);
+  }, [setParticipantStreams, setParticipantList, transmissionWindowRef, updateVideoElementsImmediately]);
 
   return {
     handleParticipantStream,

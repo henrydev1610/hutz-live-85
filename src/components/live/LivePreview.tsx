@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Participant } from './ParticipantGrid';
 import DraggableWrapper from '@/components/common/DraggableWrapper';
@@ -108,7 +107,7 @@ const LivePreview: React.FC<LivePreviewProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizingQrCode, isResizingText, resizeStartPos, initialSize]);
+  }, [isResizingQrCode, isResizingText, resizeStartPos, initialSize, qrCodePosition.width, setQrCodePosition, setQrDescriptionPosition]);
 
   return (
     <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
@@ -123,9 +122,9 @@ const LivePreview: React.FC<LivePreviewProps> = ({
         )}
       </div>
       
-      {/* Participant grid preview */}
+      {/* Participant grid preview with improved video containers */}
       <div 
-        className="absolute right-[5%] top-[5%] bottom-[5%] left-[30%]"
+        className="participant-grid absolute right-[5%] top-[5%] bottom-[5%] left-[30%]"
         style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${Math.ceil(Math.sqrt(participantCount))}, 1fr)`,
@@ -135,15 +134,31 @@ const LivePreview: React.FC<LivePreviewProps> = ({
         {participantList.filter(p => p.selected).slice(0, participantCount).map((participant, index) => (
           <div 
             key={participant.id} 
-            className="bg-gray-800/60 rounded-md overflow-hidden relative"
+            className="participant-video bg-gray-800/60 rounded-md overflow-hidden relative"
             id={`preview-participant-video-${participant.id}`}
+            data-participant-id={participant.id}
+            style={{ minHeight: '120px', minWidth: '160px' }}
           >
+            {/* Video will be inserted here automatically by useVideoElementManagement */}
             {!participant.hasVideo && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <svg className="w-12 h-12 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
+              <div className="absolute inset-0 flex items-center justify-center z-10">
+                <div className="text-center text-white/50">
+                  <svg className="w-8 h-8 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <p className="text-xs">{participant.name}</p>
+                </div>
               </div>
+            )}
+            
+            {/* Participant info overlay */}
+            <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+              {participant.name || `P${index + 1}`}
+            </div>
+            
+            {/* Video indicator */}
+            {participant.hasVideo && (
+              <div className="absolute top-2 right-2 bg-green-500 w-2 h-2 rounded-full animate-pulse"></div>
             )}
           </div>
         ))}
