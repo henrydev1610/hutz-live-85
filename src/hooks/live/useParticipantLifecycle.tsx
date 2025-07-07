@@ -49,7 +49,7 @@ export const useParticipantLifecycle = ({
           joinedAt: Date.now(),
           lastActive: Date.now(),
           active: true,
-          selected: false,
+          selected: true, // AUTO-SELECT immediately when participant connects
           hasVideo: false,
           connectedAt: Date.now()
         };
@@ -76,7 +76,7 @@ export const useParticipantLifecycle = ({
         joinedAt: Date.now(),
         lastActive: Date.now(),
         active: true,
-        selected: false,
+        selected: true, // AUTO-SELECT immediately when participant connects
         hasVideo: false,
         connectedAt: Date.now()
       };

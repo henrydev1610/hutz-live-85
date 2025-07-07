@@ -19,7 +19,13 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   const { gridCols, selectedParticipants, emptySlots } = useMemo(() => {
     const cols = Math.ceil(Math.sqrt(Math.max(participantCount, 1)));
     const selected = participantList
-      .filter(p => (p.selected || p.hasVideo) && !p.id.includes('placeholder'))
+      .filter(p => (p.selected || p.hasVideo || p.active) && !p.id.includes('placeholder'))
+      .sort((a, b) => {
+        // Prioritize active participants first, then by connection time
+        if (a.active && !b.active) return -1;
+        if (!a.active && b.active) return 1;
+        return (a.connectedAt || a.joinedAt) - (b.connectedAt || b.joinedAt);
+      })
       .slice(0, participantCount);
     const empty = Math.max(0, participantCount - selected.length);
     
