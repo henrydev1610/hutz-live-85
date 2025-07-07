@@ -14,16 +14,10 @@ export const getWebSocketURL = (): string => {
     return `http://${localIP}:3001`;
   }
   
-  // Ngrok environment (specific detection) - use same origin with backend port
+  // Ngrok environment (specific detection) - use same origin for API calls
   if (host.includes('ngrok-free.app') || host.includes('ngrok.io')) {
-    // Try to connect to backend through ngrok (assuming backend is also tunneled)
-    const backendHost = host.replace('88099e135c0d', 'BACKEND_TUNNEL_ID'); // User needs to update this
-    const wsUrl = `https://${backendHost}`;
-    console.log(`🌐 CONNECTION: Using Ngrok backend URL: ${wsUrl}`);
-    
-    // Fallback: if backend not tunneled, use local connection
-    // Comment: User should run 'ngrok http 3001' for backend and update BACKEND_TUNNEL_ID above
-    console.log(`⚠️  NGROK: For full functionality, tunnel backend with 'ngrok http 3001'`);
+    const wsUrl = `https://${host}/api/socket.io`;
+    console.log(`🌐 CONNECTION: Using Ngrok same origin for WebSocket: ${wsUrl}`);
     return wsUrl;
   }
   
