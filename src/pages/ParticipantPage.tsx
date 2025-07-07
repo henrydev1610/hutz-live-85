@@ -1,12 +1,12 @@
-
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Camera, CameraOff, Mic, MicOff, Phone, PhoneOff, Settings, Monitor, MonitorOff } from "lucide-react";
+import { Camera, CameraOff, Mic, MicOff, Phone, PhoneOff, Settings, Monitor, MonitorOff, Wifi, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
+import signalingService from '@/services/WebSocketSignalingService';
 
 const ParticipantPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -31,6 +31,21 @@ const ParticipantPage = () => {
   // Connection state
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
+  const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
+
+  // Monitor signaling service status
+  useEffect(() => {
+    const checkSignalingStatus = () => {
+      const status = signalingService.getConnectionStatus();
+      setSignalingStatus(status);
+      console.log('📡 Signaling status:', status);
+    };
+
+    const interval = setInterval(checkSignalingStatus, 1000);
+    checkSignalingStatus(); // Initial check
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Auto-initialize media and connect on mount
   useEffect(() => {
@@ -52,8 +67,19 @@ const ParticipantPage = () => {
     setError(null);
 
     try {
-      // Step 1: Get user media
-      console.log('📹 PARTICIPANT: Step 1 - Getting user media');
+      // Step 1: Test signaling connection first
+      console.log('🔌 PARTICIPANT: Step 1 - Testing signaling connection');
+      await signalingService.connect();
+      
+      const signalingReady = signalingService.isReady();
+      console.log('📡 Signaling ready:', signalingReady);
+      
+      if (!signalingReady) {
+        console.warn('⚠️ Signaling not ready, but continuing...');
+      }
+
+      // Step 2: Get user media
+      console.log('📹 PARTICIPANT: Step 2 - Getting user media');
       const stream = await getUserMedia({ 
         video: { 
           width: { ideal: 1280, max: 1920 },
@@ -83,7 +109,7 @@ const ParticipantPage = () => {
       
       console.log(`✅ PARTICIPANT: Media obtained - Video: ${videoTracks.length > 0}, Audio: ${audioTracks.length > 0}`);
       
-      // Step 2: Display local video
+      // Step 3: Display local video
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
         try {
@@ -94,9 +120,31 @@ const ParticipantPage = () => {
         }
       }
       
-      // Step 3: Initialize WebRTC connection
-      console.log('🔗 PARTICIPANT: Step 3 - Initializing WebRTC connection');
-      await initParticipantWebRTC(sessionId!, participantId, stream);
+      // Step 4: Initialize WebRTC connection with retry
+      console.log('🔗 PARTICIPANT: Step 4 - Initializing WebRTC connection');
+      let webrtcInitialized = false;
+      let attempts = 0;
+      const maxAttempts = 3;
+
+      while (!webrtcInitialized && attempts < maxAttempts) {
+        try {
+          attempts++;
+          console.log(`🔄 PARTICIPANT: WebRTC initialization attempt ${attempts}/${maxAttempts}`);
+          
+          await initParticipantWebRTC(sessionId!, participantId, stream);
+          webrtcInitialized = true;
+          console.log('✅ PARTICIPANT: WebRTC initialized successfully');
+        } catch (webrtcError) {
+          console.error(`❌ PARTICIPANT: WebRTC init attempt ${attempts} failed:`, webrtcError);
+          
+          if (attempts < maxAttempts) {
+            console.log('🔄 PARTICIPANT: Retrying WebRTC init in 2 seconds...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          } else {
+            throw webrtcError;
+          }
+        }
+      }
       
       setIsConnected(true);
       setConnectionStatus('connected');
@@ -107,14 +155,28 @@ const ParticipantPage = () => {
     } catch (error) {
       console.error('❌ PARTICIPANT: Auto-connection failed:', error);
       setConnectionStatus('failed');
-      setError(error instanceof Error ? error.message : 'Erro na conexão automática');
+      
+      let errorMessage = 'Erro na conexão automática';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        
+        // Mensagens específicas para diferentes tipos de erro
+        if (error.message.includes('websocket') || error.message.includes('socket')) {
+          errorMessage = 'Erro de conexão WebSocket. Verifique se o servidor está rodando em localhost:3001';
+        } else if (error.message.includes('media') || error.message.includes('getUserMedia')) {
+          errorMessage = 'Erro ao acessar câmera/microfone. Verifique as permissões do navegador';
+        } else if (error.message.includes('WebRTC')) {
+          errorMessage = 'Erro na conexão WebRTC. Tente reconectar';
+        }
+      }
+      
+      setError(errorMessage);
       toast.error('Falha na conexão automática. Tente reconectar manualmente.');
     } finally {
       setIsConnecting(false);
     }
   };
 
-  // Get user media with enhanced error handling
   const getUserMedia = async (constraints: MediaStreamConstraints): Promise<MediaStream | null> => {
     try {
       console.log('🎥 PARTICIPANT: Requesting user media with constraints:', constraints);
@@ -235,6 +297,9 @@ const ParticipantPage = () => {
     
     // Cleanup WebRTC
     cleanupWebRTC();
+    
+    // Disconnect signaling
+    signalingService.disconnect();
   };
 
   // Toggle video
@@ -348,6 +413,15 @@ const ParticipantPage = () => {
     }
   };
 
+  const getSignalingStatusColor = () => {
+    switch (signalingStatus) {
+      case 'connected': return 'text-green-400';
+      case 'reconnecting': return 'text-yellow-400';
+      case 'fallback': return 'text-orange-400';
+      default: return 'text-red-400';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4">
       <div className="max-w-4xl mx-auto">
@@ -366,6 +440,14 @@ const ParticipantPage = () => {
                 className={`text-white border-white/30 ${getConnectionStatusColor()}`}
               >
                 {getConnectionStatusText()}
+              </Badge>
+              <Badge variant="outline" className="text-white border-white/30">
+                <div className="flex items-center gap-1">
+                  {signalingStatus === 'connected' ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                  <span className={getSignalingStatusColor()}>
+                    {signalingStatus}
+                  </span>
+                </div>
               </Badge>
             </div>
           </div>
@@ -394,6 +476,39 @@ const ParticipantPage = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Connection Status Details */}
+        <Card className="mb-6 bg-black/20 border-white/10">
+          <CardContent className="p-4">
+            <h3 className="text-white font-semibold mb-2">Status da Conexão:</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-white/70">WebSocket:</span>
+                <span className={`ml-2 ${getSignalingStatusColor()}`}>
+                  {signalingStatus}
+                </span>
+              </div>
+              <div>
+                <span className="text-white/70">WebRTC:</span>
+                <span className={`ml-2 ${connectionStatus === 'connected' ? 'text-green-400' : 'text-red-400'}`}>
+                  {connectionStatus}
+                </span>
+              </div>
+              <div>
+                <span className="text-white/70">Vídeo:</span>
+                <span className={`ml-2 ${hasVideo ? 'text-green-400' : 'text-red-400'}`}>
+                  {hasVideo ? 'Ativo' : 'Inativo'}
+                </span>
+              </div>
+              <div>
+                <span className="text-white/70">Áudio:</span>
+                <span className={`ml-2 ${hasAudio ? 'text-green-400' : 'text-red-400'}`}>
+                  {hasAudio ? 'Ativo' : 'Inativo'}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Video Preview */}
         <Card className="mb-6 bg-black/30 border-white/10">
@@ -521,12 +636,13 @@ const ParticipantPage = () => {
         {/* Instructions */}
         <Card className="mt-6 bg-black/20 border-white/10">
           <CardContent className="p-4">
-            <h3 className="text-white font-semibold mb-2">Status da Conexão:</h3>
+            <h3 className="text-white font-semibold mb-2">Instruções:</h3>
             <ul className="text-white/70 text-sm space-y-1">
+              <li>• Verifique se o servidor de sinalização está rodando em localhost:3001</li>
               <li>• A câmera e microfone são inicializados automaticamente</li>
-              <li>• Sua transmissão está sendo enviada para o host em tempo real</li>
               <li>• Use os controles para ajustar vídeo, áudio e compartilhamento de tela</li>
-              <li>• Se houver problemas, use o botão de reconexão</li>
+              <li>• Se houver problemas de conexão, use o botão de reconexão</li>
+              <li>• O status do WebSocket deve mostrar "connected" para funcionar corretamente</li>
             </ul>
           </CardContent>
         </Card>

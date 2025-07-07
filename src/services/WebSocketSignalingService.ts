@@ -1,4 +1,3 @@
-
 import { io, Socket } from 'socket.io-client';
 
 interface SignalingCallbacks {
@@ -34,18 +33,28 @@ class WebSocketSignalingService {
   }
 
   async connect(serverUrl?: string): Promise<void> {
-    const url = serverUrl || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+    // Usar a URL correta do servidor Node.js
+    const url = serverUrl || 'http://localhost:3001';
     
     console.log(`🔌 Connecting to signaling server: ${url}`);
     
     try {
+      // Desconectar socket anterior se existir
+      if (this.socket) {
+        this.socket.disconnect();
+        this.socket = null;
+      }
+
       this.socket = io(url, {
         transports: ['websocket', 'polling'],
         timeout: 10000,
         forceNew: true,
         reconnection: true,
         reconnectionAttempts: this.maxReconnectAttempts,
-        reconnectionDelay: 1000
+        reconnectionDelay: 1000,
+        // Adicionar configurações específicas para evitar CORS
+        withCredentials: false,
+        autoConnect: true
       });
 
       return new Promise((resolve, reject) => {
@@ -53,11 +62,11 @@ class WebSocketSignalingService {
           console.warn('⚠️ Connection timeout, enabling fallback mode');
           this.fallbackMode = true;
           resolve();
-        }, 5000);
+        }, 8000);
 
         this.socket!.on('connect', () => {
           clearTimeout(connectTimeout);
-          console.log('✅ Connected to signaling server');
+          console.log('✅ Connected to signaling server, Socket ID:', this.socket!.id);
           this.isConnected = true;
           this.reconnectAttempts = 0;
           this.fallbackMode = false;
@@ -67,14 +76,27 @@ class WebSocketSignalingService {
         this.socket!.on('connect_error', (error) => {
           clearTimeout(connectTimeout);
           console.error('❌ Connection error:', error);
+          console.error('Error details:', {
+            message: error.message,
+            description: error.description,
+            context: error.context,
+            type: error.type
+          });
+          
           this.reconnectAttempts++;
           
           if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             console.warn('⚠️ Max reconnection attempts reached, enabling fallback mode');
             this.fallbackMode = true;
-            resolve();
+            resolve(); // Não rejeitar para permitir fallback
           } else {
-            reject(error);
+            console.log(`🔄 Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+            // Não rejeitar ainda, deixar o Socket.IO tentar reconectar
+            setTimeout(() => {
+              if (!this.isConnected && this.reconnectAttempts < this.maxReconnectAttempts) {
+                resolve(); // Resolver em fallback se ainda não conectou
+              }
+            }, 3000);
           }
         });
 
@@ -83,7 +105,7 @@ class WebSocketSignalingService {
           this.isConnected = false;
           
           if (reason === 'io server disconnect') {
-            console.log('🔄 Attempting to reconnect...');
+            console.log('🔄 Server disconnected, attempting to reconnect...');
             this.socket!.connect();
           }
         });
@@ -107,7 +129,8 @@ class WebSocketSignalingService {
     } catch (error) {
       console.error('❌ Failed to initialize socket connection:', error);
       this.fallbackMode = true;
-      throw error;
+      console.log('⚠️ Continuing in fallback mode');
+      // Não lançar erro para permitir que a aplicação continue
     }
   }
 
@@ -159,7 +182,7 @@ class WebSocketSignalingService {
       }
     });
 
-    // Stream events - NEW!
+    // Stream events
     this.socket.on('stream-started', (data) => {
       console.log('🎥 Stream started event:', data);
       if (this.callbacks.onStreamStarted) {
@@ -198,18 +221,21 @@ class WebSocketSignalingService {
     this.currentRoom = roomId;
     this.currentUserId = userId;
 
-    if (!this.socket || this.fallbackMode) {
+    // Tentar conectar se não estiver conectado
+    if (!this.socket || !this.isConnected) {
+      console.log('🔄 Socket not connected, attempting to connect...');
       await this.connect();
     }
 
     if (this.socket && this.isConnected && !this.fallbackMode) {
       try {
+        console.log('📤 Sending join-room request');
         this.socket.emit('join-room', {
           roomId,
           userId,
           timestamp: Date.now()
         });
-        console.log('✅ Join room request sent');
+        console.log('✅ Join room request sent successfully');
       } catch (error) {
         console.error('❌ Failed to join room:', error);
         if (error.message?.includes('TypeID')) {
@@ -223,7 +249,6 @@ class WebSocketSignalingService {
     }
   }
 
-  // NEW: Notify about stream events
   notifyStreamStarted(participantId: string, streamInfo: any): void {
     console.log(`📹 Notifying stream started for: ${participantId}`);
     
@@ -304,6 +329,13 @@ class WebSocketSignalingService {
 
   isReady(): boolean {
     return this.isConnected && !this.fallbackMode;
+  }
+
+  getConnectionStatus(): string {
+    if (this.isConnected && !this.fallbackMode) return 'connected';
+    if (this.fallbackMode) return 'fallback';
+    if (this.reconnectAttempts > 0) return 'reconnecting';
+    return 'disconnected';
   }
 
   disconnect(): void {
