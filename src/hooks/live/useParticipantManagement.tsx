@@ -89,15 +89,81 @@ export const useParticipantManagement = ({
     }
   }, [participantList.length, setParticipantList]);
 
-  // CRITICAL: Enhanced stream monitoring with DOM-ready checks
+  // CRITICAL: Auto-select participants with streams for transmission
+  useEffect(() => {
+    console.log('🎯 CRITICAL: Auto-selecting participants with streams');
+    
+    Object.entries(participantStreams).forEach(([participantId, stream]) => {
+      const participant = participantList.find(p => p.id === participantId);
+      
+      if (participant && !participant.selected && stream.active) {
+        console.log(`✅ AUTO-SELECTING participant ${participantId} for transmission`);
+        
+        setParticipantList(prev => prev.map(p => 
+          p.id === participantId 
+            ? { ...p, selected: true, hasVideo: true, active: true }
+            : p
+        ));
+        
+        // Immediately send to transmission window
+        setTimeout(() => {
+          transferStreamToTransmission(participantId, stream);
+          updateTransmissionParticipants();
+        }, 100);
+      }
+    });
+  }, [participantStreams, participantList, transmissionWindowRef, updateTransmissionParticipants]);
+
+  // NEW: Function to transfer streams to transmission window
+  const transferStreamToTransmission = (participantId: string, stream: MediaStream) => {
+    if (!transmissionWindowRef.current || transmissionWindowRef.current.closed) {
+      console.warn('⚠️ Transmission window not available for stream transfer');
+      return;
+    }
+
+    console.log('📤 CRITICAL: Transferring stream to transmission window:', participantId);
+    
+    try {
+      // Send stream information to transmission window
+      transmissionWindowRef.current.postMessage({
+        type: 'participant-stream-ready',
+        participantId: participantId,
+        streamInfo: {
+          id: stream.id,
+          active: stream.active,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length
+        },
+        timestamp: Date.now()
+      }, '*');
+
+      // Use BroadcastChannel for additional communication
+      const channel = new BroadcastChannel(`live-session-${sessionId}`);
+      channel.postMessage({
+        type: 'video-stream',
+        participantId: participantId,
+        hasStream: true,
+        streamActive: stream.active,
+        trackCount: stream.getTracks().length
+      });
+      
+      console.log('✅ Stream transfer initiated for:', participantId);
+      
+    } catch (error) {
+      console.error('❌ Failed to transfer stream:', error);
+    }
+  };
+
+  // Enhanced stream monitoring with better DOM-ready checks and auto-selection
   useEffect(() => {
     console.log('🔍 CRITICAL Stream Monitor:', {
       totalStreams: Object.keys(participantStreams).length,
       activeParticipants: participantList.filter(p => p.active).length,
+      selectedParticipants: participantList.filter(p => p.selected).length,
       realParticipants: participantList.filter(p => !p.id.startsWith('placeholder-')).length
     });
     
-    // Wait for DOM to be ready before processing streams
+    // Process streams when DOM is ready
     const processStreams = () => {
       Object.entries(participantStreams).forEach(([participantId, stream]) => {
         console.log(`📹 Processing stream for participant: ${participantId}`, {
@@ -109,39 +175,47 @@ export const useParticipantManagement = ({
         
         const participant = participantList.find(p => p.id === participantId);
         if (participant) {
-          console.log(`✅ Found participant ${participantId}, updating video display`);
+          console.log(`✅ Found participant ${participantId}, updating for transmission`);
           
-          // Ensure participant is marked correctly BEFORE updating video
+          // Ensure participant is marked correctly AND selected for transmission
           setParticipantList(prev => prev.map(p => 
             p.id === participantId 
-              ? { ...p, hasVideo: true, active: true, lastActive: Date.now() }
+              ? { 
+                  ...p, 
+                  hasVideo: true, 
+                  active: true, 
+                  selected: true, // AUTO-SELECT for transmission
+                  lastActive: Date.now() 
+                }
               : p
           ));
           
-          // Delay video update to ensure participant list is updated
+          // Transfer stream to transmission and update video display
           setTimeout(() => {
+            transferStreamToTransmission(participantId, stream);
             updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
-          }, 100);
+          }, 150);
           
         } else {
           console.warn(`⚠️ Stream received for unknown participant: ${participantId}`);
           
-          // Add new real participant for this stream
+          // Add new real participant for this stream and auto-select
           const newParticipant: Participant = {
             id: participantId,
             name: `Participante ${participantId.substring(0, 8)}`,
             joinedAt: Date.now(),
             lastActive: Date.now(),
             active: true,
-            selected: false,
+            selected: true, // AUTO-SELECT new participants
             hasVideo: true
           };
           
-          console.log(`➕ Adding new real participant: ${participantId}`);
+          console.log(`➕ Adding new auto-selected participant: ${participantId}`);
           setParticipantList(prev => [...prev, newParticipant]);
           
-          // Update video display after adding participant
+          // Transfer stream and update display
           setTimeout(() => {
+            transferStreamToTransmission(participantId, stream);
             updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
           }, 200);
         }
@@ -155,7 +229,7 @@ export const useParticipantManagement = ({
       window.addEventListener('load', processStreams);
       return () => window.removeEventListener('load', processStreams);
     }
-  }, [participantList, participantStreams, transmissionWindowRef, updateVideoElementsImmediately, setParticipantList]);
+  }, [participantList, participantStreams, transmissionWindowRef, updateVideoElementsImmediately, setParticipantList, sessionId]);
 
   const testConnection = () => {
     console.log('🧪 Testing WebRTC connection...');
@@ -166,7 +240,7 @@ export const useParticipantManagement = ({
       joinedAt: Date.now(),
       lastActive: Date.now(),
       active: true,
-      selected: false,
+      selected: true, // Auto-select test participant
       hasVideo: false
     };
     
@@ -202,6 +276,7 @@ export const useParticipantManagement = ({
     handleParticipantRemove,
     handleParticipantJoin,
     handleParticipantStream,
-    testConnection
+    testConnection,
+    transferStreamToTransmission
   };
 };
