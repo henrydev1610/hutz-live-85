@@ -40,12 +40,33 @@ export const useParticipantMedia = () => {
     const isMobile = detectMobile();
     
     try {
-      console.log(`📹 MEDIA: Initializing media (Mobile: ${isMobile})`);
+      console.log(`📹 MEDIA DEBUG: Starting initialization (Mobile: ${isMobile})`);
+      console.log(`📹 MEDIA DEBUG: User agent: ${navigator.userAgent}`);
+      console.log(`📹 MEDIA DEBUG: Protocol: ${window.location.protocol}`);
+      console.log(`📹 MEDIA DEBUG: Host: ${window.location.host}`);
+      
+      // Verificar suporte a getUserMedia ANTES de qualquer coisa
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.error('❌ MEDIA DEBUG: getUserMedia not supported');
+        throw new Error('getUserMedia não é suportado neste navegador/dispositivo');
+      }
       
       // No mobile, aguardar mais tempo e verificar permissões
       if (isMobile) {
-        console.log(`📱 MEDIA: Mobile detected, waiting for device ready...`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        console.log(`📱 MEDIA DEBUG: Mobile detected, checking permissions...`);
+        
+        // Verificar permissões
+        try {
+          const permissions = await navigator.permissions.query({ name: 'camera' as PermissionName });
+          console.log(`📱 MEDIA DEBUG: Camera permission: ${permissions.state}`);
+          
+          const micPermissions = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+          console.log(`📱 MEDIA DEBUG: Microphone permission: ${micPermissions.state}`);
+        } catch (permError) {
+          console.log(`📱 MEDIA DEBUG: Permission check failed:`, permError);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         // Verificar se getUserMedia está disponível
         if (!checkMediaDevicesSupport()) {
