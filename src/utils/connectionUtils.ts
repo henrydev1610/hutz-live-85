@@ -9,16 +9,9 @@ export const getWebSocketURL = (): string => {
   
   // Development environment (localhost ou IP local)
   if (host.includes('localhost') || host.includes('192.168.') || host.includes('172.26.') || host.includes('10.255.') || host.includes('127.0.0.1')) {
-    const localIP = '10.255.255.254'; // IP da rede local da sua máquina
+    const localIP = '172.26.204.230'; // IP da rede local detectado pelo Vite
     console.log(`🏠 CONNECTION: Using local network IP: ${localIP}`);
     return `http://${localIP}:3001`;
-  }
-  
-  // Ngrok environment (specific detection) - use same origin for API calls
-  if (host.includes('ngrok-free.app') || host.includes('ngrok.io')) {
-    const wsUrl = `https://${host}/api/socket.io`;
-    console.log(`🌐 CONNECTION: Using Ngrok same origin for WebSocket: ${wsUrl}`);
-    return wsUrl;
   }
   
   // Lovable environment (specific detection)
@@ -42,16 +35,9 @@ export const getApiBaseURL = (): string => {
   
   // Development environment (localhost ou IP local)
   if (host.includes('localhost') || host.includes('192.168.') || host.includes('172.26.') || host.includes('10.255.') || host.includes('127.0.0.1')) {
-    const localIP = '10.255.255.254'; // IP da rede local da sua máquina
+    const localIP = '172.26.204.230'; // IP da rede local detectado pelo Vite
     console.log(`🏠 API: Using local network IP: ${localIP}`);
     return `http://${localIP}:3001`;
-  }
-  
-  // Ngrok environment - use current origin for API
-  if (host.includes('ngrok-free.app') || host.includes('ngrok.io')) {
-    const apiUrl = `${protocol}//${host}`;
-    console.log(`🌐 API: Using Ngrok API URL: ${apiUrl}`);
-    return apiUrl;
   }
   
   // Production/Preview environment (use current origin)

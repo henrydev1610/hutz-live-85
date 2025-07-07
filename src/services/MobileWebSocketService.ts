@@ -56,36 +56,37 @@ class MobileWebSocketService {
       this.socket = null;
     }
 
-    // Configuração ESPECÍFICA para mobile Chrome com melhor compatibilidade
+    // Configuração ESPECÍFICA para mobile Chrome
     const mobileOptions = {
-      transports: ['polling'], // APENAS polling no mobile para evitar erros
-      timeout: 60000, // Timeout ainda maior
+      transports: ['polling', 'websocket'], // Polling primeiro no mobile
+      timeout: 30000, // Timeout longo para mobile
       forceNew: true,
       reconnection: true,
-      reconnectionAttempts: 5, // Reduzir tentativas
-      reconnectionDelay: 3000, // Delay maior entre tentativas
-      reconnectionDelayMax: 15000,
-      maxHttpBufferSize: 1e6,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000,
+      maxHttpBufferSize: 1e6, // 1MB buffer
       withCredentials: false,
-      autoConnect: false,
-      upgrade: false, // DESABILITAR upgrade para WebSocket no mobile
-      pingTimeout: 120000, // Ping timeout muito maior
-      pingInterval: 30000, // Ping interval maior
-      // Configurações específicas para evitar timeouts
-      rememberUpgrade: false,
-      closeOnBeforeunload: false
+      autoConnect: false, // Conectar manualmente
+      upgrade: true, // Permitir upgrade para WebSocket
+      pingTimeout: 60000,
+      pingInterval: 25000,
+      // Headers específicos para mobile
+      extraHeaders: {
+        'User-Agent': navigator.userAgent
+      }
     };
 
-    console.log('📱 MOBILE: Using polling-only configuration for better mobile compatibility');
+    console.log('📱 MOBILE: Using mobile-specific Socket.IO options');
 
     this.socket = io(url, mobileOptions);
 
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        console.error('📱 MOBILE: Connection timeout after 60s');
+        console.error('📱 MOBILE: Connection timeout');
         this.callbacks.onConnectionFailed?.(new Error('Connection timeout'));
         reject(new Error('Mobile WebSocket connection timeout'));
-      }, 60000); // 60s timeout para dar mais tempo
+      }, 35000); // 35s timeout
 
       this.socket!.on('connect', () => {
         clearTimeout(timeoutId);
