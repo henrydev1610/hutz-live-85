@@ -8,8 +8,8 @@ export const getWebSocketURL = (): string => {
   console.log(`🔍 CONNECTION: Detecting environment - protocol: ${protocol}, host: ${host}`);
   
   // Development environment (localhost ou IP local)
-  if (host.includes('localhost') || host.includes('192.168.') || host.includes('127.0.0.1')) {
-    const localIP = '192.168.18.17'; // IP da rede local
+  if (host.includes('localhost') || host.includes('192.168.') || host.includes('172.26.') || host.includes('10.255.') || host.includes('127.0.0.1')) {
+    const localIP = '172.26.204.230'; // IP da rede local detectado pelo Vite
     console.log(`🏠 CONNECTION: Using local network IP: ${localIP}`);
     return `http://${localIP}:3001`;
   }
@@ -34,8 +34,8 @@ export const getApiBaseURL = (): string => {
   console.log(`📡 API: Detecting base URL - protocol: ${protocol}, host: ${host}`);
   
   // Development environment (localhost ou IP local)
-  if (host.includes('localhost') || host.includes('192.168.') || host.includes('127.0.0.1')) {
-    const localIP = '192.168.18.17'; // IP da rede local
+  if (host.includes('localhost') || host.includes('192.168.') || host.includes('172.26.') || host.includes('10.255.') || host.includes('127.0.0.1')) {
+    const localIP = '172.26.204.230'; // IP da rede local detectado pelo Vite
     console.log(`🏠 API: Using local network IP: ${localIP}`);
     return `http://${localIP}:3001`;
   }
