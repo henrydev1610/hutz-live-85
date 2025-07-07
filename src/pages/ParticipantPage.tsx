@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -78,21 +79,9 @@ const ParticipantPage = () => {
         console.warn('⚠️ Signaling not ready, but continuing...');
       }
 
-      // Step 2: Get user media
+      // Step 2: Get user media with simpler constraints
       console.log('📹 PARTICIPANT: Step 2 - Getting user media');
-      const stream = await getUserMedia({ 
-        video: { 
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          frameRate: { ideal: 30 },
-          facingMode: 'user'
-        }, 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
+      const stream = await getUserMediaWithFallback();
 
       if (!stream) {
         throw new Error('Falha ao obter stream de mídia');
@@ -110,7 +99,7 @@ const ParticipantPage = () => {
       console.log(`✅ PARTICIPANT: Media obtained - Video: ${videoTracks.length > 0}, Audio: ${audioTracks.length > 0}`);
       
       // Step 3: Display local video
-      if (localVideoRef.current) {
+      if (localVideoRef.current && videoTracks.length > 0) {
         localVideoRef.current.srcObject = stream;
         try {
           await localVideoRef.current.play();
@@ -120,31 +109,10 @@ const ParticipantPage = () => {
         }
       }
       
-      // Step 4: Initialize WebRTC connection with retry
+      // Step 4: Initialize WebRTC connection
       console.log('🔗 PARTICIPANT: Step 4 - Initializing WebRTC connection');
-      let webrtcInitialized = false;
-      let attempts = 0;
-      const maxAttempts = 3;
-
-      while (!webrtcInitialized && attempts < maxAttempts) {
-        try {
-          attempts++;
-          console.log(`🔄 PARTICIPANT: WebRTC initialization attempt ${attempts}/${maxAttempts}`);
-          
-          await initParticipantWebRTC(sessionId!, participantId, stream);
-          webrtcInitialized = true;
-          console.log('✅ PARTICIPANT: WebRTC initialized successfully');
-        } catch (webrtcError) {
-          console.error(`❌ PARTICIPANT: WebRTC init attempt ${attempts} failed:`, webrtcError);
-          
-          if (attempts < maxAttempts) {
-            console.log('🔄 PARTICIPANT: Retrying WebRTC init in 2 seconds...');
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          } else {
-            throw webrtcError;
-          }
-        }
-      }
+      await initParticipantWebRTC(sessionId!, participantId, stream);
+      console.log('✅ PARTICIPANT: WebRTC initialized successfully');
       
       setIsConnected(true);
       setConnectionStatus('connected');
@@ -177,64 +145,61 @@ const ParticipantPage = () => {
     }
   };
 
-  const getUserMedia = async (constraints: MediaStreamConstraints): Promise<MediaStream | null> => {
-    try {
-      console.log('🎥 PARTICIPANT: Requesting user media with constraints:', constraints);
-      
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('getUserMedia não é suportado neste navegador');
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('✅ PARTICIPANT: Successfully obtained user media:', {
-        tracks: stream.getTracks().map(t => ({ 
-          kind: t.kind, 
-          label: t.label, 
-          enabled: t.enabled,
-          readyState: t.readyState 
-        }))
-      });
-      return stream;
-    } catch (error) {
-      console.error('❌ PARTICIPANT: Error getting user media:', error);
-      
-      if (error instanceof Error) {
-        if (error.name === 'NotAllowedError') {
-          toast.error('Acesso à câmera/microfone negado. Por favor, permita o acesso nas configurações do navegador.');
-        } else if (error.name === 'NotFoundError') {
-          toast.error('Câmera ou microfone não encontrados. Verifique se os dispositivos estão conectados.');
-        } else if (error.name === 'NotReadableError') {
-          toast.error('Câmera ou microfone já estão sendo usados por outro aplicativo.');
-        } else if (error.name === 'OverconstrainedError') {
-          // Try with fallback constraints
-          console.log('🔄 PARTICIPANT: Trying fallback constraints');
-          return getUserMediaFallback();
-        } else {
-          toast.error(`Erro ao acessar mídia: ${error.message}`);
-        }
-      }
-      
-      return null;
-    }
-  };
-
-  const getUserMediaFallback = async (): Promise<MediaStream | null> => {
-    const fallbackConstraints = [
-      { video: { width: 640, height: 480 }, audio: true },
+  const getUserMediaWithFallback = async (): Promise<MediaStream | null> => {
+    // Lista de configurações em ordem de preferência
+    const constraintsList = [
+      // Tentar com vídeo e áudio básicos primeiro
       { video: true, audio: true },
-      { video: { width: 320, height: 240 }, audio: true },
-      { audio: true }
+      // Tentar apenas com vídeo
+      { video: true, audio: false },
+      // Tentar com configurações básicas específicas
+      { 
+        video: { width: 640, height: 480, facingMode: 'user' }, 
+        audio: { echoCancellation: true } 
+      },
+      // Configuração mínima
+      { video: { width: 320, height: 240 }, audio: false },
+      // Apenas áudio como último recurso
+      { video: false, audio: true }
     ];
 
-    for (const constraints of fallbackConstraints) {
+    for (let i = 0; i < constraintsList.length; i++) {
+      const constraints = constraintsList[i];
       try {
-        console.log('🔄 PARTICIPANT: Trying fallback constraints:', constraints);
+        console.log(`🎥 PARTICIPANT: Trying constraints ${i + 1}/${constraintsList.length}:`, constraints);
+        
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('getUserMedia não é suportado neste navegador');
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        console.log('✅ PARTICIPANT: Fallback constraints worked');
+        console.log('✅ PARTICIPANT: Successfully obtained user media:', {
+          tracks: stream.getTracks().map(t => ({ 
+            kind: t.kind, 
+            label: t.label, 
+            enabled: t.enabled,
+            readyState: t.readyState 
+          }))
+        });
         return stream;
       } catch (error) {
-        console.log('❌ PARTICIPANT: Fallback attempt failed:', error);
-        continue;
+        console.error(`❌ PARTICIPANT: Constraints ${i + 1} failed:`, error);
+        
+        if (error instanceof Error) {
+          if (error.name === 'NotAllowedError') {
+            // Se o usuário negou permissão, não adianta tentar outras configurações
+            toast.error('Acesso à câmera/microfone negado. Por favor, permita o acesso nas configurações do navegador.');
+            throw error;
+          } else if (error.name === 'NotFoundError' && i === 0) {
+            // Se não encontrou dispositivos na primeira tentativa, mostra aviso mas continua tentando
+            console.warn('⚠️ PARTICIPANT: No media devices found, trying fallback options...');
+          }
+        }
+        
+        // Se é a última tentativa, relança o erro
+        if (i === constraintsList.length - 1) {
+          throw error;
+        }
       }
     }
 
@@ -639,10 +604,11 @@ const ParticipantPage = () => {
             <h3 className="text-white font-semibold mb-2">Instruções:</h3>
             <ul className="text-white/70 text-sm space-y-1">
               <li>• Verifique se o servidor de sinalização está rodando em localhost:3001</li>
-              <li>• A câmera e microfone são inicializados automaticamente</li>
+              <li>• A câmera e microfone são inicializados automaticamente com fallback</li>
               <li>• Use os controles para ajustar vídeo, áudio e compartilhamento de tela</li>
               <li>• Se houver problemas de conexão, use o botão de reconexão</li>
               <li>• O status do WebSocket deve mostrar "connected" para funcionar corretamente</li>
+              <li>• Permita acesso à câmera/microfone quando solicitado pelo navegador</li>
             </ul>
           </CardContent>
         </Card>
