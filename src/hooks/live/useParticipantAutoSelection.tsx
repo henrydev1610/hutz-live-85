@@ -57,23 +57,30 @@ export const useParticipantAutoSelection = ({
     Object.entries(participantStreams).forEach(([participantId, stream]) => {
       const participant = participantList.find(p => p.id === participantId);
       
-      if (participant && !participant.selected && stream.active) {
-        console.log(`✅ AUTO-SELECTING participant ${participantId} for transmission`);
+      if (participant && stream.active) {
+        console.log(`✅ FORCE AUTO-SELECTING participant ${participantId} for transmission`);
         
+        // Always ensure the participant is selected and has video
         setParticipantList(prev => prev.map(p => 
           p.id === participantId 
             ? { ...p, selected: true, hasVideo: true, active: true }
             : p
         ));
         
-        // Immediately send to transmission window
+        // Immediately send to transmission window multiple times to ensure delivery
         setTimeout(() => {
           transferStreamToTransmission(participantId, stream);
           updateTransmissionParticipants();
+          
+          // Force update again after a short delay
+          setTimeout(() => {
+            transferStreamToTransmission(participantId, stream);
+            updateTransmissionParticipants();
+          }, 500);
         }, 100);
       }
     });
-  }, [participantStreams, participantList, transmissionWindowRef, updateTransmissionParticipants]);
+  }, [participantStreams, participantList, setParticipantList, transmissionWindowRef, updateTransmissionParticipants]);
 
   // Function to transfer streams to transmission window
   const transferStreamToTransmission = (participantId: string, stream: MediaStream) => {
@@ -85,30 +92,48 @@ export const useParticipantAutoSelection = ({
     console.log('📤 CRITICAL: Transferring stream to transmission window:', participantId);
     
     try {
-      // Send stream information to transmission window
-      transmissionWindowRef.current.postMessage({
-        type: 'participant-stream-ready',
-        participantId: participantId,
-        streamInfo: {
-          id: stream.id,
-          active: stream.active,
-          videoTracks: stream.getVideoTracks().length,
-          audioTracks: stream.getAudioTracks().length
+      // Send multiple types of messages to ensure compatibility
+      const messages = [
+        {
+          type: 'participant-stream-ready',
+          participantId: participantId,
+          streamInfo: {
+            id: stream.id,
+            active: stream.active,
+            videoTracks: stream.getVideoTracks().length,
+            audioTracks: stream.getAudioTracks().length
+          },
+          timestamp: Date.now()
         },
-        timestamp: Date.now()
-      }, '*');
+        {
+          type: 'video-stream',
+          participantId: participantId,
+          hasStream: true,
+          streamActive: stream.active,
+          trackCount: stream.getTracks().length,
+          timestamp: Date.now()
+        },
+        {
+          type: 'participant-auto-selected',
+          participantId: participantId,
+          selected: true,
+          hasVideo: true,
+          timestamp: Date.now()
+        }
+      ];
+
+      // Send all messages to transmission window
+      messages.forEach(message => {
+        transmissionWindowRef.current?.postMessage(message, '*');
+      });
 
       // Use BroadcastChannel for additional communication
       const channel = new BroadcastChannel(`live-session-${sessionId}`);
-      channel.postMessage({
-        type: 'video-stream',
-        participantId: participantId,
-        hasStream: true,
-        streamActive: stream.active,
-        trackCount: stream.getTracks().length
+      messages.forEach(message => {
+        channel.postMessage(message);
       });
       
-      console.log('✅ Stream transfer initiated for:', participantId);
+      console.log('✅ Multiple stream transfer messages sent for:', participantId);
       
     } catch (error) {
       console.error('❌ Failed to transfer stream:', error);

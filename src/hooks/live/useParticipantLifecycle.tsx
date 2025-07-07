@@ -34,7 +34,8 @@ export const useParticipantLifecycle = ({
           ...p, 
           active: true, 
           lastActive: Date.now(), 
-          connectedAt: Date.now() 
+          connectedAt: Date.now(),
+          selected: true // AUTO-SELECT when participant joins
         } : p);
       }
       
@@ -49,11 +50,11 @@ export const useParticipantLifecycle = ({
           joinedAt: Date.now(),
           lastActive: Date.now(),
           active: true,
-          selected: false,
+          selected: true, // AUTO-SELECT when participant joins
           hasVideo: false,
           connectedAt: Date.now()
         };
-        console.log(`✅ Replaced placeholder at index ${placeholderIndex} with ${participantId}`);
+        console.log(`✅ Replaced placeholder at index ${placeholderIndex} with ${participantId} - AUTO-SELECTED`);
         
         // Add to session
         if (sessionId) {
@@ -62,7 +63,7 @@ export const useParticipantLifecycle = ({
         
         toast({
           title: "Participante conectado",
-          description: `${participantName} entrou na sessão`,
+          description: `${participantName} entrou na sessão e foi selecionado automaticamente`,
         });
         
         return updated;
@@ -76,7 +77,7 @@ export const useParticipantLifecycle = ({
         joinedAt: Date.now(),
         lastActive: Date.now(),
         active: true,
-        selected: false,
+        selected: true, // AUTO-SELECT when participant joins
         hasVideo: false,
         connectedAt: Date.now()
       };
@@ -87,10 +88,10 @@ export const useParticipantLifecycle = ({
       
       toast({
         title: "Novo participante",
-        description: `${participantName} se conectou`,
+        description: `${participantName} se conectou e foi selecionado automaticamente`,
       });
       
-      console.log(`➕ Added new participant: ${participantId}`);
+      console.log(`➕ Added new participant: ${participantId} - AUTO-SELECTED`);
       return [...prev, newParticipant];
     });
     
@@ -99,14 +100,24 @@ export const useParticipantLifecycle = ({
       transmissionWindowRef.current.postMessage({
         type: 'participant-joined',
         id: participantId,
-        sessionId
+        sessionId,
+        autoSelected: true // Flag indicating auto-selection
       }, '*');
     }
     
-    // Update transmission participants
+    // Update transmission participants after a small delay to ensure state updates
     setTimeout(() => {
       updateTransmissionParticipants();
-    }, 100);
+      
+      // Send additional message to ensure transmission window shows the participant
+      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+        transmissionWindowRef.current.postMessage({
+          type: 'force-participant-display',
+          participantId: participantId,
+          timestamp: Date.now()
+        }, '*');
+      }
+    }, 200);
   }, [setParticipantList, sessionId, toast, transmissionWindowRef, updateTransmissionParticipants]);
 
   const handleParticipantSelect = useCallback((id: string) => {
