@@ -29,7 +29,7 @@ export const useParticipantStreams = ({
 
   const handleParticipantStream = useCallback((participantId: string, stream: MediaStream) => {
     const operationId = `${participantId}-${Date.now()}`;
-    console.log(`🎥 HANDLER: handleParticipantStream called for: ${participantId} (${operationId})`, {
+    console.log(`🎥 CRITICAL: handleParticipantStream called for: ${participantId} (${operationId})`, {
       streamId: stream.id,
       active: stream.active,
       videoTracks: stream.getVideoTracks().length,
@@ -45,44 +45,44 @@ export const useParticipantStreams = ({
     
     console.log(`✅ CRITICAL: Stream validated successfully for ${participantId}`);
     
-    // Update React state immediately
+    // FORCE immediate state update with video
     updateStreamState(participantId, stream);
     
-    // Process video update with controlled approach (sem retry excessivo)
+    // IMMEDIATELY process video update
     const processVideoUpdate = async () => {
-      console.log(`📤 PROCESS: Processing video update for ${participantId} (${operationId})`);
+      console.log(`📤 CRITICAL: IMMEDIATE video processing for ${participantId} (${operationId})`);
       
       try {
-        // Aguardar um pouco para o DOM estar pronto
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Wait for DOM to be ready
+        await new Promise(resolve => setTimeout(resolve, 50));
         
-        // Update video elements - agora com processamento seguro interno
+        // FORCE video element creation
         await updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
         
-        // Send to transmission window
+        // Send to transmission window immediately
         sendStreamToTransmission(participantId, stream, transmissionWindowRef);
         
-        console.log(`✅ SUCCESS: Video elements updated successfully (${operationId})`);
+        console.log(`✅ CRITICAL: Video processing completed for ${participantId} (${operationId})`);
         
-        // Show success toast
+        // Success notification
         toast({
-          title: "Vídeo conectado!",
-          description: `Participante ${participantId.substring(0, 8)} está transmitindo`,
+          title: "Participante conectado!",
+          description: `${participantId.substring(0, 8)} está transmitindo vídeo`,
         });
         
       } catch (error) {
-        console.error(`❌ FAILED: Video update failed (${operationId}):`, error);
+        console.error(`❌ CRITICAL: Video processing failed (${operationId}):`, error);
         
-        // Show error toast
+        // Error notification
         toast({
-          title: "Erro na conexão",
-          description: `Falha ao conectar vídeo do participante ${participantId.substring(0, 8)}`,
+          title: "Erro no vídeo",
+          description: `Falha ao exibir vídeo de ${participantId.substring(0, 8)}`,
           variant: "destructive"
         });
       }
     };
     
-    // Executar processamento sem retry manual (agora controlado pelo StreamManager)
+    // Execute immediately without delay
     processVideoUpdate();
     
   }, [validateStream, updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast]);

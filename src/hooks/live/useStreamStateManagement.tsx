@@ -14,7 +14,7 @@ export const useStreamStateManagement = ({
 }: UseStreamStateManagementProps) => {
   
   const updateStreamState = useCallback((participantId: string, stream: MediaStream) => {
-    console.log('🔄 STATE: Updating stream state for:', participantId, {
+    console.log('🔄 CRITICAL: FORCE updating stream state for:', participantId, {
       streamId: stream.id,
       active: stream.active,
       videoTracks: stream.getVideoTracks().length,
@@ -22,21 +22,21 @@ export const useStreamStateManagement = ({
     });
     
     flushSync(() => {
-      // IMMEDIATE stream update
+      // FORCE immediate stream update
       setParticipantStreams(prev => {
         const updated = {
           ...prev,
           [participantId]: stream
         };
-        console.log('📦 Total streams now:', Object.keys(updated).length);
+        console.log('📦 CRITICAL: Total streams now:', Object.keys(updated).length);
         return updated;
       });
       
-      // IMMEDIATE participant list update with AUTO-SELECTION for transmission
+      // FORCE immediate participant update with video enabled
       setParticipantList(prev => {
         const updated = prev.map(p => {
           if (p.id === participantId) {
-            console.log(`✅ IMMEDIATE participant update: ${participantId} now has video and is SELECTED`);
+            console.log(`✅ CRITICAL: FORCE participant ${participantId} to have video and be SELECTED`);
             return { 
               ...p, 
               hasVideo: true, 
@@ -49,10 +49,10 @@ export const useStreamStateManagement = ({
           return p;
         });
         
-        // If participant doesn't exist, add them
+        // If participant doesn't exist, FORCE add them with video
         const existingParticipant = updated.find(p => p.id === participantId);
         if (!existingParticipant) {
-          console.log(`➕ Adding new participant: ${participantId}`);
+          console.log(`➕ CRITICAL: FORCE adding new participant with video: ${participantId}`);
           updated.push({
             id: participantId,
             name: `Participante ${participantId.substring(0, 8)}`,
@@ -60,11 +60,12 @@ export const useStreamStateManagement = ({
             lastActive: Date.now(),
             active: true,
             selected: true,
-            hasVideo: true
+            hasVideo: true,
+            connectedAt: Date.now()
           });
         }
         
-        console.log('📝 Updated participant list - selected participants:', 
+        console.log('📝 CRITICAL: Updated participant list - selected with video:', 
           updated.filter(p => p.selected && p.hasVideo).length);
         
         return updated;

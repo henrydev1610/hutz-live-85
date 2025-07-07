@@ -7,29 +7,34 @@ export const useContainerManagement = () => {
       const searchContainers = () => {
          const containers: HTMLElement[] = [];
          
-         console.log(`🔍 ENHANCED: Searching containers for participant: ${participantId}`);
-         console.log('🔍 DOM State:', {
+         console.log(`🔍 CRITICAL: FORCE searching containers for participant: ${participantId}`);
+         console.log('🔍 CRITICAL: DOM State:', {
            totalDivs: document.querySelectorAll('div').length,
            participantGrids: document.querySelectorAll('.participant-grid').length,
            previewContainers: document.querySelectorAll('[id*="preview-participant"]').length,
            participantVideoContainers: document.querySelectorAll('.participant-video').length,
-           participantContainersWithId: document.querySelectorAll(`[data-participant-id="${participantId}"]`).length
+           participantContainersWithId: document.querySelectorAll(`[data-participant-id="${participantId}"]`).length,
+           allParticipantContainers: document.querySelectorAll('.participant-video').length
          });
         
-        // Enhanced search strategies with more specific selectors
+        // ENHANCED search with FORCED container detection
         const selectors = [
-          // Most specific first
+          // Most specific first - EXACT participant container
           `#preview-participant-video-${participantId}`,
           `#participant-video-${participantId}`, 
           `[data-participant-id="${participantId}"]`,
           `.participant-video-${participantId}`,
-          // General participant containers
+          // ANY participant container without video
           '.participant-video:not(:has(video))',
-          '.participant-grid .bg-gray-800:not(:has(video))',
-          '.participant-grid > div:not(:has(video))',
-          // Fallback to any available containers
-          '.aspect-video:not(:has(video))',
-          '.bg-gray-800:not(:has(video))'
+          // ANY container in participant grid
+          '.participant-grid .participant-video',
+          '.participant-grid > div',
+          // FORCE any available video container
+          '.aspect-video',
+          '.bg-gray-800',
+          // EMERGENCY - any div that looks like a container
+          '[class*="participant"]',
+          '[class*="video"]'
         ];
         
         selectors.forEach(selector => {

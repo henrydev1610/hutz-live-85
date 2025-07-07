@@ -21,16 +21,17 @@ export const useVideoElementManagement = () => {
     transmissionWindowRef?: React.MutableRefObject<Window | null>
   ) => {
     const operationId = `${participantId}-${Date.now()}`;
-    console.log(`🎬 CRITICAL: IMMEDIATE video update for: ${participantId} (${operationId})`, {
+    console.log(`🎬 CRITICAL: FORCE IMMEDIATE video update for: ${participantId} (${operationId})`, {
       streamId: stream.id,
       trackCount: stream.getTracks().length,
       videoTracks: stream.getVideoTracks().length,
       active: stream.active
     });
     
+    // FORCE processing even if stream looks invalid - for debugging
     if (!stream.active || stream.getVideoTracks().length === 0) {
-      console.warn(`⚠️ CRITICAL: Invalid stream for ${participantId} (${operationId})`);
-      return;
+      console.warn(`⚠️ CRITICAL: Stream might be invalid for ${participantId}, but FORCING processing (${operationId})`);
+      // Continue anyway to create placeholder
     }
     
     // Usar processamento ULTRA SEGURO para evitar piscar

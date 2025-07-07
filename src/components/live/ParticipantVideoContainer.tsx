@@ -33,16 +33,29 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
       )}
       
       {/* Video will be inserted here automatically by useVideoElementManagement */}
-      {!participant.hasVideo && (
+      {/* Show placeholder for connected participants even without video stream yet */}
+      {participant.active && !document.querySelector(`#${containerId} video`) && (
         <div className="absolute inset-0 flex items-center justify-center z-10 bg-gray-800/60">
           <div className="text-center text-white/70">
+            <svg className="w-8 h-8 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            <p className="text-xs font-medium">{participant.name || `P${index + 1}`}</p>
+            <p className="text-xs text-green-400 mt-1">● Conectado</p>
+            <p className="text-xs text-yellow-400 mt-1">Carregando vídeo...</p>
+          </div>
+        </div>
+      )}
+      
+      {/* Show placeholder for inactive participants */}
+      {!participant.active && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 bg-gray-800/60">
+          <div className="text-center text-white/40">
             <svg className="w-8 h-8 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
             <p className="text-xs">{participant.name || `P${index + 1}`}</p>
-            {participant.active && (
-              <p className="text-xs text-green-400 mt-1">Conectado</p>
-            )}
+            <p className="text-xs text-gray-500 mt-1">Aguardando</p>
           </div>
         </div>
       )}

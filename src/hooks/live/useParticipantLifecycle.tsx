@@ -24,15 +24,17 @@ export const useParticipantLifecycle = ({
   const { toast } = useToast();
 
   const handleParticipantJoin = useCallback((participantId: string) => {
-    console.log("🚀 CRITICAL: Participant joined:", participantId);
+    console.log("🚀 CRITICAL: FORCE Participant joined:", participantId);
     
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === participantId);
       if (exists) {
-        console.log(`🔄 Updating existing participant: ${participantId}`);
+        console.log(`🔄 CRITICAL: FORCE updating existing participant: ${participantId}`);
         return prev.map(p => p.id === participantId ? { 
           ...p, 
           active: true, 
+          selected: true, // FORCE select immediately
+          hasVideo: true, // FORCE show as having video (placeholder until stream arrives)
           lastActive: Date.now(), 
           connectedAt: Date.now() 
         } : p);
@@ -49,11 +51,11 @@ export const useParticipantLifecycle = ({
           joinedAt: Date.now(),
           lastActive: Date.now(),
           active: true,
-          selected: true, // AUTO-SELECT immediately when participant connects
-          hasVideo: false,
+          selected: true, // FORCE AUTO-SELECT immediately
+          hasVideo: true, // FORCE show video placeholder immediately
           connectedAt: Date.now()
         };
-        console.log(`✅ Replaced placeholder at index ${placeholderIndex} with ${participantId}`);
+        console.log(`✅ CRITICAL: FORCE replaced placeholder at index ${placeholderIndex} with ${participantId}`);
         
         // Add to session
         if (sessionId) {
@@ -61,8 +63,8 @@ export const useParticipantLifecycle = ({
         }
         
         toast({
-          title: "Participante conectado",
-          description: `${participantName} entrou na sessão`,
+          title: "Participante conectado!",
+          description: `${participantName} aparecerá no quadrante`,
         });
         
         return updated;
@@ -76,8 +78,8 @@ export const useParticipantLifecycle = ({
         joinedAt: Date.now(),
         lastActive: Date.now(),
         active: true,
-        selected: true, // AUTO-SELECT immediately when participant connects
-        hasVideo: false,
+        selected: true, // FORCE AUTO-SELECT immediately
+        hasVideo: true, // FORCE show video placeholder immediately
         connectedAt: Date.now()
       };
       
@@ -86,11 +88,11 @@ export const useParticipantLifecycle = ({
       }
       
       toast({
-        title: "Novo participante",
-        description: `${participantName} se conectou`,
+        title: "Novo participante!",
+        description: `${participantName} aparecerá no quadrante`,
       });
       
-      console.log(`➕ Added new participant: ${participantId}`);
+      console.log(`➕ CRITICAL: FORCE added new participant: ${participantId}`);
       return [...prev, newParticipant];
     });
     
