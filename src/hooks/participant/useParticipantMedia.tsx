@@ -20,56 +20,31 @@ export const useParticipantMedia = () => {
     const isMobile = detectMobile();
     console.log(`📱 MEDIA: Initializing media for ${isMobile ? 'MOBILE' : 'DESKTOP'}`);
 
-    // Configurações específicas para mobile com fallbacks agressivos
+    // Configurações simplificadas e progressivas para mobile
     const mobileConstraints = [
-      // Tentativa 1: Configuração ideal para mobile
+      // Tentativa 1: Configuração básica ideal
       {
         video: {
-          width: { ideal: 640, max: 1280 },
-          height: { ideal: 480, max: 720 },
-          frameRate: { ideal: 15, max: 30 },
-          facingMode: 'user'
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 44100
-        }
-      },
-      // Tentativa 2: Configuração mais simples
-      {
-        video: {
-          width: 640,
-          height: 480,
           facingMode: 'user'
         },
         audio: true
       },
-      // Tentativa 3: Configuração mínima
-      {
-        video: {
-          width: 320,
-          height: 240
-        },
-        audio: true
-      },
-      // Tentativa 4: Só vídeo básico
+      // Tentativa 2: Só vídeo sem áudio
       {
         video: true,
         audio: false
       },
-      // Tentativa 5: Vídeo com facing mode environment (câmera traseira)
+      // Tentativa 3: Câmera traseira
       {
         video: {
           facingMode: 'environment'
         },
         audio: false
       },
-      // Tentativa 6: Só áudio
+      // Tentativa 4: Qualquer câmera disponível
       {
-        video: false,
-        audio: true
+        video: {},
+        audio: false
       }
     ];
 
@@ -147,9 +122,15 @@ export const useParticipantMedia = () => {
     try {
       console.log(`📹 MEDIA: Initializing media (Mobile: ${isMobile})`);
       
-      // No mobile, aguardar um pouco para garantir que o DOM está pronto
+      // No mobile, aguardar mais tempo e verificar permissões
       if (isMobile) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log(`📱 MEDIA: Mobile detected, waiting for device ready...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Verificar se getUserMedia está disponível
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('getUserMedia não suportado no dispositivo');
+        }
       }
       
       const stream = await getUserMediaWithMobileFallback();

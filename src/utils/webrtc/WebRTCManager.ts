@@ -9,6 +9,7 @@ export class WebRTCManager {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private localStream: MediaStream | null = null;
   private roomId: string | null = null;
+  private participantId: string | null = null;
   private isHost: boolean = false;
   private isMobile: boolean = false;
   private connectionHandler: ConnectionHandler;
@@ -54,6 +55,7 @@ export class WebRTCManager {
   async initializeAsHost(sessionId: string): Promise<void> {
     console.log(`🏠 UNIFIED: Initializing as host for session: ${sessionId} (Mobile: ${this.isMobile})`);
     this.roomId = sessionId;
+    this.participantId = `host-${Date.now()}`;
     this.isHost = true;
 
     try {
@@ -82,7 +84,7 @@ export class WebRTCManager {
         this.signalingHandler.handleIceCandidate.bind(this.signalingHandler)
       );
 
-      await signalingService.joinRoom(sessionId, `host-${Date.now()}`);
+      await signalingService.joinRoom(sessionId, this.participantId);
       console.log(`✅ UNIFIED HOST: Connected to signaling server (Mobile: ${this.isMobile})`);
       
     } catch (error) {
@@ -94,6 +96,7 @@ export class WebRTCManager {
   async initializeAsParticipant(sessionId: string, participantId: string, stream?: MediaStream): Promise<void> {
     console.log(`👤 UNIFIED: Initializing as participant ${participantId} for session ${sessionId} (Mobile: ${this.isMobile})`);
     this.roomId = sessionId;
+    this.participantId = participantId;
     this.isHost = false;
 
     try {
@@ -101,27 +104,25 @@ export class WebRTCManager {
         this.localStream = stream;
         console.log(`📹 UNIFIED: Using provided stream (Mobile: ${this.isMobile}):`, stream.getTracks().length, 'tracks');
       } else {
+        // Fallback se não receber stream - para mobile usar configurações simplificadas
         const constraints = this.isMobile ? {
-          video: {
-            width: { ideal: 640, max: 1280 },
-            height: { ideal: 480, max: 720 },
-            frameRate: { ideal: 15, max: 30 },
-            facingMode: 'user'
-          },
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          }
+          video: { facingMode: 'user' },
+          audio: true
         } : MEDIA_CONSTRAINTS;
 
-        const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-        this.localStream = mediaStream;
-        console.log(`📹 UNIFIED: Local stream obtained (Mobile: ${this.isMobile}):`, mediaStream.getTracks().length, 'tracks');
+        try {
+          const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+          this.localStream = mediaStream;
+          console.log(`📹 UNIFIED: Local stream obtained (Mobile: ${this.isMobile}):`, mediaStream.getTracks().length, 'tracks');
+        } catch (error) {
+          console.warn(`⚠️ UNIFIED: Could not get media stream (Mobile: ${this.isMobile}):`, error);
+          // Continue sem stream local
+        }
       }
 
       await signalingService.connect();
 
+      // Setup callbacks específicos para mobile
       this.callbacksManager.setupParticipantCallbacks(
         participantId,
         (data) => {
@@ -149,6 +150,12 @@ export class WebRTCManager {
 
       await signalingService.joinRoom(sessionId, participantId);
       console.log(`✅ UNIFIED PARTICIPANT: Connected to signaling server (Mobile: ${this.isMobile})`);
+      
+      // No mobile, aguardar antes de notificar stream
+      if (this.isMobile && this.localStream) {
+        console.log(`📱 UNIFIED: Mobile detected, waiting before notifying stream...`);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
       
       if (this.localStream) {
         const streamInfo = {
@@ -208,6 +215,7 @@ export class WebRTCManager {
     signalingService.disconnect();
     
     this.roomId = null;
+    this.participantId = null;
     this.isHost = false;
     
     console.log(`✅ UNIFIED: WebRTC cleanup completed (Mobile: ${this.isMobile})`);

@@ -74,15 +74,18 @@ class WebSocketSignalingService {
       this.socket = null;
     }
 
-    // Configurações ULTRA otimizadas para mobile com WebSocket FORÇADO
+    // Configurações inteligentes com fallback para mobile
     const connectionOptions = this.isMobile ? {
-      transports: ['websocket'], // FORÇAR APENAS WebSocket no mobile
-      timeout: 15000, // Timeout aumentado para mobile
+      transports: ['websocket', 'polling'], // Permitir ambos no mobile com fallback
+      timeout: 20000, // Timeout maior para mobile
       forceNew: true,
-      reconnection: false, // Desabilitar reconexão automática para controle manual
+      reconnection: true, // Habilitar reconexão automática
+      reconnectionAttempts: 5, // Mais tentativas para mobile
+      reconnectionDelay: 2000, // Delay maior entre tentativas
+      reconnectionDelayMax: 5000,
       withCredentials: false,
-      autoConnect: false, // Conectar manualmente
-      upgrade: false, // Não tentar upgrade
+      autoConnect: true,
+      upgrade: true, // Permitir upgrade para WebSocket
       pingTimeout: 30000, // Ping timeout maior
       pingInterval: 10000, // Ping mais frequente
       // Configurações específicas para mobile
@@ -177,11 +180,11 @@ class WebSocketSignalingService {
         }
       });
 
-      // Conectar manualmente no mobile
-      if (this.isMobile) {
-        console.log(`📱 UNIFIED: Manual connect for mobile`);
-        this.socket!.connect();
-      }
+      // Log de tipo de transporte conectado
+      this.socket!.on('connect', () => {
+        const transport = this.socket!.io.engine.transport.name;
+        console.log(`🔗 UNIFIED: Connected via ${transport} (Mobile: ${this.isMobile})`);
+      });
 
       this.setupEventListeners();
     });

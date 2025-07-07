@@ -93,6 +93,7 @@ const initializeSocketHandlers = (io) => {
         }
         
         socket.emit('room-participants', { participants: participantsInRoom });
+        socket.emit('participants-update', { participants: participantsInRoom });
         
         console.log(`✅ User ${userId} joined room ${roomId} (${participantsInRoom.length + 1} total)`);
         
@@ -105,7 +106,7 @@ const initializeSocketHandlers = (io) => {
     // Evento: Oferta WebRTC
     socket.on('offer', (data) => {
       try {
-        const { roomId, targetSocketId, offer } = data;
+        const { roomId, targetSocketId, targetUserId, offer, fromUserId } = data;
         const connection = connections.get(socket.id);
         
         if (!connection || connection.roomId !== roomId) {
@@ -113,11 +114,27 @@ const initializeSocketHandlers = (io) => {
           return;
         }
         
-        console.log(`📤 Offer from ${connection.userId} to ${targetSocketId}`);
+        console.log(`📤 Offer from ${fromUserId || connection.userId} to ${targetUserId || targetSocketId}`);
+        
+        let finalTargetSocketId = targetSocketId;
+        
+        // Se temos targetUserId, encontrar o socketId correspondente
+        if (targetUserId && !targetSocketId) {
+          const roomSockets = rooms.get(roomId);
+          if (roomSockets) {
+            for (const socketId of roomSockets) {
+              const conn = connections.get(socketId);
+              if (conn && conn.userId === targetUserId) {
+                finalTargetSocketId = socketId;
+                break;
+              }
+            }
+          }
+        }
         
         // Enviar oferta para socket específico
-        if (targetSocketId) {
-          socket.to(targetSocketId).emit('offer', {
+        if (finalTargetSocketId) {
+          socket.to(finalTargetSocketId).emit('offer', {
             offer,
             fromSocketId: socket.id,
             fromUserId: connection.userId
@@ -140,7 +157,7 @@ const initializeSocketHandlers = (io) => {
     // Evento: Resposta WebRTC
     socket.on('answer', (data) => {
       try {
-        const { roomId, targetSocketId, answer } = data;
+        const { roomId, targetSocketId, targetUserId, answer, fromUserId } = data;
         const connection = connections.get(socket.id);
         
         if (!connection || connection.roomId !== roomId) {
@@ -148,11 +165,27 @@ const initializeSocketHandlers = (io) => {
           return;
         }
         
-        console.log(`📥 Answer from ${connection.userId} to ${targetSocketId}`);
+        console.log(`📥 Answer from ${fromUserId || connection.userId} to ${targetUserId || targetSocketId}`);
+        
+        let finalTargetSocketId = targetSocketId;
+        
+        // Se temos targetUserId, encontrar o socketId correspondente
+        if (targetUserId && !targetSocketId) {
+          const roomSockets = rooms.get(roomId);
+          if (roomSockets) {
+            for (const socketId of roomSockets) {
+              const conn = connections.get(socketId);
+              if (conn && conn.userId === targetUserId) {
+                finalTargetSocketId = socketId;
+                break;
+              }
+            }
+          }
+        }
         
         // Enviar resposta para socket específico
-        if (targetSocketId) {
-          socket.to(targetSocketId).emit('answer', {
+        if (finalTargetSocketId) {
+          socket.to(finalTargetSocketId).emit('answer', {
             answer,
             fromSocketId: socket.id,
             fromUserId: connection.userId
@@ -172,7 +205,7 @@ const initializeSocketHandlers = (io) => {
       }
     });
     
-    // Evento: Candidato ICE
+    // Evento: Candidato ICE (suporte a ambos formatos)
     socket.on('ice', (data) => {
       try {
         const { roomId, targetSocketId, candidate } = data;
@@ -202,6 +235,76 @@ const initializeSocketHandlers = (io) => {
       } catch (error) {
         console.error('Error in ice:', error);
         socket.emit('error', { message: 'Failed to send ICE candidate' });
+      }
+    });
+
+    // Evento: Candidato ICE (formato UNIFIED)
+    socket.on('ice-candidate', (data) => {
+      try {
+        const { roomId, targetUserId, candidate, fromUserId } = data;
+        const connection = connections.get(socket.id);
+        
+        if (!connection || connection.roomId !== roomId) {
+          socket.emit('error', { message: 'Not in room' });
+          return;
+        }
+        
+        console.log(`🧊 ICE candidate from ${fromUserId || connection.userId} to ${targetUserId}`);
+        
+        // Encontrar socket do usuário alvo
+        let targetSocketId = null;
+        const roomSockets = rooms.get(roomId);
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const conn = connections.get(socketId);
+            if (conn && conn.userId === targetUserId) {
+              targetSocketId = socketId;
+              break;
+            }
+          }
+        }
+        
+        // Enviar candidato ICE
+        if (targetSocketId) {
+          socket.to(targetSocketId).emit('ice-candidate', {
+            candidate,
+            fromSocketId: socket.id,
+            fromUserId: connection.userId
+          });
+        } else {
+          console.warn(`Target user ${targetUserId} not found in room ${roomId}`);
+        }
+        
+      } catch (error) {
+        console.error('Error in ice-candidate:', error);
+        socket.emit('error', { message: 'Failed to send ICE candidate' });
+      }
+    });
+
+    // Evento: Stream iniciado
+    socket.on('stream-started', (data) => {
+      try {
+        const { participantId, roomId, streamInfo } = data;
+        const connection = connections.get(socket.id);
+        
+        if (!connection || connection.roomId !== roomId) {
+          socket.emit('error', { message: 'Not in room' });
+          return;
+        }
+        
+        console.log(`📹 Stream started from ${participantId} in room ${roomId}`);
+        
+        // Notificar outros participantes
+        socket.to(roomId).emit('stream-started', {
+          participantId,
+          streamInfo,
+          fromSocketId: socket.id,
+          timestamp: Date.now()
+        });
+        
+      } catch (error) {
+        console.error('Error in stream-started:', error);
+        socket.emit('error', { message: 'Failed to notify stream started' });
       }
     });
     
