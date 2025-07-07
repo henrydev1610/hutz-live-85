@@ -16,43 +16,47 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       return;
     }
 
-    console.log('🎯 MOBILE: Starting connection process');
+    console.log(`🎯 Starting connection process (Mobile: ${/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)})`);
     setIsConnecting(true);
     setConnectionStatus('connecting');
     setError(null);
 
     try {
-      console.log('🔌 MOBILE: Testing signaling connection');
+      console.log('🔌 Testing signaling connection with enhanced settings');
       await signalingService.connect();
       
       const signalingReady = signalingService.isReady();
       const fallbackStreaming = signalingService.isFallbackStreamingEnabled();
+      const connectionMetrics = signalingService.getConnectionMetrics();
       
-      console.log('📡 MOBILE: Signaling status:', {
+      console.log('📡 Connection status:', {
         ready: signalingReady,
         fallbackMode: signalingService.isFallbackMode(),
-        fallbackStreaming: fallbackStreaming
+        fallbackStreaming: fallbackStreaming,
+        connectionStatus: signalingService.getConnectionStatus(),
+        metrics: connectionMetrics
       });
 
-      console.log('🔗 MOBILE: Initializing WebRTC connection');
+      console.log('🔗 Initializing WebRTC connection');
       await initParticipantWebRTC(sessionId, participantId, stream);
-      console.log('✅ MOBILE: WebRTC initialized successfully');
+      console.log('✅ WebRTC initialized successfully');
       
       setIsConnected(true);
       setConnectionStatus('connected');
-      console.log('✅ MOBILE: Connection completed successfully');
+      console.log('✅ Connection completed successfully');
       
-      // Show different success message based on connection type
-      if (fallbackStreaming) {
+      // Show success message based on actual connection type
+      const finalStatus = signalingService.getConnectionStatus();
+      if (finalStatus === 'connected') {
+        toast.success('Conectado à sessão com WebSocket!');
+      } else if (finalStatus === 'fallback-streaming') {
         toast.success('Conectado em modo de compatibilidade - transmissão ativa!');
-      } else if (signalingReady) {
-        toast.success('Conectado à sessão com sucesso!');
       } else {
-        toast.success('Conectado em modo fallback - transmissão funcionando!');
+        toast.success('Conectado à sessão!');
       }
       
     } catch (error) {
-      console.error('❌ MOBILE: Connection failed:', error);
+      console.error('❌ Connection failed:', error);
       setConnectionStatus('failed');
       
       let errorMessage = 'Erro na conexão';
@@ -60,7 +64,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         errorMessage = error.message;
         
         if (error.message.includes('websocket') || error.message.includes('socket')) {
-          errorMessage = 'Conexão WebSocket instável - tentando modo de compatibilidade';
+          errorMessage = 'Conexão WebSocket instável - usando modo de compatibilidade';
         } else if (error.message.includes('media') || error.message.includes('getUserMedia')) {
           errorMessage = 'Erro ao acessar câmera/microfone. Verifique as permissões do navegador';
         } else if (error.message.includes('WebRTC')) {
@@ -70,22 +74,18 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       
       setError(errorMessage);
       
-      // On mobile, try to continue with fallback streaming
-      if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-        console.log('🚀 MOBILE: Attempting fallback streaming after error');
-        setTimeout(() => {
-          if (signalingService.isFallbackStreamingEnabled()) {
-            setIsConnected(true);
-            setConnectionStatus('connected');
-            setError(null);
-            toast.success('Conectado em modo de compatibilidade móvel!');
-          } else {
-            toast.error('Falha na conexão. Tente reconectar.');
-          }
-        }, 3000);
-      } else {
-        toast.error('Falha na conexão. Tente reconectar.');
-      }
+      // Try fallback after connection failure
+      console.log('🚀 Attempting fallback streaming after error');
+      setTimeout(() => {
+        if (signalingService.isFallbackStreamingEnabled()) {
+          setIsConnected(true);
+          setConnectionStatus('connected');
+          setError(null);
+          toast.success('Conectado em modo de compatibilidade!');
+        } else {
+          toast.error('Falha na conexão. Tente reconectar.');
+        }
+      }, 2000);
     } finally {
       setIsConnecting(false);
     }
@@ -98,7 +98,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       setConnectionStatus('disconnected');
       toast.success('Desconectado da sessão');
     } catch (error) {
-      console.error('❌ MOBILE: Error disconnecting:', error);
+      console.error('❌ Error disconnecting:', error);
       toast.error('Erro ao desconectar');
     }
   }, []);

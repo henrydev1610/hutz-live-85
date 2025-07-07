@@ -19,6 +19,14 @@ interface SocketIOError extends Error {
   type?: string;
 }
 
+interface ConnectionMetrics {
+  attempts: number;
+  networkErrors: number;
+  timeoutErrors: number;
+  startTime: number;
+  lastAttemptTime: number;
+}
+
 class WebSocketSignalingService {
   private socket: Socket | null = null;
   private callbacks: SignalingCallbacks = {};
@@ -26,10 +34,18 @@ class WebSocketSignalingService {
   private currentRoom: string | null = null;
   private currentUserId: string | null = null;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 3; // Reduced for mobile
+  private maxReconnectAttempts = 5; // Equalizado para mobile e desktop
   private fallbackMode = false;
   private isMobile = false;
   private fallbackStreamingEnabled = false;
+  private connectionMetrics: ConnectionMetrics = {
+    attempts: 0,
+    networkErrors: 0,
+    timeoutErrors: 0,
+    startTime: 0,
+    lastAttemptTime: 0
+  };
+  private pingInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     console.log('🔧 WebSocket Signaling Service initialized');
@@ -41,6 +57,63 @@ class WebSocketSignalingService {
     console.log('📱 Mobile detected:', this.isMobile);
   }
 
+  private resetConnectionMetrics() {
+    this.connectionMetrics = {
+      attempts: 0,
+      networkErrors: 0,
+      timeoutErrors: 0,
+      startTime: Date.now(),
+      lastAttemptTime: 0
+    };
+  }
+
+  private logConnectionMetrics() {
+    const duration = Date.now() - this.connectionMetrics.startTime;
+    console.log(`📊 Connection Metrics (Mobile: ${this.isMobile}):`, {
+      attempts: this.connectionMetrics.attempts,
+      networkErrors: this.connectionMetrics.networkErrors,
+      timeoutErrors: this.connectionMetrics.timeoutErrors,
+      duration: `${duration}ms`,
+      reconnectAttempts: this.reconnectAttempts
+    });
+  }
+
+  private async checkNetworkConnectivity(): Promise<boolean> {
+    try {
+      // Teste simples de conectividade
+      const response = await fetch('https://www.google.com/favicon.ico', { 
+        method: 'HEAD',
+        mode: 'no-cors',
+        cache: 'no-cache'
+      });
+      console.log('🌐 Network connectivity check: OK');
+      return true;
+    } catch (error) {
+      console.warn('🌐 Network connectivity check: FAILED', error);
+      return false;
+    }
+  }
+
+  private startHeartbeat() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+    }
+
+    this.pingInterval = setInterval(() => {
+      if (this.socket && this.isConnected) {
+        console.log('💓 Sending heartbeat');
+        this.socket.emit('ping', { timestamp: Date.now(), isMobile: this.isMobile });
+      }
+    }, 25000); // Heartbeat a cada 25 segundos
+  }
+
+  private stopHeartbeat() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+  }
+
   setCallbacks(callbacks: SignalingCallbacks) {
     this.callbacks = callbacks;
     console.log('📞 Signaling callbacks set:', Object.keys(callbacks));
@@ -49,7 +122,8 @@ class WebSocketSignalingService {
   async connect(serverUrl?: string): Promise<void> {
     const url = serverUrl || 'http://localhost:3001';
     
-    console.log(`🔌 Connecting to signaling server: ${url} (Mobile: ${this.isMobile})`);
+    this.resetConnectionMetrics();
+    console.log(`🔌 Starting connection process: ${url} (Mobile: ${this.isMobile}, Attempt: ${this.reconnectAttempts + 1})`);
     
     try {
       if (this.socket) {
@@ -57,81 +131,111 @@ class WebSocketSignalingService {
         this.socket = null;
       }
 
-      // Mobile-optimized connection settings
+      // Configurações equalizadas para mobile e desktop
       const connectionOptions = {
-        transports: this.isMobile ? ['polling', 'websocket'] : ['websocket', 'polling'],
-        timeout: this.isMobile ? 10000 : 15000,
+        transports: ['websocket', 'polling'], // WebSocket como prioridade em ambos
+        timeout: 15000, // Timeout equalizado
         forceNew: true,
         reconnection: true,
-        reconnectionAttempts: this.isMobile ? 2 : this.maxReconnectAttempts,
-        reconnectionDelay: this.isMobile ? 1000 : 2000,
-        reconnectionDelayMax: this.isMobile ? 3000 : 5000,
+        reconnectionAttempts: this.maxReconnectAttempts,
+        reconnectionDelay: 2000,
+        reconnectionDelayMax: 5000,
         withCredentials: false,
         autoConnect: true,
-        upgrade: !this.isMobile // Disable upgrade on mobile for stability
+        upgrade: true, // Permitir upgrade no mobile também
+        pingTimeout: 30000, // Aumentado para conexões instáveis
+        pingInterval: 25000 // Intervalo de ping otimizado
       };
 
+      console.log(`⚙️ Connection options (Mobile: ${this.isMobile}):`, connectionOptions);
+
       this.socket = io(url, connectionOptions);
+      this.connectionMetrics.attempts++;
+      this.connectionMetrics.lastAttemptTime = Date.now();
 
       return new Promise((resolve, reject) => {
+        // Timeout mais longo e igual para ambos
         const connectTimeout = setTimeout(() => {
-          console.warn('⚠️ Connection timeout, enabling enhanced fallback mode for mobile');
-          this.fallbackMode = true;
-          this.fallbackStreamingEnabled = true;
-          this.enableFallbackStreaming();
+          this.connectionMetrics.timeoutErrors++;
+          console.warn(`⏱️ Connection timeout after 15s (Mobile: ${this.isMobile})`);
+          this.logConnectionMetrics();
+          
+          // Só ativar fallback após esgotar todas as tentativas
+          if (this.reconnectAttempts >= this.maxReconnectAttempts - 1) {
+            console.warn('⚠️ All connection attempts failed, enabling fallback mode');
+            this.fallbackMode = true;
+            this.fallbackStreamingEnabled = true;
+            this.enableFallbackStreaming();
+          }
+          
           resolve();
-        }, this.isMobile ? 8000 : 12000);
+        }, 15000);
 
         this.socket!.on('connect', () => {
           clearTimeout(connectTimeout);
-          console.log('✅ Connected to signaling server, Socket ID:', this.socket!.id);
+          console.log(`✅ Connected successfully! Socket ID: ${this.socket!.id} (Mobile: ${this.isMobile})`);
           this.isConnected = true;
           this.reconnectAttempts = 0;
           this.fallbackMode = false;
           this.fallbackStreamingEnabled = false;
+          this.logConnectionMetrics();
+          this.startHeartbeat();
           resolve();
         });
 
-        this.socket!.on('connect_error', (error: SocketIOError) => {
+        this.socket!.on('connect_error', async (error: SocketIOError) => {
           clearTimeout(connectTimeout);
-          console.error('❌ Connection error:', error);
+          this.connectionMetrics.networkErrors++;
+          console.error(`❌ Connection error (Mobile: ${this.isMobile}):`, error);
           
           this.reconnectAttempts++;
+          console.log(`🔄 Reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
           
-          if (this.reconnectAttempts >= this.maxReconnectAttempts || this.isMobile) {
-            console.warn('⚠️ Enabling enhanced fallback mode with streaming support');
+          if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            // Verificar conectividade de rede antes de tentar novamente
+            const hasNetwork = await this.checkNetworkConnectivity();
+            
+            if (hasNetwork) {
+              const delay = Math.min(2000 * Math.pow(2, this.reconnectAttempts - 1), 8000); // Backoff exponencial
+              console.log(`⏳ Retrying connection in ${delay}ms...`);
+              
+              setTimeout(() => {
+                this.connect(serverUrl).then(resolve).catch(reject);
+              }, delay);
+            } else {
+              console.warn('🌐 No network connectivity, enabling fallback immediately');
+              this.fallbackMode = true;
+              this.fallbackStreamingEnabled = true;
+              this.enableFallbackStreaming();
+              resolve();
+            }
+          } else {
+            console.warn(`⚠️ Max reconnection attempts reached (${this.maxReconnectAttempts}), enabling fallback mode`);
+            this.logConnectionMetrics();
             this.fallbackMode = true;
             this.fallbackStreamingEnabled = true;
             this.enableFallbackStreaming();
-            resolve(); // Don't reject to allow fallback
-          } else {
-            setTimeout(() => {
-              if (!this.isConnected) {
-                this.fallbackMode = true;
-                this.fallbackStreamingEnabled = true;
-                this.enableFallbackStreaming();
-                resolve();
-              }
-            }, 2000);
+            resolve();
           }
         });
 
         this.socket!.on('disconnect', (reason) => {
-          console.log('🔌 Disconnected from signaling server:', reason);
+          console.log(`🔌 Disconnected (Mobile: ${this.isMobile}):`, reason);
           this.isConnected = false;
+          this.stopHeartbeat();
           
           if (reason === 'io server disconnect') {
             console.log('🔄 Server disconnected, attempting to reconnect...');
             this.socket!.connect();
-          } else if (this.isMobile) {
-            // Enable fallback streaming immediately on mobile
-            this.fallbackStreamingEnabled = true;
-            this.enableFallbackStreaming();
           }
         });
 
+        this.socket!.on('pong', (data) => {
+          console.log('💓 Heartbeat response received:', data);
+        });
+
         this.socket!.on('error', (error: SocketIOError) => {
-          console.error('❌ Socket error:', error);
+          console.error(`❌ Socket error (Mobile: ${this.isMobile}):`, error);
           
           if (error.message && error.message.includes('TypeID')) {
             console.warn('⚠️ TypeID validation error, continuing without error propagation');
@@ -146,7 +250,8 @@ class WebSocketSignalingService {
         this.setupEventListeners();
       });
     } catch (error) {
-      console.error('❌ Failed to initialize socket connection:', error);
+      console.error(`❌ Failed to initialize socket connection (Mobile: ${this.isMobile}):`, error);
+      this.logConnectionMetrics();
       this.fallbackMode = true;
       this.fallbackStreamingEnabled = true;
       this.enableFallbackStreaming();
@@ -155,7 +260,7 @@ class WebSocketSignalingService {
   }
 
   private enableFallbackStreaming() {
-    console.log('🚀 MOBILE: Enabling fallback streaming mode');
+    console.log(`🚀 Enabling fallback streaming mode (Mobile: ${this.isMobile})`);
     
     // Simulate successful connection for WebRTC
     if (this.callbacks.onUserConnected) {
@@ -164,6 +269,7 @@ class WebSocketSignalingService {
           userId: this.currentUserId,
           socketId: `fallback-${Date.now()}`,
           fallbackMode: true,
+          isMobile: this.isMobile,
           timestamp: Date.now()
         });
       }, 1000);
@@ -249,43 +355,44 @@ class WebSocketSignalingService {
   }
 
   async joinRoom(roomId: string, userId: string): Promise<void> {
-    console.log(`🏠 MOBILE: Joining room: ${roomId} as user: ${userId}`);
+    console.log(`🏠 Joining room: ${roomId} as user: ${userId} (Mobile: ${this.isMobile})`);
     
     this.currentRoom = roomId;
     this.currentUserId = userId;
 
     if (!this.socket || !this.isConnected) {
-      console.log('🔄 MOBILE: Socket not connected, attempting to connect...');
+      console.log(`🔄 Socket not connected, attempting to connect... (Mobile: ${this.isMobile})`);
       await this.connect();
     }
 
     if (this.socket && this.isConnected && !this.fallbackMode) {
       try {
-        console.log('📤 MOBILE: Sending join-room request');
+        console.log(`📤 Sending join-room request (Mobile: ${this.isMobile})`);
         this.socket.emit('join-room', {
           roomId,
           userId,
           timestamp: Date.now(),
-          isMobile: this.isMobile
+          isMobile: this.isMobile,
+          connectionType: 'websocket'
         });
-        console.log('✅ MOBILE: Join room request sent successfully');
+        console.log(`✅ Join room request sent successfully (Mobile: ${this.isMobile})`);
       } catch (error: any) {
-        console.error('❌ MOBILE: Failed to join room:', error);
+        console.error(`❌ Failed to join room (Mobile: ${this.isMobile}):`, error);
         if (error.message?.includes('TypeID')) {
-          console.warn('⚠️ MOBILE: TypeID error ignored, enabling fallback streaming');
+          console.warn(`⚠️ TypeID error ignored, enabling fallback streaming (Mobile: ${this.isMobile})`);
           this.fallbackStreamingEnabled = true;
           this.enableFallbackStreaming();
         }
       }
     } else {
-      console.warn('⚠️ MOBILE: Operating in fallback mode with streaming enabled');
+      console.warn(`⚠️ Operating in fallback mode with streaming enabled (Mobile: ${this.isMobile})`);
       this.fallbackStreamingEnabled = true;
       this.enableFallbackStreaming();
     }
   }
 
   notifyStreamStarted(participantId: string, streamInfo: any): void {
-    console.log(`📹 MOBILE: Notifying stream started for: ${participantId}`);
+    console.log(`📹 Notifying stream started for: ${participantId} (Mobile: ${this.isMobile})`);
     
     if (this.socket && this.isConnected && !this.fallbackMode) {
       try {
@@ -295,23 +402,24 @@ class WebSocketSignalingService {
           streamInfo: {
             ...streamInfo,
             isMobile: this.isMobile,
-            fallbackMode: false
+            fallbackMode: false,
+            connectionType: 'websocket'
           },
           timestamp: Date.now()
         });
       } catch (error) {
-        console.error('❌ MOBILE: Failed to notify stream started:', error);
+        console.error(`❌ Failed to notify stream started (Mobile: ${this.isMobile}):`, error);
       }
     } else if (this.fallbackStreamingEnabled) {
-      // In fallback mode, trigger the callback directly
-      console.log('🚀 MOBILE: Fallback stream notification');
+      console.log(`🚀 Fallback stream notification (Mobile: ${this.isMobile})`);
       if (this.callbacks.onStreamStarted) {
         this.callbacks.onStreamStarted({
           participantId,
           streamInfo: {
             ...streamInfo,
             isMobile: this.isMobile,
-            fallbackMode: true
+            fallbackMode: true,
+            connectionType: 'fallback'
           },
           timestamp: Date.now()
         });
@@ -320,7 +428,7 @@ class WebSocketSignalingService {
   }
 
   sendOffer(targetUserId: string, offer: RTCSessionDescriptionInit): void {
-    console.log(`📤 MOBILE: Sending offer to: ${targetUserId}`);
+    console.log(`📤 Sending offer to: ${targetUserId} (Mobile: ${this.isMobile})`);
     
     if (this.socket && this.isConnected && !this.fallbackMode) {
       try {
@@ -332,15 +440,15 @@ class WebSocketSignalingService {
           isMobile: this.isMobile
         });
       } catch (error) {
-        console.error('❌ MOBILE: Failed to send offer:', error);
+        console.error(`❌ Failed to send offer (Mobile: ${this.isMobile}):`, error);
       }
     } else {
-      console.warn('⚠️ MOBILE: Cannot send offer in fallback mode');
+      console.warn(`⚠️ Cannot send offer in fallback mode (Mobile: ${this.isMobile})`);
     }
   }
 
   sendAnswer(targetUserId: string, answer: RTCSessionDescriptionInit): void {
-    console.log(`📥 MOBILE: Sending answer to: ${targetUserId}`);
+    console.log(`📥 Sending answer to: ${targetUserId} (Mobile: ${this.isMobile})`);
     
     if (this.socket && this.isConnected && !this.fallbackMode) {
       try {
@@ -352,15 +460,15 @@ class WebSocketSignalingService {
           isMobile: this.isMobile
         });
       } catch (error) {
-        console.error('❌ MOBILE: Failed to send answer:', error);
+        console.error(`❌ Failed to send answer (Mobile: ${this.isMobile}):`, error);
       }
     } else {
-      console.warn('⚠️ MOBILE: Cannot send answer in fallback mode');
+      console.warn(`⚠️ Cannot send answer in fallback mode (Mobile: ${this.isMobile})`);
     }
   }
 
   sendIceCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
-    console.log(`🧊 MOBILE: Sending ICE candidate to: ${targetUserId}`);
+    console.log(`🧊 Sending ICE candidate to: ${targetUserId} (Mobile: ${this.isMobile})`);
     
     if (this.socket && this.isConnected && !this.fallbackMode) {
       try {
@@ -372,10 +480,10 @@ class WebSocketSignalingService {
           isMobile: this.isMobile
         });
       } catch (error) {
-        console.error('❌ MOBILE: Failed to send ICE candidate:', error);
+        console.error(`❌ Failed to send ICE candidate (Mobile: ${this.isMobile}):`, error);
       }
     } else {
-      console.warn('⚠️ MOBILE: Cannot send ICE candidate in fallback mode');
+      console.warn(`⚠️ Cannot send ICE candidate in fallback mode (Mobile: ${this.isMobile})`);
     }
   }
 
@@ -399,8 +507,14 @@ class WebSocketSignalingService {
     return 'disconnected';
   }
 
+  getConnectionMetrics(): ConnectionMetrics {
+    return { ...this.connectionMetrics };
+  }
+
   disconnect(): void {
-    console.log('🔌 MOBILE: Disconnecting from signaling server');
+    console.log(`🔌 Disconnecting from signaling server (Mobile: ${this.isMobile})`);
+    
+    this.stopHeartbeat();
     
     if (this.socket) {
       this.socket.disconnect();
@@ -413,6 +527,7 @@ class WebSocketSignalingService {
     this.fallbackMode = false;
     this.fallbackStreamingEnabled = false;
     this.reconnectAttempts = 0;
+    this.resetConnectionMetrics();
   }
 }
 
