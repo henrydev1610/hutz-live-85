@@ -1,3 +1,4 @@
+
 import { io, Socket } from 'socket.io-client';
 
 interface SignalingCallbacks {
@@ -73,10 +74,23 @@ class WebSocketSignalingService {
       this.socket = null;
     }
 
-    // Configurações otimizadas baseadas no tipo de dispositivo
+    // Configurações ULTRA otimizadas para mobile com WebSocket FORÇADO
     const connectionOptions = this.isMobile ? {
-      transports: ['websocket'], // APENAS WebSocket no mobile
-      timeout: 10000, // Timeout otimizado para mobile
+      transports: ['websocket'], // FORÇAR APENAS WebSocket no mobile
+      timeout: 15000, // Timeout aumentado para mobile
+      forceNew: true,
+      reconnection: false, // Desabilitar reconexão automática para controle manual
+      withCredentials: false,
+      autoConnect: false, // Conectar manualmente
+      upgrade: false, // Não tentar upgrade
+      pingTimeout: 30000, // Ping timeout maior
+      pingInterval: 10000, // Ping mais frequente
+      // Configurações específicas para mobile
+      rememberUpgrade: false,
+      rejectUnauthorized: false
+    } : {
+      transports: ['websocket', 'polling'], // Desktop pode usar ambos
+      timeout: 10000,
       forceNew: true,
       reconnection: true,
       reconnectionAttempts: 3,
@@ -84,22 +98,9 @@ class WebSocketSignalingService {
       reconnectionDelayMax: 3000,
       withCredentials: false,
       autoConnect: true,
-      upgrade: false, // Não fazer upgrade no mobile
-      pingTimeout: 25000,
-      pingInterval: 20000
-    } : {
-      transports: ['websocket', 'polling'], // Desktop pode usar ambos
-      timeout: 15000,
-      forceNew: true,
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 2000,
-      reconnectionDelayMax: 5000,
-      withCredentials: false,
-      autoConnect: true,
       upgrade: true,
-      pingTimeout: 30000,
-      pingInterval: 25000
+      pingTimeout: 20000,
+      pingInterval: 15000
     };
 
     console.log(`⚙️ UNIFIED: Connection options (Mobile: ${this.isMobile}):`, connectionOptions);
@@ -115,15 +116,15 @@ class WebSocketSignalingService {
         
         this.reconnectAttempts++;
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          console.log(`🔄 UNIFIED: Retry ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+          console.log(`🔄 UNIFIED: Retry ${this.reconnectAttempts}/${this.maxReconnectAttempts} (Mobile: ${this.isMobile})`);
           setTimeout(() => {
             this.connect(serverUrl).then(resolve).catch(reject);
-          }, this.isMobile ? 1000 : 2000);
+          }, this.isMobile ? 2000 : 1000); // Delay maior no mobile
         } else {
           console.error(`❌ UNIFIED: Max attempts reached (Mobile: ${this.isMobile})`);
-          reject(new Error('WebSocket connection failed'));
+          reject(new Error(`WebSocket connection failed after ${this.maxReconnectAttempts} attempts`));
         }
-      }, this.isMobile ? 10000 : 15000);
+      }, this.isMobile ? 15000 : 10000); // Timeout maior no mobile
 
       this.socket!.on('connect', () => {
         clearTimeout(connectTimeout);
@@ -139,17 +140,18 @@ class WebSocketSignalingService {
         this.connectionMetrics.networkErrors++;
         console.error(`❌ UNIFIED: Connection error (Mobile: ${this.isMobile}):`, error);
         
+        // No mobile, ser mais agressivo com retry
         this.reconnectAttempts++;
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          const delay = this.isMobile ? 1000 : 2000;
-          console.log(`🔄 UNIFIED: Retrying in ${delay}ms (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+          const delay = this.isMobile ? 3000 : 1000; // Delay maior no mobile
+          console.log(`🔄 UNIFIED: Retrying in ${delay}ms (${this.reconnectAttempts}/${this.maxReconnectAttempts}) (Mobile: ${this.isMobile})`);
           
           setTimeout(() => {
             this.connect(serverUrl).then(resolve).catch(reject);
           }, delay);
         } else {
           console.error(`❌ UNIFIED: All attempts failed (Mobile: ${this.isMobile})`);
-          reject(error);
+          reject(new Error(`Connection failed: ${error.message || error}`));
         }
       });
 
@@ -157,9 +159,14 @@ class WebSocketSignalingService {
         console.log(`🔌 UNIFIED: Disconnected (Mobile: ${this.isMobile}):`, reason);
         this.isConnected = false;
         
-        if (reason === 'io server disconnect') {
-          console.log('🔄 UNIFIED: Server disconnected, attempting to reconnect...');
-          setTimeout(() => this.socket?.connect(), 1000);
+        // No mobile, tentar reconectar mais agressivamente
+        if (reason === 'io server disconnect' || (this.isMobile && reason !== 'io client disconnect')) {
+          console.log(`🔄 UNIFIED: Auto-reconnecting (Mobile: ${this.isMobile})...`);
+          setTimeout(() => {
+            if (!this.isConnected) {
+              this.socket?.connect();
+            }
+          }, this.isMobile ? 2000 : 1000);
         }
       });
 
@@ -169,6 +176,12 @@ class WebSocketSignalingService {
           this.callbacks.onError(error);
         }
       });
+
+      // Conectar manualmente no mobile
+      if (this.isMobile) {
+        console.log(`📱 UNIFIED: Manual connect for mobile`);
+        this.socket!.connect();
+      }
 
       this.setupEventListeners();
     });
@@ -331,7 +344,9 @@ class WebSocketSignalingService {
   }
 
   isReady(): boolean {
-    return this.isConnected;
+    const ready = this.isConnected && this.socket && this.socket.connected;
+    console.log(`🔍 UNIFIED: Connection ready check (Mobile: ${this.isMobile}): ${ready}`);
+    return ready;
   }
 
   isMobileDevice(): boolean {
@@ -339,7 +354,7 @@ class WebSocketSignalingService {
   }
 
   getConnectionStatus(): string {
-    if (this.isConnected) return 'connected';
+    if (this.isConnected && this.socket?.connected) return 'connected';
     if (this.reconnectAttempts > 0) return 'connecting';
     return 'disconnected';
   }
