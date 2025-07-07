@@ -12,7 +12,7 @@ export const useVideoCreation = () => {
   // Manter estado de reprodução por container para evitar conflitos
   const videoStatesRef = useRef(new Map<HTMLElement, VideoPlayState>());
 
-  const createVideoElement = useCallback((container: HTMLElement, stream: MediaStream) => {
+  const createVideoElement = useCallback(async (container: HTMLElement, stream: MediaStream) => {
     const containerId = container.id || container.className;
     console.log('🎬 Creating video element in container:', containerId);
     

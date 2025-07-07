@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect } from 'react';
 import { useVideoCreation } from './useVideoCreation';
 import { useContainerManagement } from './useContainerManagement';
@@ -53,17 +52,17 @@ export const useVideoElementManagement = () => {
         const emergencyContainer = createEmergencyContainer(participantId);
         if (emergencyContainer) {
           console.log('🎬 Creating video in emergency container');
-          createVideoElement(emergencyContainer, stream);
+          await createVideoElement(emergencyContainer, stream);
         } else {
           console.error('❌ Failed to create emergency container');
           return;
         }
       } else {
         console.log(`📹 Found ${containers.length} container(s) for ${participantId}, creating videos`);
-        containers.forEach((container, index) => {
+        for (const [index, container] of containers.entries()) {
           console.log(`🎯 Creating video in container ${index + 1}:`, container.id || container.className);
-          createVideoElement(container, stream);
-        });
+          await createVideoElement(container, stream);
+        }
       }
       
       // Update transmission window if available
