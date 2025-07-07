@@ -2,20 +2,15 @@
 import { useState, useCallback } from 'react';
 import { toast } from "sonner";
 import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
-import signalingService from '@/services/WebSocketSignalingService';
 import mobileWebSocketService from '@/services/MobileWebSocketService';
-import { useMobileConnection } from './useMobileConnection';
 import { useIsMobile } from '@/hooks/use-mobile';
 
-export const useParticipantConnection = (sessionId: string | undefined, participantId: string) => {
+export const useMobileConnection = (sessionId: string | undefined, participantId: string) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
   const isMobile = useIsMobile();
-  
-  // Hook específico para mobile
-  const mobileConnection = useMobileConnection(sessionId, participantId);
 
   const connectToSession = useCallback(async (stream?: MediaStream) => {
     if (!sessionId) {
@@ -23,65 +18,66 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       return;
     }
 
-    // Se for mobile, usar serviço específico
-    if (isMobile) {
-      console.log('📱 Using mobile-specific connection service');
-      return mobileConnection.connectToSession(stream);
+    if (!isMobile) {
+      console.log('📱 Not mobile device, skipping mobile connection');
+      return;
     }
 
-    // Código original para desktop
-    console.log('🖥️ Using desktop connection service');
+    console.log('📱 Starting MOBILE-SPECIFIC connection process');
     setIsConnecting(true);
     setConnectionStatus('connecting');
     setError(null);
 
     try {
-      await signalingService.connect();
+      // FORÇA conexão WebSocket no mobile
+      console.log('🔌 MOBILE: Forcing WebSocket connection');
+      await mobileWebSocketService.connect();
+      
+      if (!mobileWebSocketService.isReady()) {
+        throw new Error('Mobile WebSocket connection failed');
+      }
+
+      console.log('✅ MOBILE: WebSocket connected successfully');
+      
+      // Inicializar WebRTC após WebSocket conectar
+      console.log('🔗 MOBILE: Initializing WebRTC connection');
       await initParticipantWebRTC(sessionId, participantId, stream);
+      console.log('✅ MOBILE: WebRTC initialized successfully');
       
       setIsConnected(true);
       setConnectionStatus('connected');
-      toast.success('Conectado à sessão!');
+      toast.success('📱 Conectado via mobile WebSocket!');
       
     } catch (error) {
-      console.error('❌ Desktop connection failed:', error);
+      console.error('❌ MOBILE: Connection failed:', error);
       setConnectionStatus('failed');
       
-      let errorMessage = 'Erro na conexão';
+      let errorMessage = 'Erro na conexão mobile';
       if (error instanceof Error) {
         errorMessage = error.message;
       }
       
       setError(errorMessage);
-      toast.error('Falha na conexão. Tente reconectar.');
+      toast.error(`Falha na conexão mobile: ${errorMessage}`);
     } finally {
       setIsConnecting(false);
     }
-  }, [sessionId, participantId, isMobile, mobileConnection]);
+  }, [sessionId, participantId, isMobile]);
 
   const disconnectFromSession = useCallback(() => {
-    if (isMobile) {
-      return mobileConnection.disconnectFromSession();
-    }
-
+    if (!isMobile) return;
+    
     try {
       cleanupWebRTC();
+      mobileWebSocketService.disconnect();
       setIsConnected(false);
       setConnectionStatus('disconnected');
-      toast.success('Desconectado da sessão');
+      toast.success('Desconectado da sessão mobile');
     } catch (error) {
-      console.error('❌ Error disconnecting:', error);
-      toast.error('Erro ao desconectar');
+      console.error('❌ MOBILE: Error disconnecting:', error);
+      toast.error('Erro ao desconectar mobile');
     }
-  }, [isMobile, mobileConnection]);
-
-  // Retornar estado do mobile se for mobile, senão estado local
-  if (isMobile) {
-    return {
-      ...mobileConnection,
-      isMobile: true
-    };
-  }
+  }, [isMobile]);
 
   return {
     isConnected,
@@ -90,6 +86,6 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     error,
     connectToSession,
     disconnectFromSession,
-    isMobile: false
+    isMobile
   };
 };
