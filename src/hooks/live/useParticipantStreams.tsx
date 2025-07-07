@@ -28,7 +28,8 @@ export const useParticipantStreams = ({
   });
 
   const handleParticipantStream = useCallback((participantId: string, stream: MediaStream) => {
-    console.log('🎥 CRITICAL: handleParticipantStream called for:', participantId);
+    const operationId = `${participantId}-${Date.now()}`;
+    console.log(`🎥 HANDLER: handleParticipantStream called for: ${participantId} (${operationId})`);
     
     // Validate stream
     if (!validateStream(stream, participantId)) {
@@ -38,21 +39,21 @@ export const useParticipantStreams = ({
     // Update React state immediately
     updateStreamState(participantId, stream);
     
-    // Update video elements with retry logic
-    const updateVideoWithRetry = async (attempt = 1, maxAttempts = 5) => {
-      console.log(`📤 CRITICAL: Video update attempt ${attempt}/${maxAttempts} for ${participantId}`);
+    // Process video update with controlled approach (sem retry excessivo)
+    const processVideoUpdate = async () => {
+      console.log(`📤 PROCESS: Processing video update for ${participantId} (${operationId})`);
       
       try {
-        // Wait for DOM to be ready
-        await new Promise(resolve => setTimeout(resolve, attempt * 100));
+        // Aguardar um pouco para o DOM estar pronto
+        await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Update video elements
+        // Update video elements - agora com processamento seguro interno
         await updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
         
         // Send to transmission window
         sendStreamToTransmission(participantId, stream, transmissionWindowRef);
         
-        console.log(`✅ Video elements updated successfully on attempt ${attempt}`);
+        console.log(`✅ SUCCESS: Video elements updated successfully (${operationId})`);
         
         // Show success toast
         toast({
@@ -61,19 +62,19 @@ export const useParticipantStreams = ({
         });
         
       } catch (error) {
-        console.error(`❌ Video update attempt ${attempt} failed:`, error);
+        console.error(`❌ FAILED: Video update failed (${operationId}):`, error);
         
-        if (attempt < maxAttempts) {
-          console.log(`🔄 Retrying video update for ${participantId} (attempt ${attempt + 1})`);
-          setTimeout(() => updateVideoWithRetry(attempt + 1, maxAttempts), 300);
-        } else {
-          console.error(`❌ All video update attempts failed for ${participantId}`);
-        }
+        // Show error toast
+        toast({
+          title: "Erro na conexão",
+          description: `Falha ao conectar vídeo do participante ${participantId.substring(0, 8)}`,
+          variant: "destructive"
+        });
       }
     };
     
-    // Start the retry process
-    updateVideoWithRetry();
+    // Executar processamento sem retry manual (agora controlado pelo StreamManager)
+    processVideoUpdate();
     
   }, [validateStream, updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast]);
 

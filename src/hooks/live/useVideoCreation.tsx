@@ -6,15 +6,16 @@ interface VideoPlayState {
   playPromise: Promise<void> | null;
   retryCount: number;
   lastStreamId: string | null;
+  element: HTMLVideoElement | null;
 }
 
 export const useVideoCreation = () => {
-  // Manter estado de reprodução por container para evitar conflitos
   const videoStatesRef = useRef(new Map<HTMLElement, VideoPlayState>());
 
   const createVideoElement = useCallback(async (container: HTMLElement, stream: MediaStream) => {
     const containerId = container.id || container.className;
-    console.log('🎬 Creating video element in container:', containerId);
+    const operationId = `${containerId}-${Date.now()}`;
+    console.log(`🎬 SAFE: Creating video element in container: ${containerId} (${operationId})`);
     
     // Obter ou criar estado para este container
     let videoState = videoStatesRef.current.get(container);
@@ -23,47 +24,62 @@ export const useVideoCreation = () => {
         isPlaying: false,
         playPromise: null,
         retryCount: 0,
-        lastStreamId: null
+        lastStreamId: null,
+        element: null
       };
       videoStatesRef.current.set(container, videoState);
     }
 
-    // Verificar se já existe um vídeo com o mesmo stream para evitar recriação desnecessária
+    // Verificar se já existe um vídeo com o mesmo stream
     const existingVideo = container.querySelector('video') as HTMLVideoElement;
-    if (existingVideo && videoState.lastStreamId === stream.id && existingVideo.srcObject === stream) {
-      console.log('📹 Video already exists with same stream, checking play state');
+    
+    if (existingVideo && 
+        videoState.lastStreamId === stream.id && 
+        existingVideo.srcObject === stream &&
+        videoState.element === existingVideo) {
+      console.log(`📹 REUSE: Video already exists with same stream for ${containerId} (${operationId})`);
       
-      // Se o vídeo existe mas não está reproduzindo, tentar reproduzir
-      if (existingVideo.paused && !videoState.isPlaying) {
-        attemptPlay(existingVideo, container, videoState, stream.id);
+      // Verificar se precisa tentar reproduzir
+      if (existingVideo.paused && !videoState.isPlaying && !videoState.playPromise) {
+        await attemptPlaySafely(existingVideo, container, videoState, stream.id, operationId);
       }
       return existingVideo;
     }
 
-    // Limpar container apenas se necessário (novo stream ou sem vídeo)
+    // Aguardar conclusão de qualquer play() pendente antes de modificar o container
+    if (videoState.playPromise) {
+      console.log(`⏳ WAIT: Waiting for previous play to complete for ${containerId} (${operationId})`);
+      try {
+        await videoState.playPromise;
+      } catch (error) {
+        console.log(`⚠️ Previous play interrupted for ${containerId}:`, error);
+      }
+    }
+
+    // Limpar container apenas se necessário
     if (existingVideo && videoState.lastStreamId !== stream.id) {
-      console.log('🧹 Cleaning up old video element for new stream');
+      console.log(`🧹 CLEAN: Removing old video for new stream in ${containerId} (${operationId})`);
       await cleanupVideoElement(existingVideo, videoState);
+      container.innerHTML = '';
     } else if (!existingVideo) {
-      // Limpar qualquer conteúdo restante se não há vídeo
       container.innerHTML = '';
     }
 
-    // Criar novo elemento de vídeo com configurações otimizadas
+    // Criar novo elemento de vídeo
     const videoElement = document.createElement('video');
     
-    // Configurações essenciais para autoplay
+    // Configurações essenciais
     videoElement.autoplay = true;
     videoElement.playsInline = true;
-    videoElement.muted = true; // Essencial para autoplay sem interação do usuário
+    videoElement.muted = true;
     videoElement.controls = false;
-    videoElement.preload = 'metadata'; // Otimizar carregamento
+    videoElement.preload = 'metadata';
     
-    // Atributos específicos para compatibilidade mobile
+    // Atributos para compatibilidade
     videoElement.setAttribute('playsinline', 'true');
     videoElement.setAttribute('webkit-playsinline', 'true');
     
-    // Estilos CSS
+    // Estilos
     videoElement.className = 'w-full h-full object-cover';
     videoElement.style.cssText = `
       display: block;
@@ -72,31 +88,38 @@ export const useVideoCreation = () => {
       background-color: transparent;
     `;
     
-    // Definir stream APENAS UMA VEZ para evitar múltiplos load events
-    videoElement.srcObject = stream;
+    // Atualizar estado
     videoState.lastStreamId = stream.id;
+    videoState.element = videoElement;
+    videoState.retryCount = 0;
     
-    // Adicionar ao container
+    // Configurar eventos antes de adicionar stream
+    setupVideoEventListeners(videoElement, container, videoState, stream.id, operationId);
+    
+    // Adicionar ao DOM
     container.appendChild(videoElement);
     
-    // Configurar event listeners antes de tentar reproduzir
-    setupVideoEventListeners(videoElement, container, videoState, stream.id);
+    // Definir stream APENAS UMA VEZ
+    videoElement.srcObject = stream;
+    
+    // Aguardar um frame para o DOM atualizar
+    await new Promise(resolve => requestAnimationFrame(resolve));
     
     // Tentar reprodução inicial
-    attemptPlay(videoElement, container, videoState, stream.id);
+    await attemptPlaySafely(videoElement, container, videoState, stream.id, operationId);
     
+    console.log(`✅ SAFE: Video element created successfully for ${containerId} (${operationId})`);
     return videoElement;
 
-    // Função para limpeza adequada do elemento de vídeo
     async function cleanupVideoElement(video: HTMLVideoElement, state: VideoPlayState) {
-      console.log('🧹 Cleaning up video element');
+      console.log(`🧹 CLEANUP: Cleaning up video element (${operationId})`);
       
-      // Aguardar conclusão de qualquer play() pendente
+      // Aguardar conclusão de play pendente
       if (state.playPromise) {
         try {
           await state.playPromise;
         } catch (error) {
-          console.log('⚠️ Play promise rejected during cleanup:', error);
+          console.log(`⚠️ Play promise rejected during cleanup:`, error);
         }
       }
       
@@ -114,197 +137,131 @@ export const useVideoCreation = () => {
       state.playPromise = null;
       state.retryCount = 0;
       state.lastStreamId = null;
+      state.element = null;
     }
 
-    // Configurar listeners de eventos do vídeo
     function setupVideoEventListeners(
       video: HTMLVideoElement, 
       container: HTMLElement, 
       state: VideoPlayState,
-      streamId: string
+      streamId: string,
+      opId: string
     ) {
       const containerId = container.id || container.className;
 
-      // Evento: metadados carregados
       video.onloadedmetadata = () => {
-        console.log(`📊 Video metadata loaded for ${containerId}`, {
-          duration: video.duration,
-          videoWidth: video.videoWidth,
-          videoHeight: video.videoHeight,
-          readyState: video.readyState
-        });
+        console.log(`📊 META: Video metadata loaded for ${containerId} (${opId})`);
       };
 
-      // Evento: pode reproduzir
       video.oncanplay = () => {
-        console.log(`🎯 Video can play for ${containerId}`, {
-          readyState: video.readyState,
-          networkState: video.networkState,
-          paused: video.paused
-        });
-        
-        // Tentar reproduzir apenas se não estiver já reproduzindo
-        if (video.paused && !state.isPlaying) {
-          attemptPlay(video, container, state, streamId);
-        }
+        console.log(`🎯 READY: Video can play for ${containerId} (${opId})`);
+        // NÃO chamar attemptPlay aqui para evitar múltiplas tentativas
       };
 
-      // Evento: reprodução iniciada
       video.onplay = () => {
-        console.log(`▶️ Video started playing for ${containerId}`);
+        console.log(`▶️ PLAY: Video started playing for ${containerId} (${opId})`);
         state.isPlaying = true;
-        state.retryCount = 0; // Reset retry count on success
+        state.retryCount = 0;
         
-        // Tornar container visível
         container.style.background = 'transparent';
         container.style.visibility = 'visible';
         container.style.opacity = '1';
       };
 
-      // Evento: reprodução pausada
       video.onpause = () => {
-        console.log(`⏸️ Video paused for ${containerId}`);
+        console.log(`⏸️ PAUSE: Video paused for ${containerId} (${opId})`);
         state.isPlaying = false;
       };
 
-      // Evento: erro
       video.onerror = (event) => {
-        console.error(`❌ Video error in ${containerId}:`, {
+        console.error(`❌ ERROR: Video error in ${containerId} (${opId}):`, {
           error: video.error,
           code: video.error?.code,
-          message: video.error?.message,
-          readyState: video.readyState,
-          networkState: video.networkState
+          message: video.error?.message
         });
         
         state.isPlaying = false;
         state.playPromise = null;
       };
 
-      // Evento: stream terminou
       video.onended = () => {
-        console.log(`🔚 Video ended for ${containerId}`);
+        console.log(`🔚 END: Video ended for ${containerId} (${opId})`);
         state.isPlaying = false;
       };
     }
 
-    // Função principal para tentar reprodução com gestão adequada de promises
-    async function attemptPlay(
+    async function attemptPlaySafely(
       video: HTMLVideoElement, 
       container: HTMLElement, 
       state: VideoPlayState,
       streamId: string,
-      maxRetries = 3
+      opId: string
     ) {
       const containerId = container.id || container.className;
       
-      // Evitar múltiplas tentativas simultâneas
+      // Verificar se já está reproduzindo ou tentando reproduzir
       if (state.isPlaying || state.playPromise) {
-        console.log(`⏭️ Play already in progress for ${containerId}, skipping`);
+        console.log(`⏭️ SKIP: Play already in progress for ${containerId} (${opId})`);
         return;
       }
 
-      // Verificar limite de tentativas
-      if (state.retryCount >= maxRetries) {
-        console.error(`❌ Max retry attempts (${maxRetries}) reached for ${containerId}`);
+      // Verificar se o stream ainda está ativo
+      if (!stream.active || stream.getTracks().length === 0) {
+        console.warn(`⚠️ INACTIVE: Stream is not active for ${containerId} (${opId})`);
         return;
       }
 
-      state.retryCount++;
-      console.log(`🎮 Attempting to play video in ${containerId} (attempt ${state.retryCount}/${maxRetries})`, {
-        paused: video.paused,
-        readyState: video.readyState,
-        networkState: video.networkState,
-        currentTime: video.currentTime,
-        streamActive: stream.active,
-        streamTracks: stream.getTracks().length
-      });
+      console.log(`🎮 PLAY: Attempting to play video in ${containerId} (${opId})`);
 
       try {
-        // Verificar se o stream ainda está ativo
-        if (!stream.active || stream.getTracks().length === 0) {
-          console.warn(`⚠️ Stream is not active for ${containerId}, aborting play attempt`);
-          return;
-        }
-
-        // Verificar se o vídeo está pronto para reprodução
+        // Aguardar dados suficientes se necessário
         if (video.readyState < HTMLMediaElement.HAVE_ENOUGH_DATA) {
-          console.log(`⏳ Video not ready yet for ${containerId}, waiting...`);
+          console.log(`⏳ WAIT: Waiting for video data in ${containerId} (${opId})`);
           
-          // Aguardar até que os dados estejam disponíveis
-          await new Promise<void>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              reject(new Error('Timeout waiting for video data'));
-            }, 5000);
-
-            const checkReady = () => {
-              if (video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
-                clearTimeout(timeout);
-                resolve();
-              } else {
-                setTimeout(checkReady, 100);
-              }
-            };
-            checkReady();
-          });
+          await Promise.race([
+            new Promise<void>((resolve, reject) => {
+              const timeout = setTimeout(() => reject(new Error('Timeout waiting for video data')), 3000);
+              const checkReady = () => {
+                if (video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
+                  clearTimeout(timeout);
+                  resolve();
+                } else {
+                  setTimeout(checkReady, 100);
+                }
+              };
+              checkReady();
+            }),
+            new Promise<void>((_, reject) => {
+              setTimeout(() => reject(new Error('Video data timeout')), 3000);
+            })
+          ]);
         }
 
-        // Criar e gerenciar a promise de play()
+        // Criar promise de play controlada
         state.playPromise = video.play();
         await state.playPromise;
         
-        console.log(`✅ Video playing successfully in ${containerId}`);
+        console.log(`✅ PLAY: Video playing successfully in ${containerId} (${opId})`);
         state.playPromise = null;
         
       } catch (error: any) {
         state.playPromise = null;
         
-        // Tratar diferentes tipos de erro
         if (error.name === 'AbortError') {
-          console.warn(`⚠️ Play was aborted for ${containerId} (attempt ${state.retryCount}):`, error.message);
-          
-          // Para AbortError, aguardar um pouco antes de tentar novamente
-          if (state.retryCount < maxRetries) {
-            const delay = 500 * state.retryCount; // Backoff exponencial
-            console.log(`🔄 Retrying play for ${containerId} in ${delay}ms...`);
-            
-            setTimeout(() => {
-              // Verificar se ainda é o mesmo stream antes de tentar novamente
-              if (state.lastStreamId === streamId) {
-                attemptPlay(video, container, state, streamId, maxRetries);
-              }
-            }, delay);
-          }
-          
+          console.warn(`⚠️ ABORT: Play was aborted for ${containerId} (${opId}):`, error.message);
         } else if (error.name === 'NotAllowedError') {
-          console.error(`🚫 Autoplay not allowed for ${containerId}:`, error.message);
-          // Para autoplay bloqueado, não tentar novamente automaticamente
-          
+          console.error(`🚫 BLOCKED: Autoplay not allowed for ${containerId} (${opId}):`, error.message);
         } else {
-          console.error(`❌ Play failed for ${containerId} (attempt ${state.retryCount}):`, {
-            name: error.name,
-            message: error.message,
-            readyState: video.readyState,
-            networkState: video.networkState
-          });
-          
-          // Para outros erros, tentar novamente com delay
-          if (state.retryCount < maxRetries) {
-            const delay = 1000 * state.retryCount;
-            setTimeout(() => {
-              if (state.lastStreamId === streamId) {
-                attemptPlay(video, container, state, streamId, maxRetries);
-              }
-            }, delay);
-          }
+          console.error(`❌ FAIL: Play failed for ${containerId} (${opId}):`, error.message);
         }
+        
+        // Não fazer retry automático - deixar para o sistema controlado
       }
     }
   }, []);
 
-  // Função para limpeza quando o hook é desmontado
   const cleanup = useCallback(() => {
-    console.log('🧹 Cleaning up all video states');
+    console.log('🧹 CLEANUP: Cleaning up all video states');
     videoStatesRef.current.clear();
   }, []);
 

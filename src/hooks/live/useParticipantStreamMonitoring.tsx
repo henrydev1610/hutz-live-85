@@ -22,131 +22,65 @@ export const useParticipantStreamMonitoring = ({
   sessionId
 }: UseParticipantStreamMonitoringProps) => {
 
-  // Enhanced stream monitoring with better DOM-ready checks and auto-selection
+  // SIMPLIFIED stream monitoring - remove duplicate calls that cause flickering
   useEffect(() => {
     const activeStreams = Object.keys(participantStreams).length;
     const activeParticipants = participantList.filter(p => p.active).length;
     const selectedParticipants = participantList.filter(p => p.selected && p.hasVideo).length;
     const realParticipants = participantList.filter(p => !p.id.startsWith('placeholder-')).length;
     
-    console.log('🔍 CRITICAL Stream Monitor - ENHANCED:', {
+    console.log('🔍 MONITOR: Stream monitoring - SIMPLIFIED:', {
       totalStreams: activeStreams,
       activeParticipants,
       selectedParticipants,
       realParticipants,
-      domReady: document.readyState,
-      gridContainers: document.querySelectorAll('.participant-grid').length
+      domReady: document.readyState
     });
     
-    // Only process if we have streams and DOM is ready
-    if (activeStreams === 0) {
-      console.log('📋 No streams to process');
-      return;
-    }
-    
-    // Process streams with enhanced error handling
-    const processStreamsWithRetry = async (attempt = 1, maxAttempts = 3) => {
-      console.log(`🎬 Processing streams attempt ${attempt}/${maxAttempts}`);
+    // Only update participant state, NOT trigger video processing
+    // Video processing is now handled by the main handleParticipantStream callback only
+    for (const [participantId, stream] of Object.entries(participantStreams)) {
+      console.log(`📋 STATE: Updating participant state for: ${participantId}`, {
+        streamActive: stream.active,
+        trackCount: stream.getTracks().length
+      });
       
-      try {
-        // Process each stream
-        for (const [participantId, stream] of Object.entries(participantStreams)) {
-          console.log(`📹 Processing stream for participant: ${participantId}`, {
-            streamActive: stream.active,
-            trackCount: stream.getTracks().length,
-            videoTracks: stream.getVideoTracks().length,
-            audioTracks: stream.getAudioTracks().length
-          });
-          
-          const participant = participantList.find(p => p.id === participantId);
-          if (participant) {
-            console.log(`✅ Found participant ${participantId}, updating for transmission`);
-            
-            // Ensure participant is marked correctly AND selected for transmission
-            setParticipantList(prev => prev.map(p => 
-              p.id === participantId 
-                ? { 
-                    ...p, 
-                    hasVideo: true, 
-                    active: true, 
-                    selected: true,
-                    lastActive: Date.now() 
-                  }
-                : p
-            ));
-            
-            // Process video display
-            setTimeout(async () => {
-              try {
-                console.log(`🎯 Updating video display for ${participantId}`);
-                await updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
-                transferStreamToTransmission(participantId, stream);
-                console.log(`✅ Video display updated successfully for ${participantId}`);
-              } catch (error) {
-                console.error(`❌ Failed to update video display for ${participantId}:`, error);
-                
-                if (attempt < maxAttempts) {
-                  console.log(`🔄 Will retry processing for ${participantId}`);
-                }
+      const participant = participantList.find(p => p.id === participantId);
+      if (participant) {
+        // Update existing participant
+        setParticipantList(prev => prev.map(p => 
+          p.id === participantId 
+            ? { 
+                ...p, 
+                hasVideo: true, 
+                active: true, 
+                selected: true,
+                lastActive: Date.now() 
               }
-            }, 200 * attempt);
-            
-          } else {
-            console.warn(`⚠️ Stream received for unknown participant: ${participantId}`);
-            
-            // Add new real participant for this stream and auto-select
-            const newParticipant: Participant = {
-              id: participantId,
-              name: `Participante ${participantId.substring(0, 8)}`,
-              joinedAt: Date.now(),
-              lastActive: Date.now(),
-              active: true,
-              selected: true,
-              hasVideo: true
-            };
-            
-            console.log(`➕ Adding new auto-selected participant: ${participantId}`);
-            setParticipantList(prev => [...prev, newParticipant]);
-            
-            // Process video display for new participant
-            setTimeout(async () => {
-              try {
-                await updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
-                transferStreamToTransmission(participantId, stream);
-                console.log(`✅ New participant video display updated: ${participantId}`);
-              } catch (error) {
-                console.error(`❌ Failed to update new participant video: ${participantId}`, error);
-              }
-            }, 300 * attempt);
-          }
-        }
+            : p
+        ));
         
-        console.log(`✅ Stream processing completed successfully (attempt ${attempt})`);
+        // Only send to transmission, no video element updates here
+        transferStreamToTransmission(participantId, stream);
         
-      } catch (error) {
-        console.error(`❌ Stream processing failed (attempt ${attempt}):`, error);
+      } else {
+        // Add new participant but don't trigger video processing
+        console.warn(`➕ NEW: Adding new participant without video processing: ${participantId}`);
         
-        if (attempt < maxAttempts) {
-          console.log(`🔄 Retrying stream processing (attempt ${attempt + 1})`);
-          setTimeout(() => processStreamsWithRetry(attempt + 1, maxAttempts), 1000);
-        } else {
-          console.error('❌ All stream processing attempts failed');
-        }
+        const newParticipant: Participant = {
+          id: participantId,
+          name: `Participante ${participantId.substring(0, 8)}`,
+          joinedAt: Date.now(),
+          lastActive: Date.now(),
+          active: true,
+          selected: true,
+          hasVideo: true
+        };
+        
+        setParticipantList(prev => [...prev, newParticipant]);
+        transferStreamToTransmission(participantId, stream);
       }
-    };
-
-    // Start processing based on DOM readiness
-    if (document.readyState === 'complete') {
-      processStreamsWithRetry();
-    } else {
-      console.log('⏳ Waiting for DOM to be ready before processing streams...');
-      const handleLoad = () => {
-        console.log('✅ DOM ready, starting stream processing');
-        processStreamsWithRetry();
-      };
-      
-      window.addEventListener('load', handleLoad, { once: true });
-      return () => window.removeEventListener('load', handleLoad);
     }
-  }, [participantList, participantStreams, transmissionWindowRef, updateVideoElementsImmediately, setParticipantList, sessionId, transferStreamToTransmission]);
+
+  }, [participantList, participantStreams, transferStreamToTransmission, setParticipantList, sessionId]);
 };
