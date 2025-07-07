@@ -14,6 +14,13 @@ export const getWebSocketURL = (): string => {
     return `http://${localIP}:3001`;
   }
   
+  // Ngrok environment (specific detection)
+  if (host.includes('ngrok-free.app') || host.includes('ngrok.io')) {
+    const wsUrl = `wss://${host}`;
+    console.log(`🌐 CONNECTION: Using Ngrok WSS URL: ${wsUrl}`);
+    return wsUrl;
+  }
+  
   // Lovable environment (specific detection)
   if (host.includes('lovableproject.com')) {
     const wsUrl = `wss://${host}`;
@@ -38,6 +45,13 @@ export const getApiBaseURL = (): string => {
     const localIP = '172.26.204.230'; // IP da rede local detectado pelo Vite
     console.log(`🏠 API: Using local network IP: ${localIP}`);
     return `http://${localIP}:3001`;
+  }
+  
+  // Ngrok environment - use current origin for API
+  if (host.includes('ngrok-free.app') || host.includes('ngrok.io')) {
+    const apiUrl = `${protocol}//${host}`;
+    console.log(`🌐 API: Using Ngrok API URL: ${apiUrl}`);
+    return apiUrl;
   }
   
   // Production/Preview environment (use current origin)
