@@ -12,36 +12,48 @@ interface StreamState {
   currentStreamId: string | null;
   isProcessing: boolean;
   lastUpdate: number;
+  skipCount: number;
 }
 
 export const useStreamManager = () => {
   const streamStatesRef = useRef(new Map<string, StreamState>());
   const activeOperationsRef = useRef(new Map<string, StreamOperation>());
+  const globalDebounceRef = useRef<NodeJS.Timeout | null>(null);
   
   const shouldProcessStream = useCallback((participantId: string, stream: MediaStream): boolean => {
     const currentState = streamStatesRef.current.get(participantId);
     const now = Date.now();
     
-    // Prevenir processamento muito frequente (debounce de 500ms)
-    if (currentState && (now - currentState.lastUpdate) < 500) {
-      console.log(`⏸️ Debouncing stream update for ${participantId}`);
+    // Debounce muito agressivo de 1 segundo para evitar piscar
+    if (currentState && (now - currentState.lastUpdate) < 1000) {
+      console.log(`⏸️ AGGRESSIVE DEBOUNCE: Blocking stream update for ${participantId} (${now - currentState.lastUpdate}ms ago)`);
       return false;
     }
     
     // Verificar se já está processando o mesmo stream
-    if (currentState && currentState.currentStreamId === stream.id && currentState.isProcessing) {
-      console.log(`⏸️ Already processing stream ${stream.id} for ${participantId}`);
+    if (currentState && 
+        currentState.currentStreamId === stream.id && 
+        currentState.isProcessing) {
+      console.log(`⏸️ DUPLICATE BLOCK: Already processing stream ${stream.id} for ${participantId}`);
       return false;
+    }
+
+    // Verificar se há muitas tentativas consecutivas (possível loop)
+    if (currentState && currentState.skipCount > 3) {
+      console.log(`🚫 LOOP PREVENTION: Too many skips for ${participantId}, forcing reset`);
+      streamStatesRef.current.delete(participantId);
     }
     
     return true;
   }, []);
   
   const markStreamProcessing = useCallback((participantId: string, stream: MediaStream): void => {
+    const currentState = streamStatesRef.current.get(participantId);
     streamStatesRef.current.set(participantId, {
       currentStreamId: stream.id,
       isProcessing: true,
-      lastUpdate: Date.now()
+      lastUpdate: Date.now(),
+      skipCount: currentState?.skipCount || 0
     });
   }, []);
   
@@ -50,7 +62,18 @@ export const useStreamManager = () => {
     if (currentState) {
       streamStatesRef.current.set(participantId, {
         ...currentState,
-        isProcessing: false
+        isProcessing: false,
+        skipCount: 0
+      });
+    }
+  }, []);
+
+  const markStreamSkipped = useCallback((participantId: string): void => {
+    const currentState = streamStatesRef.current.get(participantId);
+    if (currentState) {
+      streamStatesRef.current.set(participantId, {
+        ...currentState,
+        skipCount: (currentState.skipCount || 0) + 1
       });
     }
   }, []);
@@ -58,13 +81,12 @@ export const useStreamManager = () => {
   const cancelActiveOperation = useCallback(async (participantId: string): Promise<void> => {
     const activeOp = activeOperationsRef.current.get(participantId);
     if (activeOp) {
-      console.log(`🚫 Canceling active operation for ${participantId}`);
+      console.log(`🚫 FORCE CANCEL: Canceling active operation for ${participantId}`);
       activeOperationsRef.current.delete(participantId);
-      // Aguardar a conclusão da operação anterior antes de continuar
       try {
         await activeOp.promise;
       } catch (error) {
-        console.log(`⚠️ Previous operation canceled for ${participantId}:`, error);
+        console.log(`⚠️ Operation canceled for ${participantId}:`, error);
       }
     }
   }, []);
@@ -79,7 +101,6 @@ export const useStreamManager = () => {
     
     activeOperationsRef.current.set(participantId, operation);
     
-    // Remover operação quando completar
     promise.finally(() => {
       const currentOp = activeOperationsRef.current.get(participantId);
       if (currentOp && currentOp.timestamp === operation.timestamp) {
@@ -95,10 +116,17 @@ export const useStreamManager = () => {
     processor: (participantId: string, stream: MediaStream) => Promise<void>
   ): Promise<void> => {
     const operationId = `${participantId}-${Date.now()}`;
-    console.log(`🔐 SAFE: Starting stream processing for ${participantId} (${operationId})`);
+    console.log(`🔐 CRITICAL: Starting SAFE stream processing for ${participantId} (${operationId})`);
+    
+    // Limpar qualquer debounce global pendente
+    if (globalDebounceRef.current) {
+      clearTimeout(globalDebounceRef.current);
+      globalDebounceRef.current = null;
+    }
     
     // Verificar se deve processar
     if (!shouldProcessStream(participantId, stream)) {
+      markStreamSkipped(participantId);
       return;
     }
     
@@ -108,23 +136,35 @@ export const useStreamManager = () => {
     // Marcar como processando
     markStreamProcessing(participantId, stream);
     
-    // Criar e registrar nova operação
-    const processingPromise = processor(participantId, stream);
-    registerOperation(participantId, stream, processingPromise);
-    
-    try {
-      await processingPromise;
-      console.log(`✅ SAFE: Stream processing completed for ${participantId} (${operationId})`);
-    } catch (error) {
-      console.error(`❌ SAFE: Stream processing failed for ${participantId} (${operationId}):`, error);
-      throw error;
-    }
-  }, [shouldProcessStream, cancelActiveOperation, markStreamProcessing, registerOperation]);
+    // Implementar debounce global para evitar múltiplas chamadas simultâneas
+    return new Promise((resolve, reject) => {
+      globalDebounceRef.current = setTimeout(async () => {
+        try {
+          const processingPromise = processor(participantId, stream);
+          registerOperation(participantId, stream, processingPromise);
+          
+          await processingPromise;
+          console.log(`✅ CRITICAL: Stream processing completed for ${participantId} (${operationId})`);
+          resolve();
+        } catch (error) {
+          console.error(`❌ CRITICAL: Stream processing failed for ${participantId} (${operationId}):`, error);
+          reject(error);
+        }
+      }, 200); // Debounce de 200ms
+    });
+  }, [shouldProcessStream, cancelActiveOperation, markStreamProcessing, registerOperation, markStreamSkipped]);
+  
+  const resetParticipantState = useCallback((participantId: string) => {
+    console.log(`🔄 RESET: Resetting state for ${participantId}`);
+    streamStatesRef.current.delete(participantId);
+    activeOperationsRef.current.delete(participantId);
+  }, []);
   
   return {
     processStreamSafely,
     shouldProcessStream,
     markStreamProcessing,
-    markStreamComplete
+    markStreamComplete,
+    resetParticipantState
   };
 };

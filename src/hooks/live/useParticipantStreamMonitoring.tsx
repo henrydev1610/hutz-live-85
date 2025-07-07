@@ -1,5 +1,5 @@
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
 
 interface UseParticipantStreamMonitoringProps {
@@ -17,37 +17,53 @@ export const useParticipantStreamMonitoring = ({
   setParticipantList,
   participantStreams,
   transmissionWindowRef,
-  updateVideoElementsImmediately,
   transferStreamToTransmission,
   sessionId
 }: UseParticipantStreamMonitoringProps) => {
+  const lastUpdateRef = useRef<number>(0);
+  const processedStreamsRef = useRef(new Set<string>());
 
-  // SIMPLIFIED stream monitoring - remove duplicate calls that cause flickering
+  // DRASTICALLY SIMPLIFIED stream monitoring - only state updates
   useEffect(() => {
+    const now = Date.now();
+    
+    // Debounce agressivo de 2 segundos para evitar updates excessivos
+    if (now - lastUpdateRef.current < 2000) {
+      console.log('🔥 CRITICAL: Debouncing stream monitoring update');
+      return;
+    }
+    
+    lastUpdateRef.current = now;
+    
     const activeStreams = Object.keys(participantStreams).length;
     const activeParticipants = participantList.filter(p => p.active).length;
     const selectedParticipants = participantList.filter(p => p.selected && p.hasVideo).length;
-    const realParticipants = participantList.filter(p => !p.id.startsWith('placeholder-')).length;
+    const realParticipants = participantList.filter(p => !p.id.startsWith('placeholder')).length;
     
-    console.log('🔍 MONITOR: Stream monitoring - SIMPLIFIED:', {
+    console.log('🔍 CRITICAL: Stream monitoring - ULTRA SIMPLIFIED:', {
       totalStreams: activeStreams,
       activeParticipants,
       selectedParticipants,
       realParticipants,
-      domReady: document.readyState
+      sessionId
     });
     
-    // Only update participant state, NOT trigger video processing
-    // Video processing is now handled by the main handleParticipantStream callback only
+    // ONLY update participant state - NO video processing here
+    let stateChanged = false;
+    
     for (const [participantId, stream] of Object.entries(participantStreams)) {
-      console.log(`📋 STATE: Updating participant state for: ${participantId}`, {
-        streamActive: stream.active,
-        trackCount: stream.getTracks().length
-      });
+      const streamKey = `${participantId}-${stream.id}`;
+      
+      // Skip if already processed
+      if (processedStreamsRef.current.has(streamKey)) {
+        continue;
+      }
+      
+      console.log(`📋 CRITICAL: Updating ONLY state for: ${participantId}`);
       
       const participant = participantList.find(p => p.id === participantId);
       if (participant) {
-        // Update existing participant
+        // Update existing participant state only
         setParticipantList(prev => prev.map(p => 
           p.id === participantId 
             ? { 
@@ -59,13 +75,10 @@ export const useParticipantStreamMonitoring = ({
               }
             : p
         ));
-        
-        // Only send to transmission, no video element updates here
-        transferStreamToTransmission(participantId, stream);
-        
+        stateChanged = true;
       } else {
-        // Add new participant but don't trigger video processing
-        console.warn(`➕ NEW: Adding new participant without video processing: ${participantId}`);
+        // Add new participant but mark as processed
+        console.log(`➕ CRITICAL: Adding new participant: ${participantId}`);
         
         const newParticipant: Participant = {
           id: participantId,
@@ -78,9 +91,29 @@ export const useParticipantStreamMonitoring = ({
         };
         
         setParticipantList(prev => [...prev, newParticipant]);
-        transferStreamToTransmission(participantId, stream);
+        stateChanged = true;
       }
+      
+      // Only send to transmission window - NO video element updates
+      transferStreamToTransmission(participantId, stream);
+      processedStreamsRef.current.add(streamKey);
+    }
+    
+    if (stateChanged) {
+      console.log('✅ CRITICAL: Participant state updated successfully');
     }
 
-  }, [participantList, participantStreams, transferStreamToTransmission, setParticipantList, sessionId]);
+  }, [participantStreams, sessionId, transferStreamToTransmission, setParticipantList, participantList]);
+  
+  // Cleanup processed streams when streams are removed
+  useEffect(() => {
+    const currentStreamKeys = Object.entries(participantStreams).map(([id, stream]) => `${id}-${stream.id}`);
+    const processedKeys = Array.from(processedStreamsRef.current);
+    
+    processedKeys.forEach(key => {
+      if (!currentStreamKeys.includes(key)) {
+        processedStreamsRef.current.delete(key);
+      }
+    });
+  }, [participantStreams]);
 };

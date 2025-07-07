@@ -7,7 +7,7 @@ import { useStreamManager } from './useStreamManager';
 export const useVideoElementManagement = () => {
   const { createVideoElement, cleanup } = useVideoCreation();
   const { findVideoContainers, createEmergencyContainer } = useContainerManagement();
-  const { processStreamSafely } = useStreamManager();
+  const { processStreamSafely, resetParticipantState } = useStreamManager();
 
   useEffect(() => {
     return () => {
@@ -21,7 +21,7 @@ export const useVideoElementManagement = () => {
     transmissionWindowRef?: React.MutableRefObject<Window | null>
   ) => {
     const operationId = `${participantId}-${Date.now()}`;
-    console.log(`🎬 SAFE: IMMEDIATE video update for: ${participantId} (${operationId})`, {
+    console.log(`🎬 CRITICAL: IMMEDIATE video update for: ${participantId} (${operationId})`, {
       streamId: stream.id,
       trackCount: stream.getTracks().length,
       videoTracks: stream.getVideoTracks().length,
@@ -29,74 +29,90 @@ export const useVideoElementManagement = () => {
     });
     
     if (!stream.active || stream.getVideoTracks().length === 0) {
-      console.warn(`⚠️ INVALID: Stream is not active or has no video tracks (${operationId})`);
+      console.warn(`⚠️ CRITICAL: Invalid stream for ${participantId} (${operationId})`);
       return;
     }
     
-    // Usar processamento seguro para evitar múltiplas chamadas simultâneas
+    // Usar processamento ULTRA SEGURO para evitar piscar
     await processStreamSafely(participantId, stream, async (pId, str) => {
-      console.log(`🔐 PROCESSING: Safe video processing for ${pId} (${operationId})`);
+      console.log(`🔐 CRITICAL: Ultra-safe video processing for ${pId} (${operationId})`);
       
-      // Aguardar DOM estar pronto
+      // Aguardar DOM estar completamente pronto
       if (document.readyState !== 'complete') {
-        console.log(`⏳ DOM: Waiting for DOM to be ready (${operationId})`);
+        console.log(`⏳ CRITICAL: Waiting for DOM (${operationId})`);
         await new Promise(resolve => {
-          if (document.readyState === 'complete') {
-            resolve(null);
-          } else {
-            window.addEventListener('load', () => resolve(null), { once: true });
-          }
+          const checkReady = () => {
+            if (document.readyState === 'complete') {
+              resolve(null);
+            } else {
+              setTimeout(checkReady, 50);
+            }
+          };
+          checkReady();
         });
       }
+      
+      // Aguardar mais um pouco para garantir estabilidade
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       // Encontrar containers
       const containers = await findVideoContainers(pId);
       
       if (containers.length === 0) {
-        console.warn(`⚠️ EMERGENCY: No containers found for ${pId}, creating emergency container (${operationId})`);
+        console.warn(`⚠️ CRITICAL: No containers found for ${pId}, creating emergency (${operationId})`);
         const emergencyContainer = createEmergencyContainer(pId);
         if (emergencyContainer) {
-          console.log(`🆘 EMERGENCY: Creating video in emergency container (${operationId})`);
+          console.log(`🆘 CRITICAL: Creating video in emergency container (${operationId})`);
           await createVideoElement(emergencyContainer, str);
         } else {
-          console.error(`❌ EMERGENCY: Failed to create emergency container (${operationId})`);
+          console.error(`❌ CRITICAL: Failed to create emergency container (${operationId})`);
           return;
         }
       } else {
-        console.log(`📹 CONTAINERS: Found ${containers.length} container(s) for ${pId} (${operationId})`);
-        for (const [index, container] of containers.entries()) {
-          console.log(`🎯 CONTAINER: Creating video in container ${index + 1}: ${container.id || container.className} (${operationId})`);
-          await createVideoElement(container, str);
+        console.log(`📹 CRITICAL: Found ${containers.length} container(s) for ${pId} (${operationId})`);
+        // Processar apenas o primeiro container para evitar duplicação
+        const primaryContainer = containers[0];
+        console.log(`🎯 CRITICAL: Creating video in PRIMARY container: ${primaryContainer.id || primaryContainer.className} (${operationId})`);
+        await createVideoElement(primaryContainer, str);
+      }
+      
+      // Atualizar janela de transmissão apenas se não foi fechada
+      if (transmissionWindowRef?.current && !transmissionWindowRef.current.closed) {
+        console.log(`📤 CRITICAL: Sending stream to transmission window for: ${pId} (${operationId})`);
+        
+        try {
+          transmissionWindowRef.current.postMessage({
+            type: 'video-stream',
+            participantId: pId,
+            hasStream: true,
+            timestamp: Date.now(),
+            streamInfo: {
+              id: str.id,
+              active: str.active,
+              trackCount: str.getTracks().length,
+              videoTracks: str.getVideoTracks().length
+            }
+          }, '*');
+        } catch (error) {
+          console.warn(`⚠️ CRITICAL: Failed to send message to transmission window:`, error);
         }
       }
       
-      // Atualizar janela de transmissão
-      if (transmissionWindowRef?.current && !transmissionWindowRef.current.closed) {
-        console.log(`📤 TRANSMISSION: Sending stream to transmission window for: ${pId} (${operationId})`);
-        
-        transmissionWindowRef.current.postMessage({
-          type: 'video-stream',
-          participantId: pId,
-          hasStream: true,
-          timestamp: Date.now(),
-          streamInfo: {
-            id: str.id,
-            active: str.active,
-            trackCount: str.getTracks().length,
-            videoTracks: str.getVideoTracks().length
-          }
-        }, '*');
-      }
-      
-      console.log(`✅ COMPLETE: Video update completed successfully for ${pId} (${operationId})`);
+      console.log(`✅ CRITICAL: Video update completed successfully for ${pId} (${operationId})`);
     });
     
   }, [findVideoContainers, createEmergencyContainer, createVideoElement, processStreamSafely]);
+
+  const resetVideoState = useCallback((participantId: string) => {
+    console.log(`🔄 CRITICAL: Resetting video state for ${participantId}`);
+    resetParticipantState(participantId);
+  }, [resetParticipantState]);
 
   return {
     updateVideoElementsImmediately,
     createVideoElement,
     findVideoContainers,
+    resetVideoState,
     cleanup
   };
 };
