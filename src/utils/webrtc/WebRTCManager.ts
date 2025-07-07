@@ -1,4 +1,3 @@
-
 import signalingService from '@/services/WebSocketSignalingService';
 import { ConnectionHandler } from './ConnectionHandler';
 import { SignalingHandler } from './SignalingHandler';
@@ -11,6 +10,7 @@ export class WebRTCManager {
   private localStream: MediaStream | null = null;
   private roomId: string | null = null;
   private isHost: boolean = false;
+  private isMobile: boolean = false;
   private connectionHandler: ConnectionHandler;
   private signalingHandler: SignalingHandler;
   private participantManager: ParticipantManager;
@@ -18,12 +18,12 @@ export class WebRTCManager {
 
   constructor() {
     console.log('🔧 WebRTC Manager initialized');
+    this.detectMobile();
     this.participantManager = new ParticipantManager();
     this.callbacksManager = new WebRTCCallbacks();
     this.connectionHandler = new ConnectionHandler(this.peerConnections, () => this.localStream);
     this.signalingHandler = new SignalingHandler(this.peerConnections, new Map());
     
-    // Bind callbacks with enhanced logging
     this.connectionHandler.setStreamCallback((participantId, stream) => {
       console.log('🎥 WEBRTC MANAGER: Stream received from ConnectionHandler:', participantId);
       this.callbacksManager.triggerStreamCallback(participantId, stream);
@@ -33,6 +33,11 @@ export class WebRTCManager {
       console.log('👤 WEBRTC MANAGER: Participant joined from ConnectionHandler:', participantId);
       this.callbacksManager.triggerParticipantJoinCallback(participantId);
     });
+  }
+
+  private detectMobile() {
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    console.log('📱 WEBRTC: Mobile detected:', this.isMobile);
   }
 
   setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
@@ -47,12 +52,11 @@ export class WebRTCManager {
   }
 
   async initializeAsHost(sessionId: string): Promise<void> {
-    console.log(`🏠 Initializing WebRTC as host for session: ${sessionId}`);
+    console.log(`🏠 Initializing WebRTC as host for session: ${sessionId} (Mobile: ${this.isMobile})`);
     this.roomId = sessionId;
     this.isHost = true;
 
     try {
-      // Connect to signaling server first
       await signalingService.connect();
       
       this.callbacksManager.setupHostCallbacks(
@@ -79,7 +83,6 @@ export class WebRTCManager {
         this.signalingHandler.handleIceCandidate.bind(this.signalingHandler)
       );
 
-      // Join room AFTER setting up callbacks
       await signalingService.joinRoom(sessionId, `host-${Date.now()}`);
       console.log('✅ Host connected to signaling server');
       
@@ -90,39 +93,52 @@ export class WebRTCManager {
   }
 
   async initializeAsParticipant(sessionId: string, participantId: string, stream?: MediaStream): Promise<void> {
-    console.log(`👤 Initializing WebRTC as participant: ${participantId} for session: ${sessionId}`);
+    console.log(`👤 MOBILE: Initializing WebRTC as participant: ${participantId} for session: ${sessionId}`);
     this.roomId = sessionId;
     this.isHost = false;
 
     try {
       if (stream) {
         this.localStream = stream;
-        console.log('📹 Using provided stream:', stream.getTracks().length, 'tracks');
+        console.log('📹 MOBILE: Using provided stream:', stream.getTracks().length, 'tracks');
       } else {
-        const mediaStream = await navigator.mediaDevices.getUserMedia(MEDIA_CONSTRAINTS);
+        // Mobile-optimized media constraints
+        const mobileConstraints = this.isMobile ? {
+          video: {
+            width: { ideal: 640, max: 1280 },
+            height: { ideal: 480, max: 720 },
+            frameRate: { ideal: 15, max: 30 }
+          },
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        } : MEDIA_CONSTRAINTS;
+
+        const mediaStream = await navigator.mediaDevices.getUserMedia(mobileConstraints);
         this.localStream = mediaStream;
-        console.log('📹 Local stream obtained:', mediaStream.getTracks().length, 'tracks');
+        console.log('📹 MOBILE: Local stream obtained:', mediaStream.getTracks().length, 'tracks');
       }
 
-      // Connect to signaling server first
       await signalingService.connect();
 
       this.callbacksManager.setupParticipantCallbacks(
         participantId,
         (data) => {
-          console.log('🏠 PARTICIPANT: Host or participant connected:', data);
+          console.log('🏠 MOBILE: Host or participant connected:', data);
           const hostId = data.userId || data.id || data.socketId;
           if (hostId !== participantId) {
-            console.log('📞 PARTICIPANT: Initiating call to host:', hostId);
+            console.log('📞 MOBILE: Initiating call to host:', hostId);
             this.connectionHandler.initiateCallWithRetry(hostId);
           }
         },
         (participants) => {
-          console.log('👥 PARTICIPANT: Participants updated:', participants);
+          console.log('👥 MOBILE: Participants updated:', participants);
           participants.forEach(participant => {
             const pId = participant.userId || participant.id || participant.socketId;
             if (pId !== participantId && !this.peerConnections.has(pId)) {
-              console.log('📞 PARTICIPANT: Connecting to existing participant:', pId);
+              console.log('📞 MOBILE: Connecting to existing participant:', pId);
               this.connectionHandler.initiateCallWithRetry(pId);
             }
           });
@@ -132,22 +148,34 @@ export class WebRTCManager {
         this.signalingHandler.handleIceCandidate.bind(this.signalingHandler)
       );
 
-      // Join room AFTER setting up callbacks
       await signalingService.joinRoom(sessionId, participantId);
-      console.log('✅ Participant connected to signaling server');
+      console.log('✅ MOBILE: Participant connected to signaling server');
       
-      // Notify about local stream
+      // Enhanced stream notification for mobile
       if (this.localStream) {
-        signalingService.notifyStreamStarted(participantId, {
+        const streamInfo = {
           streamId: this.localStream.id,
           trackCount: this.localStream.getTracks().length,
           hasVideo: this.localStream.getVideoTracks().length > 0,
-          hasAudio: this.localStream.getAudioTracks().length > 0
-        });
+          hasAudio: this.localStream.getAudioTracks().length > 0,
+          isMobile: this.isMobile,
+          fallbackMode: signalingService.isFallbackMode(),
+          fallbackStreaming: signalingService.isFallbackStreamingEnabled()
+        };
+        
+        signalingService.notifyStreamStarted(participantId, streamInfo);
+        
+        // If in fallback mode, trigger stream callback directly
+        if (signalingService.isFallbackStreamingEnabled()) {
+          console.log('🚀 MOBILE: Triggering direct stream callback in fallback mode');
+          setTimeout(() => {
+            this.callbacksManager.triggerStreamCallback(participantId, this.localStream!);
+          }, 2000);
+        }
       }
       
     } catch (error) {
-      console.error('❌ Failed to initialize participant WebRTC:', error);
+      console.error('❌ MOBILE: Failed to initialize participant WebRTC:', error);
       throw error;
     }
   }
