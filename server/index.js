@@ -57,10 +57,14 @@ const corsOptions = {
   optionsSuccessStatus: 200 // Para suportar browsers legados
 };
 
-// Middlewares de segurança
+// Middlewares de segurança - configuração otimizada para mobile
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: false,
+  // Desabilitar headers que causam problemas no mobile
+  noSniff: false,
+  xssFilter: false,
+  frameguard: false
 }));
 
 // Aplicar CORS
@@ -72,16 +76,20 @@ app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Configurar Socket.IO com os mesmos origins
+// Configurar Socket.IO com os mesmos origins e configurações otimizadas para mobile
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true
   },
-  transports: ['websocket', 'polling'],
-  pingTimeout: 60000,
-  pingInterval: 25000
+  transports: ['polling', 'websocket'], // Permitir ambos, mas polling primeiro
+  pingTimeout: 120000, // Timeout maior para mobile
+  pingInterval: 30000, // Intervalo maior
+  maxHttpBufferSize: 1e6, // 1MB buffer
+  allowEIO3: true, // Compatibilidade com versões antigas
+  httpCompression: false, // Desabilitar compressão para melhor compatibilidade mobile
+  perMessageDeflate: false // Desabilitar deflate para mobile
 });
 
 // Configurar Redis adapter se REDIS_URL estiver definida
