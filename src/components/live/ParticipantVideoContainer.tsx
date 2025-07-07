@@ -1,17 +1,27 @@
 
 import React from 'react';
 import { Participant } from './ParticipantGrid';
+import { useDirectVideoCreation } from '@/hooks/live/useDirectVideoCreation';
 
 interface ParticipantVideoContainerProps {
   participant: Participant;
   index: number;
+  stream?: MediaStream | null;
 }
 
 const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
   participant,
-  index
+  index,
+  stream
 }) => {
   const containerId = `preview-participant-video-${participant.id}`;
+
+  // Use direct video creation hook
+  useDirectVideoCreation({
+    participantId: participant.id,
+    stream: stream || null,
+    containerId
+  });
 
   // FORCE: Log de debug agressivo
   console.log(`🎭 RENDER: ParticipantVideoContainer for ${participant.id}`, {
@@ -19,7 +29,9 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     active: participant.active,
     hasVideo: participant.hasVideo,
     selected: participant.selected,
-    name: participant.name
+    name: participant.name,
+    hasStream: !!stream,
+    streamId: stream?.id
   });
 
   return (

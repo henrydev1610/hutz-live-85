@@ -7,11 +7,13 @@ import { useUniqueKeyGenerator } from '@/hooks/live/useUniqueKeyGenerator';
 interface ParticipantPreviewGridProps {
   participantList: Participant[];
   participantCount: number;
+  participantStreams: {[id: string]: MediaStream};
 }
 
 const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   participantList,
-  participantCount
+  participantCount,
+  participantStreams
 }) => {
   const { generateUniqueKey } = useUniqueKeyGenerator();
   
@@ -59,6 +61,7 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
           key={generateUniqueKey(participant.id, 'participant')}
           participant={participant}
           index={index}
+          stream={participantStreams[participant.id] || null}
         />
       ))}
       

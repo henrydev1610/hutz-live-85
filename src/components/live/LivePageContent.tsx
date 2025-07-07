@@ -133,6 +133,7 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
                 selectedBackgroundColor={state.selectedBackgroundColor}
                 participantList={state.participantList}
                 participantCount={state.participantCount}
+                participantStreams={state.participantStreams}
               />
             </div>
           </CardContent>
