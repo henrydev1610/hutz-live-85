@@ -1,11 +1,18 @@
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useVideoCreation } from './useVideoCreation';
 import { useContainerManagement } from './useContainerManagement';
 
 export const useVideoElementManagement = () => {
-  const { createVideoElement } = useVideoCreation();
+  const { createVideoElement, cleanup } = useVideoCreation();
   const { findVideoContainers, createEmergencyContainer } = useContainerManagement();
+
+  // Limpeza quando o componente for desmontado
+  useEffect(() => {
+    return () => {
+      cleanup();
+    };
+  }, [cleanup]);
 
   const updateVideoElementsImmediately = useCallback(async (
     participantId: string, 
@@ -90,6 +97,7 @@ export const useVideoElementManagement = () => {
   return {
     updateVideoElementsImmediately,
     createVideoElement,
-    findVideoContainers
+    findVideoContainers,
+    cleanup
   };
 };
