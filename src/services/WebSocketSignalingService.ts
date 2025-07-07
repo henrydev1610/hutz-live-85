@@ -8,6 +8,9 @@ interface SignalingCallbacks {
   onOffer?: (data: any) => void;
   onAnswer?: (data: any) => void;
   onIceCandidate?: (data: any) => void;
+  onStreamStarted?: (data: any) => void;
+  onVideoStream?: (data: any) => void;
+  onParticipantVideo?: (data: any) => void;
   onError?: (error: any) => void;
 }
 
@@ -27,7 +30,7 @@ class WebSocketSignalingService {
 
   setCallbacks(callbacks: SignalingCallbacks) {
     this.callbacks = callbacks;
-    console.log('📞 Signaling callbacks set');
+    console.log('📞 Signaling callbacks set:', Object.keys(callbacks));
   }
 
   async connect(serverUrl?: string): Promise<void> {
@@ -111,6 +114,8 @@ class WebSocketSignalingService {
   private setupEventListeners() {
     if (!this.socket) return;
 
+    console.log('🎧 Setting up Socket.IO event listeners');
+
     this.socket.on('user-connected', (data) => {
       console.log('👤 User connected event:', data);
       if (this.callbacks.onUserConnected) {
@@ -132,6 +137,7 @@ class WebSocketSignalingService {
       }
     });
 
+    // WebRTC signaling events
     this.socket.on('offer', (data) => {
       console.log('📤 Received offer:', data);
       if (this.callbacks.onOffer) {
@@ -150,6 +156,28 @@ class WebSocketSignalingService {
       console.log('🧊 Received ICE candidate:', data);
       if (this.callbacks.onIceCandidate) {
         this.callbacks.onIceCandidate(data);
+      }
+    });
+
+    // Stream events - NEW!
+    this.socket.on('stream-started', (data) => {
+      console.log('🎥 Stream started event:', data);
+      if (this.callbacks.onStreamStarted) {
+        this.callbacks.onStreamStarted(data);
+      }
+    });
+
+    this.socket.on('video-stream', (data) => {
+      console.log('📹 Video stream event:', data);
+      if (this.callbacks.onVideoStream) {
+        this.callbacks.onVideoStream(data);
+      }
+    });
+
+    this.socket.on('participant-video', (data) => {
+      console.log('🎬 Participant video event:', data);
+      if (this.callbacks.onParticipantVideo) {
+        this.callbacks.onParticipantVideo(data);
       }
     });
 
@@ -192,6 +220,24 @@ class WebSocketSignalingService {
     } else {
       console.warn('⚠️ Operating in fallback mode - no server connection');
       this.fallbackMode = true;
+    }
+  }
+
+  // NEW: Notify about stream events
+  notifyStreamStarted(participantId: string, streamInfo: any): void {
+    console.log(`📹 Notifying stream started for: ${participantId}`);
+    
+    if (this.socket && this.isConnected && !this.fallbackMode) {
+      try {
+        this.socket.emit('stream-started', {
+          participantId,
+          roomId: this.currentRoom,
+          streamInfo,
+          timestamp: Date.now()
+        });
+      } catch (error) {
+        console.error('❌ Failed to notify stream started:', error);
+      }
     }
   }
 

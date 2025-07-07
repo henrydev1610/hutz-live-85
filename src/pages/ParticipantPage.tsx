@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -5,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Camera, CameraOff, Mic, MicOff, Phone, PhoneOff, Settings, Monitor, MonitorOff } from "lucide-react";
 import { toast } from "sonner";
-import { setupParticipantWebRTC, setLocalStream, endWebRTC } from '@/utils/webrtcUtils';
+import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
 
 const ParticipantPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -31,18 +32,99 @@ const ParticipantPage = () => {
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
 
-  // Get user media with enhanced error handling and better constraints
+  // Auto-initialize media and connect on mount
+  useEffect(() => {
+    console.log('🚀 PARTICIPANT PAGE: Auto-initializing for session:', sessionId);
+    
+    if (sessionId) {
+      autoConnectToSession();
+    }
+    
+    return () => {
+      cleanup();
+    };
+  }, [sessionId]);
+
+  const autoConnectToSession = async () => {
+    console.log('🎯 PARTICIPANT: Starting auto-connection process');
+    setIsConnecting(true);
+    setConnectionStatus('connecting');
+    setError(null);
+
+    try {
+      // Step 1: Get user media
+      console.log('📹 PARTICIPANT: Step 1 - Getting user media');
+      const stream = await getUserMedia({ 
+        video: { 
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          frameRate: { ideal: 30 },
+          facingMode: 'user'
+        }, 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      if (!stream) {
+        throw new Error('Falha ao obter stream de mídia');
+      }
+
+      localStreamRef.current = stream;
+      
+      // Update media states
+      const videoTracks = stream.getVideoTracks();
+      const audioTracks = stream.getAudioTracks();
+      
+      setHasVideo(videoTracks.length > 0);
+      setHasAudio(audioTracks.length > 0);
+      
+      console.log(`✅ PARTICIPANT: Media obtained - Video: ${videoTracks.length > 0}, Audio: ${audioTracks.length > 0}`);
+      
+      // Step 2: Display local video
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        try {
+          await localVideoRef.current.play();
+          console.log('✅ PARTICIPANT: Local video playing');
+        } catch (playError) {
+          console.warn('⚠️ PARTICIPANT: Video play warning:', playError);
+        }
+      }
+      
+      // Step 3: Initialize WebRTC connection
+      console.log('🔗 PARTICIPANT: Step 3 - Initializing WebRTC connection');
+      await initParticipantWebRTC(sessionId!, participantId, stream);
+      
+      setIsConnected(true);
+      setConnectionStatus('connected');
+      console.log('✅ PARTICIPANT: Auto-connection completed successfully');
+      
+      toast.success('Conectado automaticamente à sessão!');
+      
+    } catch (error) {
+      console.error('❌ PARTICIPANT: Auto-connection failed:', error);
+      setConnectionStatus('failed');
+      setError(error instanceof Error ? error.message : 'Erro na conexão automática');
+      toast.error('Falha na conexão automática. Tente reconectar manualmente.');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  // Get user media with enhanced error handling
   const getUserMedia = async (constraints: MediaStreamConstraints): Promise<MediaStream | null> => {
     try {
-      console.log('🎥 Requesting user media with constraints:', constraints);
+      console.log('🎥 PARTICIPANT: Requesting user media with constraints:', constraints);
       
-      // Check if mediaDevices is supported
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('getUserMedia não é suportado neste navegador');
       }
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('✅ Successfully obtained user media:', {
+      console.log('✅ PARTICIPANT: Successfully obtained user media:', {
         tracks: stream.getTracks().map(t => ({ 
           kind: t.kind, 
           label: t.label, 
@@ -52,7 +134,7 @@ const ParticipantPage = () => {
       });
       return stream;
     } catch (error) {
-      console.error('❌ Error getting user media:', error);
+      console.error('❌ PARTICIPANT: Error getting user media:', error);
       
       if (error instanceof Error) {
         if (error.name === 'NotAllowedError') {
@@ -62,7 +144,9 @@ const ParticipantPage = () => {
         } else if (error.name === 'NotReadableError') {
           toast.error('Câmera ou microfone já estão sendo usados por outro aplicativo.');
         } else if (error.name === 'OverconstrainedError') {
-          toast.error('Configurações de vídeo/áudio não suportadas pelo dispositivo.');
+          // Try with fallback constraints
+          console.log('🔄 PARTICIPANT: Trying fallback constraints');
+          return getUserMediaFallback();
         } else {
           toast.error(`Erro ao acessar mídia: ${error.message}`);
         }
@@ -72,283 +156,43 @@ const ParticipantPage = () => {
     }
   };
 
-  // Initialize media stream with fallback options
-  const initializeMedia = async () => {
-    try {
-      setIsConnecting(true);
-      setError(null);
-      
-      console.log('🎥 Starting media initialization...');
-      
-      // Try different constraint combinations, starting with ideal and falling back
-      const constraintOptions = [
-        // First try: High quality
-        { 
-          video: { 
-            width: { ideal: 1280, max: 1920 },
-            height: { ideal: 720, max: 1080 },
-            frameRate: { ideal: 30 },
-            facingMode: 'user'
-          }, 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          }
-        },
-        // Second try: Medium quality
-        { 
-          video: { 
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            frameRate: { ideal: 30 }
-          }, 
-          audio: true 
-        },
-        // Third try: Basic video
-        { video: true, audio: true },
-        // Fourth try: Audio only
-        { audio: true },
-        // Last try: Very basic
-        { video: { width: 320, height: 240 }, audio: true }
-      ];
-      
-      let stream: MediaStream | null = null;
-      
-      for (let i = 0; i < constraintOptions.length; i++) {
-        console.log(`🎥 Trying constraint option ${i + 1}:`, constraintOptions[i]);
-        
-        try {
-          stream = await getUserMedia(constraintOptions[i]);
-          if (stream) {
-            console.log(`✅ Success with constraint option ${i + 1}`);
-            break;
-          }
-        } catch (constraintError) {
-          console.log(`❌ Constraint option ${i + 1} failed:`, constraintError);
-          // Continue to next option
-        }
+  const getUserMediaFallback = async (): Promise<MediaStream | null> => {
+    const fallbackConstraints = [
+      { video: { width: 640, height: 480 }, audio: true },
+      { video: true, audio: true },
+      { video: { width: 320, height: 240 }, audio: true },
+      { audio: true }
+    ];
+
+    for (const constraints of fallbackConstraints) {
+      try {
+        console.log('🔄 PARTICIPANT: Trying fallback constraints:', constraints);
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        console.log('✅ PARTICIPANT: Fallback constraints worked');
+        return stream;
+      } catch (error) {
+        console.log('❌ PARTICIPANT: Fallback attempt failed:', error);
+        continue;
       }
-      
-      if (!stream) {
-        throw new Error('Não foi possível acessar câmera nem microfone com nenhuma configuração');
-      }
-      
-      localStreamRef.current = stream;
-      
-      // Update media availability states
-      const videoTracks = stream.getVideoTracks();
-      const audioTracks = stream.getAudioTracks();
-      
-      setHasVideo(videoTracks.length > 0);
-      setHasAudio(audioTracks.length > 0);
-      
-      console.log(`✅ Media initialized - Video: ${videoTracks.length > 0}, Audio: ${audioTracks.length > 0}`);
-      
-      // Set initial enabled states
-      videoTracks.forEach(track => {
-        track.enabled = isVideoEnabled;
-        console.log(`Video track ${track.id} enabled: ${track.enabled}`);
-      });
-      audioTracks.forEach(track => {
-        track.enabled = isAudioEnabled;
-        console.log(`Audio track ${track.id} enabled: ${track.enabled}`);
-      });
-      
-      // Display local video
-      if (localVideoRef.current && stream) {
-        localVideoRef.current.srcObject = stream;
-        
-        // Enhanced video element setup
-        localVideoRef.current.onloadedmetadata = () => {
-          console.log('✅ Video metadata loaded');
-          if (localVideoRef.current) {
-            localVideoRef.current.play()
-              .then(() => console.log('✅ Video playing successfully'))
-              .catch(playErr => console.warn('⚠️ Video play warning:', playErr));
-          }
-        };
-        
-        // Try to play immediately
-        try {
-          await localVideoRef.current.play();
-          console.log('✅ Local video is playing');
-        } catch (playError) {
-          console.warn('⚠️ Video play failed initially, will retry when metadata loads:', playError);
-        }
-      }
-      
-      console.log('✅ Media initialized successfully');
-      toast.success('Câmera e microfone acessados com sucesso!');
-      return stream;
-      
-    } catch (error) {
-      console.error('❌ Error initializing media:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao inicializar mídia';
-      setError(errorMessage);
-      toast.error(errorMessage);
-      throw error;
-    } finally {
-      setIsConnecting(false);
     }
+
+    throw new Error('Não foi possível acessar câmera nem microfone com nenhuma configuração');
   };
 
-  // Connect to session - now properly connects WebRTC
+  // Manual connect (for retry)
   const connectToSession = async () => {
     if (!sessionId) {
       toast.error('ID da sessão não encontrado');
       return;
     }
     
-    try {
-      setConnectionStatus('connecting');
-      setError(null);
-      
-      // Initialize media first (this is the most important part)
-      const stream = await initializeMedia();
-      if (!stream) {
-        throw new Error('Falha ao inicializar mídia');
-      }
-      
-      // Initialize WebRTC connection properly
-      console.log('🔗 Establishing WebRTC connection...');
-      await setupParticipantWebRTC(sessionId, participantId, stream);
-      setLocalStream(stream);
-      
-      // Send stream info to host via broadcast channel
-      try {
-        const infoChannel = new BroadcastChannel(`stream-info-${sessionId}`);
-        infoChannel.postMessage({
-          type: 'video-stream-info',
-          id: participantId,
-          hasVideo: stream.getVideoTracks().length > 0,
-          hasAudio: stream.getAudioTracks().length > 0,
-          streamActive: stream.active,
-          trackIds: stream.getTracks().map(t => t.id),
-          timestamp: Date.now(),
-          visibilityState: document.visibilityState,
-          deviceInfo: {
-            userAgent: navigator.userAgent,
-            platform: navigator.platform
-          }
-        });
-        setTimeout(() => infoChannel.close(), 1000);
-        console.log('📡 Stream info sent to host via broadcast channel');
-      } catch (bcError) {
-        console.warn('⚠️ Broadcast channel failed, trying localStorage fallback:', bcError);
-        
-        // Fallback to localStorage for Firefox/Opera
-        try {
-          const streamInfo = {
-            type: 'video-stream-info',
-            id: participantId,
-            hasVideo: stream.getVideoTracks().length > 0,
-            hasAudio: stream.getAudioTracks().length > 0,
-            streamActive: stream.active,
-            trackIds: stream.getTracks().map(t => t.id),
-            timestamp: Date.now(),
-            visibilityState: document.visibilityState,
-            deviceInfo: {
-              userAgent: navigator.userAgent,
-              platform: navigator.platform
-            }
-          };
-          
-          localStorage.setItem(`stream-info-${sessionId}-${participantId}-${Date.now()}`, JSON.stringify(streamInfo));
-          console.log('📡 Stream info sent to host via localStorage');
-        } catch (lsError) {
-          console.error('❌ Both broadcast and localStorage failed:', lsError);
-        }
-      }
-      
-      setIsConnected(true);
-      setConnectionStatus('connected');
-      console.log('✅ WebRTC connected successfully');
-      toast.success('Conectado à sessão com sucesso!');
-      
-      // Start periodic heartbeat to maintain connection visibility
-      const heartbeatInterval = setInterval(() => {
-        if (isConnected && stream && stream.active) {
-          try {
-            const infoChannel = new BroadcastChannel(`stream-info-${sessionId}`);
-            infoChannel.postMessage({
-              type: 'video-stream-info',
-              id: participantId,
-              hasVideo: stream.getVideoTracks().length > 0,
-              hasAudio: stream.getAudioTracks().length > 0,
-              streamActive: stream.active,
-              trackIds: stream.getTracks().map(t => t.id),
-              timestamp: Date.now(),
-              visibilityState: document.visibilityState,
-              heartbeat: true
-            });
-            setTimeout(() => infoChannel.close(), 500);
-          } catch (e) {
-            console.warn('Heartbeat broadcast failed:', e);
-          }
-        }
-      }, 5000);
-      
-      // Store interval for cleanup
-      return () => clearInterval(heartbeatInterval);
-      
-    } catch (error) {
-      console.error('❌ Error connecting to session:', error);
-      setConnectionStatus('failed');
-      setError(error instanceof Error ? error.message : 'Erro desconhecido');
-      toast.error('Falha ao conectar à sessão');
-    }
+    await autoConnectToSession();
   };
-
-  // Auto-initialize media and connect to session on component mount
-  useEffect(() => {
-    console.log('🚀 ParticipantPage mounted, auto-connecting to session...');
-    
-    // Auto-connect to session immediately when page loads
-    const autoConnect = async () => {
-      try {
-        await connectToSession();
-      } catch (error) {
-        console.error('❌ Auto-connection failed:', error);
-        // Still try to initialize media for preview
-        try {
-          await initializeMedia();
-        } catch (mediaError) {
-          console.error('❌ Fallback media initialization failed:', mediaError);
-        }
-      }
-    };
-    
-    autoConnect();
-  }, [sessionId]); // Re-run if sessionId changes
 
   // Disconnect from session
   const disconnectFromSession = () => {
     try {
-      // Stop all tracks
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => {
-          track.stop();
-          console.log(`Stopped ${track.kind} track`);
-        });
-        localStreamRef.current = null;
-      }
-      
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach(track => {
-          track.stop();
-          console.log(`Stopped screen ${track.kind} track`);
-        });
-        screenStreamRef.current = null;
-      }
-      
-      // Clear video element
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = null;
-      }
-      
-      // End WebRTC session
-      endWebRTC();
+      cleanup();
       
       setIsConnected(false);
       setConnectionStatus('disconnected');
@@ -359,9 +203,38 @@ const ParticipantPage = () => {
       toast.success('Desconectado da sessão');
       
     } catch (error) {
-      console.error('❌ Error disconnecting:', error);
+      console.error('❌ PARTICIPANT: Error disconnecting:', error);
       toast.error('Erro ao desconectar');
     }
+  };
+
+  const cleanup = () => {
+    console.log('🧹 PARTICIPANT: Cleaning up');
+    
+    // Stop all tracks
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log(`PARTICIPANT: Stopped ${track.kind} track`);
+      });
+      localStreamRef.current = null;
+    }
+    
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log(`PARTICIPANT: Stopped screen ${track.kind} track`);
+      });
+      screenStreamRef.current = null;
+    }
+    
+    // Clear video element
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+    
+    // Cleanup WebRTC
+    cleanupWebRTC();
   };
 
   // Toggle video
@@ -372,11 +245,11 @@ const ParticipantPage = () => {
       
       videoTracks.forEach(track => {
         track.enabled = newEnabled;
-        console.log(`Video track enabled: ${track.enabled}`);
+        console.log(`PARTICIPANT: Video track enabled: ${track.enabled}`);
       });
       
       setIsVideoEnabled(newEnabled);
-      console.log(`Video toggled: ${newEnabled ? 'ON' : 'OFF'}`);
+      console.log(`PARTICIPANT: Video toggled: ${newEnabled ? 'ON' : 'OFF'}`);
     }
   };
 
@@ -388,11 +261,11 @@ const ParticipantPage = () => {
       
       audioTracks.forEach(track => {
         track.enabled = newEnabled;
-        console.log(`Audio track enabled: ${track.enabled}`);
+        console.log(`PARTICIPANT: Audio track enabled: ${track.enabled}`);
       });
       
       setIsAudioEnabled(newEnabled);
-      console.log(`Audio toggled: ${newEnabled ? 'ON' : 'OFF'}`);
+      console.log(`PARTICIPANT: Audio toggled: ${newEnabled ? 'ON' : 'OFF'}`);
     }
   };
 
@@ -407,10 +280,7 @@ const ParticipantPage = () => {
         }
         
         // Switch back to camera
-        const stream = await initializeMedia();
-        if (stream) {
-          setLocalStream(stream);
-        }
+        await autoConnectToSession();
         
         setHasScreenShare(false);
         toast.success('Compartilhamento de tela interrompido');
@@ -433,7 +303,8 @@ const ParticipantPage = () => {
             });
           }
           
-          setLocalStream(screenStream);
+          // Update local stream
+          localStreamRef.current = screenStream;
           setHasScreenShare(true);
           
           // Update video element
@@ -449,22 +320,15 @@ const ParticipantPage = () => {
           toast.success('Compartilhamento de tela iniciado');
           
         } catch (error) {
-          console.error('Error starting screen share:', error);
+          console.error('PARTICIPANT: Error starting screen share:', error);
           toast.error('Erro ao iniciar compartilhamento de tela');
         }
       }
     } catch (error) {
-      console.error('Error toggling screen share:', error);
+      console.error('PARTICIPANT: Error toggling screen share:', error);
       toast.error('Erro ao alternar compartilhamento de tela');
     }
   };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      disconnectFromSession();
-    };
-  }, []);
 
   const getConnectionStatusColor = () => {
     switch (connectionStatus) {
@@ -520,6 +384,13 @@ const ParticipantPage = () => {
           <Card className="mb-6 border-red-500/50 bg-red-500/10">
             <CardContent className="p-4">
               <p className="text-red-400">{error}</p>
+              <Button 
+                onClick={connectToSession}
+                className="mt-2"
+                disabled={isConnecting}
+              >
+                Tentar Reconectar
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -583,6 +454,7 @@ const ParticipantPage = () => {
                   size="lg"
                   onClick={toggleVideo}
                   className="h-12 w-12 rounded-full"
+                  disabled={isConnecting}
                 >
                   {isVideoEnabled ? <Camera className="h-5 w-5" /> : <CameraOff className="h-5 w-5" />}
                 </Button>
@@ -595,6 +467,7 @@ const ParticipantPage = () => {
                   size="lg"
                   onClick={toggleAudio}
                   className="h-12 w-12 rounded-full"
+                  disabled={isConnecting}
                 >
                   {isAudioEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
                 </Button>
@@ -636,9 +509,10 @@ const ParticipantPage = () => {
             {/* Status Text */}
             <div className="text-center mt-4">
               <p className="text-white/70 text-sm">
-                {isConnecting && 'Inicializando câmera e microfone...'}
-                {isConnected && !isConnecting && 'Mídia ativa - pronto para transmitir'}
-                {!isConnected && !isConnecting && 'Clique no botão de telefone para conectar à sessão'}
+                {isConnecting && 'Conectando à sessão...'}
+                {isConnected && !isConnecting && 'Conectado - transmitindo para o host'}
+                {!isConnected && !isConnecting && 'Desconectado da sessão'}
+                {connectionStatus === 'failed' && ' - Clique no botão de telefone para reconectar'}
               </p>
             </div>
           </CardContent>
@@ -647,13 +521,12 @@ const ParticipantPage = () => {
         {/* Instructions */}
         <Card className="mt-6 bg-black/20 border-white/10">
           <CardContent className="p-4">
-            <h3 className="text-white font-semibold mb-2">Instruções:</h3>
+            <h3 className="text-white font-semibold mb-2">Status da Conexão:</h3>
             <ul className="text-white/70 text-sm space-y-1">
               <li>• A câmera e microfone são inicializados automaticamente</li>
-              <li>• Use os botões de câmera e microfone para controlar sua transmissão</li>
-              <li>• O botão de monitor permite compartilhar sua tela</li>
-              <li>• Clique no botão de telefone para conectar/desconectar da sessão</li>
-              <li>• Sua transmissão funcionará mesmo em modo local se a conexão falhar</li>
+              <li>• Sua transmissão está sendo enviada para o host em tempo real</li>
+              <li>• Use os controles para ajustar vídeo, áudio e compartilhamento de tela</li>
+              <li>• Se houver problemas, use o botão de reconexão</li>
             </ul>
           </CardContent>
         </Card>

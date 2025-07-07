@@ -4,10 +4,10 @@ import signalingService from '@/services/WebSocketSignalingService';
 export class ConnectionHandler {
   private peerConnections: Map<string, RTCPeerConnection>;
   private getLocalStream: () => MediaStream | null;
-  private connectionRetries: Map<string, number> = new Map();
-  private maxRetries = 3;
-  private onStreamCallback: ((participantId: string, stream: MediaStream) => void) | null = null;
-  private onParticipantJoinCallback: ((participantId: string) => void) | null = null;
+  private streamCallback: ((participantId: string, stream: MediaStream) => void) | null = null;
+  private participantJoinCallback: ((participantId: string) => void) | null = null;
+  private retryAttempts: Map<string, number> = new Map();
+  private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(
     peerConnections: Map<string, RTCPeerConnection>,
@@ -18,48 +18,18 @@ export class ConnectionHandler {
   }
 
   setStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
-    this.onStreamCallback = callback;
+    this.streamCallback = callback;
+    console.log('📞 ConnectionHandler: Stream callback set');
   }
 
   setParticipantJoinCallback(callback: (participantId: string) => void) {
-    this.onParticipantJoinCallback = callback;
-  }
-
-  async initiateCallWithRetry(participantId: string, retryCount: number = 0) {
-    try {
-      console.log(`📞 Initiating call to: ${participantId} (attempt ${retryCount + 1})`);
-      await this.initiateCall(participantId);
-    } catch (error) {
-      console.error(`❌ Call initiation failed (attempt ${retryCount + 1}):`, error);
-      
-      if (retryCount < this.maxRetries) {
-        const delay = Math.pow(2, retryCount) * 1000;
-        console.log(`🔄 Retrying call in ${delay}ms...`);
-        setTimeout(() => {
-          this.initiateCallWithRetry(participantId, retryCount + 1);
-        }, delay);
-      } else {
-        console.error(`❌ Max retries reached for participant: ${participantId}`);
-      }
-    }
-  }
-
-  private async initiateCall(participantId: string) {
-    console.log(`📞 Initiating call to: ${participantId}`);
-    
-    const peerConnection = this.createPeerConnection(participantId);
-    
-    const offer = await peerConnection.createOffer({
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: true
-    });
-    await peerConnection.setLocalDescription(offer);
-    
-    signalingService.sendOffer(participantId, offer);
-    console.log('📤 Offer sent to:', participantId);
+    this.participantJoinCallback = callback;
+    console.log('👤 ConnectionHandler: Participant join callback set');
   }
 
   createPeerConnection(participantId: string): RTCPeerConnection {
+    console.log(`🔗 Creating peer connection for: ${participantId}`);
+
     const config = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -67,130 +37,182 @@ export class ConnectionHandler {
         { urls: 'stun:stun2.l.google.com:19302' }
       ]
     };
-    
+
     const peerConnection = new RTCPeerConnection(config);
     this.peerConnections.set(participantId, peerConnection);
-    
-    peerConnection.ontrack = (event) => {
-      console.log('📺 Received track from:', participantId, event.track.kind);
-      
-      if (event.streams && event.streams[0]) {
-        const stream = event.streams[0];
-        console.log('🎥 Processing stream from:', participantId, {
-          streamId: stream.id,
-          active: stream.active,
-          tracks: stream.getTracks().length
-        });
-        
-        if (this.onStreamCallback) {
-          console.log('✅ IMMEDIATE stream callback for:', participantId);
-          setTimeout(() => {
-            this.onStreamCallback!(participantId, stream);
-          }, 0);
-        }
-        
-        if (this.onParticipantJoinCallback) {
-          console.log('👤 Ensuring participant join for:', participantId);
-          setTimeout(() => {
-            this.onParticipantJoinCallback!(participantId);
-          }, 0);
-        }
-      }
-    };
-    
+
+    // ICE candidate handling
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log('🧊 Sending ICE candidate to:', participantId);
+        console.log(`🧊 Sending ICE candidate to: ${participantId}`);
         signalingService.sendIceCandidate(participantId, event.candidate);
       }
     };
-    
+
+    // Connection state monitoring
     peerConnection.onconnectionstatechange = () => {
-      const state = peerConnection.connectionState;
-      console.log(`🔗 Connection state for ${participantId}:`, state);
+      console.log(`🔗 Connection state for ${participantId}:`, peerConnection.connectionState);
       
-      if (state === 'connected') {
-        console.log(`✅ Peer connection established with ${participantId}`);
-        this.connectionRetries.delete(participantId);
-        
-        const receivers = peerConnection.getReceivers();
-        receivers.forEach(receiver => {
-          if (receiver.track && receiver.track.readyState === 'live') {
-            console.log('🔄 Verifying stream for connected peer:', participantId);
-            if (receiver.track.kind === 'video') {
-              const stream = new MediaStream([receiver.track]);
-              if (this.onStreamCallback) {
-                console.log('🎥 Re-calling stream callback for verification:', participantId);
-                this.onStreamCallback(participantId, stream);
-              }
-            }
-          }
-        });
-      } else if (state === 'failed' || state === 'disconnected') {
-        console.error(`❌ Peer connection ${state} with ${participantId}`);
+      if (peerConnection.connectionState === 'connected') {
+        console.log(`✅ Peer connection established with: ${participantId}`);
+        if (this.participantJoinCallback) {
+          this.participantJoinCallback(participantId);
+        }
+      } else if (peerConnection.connectionState === 'failed') {
+        console.log(`❌ Peer connection failed with: ${participantId}`);
         this.handleConnectionFailure(participantId);
       }
     };
-    
-    peerConnection.onicegatheringstatechange = () => {
-      console.log(`🧊 ICE gathering state for ${participantId}:`, peerConnection.iceGatheringState);
+
+    // CRITICAL: Stream handling for incoming tracks
+    peerConnection.ontrack = (event) => {
+      console.log(`🎥 CRITICAL: Track received from ${participantId}:`, {
+        kind: event.track.kind,
+        trackId: event.track.id,
+        streamCount: event.streams.length,
+        streamIds: event.streams.map(s => s.id)
+      });
+
+      if (event.streams && event.streams.length > 0) {
+        const stream = event.streams[0];
+        console.log(`📹 CRITICAL: Processing stream from ${participantId}:`, {
+          streamId: stream.id,
+          trackCount: stream.getTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length
+        });
+
+        // IMMEDIATE callback trigger
+        if (this.streamCallback) {
+          console.log(`🚀 IMMEDIATE: Triggering stream callback for ${participantId}`);
+          this.streamCallback(participantId, stream);
+        } else {
+          console.error(`❌ CRITICAL: No stream callback set when receiving stream from ${participantId}`);
+        }
+      } else {
+        console.warn(`⚠️ Track received from ${participantId} but no streams attached`);
+      }
     };
-    
-    peerConnection.oniceconnectionstatechange = () => {
-      console.log(`🧊 ICE connection state for ${participantId}:`, peerConnection.iceConnectionState);
-    };
-    
+
+    // Add local stream if available (for participants)
     const localStream = this.getLocalStream();
     if (localStream) {
-      console.log(`📹 Adding local stream to peer connection for ${participantId}`);
+      console.log(`📤 Adding local stream to peer connection for: ${participantId}`);
       localStream.getTracks().forEach(track => {
-        console.log(`📹 Adding ${track.kind} track:`, track.id);
         peerConnection.addTrack(track, localStream);
+        console.log(`➕ Added ${track.kind} track to peer connection`);
       });
     }
-    
+
     return peerConnection;
   }
 
-  private handleConnectionFailure(participantId: string) {
-    const retryCount = this.connectionRetries.get(participantId) || 0;
+  async initiateCallWithRetry(participantId: string, maxRetries: number = 3): Promise<void> {
+    const currentRetries = this.retryAttempts.get(participantId) || 0;
     
-    if (retryCount < this.maxRetries) {
-      console.log(`🔄 Retrying connection to ${participantId} (attempt ${retryCount + 1})`);
-      this.connectionRetries.set(participantId, retryCount + 1);
+    if (currentRetries >= maxRetries) {
+      console.error(`❌ Max retry attempts reached for: ${participantId}`);
+      return;
+    }
+
+    this.retryAttempts.set(participantId, currentRetries + 1);
+    
+    try {
+      await this.initiateCall(participantId);
+      this.retryAttempts.delete(participantId); // Reset on success
+    } catch (error) {
+      console.error(`❌ Call initiation failed for ${participantId} (attempt ${currentRetries + 1}):`, error);
       
-      const existingConnection = this.peerConnections.get(participantId);
-      if (existingConnection) {
-        existingConnection.close();
-        this.peerConnections.delete(participantId);
+      if (currentRetries + 1 < maxRetries) {
+        console.log(`🔄 Retrying call to ${participantId} in 2 seconds...`);
+        setTimeout(() => {
+          this.initiateCallWithRetry(participantId, maxRetries);
+        }, 2000);
       }
-      
-      setTimeout(() => {
-        this.initiateCallWithRetry(participantId, retryCount);
-      }, 2000);
-    } else {
-      console.error(`❌ Max retries reached for participant: ${participantId}`);
-      this.connectionRetries.delete(participantId);
     }
   }
 
-  startHeartbeat(participantId: string) {
-    const heartbeatInterval = setInterval(() => {
-      const connection = this.peerConnections.get(participantId);
-      if (connection && connection.connectionState === 'connected') {
-        console.log(`💓 Heartbeat for ${participantId}: connected`);
-      } else if (!connection) {
-        console.log(`💓 Heartbeat stopped for ${participantId}: no connection`);
-        clearInterval(heartbeatInterval);
+  private async initiateCall(participantId: string): Promise<void> {
+    console.log(`📞 Initiating call to: ${participantId}`);
+
+    const peerConnection = this.createPeerConnection(participantId);
+    
+    try {
+      const offer = await peerConnection.createOffer({
+        offerToReceiveVideo: true,
+        offerToReceiveAudio: true
+      });
+      
+      await peerConnection.setLocalDescription(offer);
+      console.log(`📤 Sending offer to: ${participantId}`);
+      
+      signalingService.sendOffer(participantId, offer);
+    } catch (error) {
+      console.error(`❌ Failed to create/send offer to ${participantId}:`, error);
+      throw error;
+    }
+  }
+
+  private handleConnectionFailure(participantId: string): void {
+    console.log(`🔄 Handling connection failure for: ${participantId}`);
+    
+    // Clean up failed connection
+    const peerConnection = this.peerConnections.get(participantId);
+    if (peerConnection) {
+      peerConnection.close();
+      this.peerConnections.delete(participantId);
+    }
+    
+    // Clear heartbeat
+    this.clearHeartbeat(participantId);
+    
+    // Attempt retry after delay
+    setTimeout(() => {
+      this.initiateCallWithRetry(participantId);
+    }, 3000);
+  }
+
+  startHeartbeat(participantId: string): void {
+    console.log(`💓 Starting heartbeat for: ${participantId}`);
+    
+    const interval = setInterval(() => {
+      const peerConnection = this.peerConnections.get(participantId);
+      if (peerConnection && peerConnection.connectionState === 'connected') {
+        console.log(`💓 Heartbeat sent to: ${participantId}`);
+        // Could send heartbeat via data channel or signaling
+      } else {
+        console.log(`💔 No active connection for heartbeat: ${participantId}`);
+        this.clearHeartbeat(participantId);
       }
-    }, 5000);
+    }, 30000); // 30 second heartbeat
+    
+    this.heartbeatIntervals.set(participantId, interval);
   }
 
-  clearRetries(participantId: string) {
-    this.connectionRetries.delete(participantId);
+  clearHeartbeat(participantId: string): void {
+    const interval = this.heartbeatIntervals.get(participantId);
+    if (interval) {
+      clearInterval(interval);
+      this.heartbeatIntervals.delete(participantId);
+      console.log(`💔 Heartbeat cleared for: ${participantId}`);
+    }
   }
 
-  cleanup() {
-    this.connectionRetries.clear();
+  clearRetries(participantId: string): void {
+    this.retryAttempts.delete(participantId);
+  }
+
+  cleanup(): void {
+    console.log('🧹 Cleaning up ConnectionHandler');
+    
+    // Clear all heartbeats
+    this.heartbeatIntervals.forEach((interval, participantId) => {
+      clearInterval(interval);
+      console.log(`💔 Cleared heartbeat for: ${participantId}`);
+    });
+    this.heartbeatIntervals.clear();
+    
+    // Clear retry attempts
+    this.retryAttempts.clear();
   }
 }
