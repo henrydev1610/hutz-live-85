@@ -13,6 +13,15 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
 }) => {
   const containerId = `preview-participant-video-${participant.id}`;
 
+  // FORCE: Log de debug agressivo
+  console.log(`🎭 RENDER: ParticipantVideoContainer for ${participant.id}`, {
+    containerId,
+    active: participant.active,
+    hasVideo: participant.hasVideo,
+    selected: participant.selected,
+    name: participant.name
+  });
+
   return (
     <div 
       key={participant.id} 
@@ -25,12 +34,10 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
         backgroundColor: participant.hasVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
       }}
     >
-      {/* DEBUG: Adicionar informações de debug visíveis */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-1 rounded z-30">
-          {participant.hasVideo ? 'HAS_VIDEO' : 'NO_VIDEO'}
-        </div>
-      )}
+      {/* DEBUG: Informações de debug SEMPRE visíveis */}
+      <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-1 rounded z-30">
+        {participant.hasVideo ? 'HAS_VIDEO' : 'NO_VIDEO'} | {participant.active ? 'ACTIVE' : 'INACTIVE'}
+      </div>
       
       {/* Video will be inserted here automatically by useVideoElementManagement */}
       {/* Show placeholder for connected participants even without video stream yet */}

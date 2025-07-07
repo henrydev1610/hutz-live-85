@@ -7,6 +7,7 @@ import { useParticipantStreams } from './useParticipantStreams';
 import { useParticipantLifecycle } from './useParticipantLifecycle';
 import { useParticipantAutoSelection } from './useParticipantAutoSelection';
 import { useParticipantStreamMonitoring } from './useParticipantStreamMonitoring';
+import { useForceVideoDisplay } from './useForceVideoDisplay';
 
 interface UseParticipantManagementProps {
   participantList: Participant[];
@@ -66,6 +67,12 @@ export const useParticipantManagement = ({
     updateVideoElementsImmediately,
     transferStreamToTransmission,
     sessionId
+  });
+
+  // EMERGENCY: Force video display hook
+  useForceVideoDisplay({
+    participantList,
+    participantStreams
   });
 
   // Set up WebRTC callbacks immediately

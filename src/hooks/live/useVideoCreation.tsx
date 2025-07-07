@@ -15,95 +15,102 @@ export const useVideoCreation = () => {
   const createVideoElement = useCallback(async (container: HTMLElement, stream: MediaStream) => {
     const containerId = container.id || container.className;
     const operationId = `${containerId}-${Date.now()}`;
-    console.log(`🎬 SAFE: Creating video element in container: ${containerId} (${operationId})`);
+    console.log(`🎬 FORCE: FORCING video element creation in container: ${containerId} (${operationId})`, {
+      containerExists: !!container,
+      streamActive: stream.active,
+      streamTracks: stream.getTracks().length,
+      videoTracks: stream.getVideoTracks().length
+    });
     
-    // Obter ou criar estado para este container
-    const videoState = getVideoState(container);
-
-    // Verificar se já existe um vídeo com o mesmo stream
-    const existingVideo = container.querySelector('video') as HTMLVideoElement;
+    // FORCE: Limpar container completamente
+    console.log(`🧹 FORCE: Clearing container ${containerId} completely`);
+    container.innerHTML = '';
     
-    if (existingVideo && 
-        videoState.lastStreamId === stream.id && 
-        existingVideo.srcObject === stream &&
-        videoState.element === existingVideo) {
-      console.log(`📹 REUSE: Video already exists with same stream for ${containerId} (${operationId})`);
-      
-      // Verificar se precisa tentar reproduzir
-      if (existingVideo.paused && !videoState.isPlaying && !videoState.playPromise) {
-        await attemptPlaySafely(existingVideo, container, stream, operationId);
-      }
-      return existingVideo;
-    }
-
-    // Aguardar conclusão de qualquer play() pendente antes de modificar o container
-    if (videoState.playPromise) {
-      console.log(`⏳ WAIT: Waiting for previous play to complete for ${containerId} (${operationId})`);
-      try {
-        await videoState.playPromise;
-      } catch (error) {
-        console.log(`⚠️ Previous play interrupted for ${containerId}:`, error);
-      }
-    }
-
-    // Limpar container apenas se necessário
-    if (existingVideo && videoState.lastStreamId !== stream.id) {
-      console.log(`🧹 CLEAN: Removing old video for new stream in ${containerId} (${operationId})`);
-      await cleanupVideoElement(existingVideo, container, operationId);
-      container.innerHTML = '';
-    } else if (!existingVideo) {
-      container.innerHTML = '';
-    }
-
-    // Criar novo elemento de vídeo
+    // FORCE: Criar novo vídeo sempre
     const videoElement = document.createElement('video');
     
-    // Configurações essenciais
+    // FORCE: Configurações mais agressivas
     videoElement.autoplay = true;
     videoElement.playsInline = true;
     videoElement.muted = true;
     videoElement.controls = false;
-    videoElement.preload = 'metadata';
+    videoElement.preload = 'auto'; // Changed to auto for faster loading
     
-    // Atributos para compatibilidade
+    // FORCE: Todos os atributos possíveis
     videoElement.setAttribute('playsinline', 'true');
     videoElement.setAttribute('webkit-playsinline', 'true');
+    videoElement.setAttribute('muted', 'true');
+    videoElement.setAttribute('autoplay', 'true');
     
-    // Estilos
-    videoElement.className = 'w-full h-full object-cover';
+    // FORCE: Estilos mais específicos
+    videoElement.className = 'w-full h-full object-cover absolute inset-0 z-10';
     videoElement.style.cssText = `
-      display: block;
-      width: 100%;
-      height: 100%;
-      background-color: transparent;
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+      background-color: transparent !important;
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      z-index: 10 !important;
     `;
     
-    // Atualizar estado
-    updateVideoState(container, {
-      lastStreamId: stream.id,
-      element: videoElement,
-      retryCount: 0
-    });
-    
-    // Configurar eventos antes de adicionar stream
-    setupVideoEventListeners(videoElement, container, stream.id, operationId);
-    
-    // Adicionar ao DOM
+    // FORCE: Adicionar ao DOM PRIMEIRO
+    console.log(`📺 FORCE: Adding video to container ${containerId}`);
     container.appendChild(videoElement);
     
-    // Definir stream APENAS UMA VEZ
+    // FORCE: Configurar stream IMEDIATAMENTE
+    console.log(`🎯 FORCE: Setting srcObject for ${containerId}`);
     videoElement.srcObject = stream;
     
-    // Aguardar um frame para o DOM atualizar
-    await new Promise(resolve => requestAnimationFrame(resolve));
+    // FORCE: Event listeners básicos
+    videoElement.addEventListener('loadedmetadata', () => {
+      console.log(`✅ FORCE: Metadata loaded for ${containerId}`);
+      videoElement.play().catch(err => {
+        console.log(`⚠️ FORCE: Play failed for ${containerId}:`, err);
+      });
+    });
     
-    // Tentar reprodução inicial
-    await attemptPlaySafely(videoElement, container, stream, operationId);
+    videoElement.addEventListener('canplay', () => {
+      console.log(`✅ FORCE: Can play for ${containerId}`);
+      videoElement.play().catch(err => {
+        console.log(`⚠️ FORCE: Play failed for ${containerId}:`, err);
+      });
+    });
     
-    console.log(`✅ SAFE: Video element created successfully for ${containerId} (${operationId})`);
+    // FORCE: Tentar reprodução múltiplas vezes
+    const forcePlay = async () => {
+      try {
+        console.log(`🎮 FORCE: Attempting to play video in ${containerId}`);
+        await videoElement.play();
+        console.log(`✅ FORCE: Video playing successfully in ${containerId}`);
+      } catch (error) {
+        console.log(`⚠️ FORCE: Play attempt failed for ${containerId}:`, error);
+        // Try again in 100ms
+        setTimeout(() => {
+          if (!videoElement.paused) return;
+          videoElement.play().catch(e => console.log(`⚠️ FORCE: Retry play failed:`, e));
+        }, 100);
+      }
+    };
+    
+    // FORCE: Aguardar DOM e tentar play
+    await new Promise(resolve => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(resolve);
+      });
+    });
+    
+    // FORCE: Múltiplas tentativas de play
+    forcePlay();
+    setTimeout(forcePlay, 100);
+    setTimeout(forcePlay, 300);
+    
+    console.log(`✅ FORCE: Video element FORCED into ${containerId} (${operationId})`);
     return videoElement;
 
-  }, [getVideoState, updateVideoState, setupVideoEventListeners, attemptPlaySafely, cleanupVideoElement]);
+  }, []);
 
   const cleanup = useCallback(() => {
     clearAllStates();
