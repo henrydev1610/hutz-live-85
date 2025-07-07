@@ -18,6 +18,8 @@ const allowedOrigins = [
   process.env.FRONTEND_URL || "http://localhost:5173",
   "http://localhost:8080", // Lovable preview
   "http://172.26.204.230:8080", // Rede local - IP da máquina detectado pelo Vite
+  "http://192.168.18.17:8080", // Backup IP rede local
+  "http://10.255.255.254:8080", // Outro IP detectado
   "https://id-preview--f728da22-f48a-45b2-91e9-28492d654d7f.lovable.app", // Lovable staging
   /^https:\/\/.*\.lovableproject\.com$/, // Qualquer subdomínio lovableproject.com
   /^https:\/\/.*\.lovable\.app$/, // Qualquer subdomínio lovable.app
