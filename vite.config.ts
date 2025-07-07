@@ -9,6 +9,10 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "0.0.0.0", // Permite acesso externo
     port: 8080,
+    https: {
+      key: undefined, // Vite gerará certificado self-signed
+      cert: undefined
+    }
   },
   plugins: [
     react(),
