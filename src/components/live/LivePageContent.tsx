@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import LivePreview from '@/components/live/LivePreview';
 import TransmissionControls from '@/components/live/TransmissionControls';
 import LiveControlTabs from '@/components/live/LiveControlTabs';
+import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
 import { Participant } from '@/components/live/ParticipantGrid';
 
 interface LivePageContentProps {
@@ -31,10 +32,14 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
   onGenerateQRCode,
   onQRCodeToTransmission
 }) => {
+  // Calculate real participants and active streams
+  const realParticipants = state.participantList.filter((p: Participant) => !p.id.startsWith('placeholder-'));
+  const activeStreams = Object.keys(state.participantStreams).length;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-      <div>
-        <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10 min-h-[700px]">
+      <div className="space-y-6">
+        <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10">
           <CardHeader className="flex flex-row justify-between items-center">
             <div className="flex items-center gap-4 w-full">
               <CardTitle className="flex items-center gap-2">
@@ -91,6 +96,14 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
             />
           </CardContent>
         </Card>
+        
+        {/* Connection Diagnostics Card */}
+        <ConnectionDiagnostics
+          sessionId={sessionId}
+          participantCount={realParticipants.length}
+          activeStreams={activeStreams}
+          onTestConnection={participantManagement.testConnection}
+        />
       </div>
       
       <div>
@@ -100,7 +113,7 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
               Pré-visualização
             </CardTitle>
             <CardDescription>
-              Veja como sua transmissão será exibida
+              Veja como sua transmissão será exibida ({realParticipants.length} participantes reais, {activeStreams} streams)
             </CardDescription>
           </CardHeader>
           <CardContent className="p-4">

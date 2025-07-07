@@ -73,30 +73,66 @@ const LivePage: React.FC = () => {
     updateTransmissionParticipants
   });
 
-  // Session initialization effect
+  // Enhanced session initialization effect with better debugging
   useEffect(() => {
     if (state.sessionId) {
+      console.log('🚀 INITIALIZING SESSION:', state.sessionId);
       window.sessionStorage.setItem('currentSessionId', state.sessionId);
       
       const cleanup = initializeHostSession(state.sessionId, {
-        onParticipantJoin: participantManagement.handleParticipantJoin,
+        onParticipantJoin: (id) => {
+          console.log('📥 Host received participant join:', id);
+          participantManagement.handleParticipantJoin(id);
+        },
         onParticipantLeave: (id) => {
-          console.log(`Participant left: ${id}`);
+          console.log(`📤 Host received participant leave: ${id}`);
           state.setParticipantList(prev => 
             prev.map(p => p.id === id ? { ...p, active: false } : p)
           );
         },
         onParticipantHeartbeat: (id) => {
+          console.log(`💓 Host received heartbeat from: ${id}`);
           state.setParticipantList(prev => 
-            prev.map(p => p.id === id ? { ...p, active: true } : p)
+            prev.map(p => p.id === id ? { ...p, active: true, lastActive: Date.now() } : p)
           );
         }
       });
 
+      // Initialize WebRTC with enhanced logging
       initHostWebRTC(state.sessionId).then(result => {
         if (result && result.webrtc) {
-          result.webrtc.setOnStreamCallback(participantManagement.handleParticipantStream);
+          console.log('✅ WebRTC initialized successfully');
+          
+          result.webrtc.setOnStreamCallback((participantId, stream) => {
+            console.log('🎥 HOST RECEIVED STREAM:', participantId, {
+              streamId: stream.id,
+              trackCount: stream.getTracks().length,
+              videoTracks: stream.getVideoTracks().length
+            });
+            participantManagement.handleParticipantStream(participantId, stream);
+          });
+          
+          result.webrtc.setOnParticipantJoinCallback((participantId) => {
+            console.log('👤 HOST RECEIVED PARTICIPANT JOIN:', participantId);
+            participantManagement.handleParticipantJoin(participantId);
+          });
+        } else {
+          console.error('❌ Failed to initialize WebRTC');
+          
+          toast({
+            title: "Erro de inicialização",
+            description: "Falha ao inicializar WebRTC. Verifique a conexão.",
+            variant: "destructive"
+          });
         }
+      }).catch(error => {
+        console.error('❌ WebRTC initialization error:', error);
+        
+        toast({
+          title: "Erro WebRTC",
+          description: "Problema na inicialização do WebRTC",
+          variant: "destructive"
+        });
       });
 
       return () => {
