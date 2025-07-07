@@ -25,6 +25,13 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
         backgroundColor: participant.hasVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
       }}
     >
+      {/* DEBUG: Adicionar informações de debug visíveis */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-1 rounded z-30">
+          {participant.hasVideo ? 'HAS_VIDEO' : 'NO_VIDEO'}
+        </div>
+      )}
+      
       {/* Video will be inserted here automatically by useVideoElementManagement */}
       {!participant.hasVideo && (
         <div className="absolute inset-0 flex items-center justify-center z-10 bg-gray-800/60">

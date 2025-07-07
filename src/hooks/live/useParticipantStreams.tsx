@@ -29,12 +29,21 @@ export const useParticipantStreams = ({
 
   const handleParticipantStream = useCallback((participantId: string, stream: MediaStream) => {
     const operationId = `${participantId}-${Date.now()}`;
-    console.log(`🎥 HANDLER: handleParticipantStream called for: ${participantId} (${operationId})`);
+    console.log(`🎥 HANDLER: handleParticipantStream called for: ${participantId} (${operationId})`, {
+      streamId: stream.id,
+      active: stream.active,
+      videoTracks: stream.getVideoTracks().length,
+      audioTracks: stream.getAudioTracks().length,
+      totalTracks: stream.getTracks().length
+    });
     
     // Validate stream
     if (!validateStream(stream, participantId)) {
+      console.error(`❌ CRITICAL: Stream validation failed for ${participantId}`);
       return;
     }
+    
+    console.log(`✅ CRITICAL: Stream validated successfully for ${participantId}`);
     
     // Update React state immediately
     updateStreamState(participantId, stream);

@@ -53,7 +53,9 @@ export const useVideoElementManagement = () => {
       }
       
       // Aguardar mais um pouco para garantir estabilidade
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log(`🔍 CRITICAL: Looking for containers for ${pId} (${operationId})`);
       
       // Encontrar containers
       const containers = await findVideoContainers(pId);

@@ -5,14 +5,16 @@ export const useContainerManagement = () => {
   const findVideoContainers = useCallback((participantId: string) => {
     return new Promise<HTMLElement[]>((resolve) => {
       const searchContainers = () => {
-        const containers: HTMLElement[] = [];
-        
-        console.log(`🔍 ENHANCED: Searching containers for participant: ${participantId}`);
-        console.log('🔍 DOM State:', {
-          totalDivs: document.querySelectorAll('div').length,
-          participantGrids: document.querySelectorAll('.participant-grid').length,
-          previewContainers: document.querySelectorAll('[id*="preview-participant"]').length
-        });
+         const containers: HTMLElement[] = [];
+         
+         console.log(`🔍 ENHANCED: Searching containers for participant: ${participantId}`);
+         console.log('🔍 DOM State:', {
+           totalDivs: document.querySelectorAll('div').length,
+           participantGrids: document.querySelectorAll('.participant-grid').length,
+           previewContainers: document.querySelectorAll('[id*="preview-participant"]').length,
+           participantVideoContainers: document.querySelectorAll('.participant-video').length,
+           participantContainersWithId: document.querySelectorAll(`[data-participant-id="${participantId}"]`).length
+         });
         
         // Enhanced search strategies with more specific selectors
         const selectors = [

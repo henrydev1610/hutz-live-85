@@ -14,7 +14,12 @@ export const useStreamStateManagement = ({
 }: UseStreamStateManagementProps) => {
   
   const updateStreamState = useCallback((participantId: string, stream: MediaStream) => {
-    console.log('✅ IMMEDIATE stream update for:', participantId);
+    console.log('🔄 STATE: Updating stream state for:', participantId, {
+      streamId: stream.id,
+      active: stream.active,
+      videoTracks: stream.getVideoTracks().length,
+      audioTracks: stream.getAudioTracks().length
+    });
     
     flushSync(() => {
       // IMMEDIATE stream update
