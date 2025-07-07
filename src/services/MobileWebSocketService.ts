@@ -71,10 +71,10 @@ class MobileWebSocketService {
       upgrade: true, // Permitir upgrade para WebSocket
       pingTimeout: 60000,
       pingInterval: 25000,
-      // Headers específicos para mobile
-      extraHeaders: {
-        'User-Agent': navigator.userAgent
-      }
+      // Remover headers que causam problemas no mobile
+      // extraHeaders: {
+      //   'User-Agent': navigator.userAgent
+      // }
     };
 
     console.log('📱 MOBILE: Using mobile-specific Socket.IO options');

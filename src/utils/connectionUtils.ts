@@ -14,10 +14,10 @@ export const getWebSocketURL = (): string => {
     return `http://${localIP}:3001`;
   }
   
-  // Ngrok environment (specific detection)
+  // Ngrok environment (specific detection) - use HTTP WebSocket em vez de WSS  
   if (host.includes('ngrok-free.app') || host.includes('ngrok.io')) {
-    const wsUrl = `wss://${host}`;
-    console.log(`🌐 CONNECTION: Using Ngrok WSS URL: ${wsUrl}`);
+    const wsUrl = `http://172.26.204.230:3001`; // Conectar diretamente ao server local
+    console.log(`🌐 CONNECTION: Using local server for Ngrok: ${wsUrl}`);
     return wsUrl;
   }
   
