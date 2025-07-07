@@ -6,7 +6,7 @@ import { Participant } from '@/components/live/ParticipantGrid';
 interface UseParticipantStreamsProps {
   setParticipantStreams: React.Dispatch<React.SetStateAction<{[id: string]: MediaStream}>>;
   setParticipantList: React.Dispatch<React.SetStateAction<Participant[]>>;
-  updateVideoElementsImmediately: (participantId: string, stream: MediaStream, transmissionWindowRef: React.MutableRefObject<Window | null>) => void;
+  updateVideoElementsImmediately: (participantId: string, stream: MediaStream, transmissionWindowRef?: React.MutableRefObject<Window | null>) => void;
   transmissionWindowRef: React.MutableRefObject<Window | null>;
 }
 
@@ -83,16 +83,21 @@ export const useParticipantStreams = ({
       return updated;
     });
     
-    // CRITICAL: Immediately update video elements and send to transmission
+    // CRITICAL: Immediately update video elements
     const updateVideo = async () => {
-      console.log('📤 CRITICAL: Updating video elements and sending to transmission');
-      
-      // Force DOM to update first
-      await new Promise(resolve => setTimeout(resolve, 50));
+      console.log('📤 CRITICAL: Updating video elements immediately');
       
       try {
+        // Force DOM to update first
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Update video elements with improved container detection
         await updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
+        
+        // Send to transmission window
         sendStreamToTransmission(participantId, stream, transmissionWindowRef);
+        
+        console.log('✅ Video elements updated successfully');
       } catch (error) {
         console.error('❌ Failed to update video elements:', error);
       }
@@ -106,8 +111,8 @@ export const useParticipantStreams = ({
       description: `Participante ${participantId.substring(0, 8)} está transmitindo`,
     });
     
-    // Multiple update attempts to ensure video displays
-    const updateAttempts = [200, 500, 1000];
+    // Additional update attempts with improved timing
+    const updateAttempts = [300, 600, 1200];
     updateAttempts.forEach((delay, index) => {
       setTimeout(async () => {
         console.log(`🔄 Stream transmission attempt ${index + 1}/${updateAttempts.length} for ${participantId}`);
@@ -146,6 +151,8 @@ export const useParticipantStreams = ({
         }, '*');
         
         console.log('✅ Stream info sent to transmission window via postMessage');
+      } else {
+        console.log('ℹ️ Transmission window not available (normal for preview mode)');
       }
       
       // Also send via BroadcastChannel for redundancy
@@ -185,7 +192,7 @@ export const useParticipantStreams = ({
           console.log(`Adding new track ${track.id} to existing stream`);
           existingStream.addTrack(track);
           
-          // Send updated stream to transmission
+          // Send updated stream to transmission and update video elements
           setTimeout(async () => {
             sendStreamToTransmission(participantId, existingStream, transmissionWindowRef);
             await updateVideoElementsImmediately(participantId, existingStream, transmissionWindowRef);
