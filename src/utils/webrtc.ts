@@ -28,14 +28,27 @@ export const initParticipantWebRTC = async (sessionId: string, participantId?: s
   try {
     console.log('🚀 Initializing participant WebRTC for session:', sessionId);
     
-    if (webrtcManager) {
-      webrtcManager.cleanup();
+    // Detectar se é mobile
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+      console.log('📱 Using mobile WebRTC manager');
+      // Usar o gerenciador mobile específico
+      const { MobileWebRTCManager } = await import('./webrtc/MobileWebRTCManager');
+      const mobileManager = new MobileWebRTCManager();
+      await mobileManager.initializeAsParticipant(sessionId, participantId || `participant-${Date.now()}`, stream);
+      return { webrtc: mobileManager };
+    } else {
+      console.log('🖥️ Using desktop WebRTC manager');
+      // Usar o gerenciador desktop
+      if (webrtcManager) {
+        webrtcManager.cleanup();
+      }
+      
+      webrtcManager = new WebRTCManager();
+      await webrtcManager.initializeAsParticipant(sessionId, participantId || `participant-${Date.now()}`, stream);
+      return { webrtc: webrtcManager };
     }
-    
-    webrtcManager = new WebRTCManager();
-    await webrtcManager.initializeAsParticipant(sessionId, participantId || `participant-${Date.now()}`, stream);
-    
-    return { webrtc: webrtcManager };
     
   } catch (error) {
     console.error('Failed to initialize participant WebRTC:', error);

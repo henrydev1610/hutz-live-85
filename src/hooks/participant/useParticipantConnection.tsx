@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react';
 import { toast } from "sonner";
 import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
-import signalingService from '@/services/WebSocketSignalingService';
+import mobileSignalingService from '@/services/MobileWebSocketService';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 export const useParticipantConnection = (sessionId: string | undefined, participantId: string) => {
@@ -18,70 +18,78 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       return;
     }
 
-    console.log(`🔄 UNIFIED: Starting connection process (Mobile: ${isMobile})`);
+    console.log(`📱 MOBILE CONNECTION: Starting connection process`);
     setIsConnecting(true);
     setConnectionStatus('connecting');
     setError(null);
 
     try {
-      // Etapa 1: Conectar WebSocket
-      console.log(`🔌 UNIFIED: Connecting WebSocket (Mobile: ${isMobile})`);
-      await signalingService.connect();
-      
-      if (!signalingService.isReady()) {
-        throw new Error('WebSocket connection failed');
-      }
-      console.log(`✅ UNIFIED: WebSocket connected (Mobile: ${isMobile})`);
+      // Setup callbacks primeiro
+      mobileSignalingService.setCallbacks({
+        onConnected: () => {
+          console.log('📱 MOBILE CONNECTION: WebSocket connected successfully');
+          setConnectionStatus('connected');
+        },
+        onConnectionFailed: (error) => {
+          console.error('📱 MOBILE CONNECTION: WebSocket connection failed:', error);
+          setConnectionStatus('failed');
+          setError('Falha na conexão WebSocket');
+        }
+      });
 
-      // Etapa 2: Conectar WebRTC
-      console.log(`🔗 UNIFIED: Initializing WebRTC (Mobile: ${isMobile})`);
+      // Etapa 1: Conectar WebSocket mobile
+      console.log(`📱 MOBILE CONNECTION: Connecting WebSocket`);
+      await mobileSignalingService.connect();
+      
+      if (!mobileSignalingService.isReady()) {
+        throw new Error('Mobile WebSocket connection failed');
+      }
+      console.log(`✅ MOBILE CONNECTION: WebSocket connected`);
+
+      // Etapa 2: Join room
+      console.log(`📱 MOBILE CONNECTION: Joining room`);
+      await mobileSignalingService.joinRoom(sessionId, participantId);
+      console.log(`✅ MOBILE CONNECTION: Joined room`);
+
+      // Etapa 3: Conectar WebRTC
+      console.log(`📱 MOBILE CONNECTION: Initializing WebRTC`);
       await initParticipantWebRTC(sessionId, participantId, stream);
-      console.log(`✅ UNIFIED: WebRTC initialized (Mobile: ${isMobile})`);
+      console.log(`✅ MOBILE CONNECTION: WebRTC initialized`);
       
       setIsConnected(true);
       setConnectionStatus('connected');
-      
-      if (isMobile) {
-        toast.success('📱 Mobile conectado com sucesso!');
-      } else {
-        toast.success('🖥️ Desktop conectado com sucesso!');
-      }
+      toast.success('📱 Mobile conectado com sucesso!');
       
     } catch (error) {
-      console.error(`❌ UNIFIED: Connection failed (Mobile: ${isMobile}):`, error);
+      console.error(`❌ MOBILE CONNECTION: Connection failed:`, error);
       setConnectionStatus('failed');
       
-      let errorMessage = 'Erro na conexão';
+      let errorMessage = 'Erro na conexão mobile';
       if (error instanceof Error) {
         errorMessage = error.message;
       }
       
       setError(errorMessage);
-      
-      if (isMobile) {
-        toast.error('📱 Falha na conexão mobile. Verifique sua internet.');
-      } else {
-        toast.error('🖥️ Falha na conexão. Tente novamente.');
-      }
+      toast.error('📱 Falha na conexão mobile. Verifique sua internet.');
     } finally {
       setIsConnecting(false);
     }
-  }, [sessionId, participantId, isMobile]);
+  }, [sessionId, participantId]);
 
   const disconnectFromSession = useCallback(() => {
-    console.log(`🔌 UNIFIED: Disconnecting (Mobile: ${isMobile})`);
+    console.log(`📱 MOBILE CONNECTION: Disconnecting`);
     
     try {
       cleanupWebRTC();
-      signalingService.disconnect();
+      mobileSignalingService.disconnect();
       setIsConnected(false);
       setConnectionStatus('disconnected');
       toast.success('Desconectado da sessão');
     } catch (error) {
-      console.error(`❌ UNIFIED: Error disconnecting (Mobile: ${isMobile}):`, error);
+      console.error(`❌ MOBILE CONNECTION: Error disconnecting:`, error);
       toast.error('Erro ao desconectar');
     }
-  }, [isMobile]);
+  }, []);
 
   return {
     isConnected,
