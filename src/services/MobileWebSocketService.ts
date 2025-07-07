@@ -44,6 +44,12 @@ class MobileWebSocketService {
     const url = serverUrl || getWebSocketURL();
     
     console.log(`📱 MOBILE: Starting connection to ${url}`);
+    console.log(`📱 MOBILE: Environment details:`, {
+      protocol: window.location.protocol,
+      host: window.location.host,
+      userAgent: navigator.userAgent,
+      finalUrl: url
+    });
     
     if (this.socket) {
       this.socket.disconnect();

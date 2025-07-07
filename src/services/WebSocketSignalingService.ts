@@ -69,6 +69,12 @@ class WebSocketSignalingService {
     
     this.resetConnectionMetrics();
     console.log(`🔌 UNIFIED: Starting connection to ${url} (Mobile: ${this.isMobile}, Attempt: ${this.reconnectAttempts + 1})`);
+    console.log(`🔍 UNIFIED: Connection environment:`, {
+      protocol: window.location.protocol,
+      host: window.location.host,
+      isMobile: this.isMobile,
+      finalUrl: url
+    });
     
     if (this.socket) {
       this.socket.disconnect();

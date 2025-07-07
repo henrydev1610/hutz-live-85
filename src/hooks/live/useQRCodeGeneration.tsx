@@ -3,10 +3,11 @@ import { useState } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import QRCode from 'qrcode';
 import { generateSessionId } from '@/utils/sessionUtils';
+import { getApiBaseURL } from '@/utils/connectionUtils';
 
 export const useQRCodeGeneration = () => {
   const { toast } = useToast();
-  const [apiBaseUrl] = useState(import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001');
+  const [apiBaseUrl] = useState(getApiBaseURL());
 
   const generateQRCode = async (url: string, setQrCodeSvg: (svg: string) => void) => {
     try {
@@ -70,6 +71,7 @@ export const useQRCodeGeneration = () => {
         console.log("Backend failed, generating QR Code locally as fallback...");
         const fallbackSessionId = generateSessionId();
         const fallbackUrl = `${window.location.origin}/participant/${fallbackSessionId}`;
+        console.log(`🔗 QR FALLBACK: Generated URL: ${fallbackUrl}`);
         
         const qrDataUrl = await QRCode.toDataURL(fallbackUrl, {
           width: 256,

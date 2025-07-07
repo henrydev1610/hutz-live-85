@@ -14,9 +14,15 @@ router.post('/', async (req, res) => {
     // Gerar roomId único
     const roomId = uuidv4();
     
-    // Montar joinURL
-    const appDomain = process.env.APP_DOMAIN || process.env.FRONTEND_URL || 'http://localhost:5173';
-    const joinURL = `${appDomain}/participant/${roomId}`;
+    // Montar joinURL com detecção automática do domínio
+    const origin = req.headers.origin || 
+                  req.headers.referer?.replace(/\/$/, '') || 
+                  process.env.APP_DOMAIN || 
+                  process.env.FRONTEND_URL || 
+                  'http://localhost:5173';
+    
+    const joinURL = `${origin}/participant/${roomId}`;
+    console.log(`🔗 ROOM: Generated joinURL: ${joinURL} (from origin: ${origin})`);
     
     // Gerar QR Code como Data URL
     const qrDataUrl = await generateQRCode(joinURL);
