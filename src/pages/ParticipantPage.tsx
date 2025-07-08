@@ -12,8 +12,12 @@ import ParticipantControls from '@/components/participant/ParticipantControls';
 import signalingService from '@/services/WebSocketSignalingService';
 
 const ParticipantPage = () => {
+  console.log('🎯 PARTICIPANT PAGE: Starting render');
+  
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  
+  console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
   
   const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
