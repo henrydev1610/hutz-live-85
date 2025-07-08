@@ -1,14 +1,14 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Wifi, WifiOff } from "lucide-react";
 import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
 import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
+import ParticipantHeader from '@/components/participant/ParticipantHeader';
+import ParticipantErrorDisplay from '@/components/participant/ParticipantErrorDisplay';
+import ParticipantConnectionStatus from '@/components/participant/ParticipantConnectionStatus';
 import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
 import ParticipantControls from '@/components/participant/ParticipantControls';
+import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
 import signalingService from '@/services/WebSocketSignalingService';
 
 const ParticipantPage = () => {
@@ -93,139 +93,33 @@ const ParticipantPage = () => {
     }
   };
 
-  const getConnectionStatusColor = () => {
-    switch (connection.connectionStatus) {
-      case 'connected': return 'bg-green-500';
-      case 'connecting': return 'bg-yellow-500';
-      case 'failed': return 'bg-red-500';
-      default: return 'bg-gray-500';
-    }
-  };
-
-  const getConnectionStatusText = () => {
-    switch (connection.connectionStatus) {
-      case 'connected': return 'Conectado';
-      case 'connecting': return 'Conectando...';
-      case 'failed': return 'Falha na conexão';
-      default: return 'Desconectado';
-    }
-  };
-
-  const getSignalingStatusColor = () => {
-    switch (signalingStatus) {
-      case 'connected': return 'text-green-400';
-      case 'reconnecting': return 'text-yellow-400';
-      case 'fallback': return 'text-orange-400';
-      default: return 'text-red-400';
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-white mb-2">
-              Participante da Sessão
-            </h1>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-white border-white/30">
-                ID: {sessionId}
-              </Badge>
-              <Badge 
-                variant="outline" 
-                className={`text-white border-white/30 ${getConnectionStatusColor()}`}
-              >
-                {getConnectionStatusText()}
-              </Badge>
-              <Badge variant="outline" className="text-white border-white/30">
-                <div className="flex items-center gap-1">
-                  {signalingStatus === 'connected' ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-                  <span className={getSignalingStatusColor()}>
-                    {signalingStatus}
-                  </span>
-                </div>
-              </Badge>
-            </div>
-          </div>
-          
-          <Button
-            variant="outline"
-            onClick={() => navigate('/')}
-            className="text-white border-white/30 hover:bg-white/10"
-          >
-            Voltar
-          </Button>
-        </div>
+        <ParticipantHeader
+          sessionId={sessionId}
+          connectionStatus={connection.connectionStatus}
+          signalingStatus={signalingStatus}
+          onBack={() => navigate('/')}
+        />
 
         {/* Error Display */}
-        {connection.error && (
-          <Card className="mb-6 border-red-500/50 bg-red-500/10">
-            <CardContent className="p-4">
-              <p className="text-red-400">{connection.error}</p>
-              <Button 
-                onClick={handleConnect}
-                className="mt-2"
-                disabled={connection.isConnecting}
-              >
-                Tentar Reconectar
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+        <ParticipantErrorDisplay
+          error={connection.error}
+          isConnecting={connection.isConnecting}
+          onRetryConnect={handleConnect}
+        />
 
         {/* Connection Status Details */}
-        <Card className="mb-6 bg-black/20 border-white/10">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-white font-semibold">Status da Conexão:</h3>
-              {(!media.hasVideo && !media.hasAudio) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRetryMedia}
-                  className="text-white border-white/30 hover:bg-white/10"
-                >
-                  Tentar Reconectar Mídia
-                </Button>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-white/70">WebSocket:</span>
-                <span className={`ml-2 ${getSignalingStatusColor()}`}>
-                  {signalingStatus}
-                </span>
-              </div>
-              <div>
-                <span className="text-white/70">WebRTC:</span>
-                <span className={`ml-2 ${connection.connectionStatus === 'connected' ? 'text-green-400' : 'text-red-400'}`}>
-                  {connection.connectionStatus}
-                </span>
-              </div>
-              <div>
-                <span className="text-white/70">Vídeo:</span>
-                <span className={`ml-2 ${media.hasVideo ? 'text-green-400' : 'text-red-400'}`}>
-                  {media.hasVideo ? 'Ativo' : 'Inativo'}
-                </span>
-              </div>
-              <div>
-                <span className="text-white/70">Áudio:</span>
-                <span className={`ml-2 ${media.hasAudio ? 'text-green-400' : 'text-red-400'}`}>
-                  {media.hasAudio ? 'Ativo' : 'Inativo'}
-                </span>
-              </div>
-            </div>
-            {(!media.hasVideo && !media.hasAudio) && (
-              <div className="mt-3 p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-md">
-                <p className="text-yellow-400 text-sm">
-                  ⚠️ Conectado em modo degradado (sem câmera/microfone). Use o botão acima para tentar reconectar.
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <ParticipantConnectionStatus
+          signalingStatus={signalingStatus}
+          connectionStatus={connection.connectionStatus}
+          hasVideo={media.hasVideo}
+          hasAudio={media.hasAudio}
+          onRetryMedia={handleRetryMedia}
+        />
 
         {/* Video Preview */}
         <ParticipantVideoPreview
@@ -255,19 +149,7 @@ const ParticipantPage = () => {
         />
 
         {/* Instructions */}
-        <Card className="mt-6 bg-black/20 border-white/10">
-          <CardContent className="p-4">
-            <h3 className="text-white font-semibold mb-2">Instruções:</h3>
-            <ul className="text-white/70 text-sm space-y-1">
-              <li>• Verifique se o servidor de sinalização está rodando em localhost:3001</li>
-              <li>• A câmera e microfone são inicializados automaticamente com fallback</li>
-              <li>• Use os controles para ajustar vídeo, áudio e compartilhamento de tela</li>
-              <li>• Se houver problemas de conexão, use o botão de reconexão</li>
-              <li>• O status do WebSocket deve mostrar "connected" para funcionar corretamente</li>
-              <li>• Permita acesso à câmera/microfone quando solicitado pelo navegador</li>
-            </ul>
-          </CardContent>
-        </Card>
+        <ParticipantInstructions />
       </div>
     </div>
   );
