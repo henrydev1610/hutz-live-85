@@ -15,11 +15,11 @@ router.post('/', async (req, res) => {
     const roomId = uuidv4();
     
     // Montar joinURL com detecção automática do domínio
-    const origin = req.headers.origin || 
+    const origin = process.env.FRONTEND_URL || 
+                  req.headers.origin || 
                   req.headers.referer?.replace(/\/$/, '') || 
                   process.env.APP_DOMAIN || 
-                  process.env.FRONTEND_URL || 
-                  'http://localhost:5173';
+                  'https://hutz-live-85.onrender.com';
     
     const joinURL = `${origin}/participant/${roomId}`;
     console.log(`🔗 ROOM: Generated joinURL: ${joinURL} (from origin: ${origin})`);

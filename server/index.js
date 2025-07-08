@@ -19,9 +19,12 @@ const allowedOrigins = [
   "http://localhost:8080", // Lovable preview
   "http://172.26.204.230:8080", // Rede local - IP da máquina detectado pelo Vite
   "https://id-preview--f728da22-f48a-45b2-91e9-28492d654d7f.lovable.app", // Lovable staging
+  "https://server-hutz-live.onrender.com", // Backend do Render
+  "https://hutz-live-85.onrender.com", // Frontend do Render
   /^https:\/\/.*\.lovableproject\.com$/, // Qualquer subdomínio lovableproject.com
   /^https:\/\/.*\.lovable\.app$/, // Qualquer subdomínio lovable.app
-  /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/ // UUIDs do Lovable
+  /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/, // UUIDs do Lovable
+  /^https:\/\/.*\.onrender\.com$/ // Qualquer subdomínio onrender.com
 ];
 
 const corsOptions = {
@@ -111,8 +114,42 @@ app.use((req, res, next) => {
   next();
 });
 
+// Rota raiz
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Hutz Live Server',
+    status: 'running',
+    timestamp: Date.now(),
+    version: process.env.npm_package_version || '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    endpoints: {
+      health: '/health',
+      rooms: '/api/rooms',
+      status: '/status'
+    }
+  });
+});
+
 // Rotas da API
 app.use('/api/rooms', roomsRouter);
+
+// Status endpoint com configurações
+app.get('/status', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: Date.now(),
+    uptime: Math.floor(process.uptime()),
+    version: process.env.npm_package_version || '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    config: {
+      port: PORT,
+      frontendUrl: process.env.FRONTEND_URL,
+      allowedOrigins: allowedOrigins.filter(origin => typeof origin === 'string'),
+      corsEnabled: true,
+      redisEnabled: !!process.env.REDIS_URL
+    }
+  });
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -121,6 +158,16 @@ app.get('/health', (req, res) => {
     timestamp: Date.now(),
     uptime: Math.floor(process.uptime()),
     version: process.env.npm_package_version || '1.0.0'
+  });
+});
+
+// Test API endpoint
+app.get('/api/test', (req, res) => {
+  res.json({
+    message: 'API está funcionando!',
+    timestamp: Date.now(),
+    origin: req.get('Origin') || 'no-origin',
+    userAgent: req.get('User-Agent') || 'no-user-agent'
   });
 });
 
