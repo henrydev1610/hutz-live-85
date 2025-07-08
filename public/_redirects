@@ -1,3 +1,1 @@
-# Handle all routes by serving index.html for SPA
-/participant/*  /index.html  200
-/*              /index.html  200
+/*    /index.html   200

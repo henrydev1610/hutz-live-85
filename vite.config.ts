@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "0.0.0.0", // Permite acesso externo
     port: 8080,
+    historyApiFallback: true,
   },
   plugins: [
     react(),
