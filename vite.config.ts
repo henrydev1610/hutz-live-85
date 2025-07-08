@@ -6,6 +6,7 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  base: "/",
   server: {
     host: "0.0.0.0", // Permite acesso externo
     port: 8080,
@@ -26,5 +27,10 @@ export default defineConfig(({ mode }) => ({
         manualChunks: undefined,
       },
     },
+    assetsDir: "assets",
+  },
+  preview: {
+    port: 8080,
+    host: "0.0.0.0",
   },
 }));

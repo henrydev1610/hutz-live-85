@@ -22,7 +22,8 @@ function App() {
         <Route path="/lightshow" element={<LightShowPage />} />
         <Route path="/quiz" element={<QuizPage />} />
         <Route path="/participant/:sessionId" element={<ParticipantPage />} />
-        <Route path="*" element={<NotFound />} />
+        <Route path="/404" element={<NotFound />} />
+        <Route path="*" element={<Navigate to="/404" replace />} />
       </Routes>
       <Toaster />
     </BrowserRouter>
