@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Wifi, WifiOff } from "lucide-react";
+import { toast } from "sonner";
 import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
 import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
 import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
@@ -60,11 +61,17 @@ const ParticipantPage = () => {
   const autoConnectToSession = async () => {
     try {
       const stream = await media.initializeMedia();
-      if (stream) {
-        await connection.connectToSession(stream);
-      }
+      // Connect even if no media stream is available
+      await connection.connectToSession(stream);
     } catch (error) {
       console.error('❌ PARTICIPANT: Auto-connection failed:', error);
+      // Try to connect without media if media initialization fails
+      try {
+        await connection.connectToSession(null);
+        toast.info('Conectado à sessão sem mídia. Você ainda pode participar.');
+      } catch (connectionError) {
+        console.error('❌ PARTICIPANT: Connection without media also failed:', connectionError);
+      }
     }
   };
 
@@ -74,11 +81,17 @@ const ParticipantPage = () => {
       if (!stream) {
         stream = await media.initializeMedia();
       }
-      if (stream) {
-        await connection.connectToSession(stream);
-      }
+      // Connect regardless of whether stream is available
+      await connection.connectToSession(stream);
     } catch (error) {
       console.error('❌ PARTICIPANT: Manual connection failed:', error);
+      // Try to connect without media if media initialization fails
+      try {
+        await connection.connectToSession(null);
+        toast.info('Conectado à sessão sem mídia. Você ainda pode participar.');
+      } catch (connectionError) {
+        console.error('❌ PARTICIPANT: Connection without media also failed:', connectionError);
+      }
     }
   };
 

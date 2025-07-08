@@ -48,7 +48,8 @@ export const useParticipantMedia = () => {
       // Verificar suporte a getUserMedia ANTES de qualquer coisa
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         console.error('❌ MEDIA DEBUG: getUserMedia not supported');
-        throw new Error('getUserMedia não é suportado neste navegador/dispositivo');
+        toast.error('getUserMedia não é suportado neste navegador/dispositivo. Continuando sem mídia.');
+        return null; // Allow app to continue without media
       }
       
       // No mobile, aguardar mais tempo e verificar permissões
@@ -70,17 +71,20 @@ export const useParticipantMedia = () => {
         
         // Verificar se getUserMedia está disponível
         if (!checkMediaDevicesSupport()) {
-          throw new Error('getUserMedia não suportado no dispositivo');
+          toast.error('getUserMedia não suportado no dispositivo. Continuando sem mídia.');
+          return null; // Allow app to continue without media
         }
       }
       
       const stream = await getUserMediaWithFallback();
 
       if (!stream) {
-        throw new Error('Falha ao obter stream de mídia');
+        console.warn('⚠️ MEDIA: No stream obtained, continuing without media');
+        toast.info('Continuando sem câmera/microfone. Você ainda pode participar da sessão.');
+        return null;
       }
 
-    localStreamRef.current = stream;
+      localStreamRef.current = stream;
       
       const videoTracks = stream.getVideoTracks();
       const audioTracks = stream.getAudioTracks();
@@ -103,11 +107,11 @@ export const useParticipantMedia = () => {
     } catch (error) {
       console.error(`❌ MEDIA: Initialization failed (Mobile: ${isMobile}):`, error);
       
-      if (isMobile) {
-        toast.error('❌ Falha na inicialização da câmera mobile. Verifique as permissões do navegador.');
-      }
+      // Don't prevent app from working if media fails
+      toast.info('Não foi possível acessar câmera/microfone. Continuando sem mídia.');
+      console.log('🔄 MEDIA: Continuing without media access');
       
-      throw error;
+      return null; // Allow app to continue without media
     }
   }, [localVideoRef, localStreamRef, setHasVideo, setHasAudio]);
 
