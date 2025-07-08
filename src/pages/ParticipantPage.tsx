@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Wifi, WifiOff } from "lucide-react";
-import { toast } from "sonner";
 import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
 import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
 import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
@@ -41,57 +40,31 @@ const ParticipantPage = () => {
 
   // Auto-initialize media and connect on mount
   useEffect(() => {
-    console.log('🚀 PARTICIPANT PAGE CRITICAL: Auto-initializing for session:', sessionId);
+    console.log('🚀 PARTICIPANT PAGE: Auto-initializing for session:', sessionId);
     
     if (sessionId) {
-      // Force immediate media initialization
-      const forceInitialize = async () => {
-        console.log('🔥 PARTICIPANT PAGE CRITICAL: Forcing media initialization');
-        try {
-          const stream = await media.initializeMedia();
-          console.log('🎯 PARTICIPANT PAGE CRITICAL: Media initialized:', !!stream);
-          
-          if (stream) {
-            console.log('📡 PARTICIPANT PAGE CRITICAL: Connecting to session with stream');
-            await connection.connectToSession(stream);
-          } else {
-            console.log('📡 PARTICIPANT PAGE CRITICAL: Connecting to session without stream');
-            await connection.connectToSession(null);
-          }
-        } catch (error) {
-          console.error('❌ PARTICIPANT PAGE CRITICAL: Force initialization failed:', error);
-        }
-      };
-      
-      // Try immediate initialization
-      forceInitialize();
+      autoConnectToSession().catch(error => {
+        console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
+      });
     }
     
     return () => {
       try {
-        if (media.cleanup) {
-          media.cleanup();
-        }
+        media.cleanup();
       } catch (error) {
         console.error('❌ PARTICIPANT: Cleanup error:', error);
       }
     };
-  }, [sessionId, media, connection]);
+  }, [sessionId]);
 
   const autoConnectToSession = async () => {
     try {
       const stream = await media.initializeMedia();
-      // Connect even if no media stream is available
-      await connection.connectToSession(stream);
+      if (stream) {
+        await connection.connectToSession(stream);
+      }
     } catch (error) {
       console.error('❌ PARTICIPANT: Auto-connection failed:', error);
-      // Try to connect without media if media initialization fails
-      try {
-        await connection.connectToSession(null);
-        toast.info('Conectado à sessão sem mídia. Você ainda pode participar.');
-      } catch (connectionError) {
-        console.error('❌ PARTICIPANT: Connection without media also failed:', connectionError);
-      }
     }
   };
 
@@ -101,17 +74,11 @@ const ParticipantPage = () => {
       if (!stream) {
         stream = await media.initializeMedia();
       }
-      // Connect regardless of whether stream is available
-      await connection.connectToSession(stream);
+      if (stream) {
+        await connection.connectToSession(stream);
+      }
     } catch (error) {
       console.error('❌ PARTICIPANT: Manual connection failed:', error);
-      // Try to connect without media if media initialization fails
-      try {
-        await connection.connectToSession(null);
-        toast.info('Conectado à sessão sem mídia. Você ainda pode participar.');
-      } catch (connectionError) {
-        console.error('❌ PARTICIPANT: Connection without media also failed:', connectionError);
-      }
     }
   };
 
@@ -239,41 +206,6 @@ const ParticipantPage = () => {
           isVideoEnabled={media.isVideoEnabled}
           isAudioEnabled={media.isAudioEnabled}
         />
-
-        {/* Debug Controls */}
-        <Card className="mb-6 bg-red-500/10 border-red-500/30">
-          <CardContent className="p-4">
-            <h3 className="text-red-400 font-semibold mb-2">Debug Controls:</h3>
-            <div className="flex gap-2">
-              <Button
-                onClick={async () => {
-                  console.log('🔥 DEBUG: Force media initialization');
-                  const stream = await media.initializeMedia();
-                  console.log('🔥 DEBUG: Result:', !!stream);
-                }}
-                variant="outline"
-                className="text-red-400 border-red-400/50 hover:bg-red-500/10"
-              >
-                Force Media Init
-              </Button>
-              <Button
-                onClick={() => {
-                  console.log('🔥 DEBUG: Current media state:', {
-                    hasVideo: media.hasVideo,
-                    hasAudio: media.hasAudio,
-                    isVideoEnabled: media.isVideoEnabled,
-                    isAudioEnabled: media.isAudioEnabled,
-                    stream: media.localStreamRef.current
-                  });
-                }}
-                variant="outline"
-                className="text-red-400 border-red-400/50 hover:bg-red-500/10"
-              >
-                Log State
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Controls */}
         <ParticipantControls

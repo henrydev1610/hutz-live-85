@@ -1,11 +1,10 @@
 services:
-  - type: static
+  - type: web
     name: hutz-live-frontend
     env: static
-    plan: free
-    staticPublishPath: dist           # ou ./build, conforme sua config de build
+    buildCommand: npm run build
+    staticPublishPath: ./dist
     routes:
-      # Reescreve **todas** as URLs para /index.html
       - type: rewrite
-        src: '/.*'
-        dest: '/index.html'
+        source: /*
+        destination: /index.html

@@ -21,31 +21,6 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
   isVideoEnabled,
   isAudioEnabled
 }) => {
-  const [videoLoaded, setVideoLoaded] = React.useState(false);
-  
-  React.useEffect(() => {
-    const video = localVideoRef.current;
-    if (!video) return;
-    
-    const handleLoadedData = () => {
-      console.log('📹 PREVIEW: Video loaded');
-      setVideoLoaded(true);
-    };
-    
-    const handleError = () => {
-      console.log('📹 PREVIEW: Video error');
-      setVideoLoaded(false);
-    };
-    
-    video.addEventListener('loadeddata', handleLoadedData);
-    video.addEventListener('error', handleError);
-    
-    return () => {
-      video.removeEventListener('loadeddata', handleLoadedData);
-      video.removeEventListener('error', handleError);
-    };
-  }, [localVideoRef]);
-  
   return (
     <Card className="mb-6 bg-black/30 border-white/10">
       <CardHeader>
@@ -59,17 +34,14 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
             muted
             playsInline
             className="w-full h-full object-cover"
-            style={{ display: hasVideo && isVideoEnabled && videoLoaded ? 'block' : 'none' }}
           />
           
-          {(!hasVideo || !isVideoEnabled || !videoLoaded) && (
+          {(!hasVideo || !isVideoEnabled) && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
               <div className="text-center text-white">
                 <CameraOff className="h-12 w-12 mx-auto mb-2 opacity-50" />
                 <p className="text-sm opacity-75">
-                  {!hasVideo ? 'Câmera não disponível' : 
-                   !isVideoEnabled ? 'Câmera desabilitada' : 
-                   'Carregando vídeo...'}
+                  {!hasVideo ? 'Câmera não disponível' : 'Câmera desabilitada'}
                 </p>
               </div>
             </div>
@@ -91,11 +63,6 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
                 <Monitor className="h-3 w-3" />
               </Badge>
             )}
-          </div>
-          
-          {/* Debug info */}
-          <div className="absolute bottom-2 right-2 text-xs text-white/50">
-            V:{hasVideo?'✓':'✗'} E:{isVideoEnabled?'✓':'✗'} L:{videoLoaded?'✓':'✗'}
           </div>
         </div>
       </CardContent>
