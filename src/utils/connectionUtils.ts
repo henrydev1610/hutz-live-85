@@ -3,6 +3,14 @@
  */
 
 export const getWebSocketURL = (): string => {
+  // Use variável de ambiente se definida
+  const envApiUrl = import.meta.env.VITE_API_URL;
+  
+  if (envApiUrl) {
+    console.log(`🔧 CONNECTION: Using environment API URL: ${envApiUrl}`);
+    return envApiUrl;
+  }
+
   const { protocol, host } = window.location;
   
   console.log(`🔍 CONNECTION: Detecting environment - protocol: ${protocol}, host: ${host}`);
@@ -29,6 +37,14 @@ export const getWebSocketURL = (): string => {
 };
 
 export const getApiBaseURL = (): string => {
+  // Use variável de ambiente se definida
+  const envApiUrl = import.meta.env.VITE_API_URL;
+  
+  if (envApiUrl) {
+    console.log(`🔧 API: Using environment API URL: ${envApiUrl}`);
+    return envApiUrl;
+  }
+
   const { protocol, host } = window.location;
   
   console.log(`📡 API: Detecting base URL - protocol: ${protocol}, host: ${host}`);
