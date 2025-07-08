@@ -5,28 +5,23 @@ export const handleMediaError = (error: unknown, isMobile: boolean, attemptNumbe
   
   if (error instanceof Error) {
     if (error.name === 'NotAllowedError') {
-      if (attemptNumber === 1) {
-        toast.error('Por favor, permita o acesso à câmera/microfone e clique em "Permitir" quando solicitado.');
-      }
-      // Só lança o erro na última tentativa
-      if (attemptNumber === totalAttempts) {
-        throw error;
-      }
+      toast.error('Acesso à câmera/microfone negado. Por favor, permita o acesso nas configurações do navegador.');
+      throw error;
     } else if (error.name === 'NotFoundError') {
       console.warn(`⚠️ MEDIA: Device not found with constraint ${attemptNumber}, trying next...`);
-      if (attemptNumber === 1) {
+      if (attemptNumber === 1 && isMobile) {
         toast.error('Câmera não encontrada. Tentando configurações alternativas...');
       }
     } else if (error.name === 'OverconstrainedError') {
       console.warn(`⚠️ MEDIA: Constraints too strict for constraint ${attemptNumber}, trying simpler...`);
-    } else if (error.name === 'NotReadableError') {
-      console.warn(`⚠️ MEDIA: Device is in use by another application, trying next...`);
     }
   }
   
   if (attemptNumber === totalAttempts) {
     console.error(`❌ MEDIA: All constraints failed (Mobile: ${isMobile})`);
-    toast.error('Não foi possível acessar a câmera. Verifique as permissões e tente novamente.');
+    if (isMobile) {
+      toast.error('Não foi possível acessar a câmera do seu dispositivo. Verifique as permissões do navegador.');
+    }
     throw error;
   }
 };

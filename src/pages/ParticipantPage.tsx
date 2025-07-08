@@ -153,26 +153,13 @@ const ParticipantPage = () => {
           <Card className="mb-6 border-red-500/50 bg-red-500/10">
             <CardContent className="p-4">
               <p className="text-red-400">{connection.error}</p>
-              <div className="flex gap-2 mt-2">
-                <Button 
-                  onClick={handleConnect}
-                  disabled={connection.isConnecting}
-                >
-                  Tentar Reconectar
-                </Button>
-                <Button 
-                  onClick={async () => {
-                    try {
-                      await media.initializeMedia();
-                    } catch (error) {
-                      console.error('Manual media init failed:', error);
-                    }
-                  }}
-                  variant="outline"
-                >
-                  Reconectar Câmera
-                </Button>
-              </div>
+              <Button 
+                onClick={handleConnect}
+                className="mt-2"
+                disabled={connection.isConnecting}
+              >
+                Tentar Reconectar
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -235,13 +222,6 @@ const ParticipantPage = () => {
           onToggleScreenShare={media.toggleScreenShare}
           onConnect={handleConnect}
           onDisconnect={connection.disconnectFromSession}
-          onRetryMedia={async () => {
-            try {
-              await media.initializeMedia();
-            } catch (error) {
-              console.error('Manual media retry failed:', error);
-            }
-          }}
         />
 
         {/* Instructions */}
