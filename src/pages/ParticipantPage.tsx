@@ -39,11 +39,17 @@ const ParticipantPage = () => {
     console.log('🚀 PARTICIPANT PAGE: Auto-initializing for session:', sessionId);
     
     if (sessionId) {
-      autoConnectToSession();
+      autoConnectToSession().catch(error => {
+        console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
+      });
     }
     
     return () => {
-      media.cleanup();
+      try {
+        media.cleanup();
+      } catch (error) {
+        console.error('❌ PARTICIPANT: Cleanup error:', error);
+      }
     };
   }, [sessionId]);
 
