@@ -40,47 +40,24 @@ export const useParticipantMedia = () => {
     const isMobile = detectMobile();
     
     try {
-      console.log(`📹 MEDIA DEBUG: Starting initialization (Mobile: ${isMobile})`);
-      console.log(`📹 MEDIA DEBUG: User agent: ${navigator.userAgent}`);
-      console.log(`📹 MEDIA DEBUG: Protocol: ${window.location.protocol}`);
-      console.log(`📹 MEDIA DEBUG: Host: ${window.location.host}`);
+      console.log(`📹 MEDIA: Starting initialization (Mobile: ${isMobile})`);
       
-      // Verificar suporte a getUserMedia ANTES de qualquer coisa
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.error('❌ MEDIA DEBUG: getUserMedia not supported');
-        throw new Error('getUserMedia não é suportado neste navegador/dispositivo');
+      // Verificar suporte básico
+      if (!checkMediaDevicesSupport()) {
+        throw new Error('getUserMedia não é suportado neste navegador');
       }
       
-      // No mobile, aguardar mais tempo e verificar permissões
-      if (isMobile) {
-        console.log(`📱 MEDIA DEBUG: Mobile detected, checking permissions...`);
-        
-        // Verificar permissões
-        try {
-          const permissions = await navigator.permissions.query({ name: 'camera' as PermissionName });
-          console.log(`📱 MEDIA DEBUG: Camera permission: ${permissions.state}`);
-          
-          const micPermissions = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-          console.log(`📱 MEDIA DEBUG: Microphone permission: ${micPermissions.state}`);
-        } catch (permError) {
-          console.log(`📱 MEDIA DEBUG: Permission check failed:`, permError);
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Verificar se getUserMedia está disponível
-        if (!checkMediaDevicesSupport()) {
-          throw new Error('getUserMedia não suportado no dispositivo');
-        }
-      }
+      // Aguardar um pouco para garantir que a página carregou
+      await new Promise(resolve => setTimeout(resolve, 100));
       
+      // Tentar obter stream
       const stream = await getUserMediaWithFallback();
 
       if (!stream) {
         throw new Error('Falha ao obter stream de mídia');
       }
 
-    localStreamRef.current = stream;
+      localStreamRef.current = stream;
       
       const videoTracks = stream.getVideoTracks();
       const audioTracks = stream.getAudioTracks();
@@ -88,23 +65,29 @@ export const useParticipantMedia = () => {
       setHasVideo(videoTracks.length > 0);
       setHasAudio(audioTracks.length > 0);
       
-      console.log(`✅ MEDIA: Media initialized (Mobile: ${isMobile}) - Video: ${videoTracks.length > 0}, Audio: ${audioTracks.length > 0}`);
+      console.log(`✅ MEDIA: Media initialized - Video: ${videoTracks.length > 0}, Audio: ${audioTracks.length > 0}`);
       
       if (localVideoRef.current && videoTracks.length > 0) {
         await setupVideoElement(localVideoRef.current, stream);
       }
       
-      // Mostrar toast de sucesso específico para mobile
-      if (isMobile) {
-        toast.success(`📱 Câmera mobile conectada! Video: ${videoTracks.length > 0 ? 'SIM' : 'NÃO'}, Áudio: ${audioTracks.length > 0 ? 'SIM' : 'NÃO'}`);
-      }
+      // Mostrar toast de sucesso
+      const videoStatus = videoTracks.length > 0 ? 'SIM' : 'NÃO';
+      const audioStatus = audioTracks.length > 0 ? 'SIM' : 'NÃO';
+      toast.success(`Câmera conectada! Video: ${videoStatus}, Áudio: ${audioStatus}`);
       
       return stream;
     } catch (error) {
-      console.error(`❌ MEDIA: Initialization failed (Mobile: ${isMobile}):`, error);
+      console.error(`❌ MEDIA: Initialization failed:`, error);
       
-      if (isMobile) {
-        toast.error('❌ Falha na inicialização da câmera mobile. Verifique as permissões do navegador.');
+      // Limpar estado em caso de erro
+      setHasVideo(false);
+      setHasAudio(false);
+      
+      if (error instanceof Error && error.name === 'NotAllowedError') {
+        toast.error('Acesso negado. Clique no ícone de câmera na barra de endereços e permita o acesso.');
+      } else {
+        toast.error('Falha ao conectar câmera. Verifique suas permissões.');
       }
       
       throw error;

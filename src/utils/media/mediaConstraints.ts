@@ -26,8 +26,12 @@ export const getMobileConstraints = (): MediaStreamConstraints[] => [
 ];
 
 export const getDesktopConstraints = (): MediaStreamConstraints[] => [
-  { video: { facingMode: 'user' }, audio: true },
+  // Tentativa 1: Configuração básica
   { video: true, audio: true },
+  // Tentativa 2: Só vídeo
   { video: true, audio: false },
+  // Tentativa 3: Qualquer dispositivo de vídeo
+  { video: {}, audio: false },
+  // Tentativa 4: Só áudio como fallback
   { video: false, audio: true }
 ];

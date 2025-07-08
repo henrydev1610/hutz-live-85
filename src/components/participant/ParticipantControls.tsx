@@ -2,7 +2,7 @@
 import React from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Camera, CameraOff, Mic, MicOff, Phone, PhoneOff, Settings, Monitor, MonitorOff } from "lucide-react";
+import { Camera, CameraOff, Mic, MicOff, Phone, PhoneOff, Settings, Monitor, MonitorOff, RefreshCw } from "lucide-react";
 
 interface ParticipantControlsProps {
   hasVideo: boolean;
@@ -18,6 +18,7 @@ interface ParticipantControlsProps {
   onToggleScreenShare: () => void;
   onConnect: () => void;
   onDisconnect: () => void;
+  onRetryMedia?: () => void;
 }
 
 const ParticipantControls: React.FC<ParticipantControlsProps> = ({
@@ -33,7 +34,8 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
   onToggleAudio,
   onToggleScreenShare,
   onConnect,
-  onDisconnect
+  onDisconnect,
+  onRetryMedia
 }) => {
   return (
     <Card className="bg-black/30 border-white/10">
@@ -91,6 +93,18 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
           >
             <Settings className="h-5 w-5" />
           </Button>
+
+          {onRetryMedia && (
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={onRetryMedia}
+              className="h-12 w-12 rounded-full"
+              disabled={isConnecting}
+            >
+              <RefreshCw className="h-5 w-5" />
+            </Button>
+          )}
         </div>
 
         <div className="text-center mt-4">
