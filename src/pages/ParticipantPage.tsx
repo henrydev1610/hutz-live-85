@@ -41,22 +41,42 @@ const ParticipantPage = () => {
 
   // Auto-initialize media and connect on mount
   useEffect(() => {
-    console.log('🚀 PARTICIPANT PAGE: Auto-initializing for session:', sessionId);
+    console.log('🚀 PARTICIPANT PAGE CRITICAL: Auto-initializing for session:', sessionId);
     
     if (sessionId) {
-      autoConnectToSession().catch(error => {
-        console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
-      });
+      // Force immediate media initialization
+      const forceInitialize = async () => {
+        console.log('🔥 PARTICIPANT PAGE CRITICAL: Forcing media initialization');
+        try {
+          const stream = await media.initializeMedia();
+          console.log('🎯 PARTICIPANT PAGE CRITICAL: Media initialized:', !!stream);
+          
+          if (stream) {
+            console.log('📡 PARTICIPANT PAGE CRITICAL: Connecting to session with stream');
+            await connection.connectToSession(stream);
+          } else {
+            console.log('📡 PARTICIPANT PAGE CRITICAL: Connecting to session without stream');
+            await connection.connectToSession(null);
+          }
+        } catch (error) {
+          console.error('❌ PARTICIPANT PAGE CRITICAL: Force initialization failed:', error);
+        }
+      };
+      
+      // Try immediate initialization
+      forceInitialize();
     }
     
     return () => {
       try {
-        media.cleanup();
+        if (media.cleanup) {
+          media.cleanup();
+        }
       } catch (error) {
         console.error('❌ PARTICIPANT: Cleanup error:', error);
       }
     };
-  }, [sessionId]);
+  }, [sessionId, media, connection]);
 
   const autoConnectToSession = async () => {
     try {
@@ -219,6 +239,41 @@ const ParticipantPage = () => {
           isVideoEnabled={media.isVideoEnabled}
           isAudioEnabled={media.isAudioEnabled}
         />
+
+        {/* Debug Controls */}
+        <Card className="mb-6 bg-red-500/10 border-red-500/30">
+          <CardContent className="p-4">
+            <h3 className="text-red-400 font-semibold mb-2">Debug Controls:</h3>
+            <div className="flex gap-2">
+              <Button
+                onClick={async () => {
+                  console.log('🔥 DEBUG: Force media initialization');
+                  const stream = await media.initializeMedia();
+                  console.log('🔥 DEBUG: Result:', !!stream);
+                }}
+                variant="outline"
+                className="text-red-400 border-red-400/50 hover:bg-red-500/10"
+              >
+                Force Media Init
+              </Button>
+              <Button
+                onClick={() => {
+                  console.log('🔥 DEBUG: Current media state:', {
+                    hasVideo: media.hasVideo,
+                    hasAudio: media.hasAudio,
+                    isVideoEnabled: media.isVideoEnabled,
+                    isAudioEnabled: media.isAudioEnabled,
+                    stream: media.localStreamRef.current
+                  });
+                }}
+                variant="outline"
+                className="text-red-400 border-red-400/50 hover:bg-red-500/10"
+              >
+                Log State
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Controls */}
         <ParticipantControls
