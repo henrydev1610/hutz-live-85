@@ -77,10 +77,18 @@ export const useParticipantMedia = () => {
       const stream = await getUserMediaWithFallback();
 
       if (!stream) {
-        throw new Error('Falha ao obter stream de mídia');
+        console.log(`⚠️ MEDIA: No stream obtained, entering degraded mode`);
+        
+        // Modo degradado - sem mídia local
+        setHasVideo(false);
+        setHasAudio(false);
+        
+        toast.warning('Conectando em modo degradado (sem câmera/microfone)');
+        
+        return null; // Permite conexão sem mídia
       }
 
-    localStreamRef.current = stream;
+      localStreamRef.current = stream;
       
       const videoTracks = stream.getVideoTracks();
       const audioTracks = stream.getAudioTracks();
@@ -97,6 +105,10 @@ export const useParticipantMedia = () => {
       // Mostrar toast de sucesso específico para mobile
       if (isMobile) {
         toast.success(`📱 Câmera mobile conectada! Video: ${videoTracks.length > 0 ? 'SIM' : 'NÃO'}, Áudio: ${audioTracks.length > 0 ? 'SIM' : 'NÃO'}`);
+      } else {
+        const hasVideoText = videoTracks.length > 0 ? 'SIM' : 'NÃO';
+        const hasAudioText = audioTracks.length > 0 ? 'SIM' : 'NÃO';
+        toast.success(`Mídia inicializada! Video: ${hasVideoText}, Áudio: ${hasAudioText}`);
       }
       
       return stream;
@@ -111,6 +123,29 @@ export const useParticipantMedia = () => {
     }
   }, [localVideoRef, localStreamRef, setHasVideo, setHasAudio]);
 
+  const retryMediaInitialization = useCallback(async () => {
+    console.log('🔄 MEDIA: Retrying media initialization...');
+    
+    // Limpar stream anterior se existir
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+    
+    // Resetar estado
+    setHasVideo(false);
+    setHasAudio(false);
+    
+    try {
+      const stream = await initializeMedia();
+      return stream;
+    } catch (error) {
+      console.error('❌ MEDIA: Retry failed:', error);
+      toast.error('Falha ao tentar reconectar mídia');
+      throw error;
+    }
+  }, [initializeMedia, localStreamRef, setHasVideo, setHasAudio]);
+
   return {
     hasVideo,
     hasAudio,
@@ -120,6 +155,7 @@ export const useParticipantMedia = () => {
     localVideoRef,
     localStreamRef,
     initializeMedia,
+    retryMediaInitialization,
     ...mediaControls
   };
 };

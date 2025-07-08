@@ -60,9 +60,8 @@ const ParticipantPage = () => {
   const autoConnectToSession = async () => {
     try {
       const stream = await media.initializeMedia();
-      if (stream) {
-        await connection.connectToSession(stream);
-      }
+      // Conectar sempre, mesmo que stream seja null (modo degradado)
+      await connection.connectToSession(stream);
     } catch (error) {
       console.error('❌ PARTICIPANT: Auto-connection failed:', error);
     }
@@ -74,11 +73,23 @@ const ParticipantPage = () => {
       if (!stream) {
         stream = await media.initializeMedia();
       }
-      if (stream) {
+      // Conectar sempre, mesmo que stream seja null (modo degradado)
+      await connection.connectToSession(stream);
+    } catch (error) {
+      console.error('❌ PARTICIPANT: Manual connection failed:', error);
+    }
+  };
+
+  const handleRetryMedia = async () => {
+    try {
+      const stream = await media.retryMediaInitialization();
+      if (stream && connection.isConnected) {
+        // Se já conectado, pode tentar reconectar com nova mídia
+        await connection.disconnectFromSession();
         await connection.connectToSession(stream);
       }
     } catch (error) {
-      console.error('❌ PARTICIPANT: Manual connection failed:', error);
+      console.error('❌ PARTICIPANT: Media retry failed:', error);
     }
   };
 
@@ -167,7 +178,19 @@ const ParticipantPage = () => {
         {/* Connection Status Details */}
         <Card className="mb-6 bg-black/20 border-white/10">
           <CardContent className="p-4">
-            <h3 className="text-white font-semibold mb-2">Status da Conexão:</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-white font-semibold">Status da Conexão:</h3>
+              {(!media.hasVideo && !media.hasAudio) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRetryMedia}
+                  className="text-white border-white/30 hover:bg-white/10"
+                >
+                  Tentar Reconectar Mídia
+                </Button>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-white/70">WebSocket:</span>
@@ -194,6 +217,13 @@ const ParticipantPage = () => {
                 </span>
               </div>
             </div>
+            {(!media.hasVideo && !media.hasAudio) && (
+              <div className="mt-3 p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-md">
+                <p className="text-yellow-400 text-sm">
+                  ⚠️ Conectado em modo degradado (sem câmera/microfone). Use o botão acima para tentar reconectar.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

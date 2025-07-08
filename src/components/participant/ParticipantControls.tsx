@@ -39,29 +39,29 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
     <Card className="bg-black/30 border-white/10">
       <CardContent className="p-6">
         <div className="flex items-center justify-center gap-4">
-          {hasVideo && (
-            <Button
-              variant={isVideoEnabled ? "default" : "destructive"}
-              size="lg"
-              onClick={onToggleVideo}
-              className="h-12 w-12 rounded-full"
-              disabled={isConnecting}
-            >
-              {isVideoEnabled ? <Camera className="h-5 w-5" /> : <CameraOff className="h-5 w-5" />}
-            </Button>
-          )}
+          {/* Vídeo - sempre mostrar, mas desabilitar se não disponível */}
+          <Button
+            variant={hasVideo ? (isVideoEnabled ? "default" : "destructive") : "outline"}
+            size="lg"
+            onClick={onToggleVideo}
+            className="h-12 w-12 rounded-full"
+            disabled={isConnecting || !hasVideo}
+            title={!hasVideo ? "Câmera não disponível" : "Alternar câmera"}
+          >
+            {hasVideo ? (isVideoEnabled ? <Camera className="h-5 w-5" /> : <CameraOff className="h-5 w-5" />) : <CameraOff className="h-5 w-5 opacity-50" />}
+          </Button>
 
-          {hasAudio && (
-            <Button
-              variant={isAudioEnabled ? "default" : "destructive"}
-              size="lg"
-              onClick={onToggleAudio}
-              className="h-12 w-12 rounded-full"
-              disabled={isConnecting}
-            >
-              {isAudioEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-            </Button>
-          )}
+          {/* Áudio - sempre mostrar, mas desabilitar se não disponível */}
+          <Button
+            variant={hasAudio ? (isAudioEnabled ? "default" : "destructive") : "outline"}
+            size="lg"
+            onClick={onToggleAudio}
+            className="h-12 w-12 rounded-full"
+            disabled={isConnecting || !hasAudio}
+            title={!hasAudio ? "Microfone não disponível" : "Alternar microfone"}
+          >
+            {hasAudio ? (isAudioEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />) : <MicOff className="h-5 w-5 opacity-50" />}
+          </Button>
 
           <Button
             variant={hasScreenShare ? "default" : "outline"}
@@ -69,6 +69,7 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
             onClick={onToggleScreenShare}
             className="h-12 w-12 rounded-full"
             disabled={isConnecting}
+            title="Compartilhar tela"
           >
             {hasScreenShare ? <Monitor className="h-5 w-5" /> : <MonitorOff className="h-5 w-5" />}
           </Button>
@@ -79,6 +80,7 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
             onClick={isConnected ? onDisconnect : onConnect}
             disabled={isConnecting}
             className="h-12 w-12 rounded-full"
+            title={isConnected ? "Desconectar" : "Conectar"}
           >
             {isConnected ? <PhoneOff className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
           </Button>
@@ -88,6 +90,7 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
             size="lg"
             className="h-12 w-12 rounded-full"
             disabled
+            title="Configurações (em breve)"
           >
             <Settings className="h-5 w-5" />
           </Button>
@@ -96,7 +99,14 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
         <div className="text-center mt-4">
           <p className="text-white/70 text-sm">
             {isConnecting && 'Conectando à sessão...'}
-            {isConnected && !isConnecting && 'Conectado - transmitindo para o host'}
+            {isConnected && !isConnecting && (
+              <>
+                {hasVideo || hasAudio ? 'Conectado - transmitindo para o host' : 'Conectado em modo degradado'}
+                {!hasVideo && !hasAudio && (
+                  <span className="text-yellow-400 ml-1">(sem mídia local)</span>
+                )}
+              </>
+            )}
             {!isConnected && !isConnecting && 'Desconectado da sessão'}
             {connectionStatus === 'failed' && ' - Clique no botão de telefone para reconectar'}
           </p>

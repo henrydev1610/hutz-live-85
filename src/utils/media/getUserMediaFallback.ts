@@ -41,5 +41,6 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
     }
   }
 
-  throw new Error('Não foi possível acessar câmera nem microfone com nenhuma configuração');
+  console.warn(`⚠️ MEDIA: All constraints failed, returning null for degraded mode`);
+  return null; // Permite modo degradado
 };

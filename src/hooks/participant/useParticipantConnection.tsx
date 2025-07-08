@@ -12,7 +12,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
   const [error, setError] = useState<string | null>(null);
   const isMobile = useIsMobile();
 
-  const connectToSession = useCallback(async (stream?: MediaStream) => {
+  const connectToSession = useCallback(async (stream?: MediaStream | null) => {
     if (!sessionId) {
       toast.error('ID da sessão não encontrado');
       return;
@@ -51,14 +51,21 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       await mobileSignalingService.joinRoom(sessionId, participantId);
       console.log(`✅ MOBILE CONNECTION: Joined room`);
 
-      // Etapa 3: Conectar WebRTC
+      // Etapa 3: Conectar WebRTC (permitir sem stream)
       console.log(`📱 MOBILE CONNECTION: Initializing WebRTC`);
-      await initParticipantWebRTC(sessionId, participantId, stream);
+      if (stream) {
+        console.log(`📱 MOBILE CONNECTION: Connecting with media stream`);
+        await initParticipantWebRTC(sessionId, participantId, stream);
+        toast.success('📱 Mobile conectado com mídia!');
+      } else {
+        console.log(`📱 MOBILE CONNECTION: Connecting in degraded mode (no media)`);
+        await initParticipantWebRTC(sessionId, participantId);
+        toast.success('📱 Mobile conectado (modo degradado)!');
+      }
       console.log(`✅ MOBILE CONNECTION: WebRTC initialized`);
       
       setIsConnected(true);
       setConnectionStatus('connected');
-      toast.success('📱 Mobile conectado com sucesso!');
       
     } catch (error) {
       console.error(`❌ MOBILE CONNECTION: Connection failed:`, error);

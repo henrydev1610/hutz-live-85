@@ -43,6 +43,11 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
                 <p className="text-sm opacity-75">
                   {!hasVideo ? 'Câmera não disponível' : 'Câmera desabilitada'}
                 </p>
+                {!hasVideo && !hasAudio && (
+                  <p className="text-xs text-yellow-400 mt-1">
+                    Modo degradado - sem mídia local
+                  </p>
+                )}
               </div>
             </div>
           )}
