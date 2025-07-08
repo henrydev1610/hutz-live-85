@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 
 interface UseDirectVideoCreationProps {
   participantId: string;
@@ -11,6 +11,8 @@ export const useDirectVideoCreation = ({
   stream,
   containerId
 }: UseDirectVideoCreationProps) => {
+  const retryCountRef = useRef(0);
+  const maxRetries = 5;
 
   const createVideoElementDirect = useCallback((container: HTMLElement, mediaStream: MediaStream) => {
     console.log(`🎬 DIRECT: Creating video for ${participantId} in ${containerId}`);
@@ -70,45 +72,79 @@ export const useDirectVideoCreation = ({
     return video;
   }, [participantId, containerId]);
 
-  useEffect(() => {
-    if (!stream || !stream.active || stream.getVideoTracks().length === 0) {
-      console.log(`🚫 DIRECT: No valid stream for ${participantId}`, {
-        hasStream: !!stream,
-        active: stream?.active,
-        videoTracks: stream?.getVideoTracks().length || 0
+  const tryCreateVideo = useCallback(() => {
+    if (!stream) {
+      console.log(`🚫 DIRECT: No stream for ${participantId}`);
+      return false;
+    }
+
+    // More lenient stream validation - just check if stream exists
+    const hasValidTracks = stream.getTracks().length > 0;
+    if (!hasValidTracks) {
+      console.log(`🚫 DIRECT: No tracks in stream for ${participantId}`, {
+        streamId: stream.id,
+        tracks: stream.getTracks().length
       });
-      return;
+      return false;
     }
 
     console.log(`🎯 DIRECT: Processing stream for ${participantId}`, {
       streamId: stream.id,
+      active: stream.active,
       videoTracks: stream.getVideoTracks().length,
-      audioTracks: stream.getAudioTracks().length
+      audioTracks: stream.getAudioTracks().length,
+      totalTracks: stream.getTracks().length
     });
 
-    // Wait for DOM to be ready, then create video
-    const processVideo = () => {
-      const container = document.getElementById(containerId);
-      
-      if (!container) {
-        console.log(`⚠️ DIRECT: Container ${containerId} not found for ${participantId}`);
-        return;
-      }
-
-      console.log(`✅ DIRECT: Container found, creating video for ${participantId}`);
-      createVideoElementDirect(container, stream);
-    };
-
-    // Process immediately if DOM is ready
-    if (document.readyState === 'complete') {
-      processVideo();
-    } else {
-      // Wait for DOM
-      const timer = setTimeout(processVideo, 100);
-      return () => clearTimeout(timer);
+    const container = document.getElementById(containerId);
+    if (!container) {
+      console.log(`⚠️ DIRECT: Container ${containerId} not found for ${participantId}`);
+      return false;
     }
 
+    // Check if video already exists and is playing
+    const existingVideo = container.querySelector('video') as HTMLVideoElement;
+    if (existingVideo && existingVideo.srcObject === stream && !existingVideo.paused) {
+      console.log(`✅ DIRECT: Video already playing for ${participantId}`);
+      return true;
+    }
+
+    console.log(`✅ DIRECT: Creating video for ${participantId}`);
+    createVideoElementDirect(container, stream);
+    return true;
   }, [stream, participantId, containerId, createVideoElementDirect]);
+
+  useEffect(() => {
+    if (!stream) return;
+
+    // Reset retry count when stream changes
+    retryCountRef.current = 0;
+
+    const attemptVideoCreation = () => {
+      const success = tryCreateVideo();
+      
+      if (!success && retryCountRef.current < maxRetries) {
+        retryCountRef.current++;
+        console.log(`🔄 DIRECT: Retry ${retryCountRef.current}/${maxRetries} for ${participantId}`);
+        setTimeout(attemptVideoCreation, 200 * retryCountRef.current); // Exponential backoff
+      } else if (!success) {
+        console.error(`❌ DIRECT: Failed to create video after ${maxRetries} retries for ${participantId}`);
+      }
+    };
+
+    // Initial attempt
+    attemptVideoCreation();
+
+    // Also retry when DOM is fully loaded
+    if (document.readyState !== 'complete') {
+      const handleLoad = () => {
+        setTimeout(attemptVideoCreation, 100);
+      };
+      window.addEventListener('load', handleLoad);
+      return () => window.removeEventListener('load', handleLoad);
+    }
+
+  }, [stream, tryCreateVideo]);
 
   return { createVideoElementDirect };
 };
