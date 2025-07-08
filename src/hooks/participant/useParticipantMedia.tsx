@@ -41,46 +41,28 @@ export const useParticipantMedia = () => {
     
     try {
       console.log(`📹 MEDIA DEBUG: Starting initialization (Mobile: ${isMobile})`);
-      console.log(`📹 MEDIA DEBUG: User agent: ${navigator.userAgent}`);
-      console.log(`📹 MEDIA DEBUG: Protocol: ${window.location.protocol}`);
-      console.log(`📹 MEDIA DEBUG: Host: ${window.location.host}`);
       
-      // Verificar suporte a getUserMedia ANTES de qualquer coisa
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      // Clean up any existing stream first
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+      }
+      
+      // Verificar suporte a getUserMedia
+      if (!checkMediaDevicesSupport()) {
         console.error('❌ MEDIA DEBUG: getUserMedia not supported');
-        toast.error('getUserMedia não é suportado neste navegador/dispositivo. Continuando sem mídia.');
-        return null; // Allow app to continue without media
+        toast.error('Mídia não suportada neste navegador/dispositivo.');
+        return null;
       }
       
-      // No mobile, aguardar mais tempo e verificar permissões
-      if (isMobile) {
-        console.log(`📱 MEDIA DEBUG: Mobile detected, checking permissions...`);
-        
-        // Verificar permissões
-        try {
-          const permissions = await navigator.permissions.query({ name: 'camera' as PermissionName });
-          console.log(`📱 MEDIA DEBUG: Camera permission: ${permissions.state}`);
-          
-          const micPermissions = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-          console.log(`📱 MEDIA DEBUG: Microphone permission: ${micPermissions.state}`);
-        } catch (permError) {
-          console.log(`📱 MEDIA DEBUG: Permission check failed:`, permError);
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Verificar se getUserMedia está disponível
-        if (!checkMediaDevicesSupport()) {
-          toast.error('getUserMedia não suportado no dispositivo. Continuando sem mídia.');
-          return null; // Allow app to continue without media
-        }
-      }
+      // Show loading state
+      toast.info('Inicializando câmera...');
       
       const stream = await getUserMediaWithFallback();
 
       if (!stream) {
-        console.warn('⚠️ MEDIA: No stream obtained, continuing without media');
-        toast.info('Continuando sem câmera/microfone. Você ainda pode participar da sessão.');
+        console.warn('⚠️ MEDIA: No stream obtained');
+        toast.info('Continuando sem câmera/microfone.');
         return null;
       }
 
@@ -91,29 +73,30 @@ export const useParticipantMedia = () => {
       
       setHasVideo(videoTracks.length > 0);
       setHasAudio(audioTracks.length > 0);
+      setIsVideoEnabled(videoTracks.length > 0);
+      setIsAudioEnabled(audioTracks.length > 0);
       
-      console.log(`✅ MEDIA: Media initialized (Mobile: ${isMobile}) - Video: ${videoTracks.length > 0}, Audio: ${audioTracks.length > 0}`);
+      console.log(`✅ MEDIA: Media initialized - Video: ${videoTracks.length}, Audio: ${audioTracks.length}`);
       
       if (localVideoRef.current && videoTracks.length > 0) {
-        await setupVideoElement(localVideoRef.current, stream);
-      }
-      
-      // Mostrar toast de sucesso específico para mobile
-      if (isMobile) {
-        toast.success(`📱 Câmera mobile conectada! Video: ${videoTracks.length > 0 ? 'SIM' : 'NÃO'}, Áudio: ${audioTracks.length > 0 ? 'SIM' : 'NÃO'}`);
+        try {
+          await setupVideoElement(localVideoRef.current, stream);
+          toast.success('Câmera conectada com sucesso!');
+        } catch (videoError) {
+          console.error('❌ MEDIA: Video setup failed:', videoError);
+          toast.warning('Mídia conectada, mas vídeo pode não estar visível');
+        }
+      } else {
+        toast.success('Mídia conectada (sem vídeo)');
       }
       
       return stream;
     } catch (error) {
-      console.error(`❌ MEDIA: Initialization failed (Mobile: ${isMobile}):`, error);
-      
-      // Don't prevent app from working if media fails
-      toast.info('Não foi possível acessar câmera/microfone. Continuando sem mídia.');
-      console.log('🔄 MEDIA: Continuing without media access');
-      
-      return null; // Allow app to continue without media
+      console.error(`❌ MEDIA: Initialization failed:`, error);
+      toast.error('Não foi possível acessar câmera/microfone');
+      return null;
     }
-  }, [localVideoRef, localStreamRef, setHasVideo, setHasAudio]);
+  }, [localVideoRef, localStreamRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled]);
 
   return {
     hasVideo,

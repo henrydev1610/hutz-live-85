@@ -1,24 +1,38 @@
 export const getMobileConstraints = (): MediaStreamConstraints[] => [
-  // Tentativa 1: Configuração básica ideal
+  // Tentativa 1: Configuração básica com resolução específica
+  {
+    video: {
+      facingMode: 'user',
+      width: { ideal: 640 },
+      height: { ideal: 480 }
+    },
+    audio: true
+  },
+  // Tentativa 2: Configuração básica sem especificações
   {
     video: {
       facingMode: 'user'
     },
     audio: true
   },
-  // Tentativa 2: Só vídeo sem áudio
+  // Tentativa 3: Só vídeo frontal
+  {
+    video: {
+      facingMode: 'user'
+    },
+    audio: false
+  },
+  // Tentativa 4: Qualquer vídeo com áudio
+  {
+    video: true,
+    audio: true
+  },
+  // Tentativa 5: Só vídeo sem áudio
   {
     video: true,
     audio: false
   },
-  // Tentativa 3: Câmera traseira
-  {
-    video: {
-      facingMode: 'environment'
-    },
-    audio: false
-  },
-  // Tentativa 4: Qualquer câmera disponível
+  // Tentativa 6: Configuração mínima
   {
     video: {},
     audio: false

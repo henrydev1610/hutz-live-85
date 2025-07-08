@@ -1,4 +1,4 @@
-import { detectMobile, checkMediaDevicesSupport } from './deviceDetection';
+import { detectMobile, checkMediaDevicesSupport, waitForStableConditions } from './deviceDetection';
 import { getMobileConstraints, getDesktopConstraints } from './mediaConstraints';
 import { handleMediaError } from './mediaErrorHandling';
 
@@ -10,6 +10,11 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
     throw new Error('getUserMedia não é suportado neste navegador');
   }
 
+  // Wait for stable conditions on mobile
+  if (isMobile) {
+    await waitForStableConditions(500);
+  }
+
   const constraintsList = isMobile ? getMobileConstraints() : getDesktopConstraints();
 
   for (let i = 0; i < constraintsList.length; i++) {
@@ -17,27 +22,44 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
     try {
       console.log(`🎥 MEDIA: Trying constraint ${i + 1}/${constraintsList.length} (Mobile: ${isMobile}):`, constraints);
 
-      // Aguardar um pouco no mobile para evitar problemas de timing
-      if (isMobile && i > 0) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      // Validate stream has active tracks
+      const videoTracks = stream.getVideoTracks();
+      const audioTracks = stream.getAudioTracks();
+      
+      if (videoTracks.length === 0 && audioTracks.length === 0) {
+        console.warn(`⚠️ MEDIA: Empty stream received, trying next constraint`);
+        stream.getTracks().forEach(track => track.stop());
+        continue;
+      }
       
       console.log(`✅ MEDIA: Successfully obtained media (Mobile: ${isMobile}):`, {
         streamId: stream.id,
+        videoTracks: videoTracks.length,
+        audioTracks: audioTracks.length,
         tracks: stream.getTracks().map(t => ({ 
           kind: t.kind, 
           label: t.label, 
           enabled: t.enabled,
-          readyState: t.readyState,
-          constraints: t.getConstraints()
+          readyState: t.readyState
         }))
       });
 
       return stream;
     } catch (error) {
-      handleMediaError(error, isMobile, i + 1, constraintsList.length);
+      try {
+        handleMediaError(error, isMobile, i + 1, constraintsList.length);
+      } catch (finalError) {
+        if (i === constraintsList.length - 1) {
+          throw finalError;
+        }
+      }
+      
+      // Add delay between attempts
+      if (i < constraintsList.length - 1) {
+        await waitForStableConditions(300);
+      }
     }
   }
 

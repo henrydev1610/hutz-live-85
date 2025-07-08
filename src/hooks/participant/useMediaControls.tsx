@@ -37,8 +37,15 @@ export const useMediaControls = ({
       
       setIsVideoEnabled(newEnabled);
       console.log(`PARTICIPANT: Video toggled: ${newEnabled ? 'ON' : 'OFF'}`);
+      
+      // Update video element visibility
+      if (localVideoRef.current) {
+        localVideoRef.current.style.display = newEnabled ? 'block' : 'none';
+      }
+      
+      toast.success(`Vídeo ${newEnabled ? 'ligado' : 'desligado'}`);
     }
-  }, [isVideoEnabled, localStreamRef, setIsVideoEnabled]);
+  }, [isVideoEnabled, localStreamRef, setIsVideoEnabled, localVideoRef]);
 
   const toggleAudio = useCallback(() => {
     if (localStreamRef.current) {
@@ -51,6 +58,8 @@ export const useMediaControls = ({
       
       setIsAudioEnabled(newEnabled);
       console.log(`PARTICIPANT: Audio toggled: ${newEnabled ? 'ON' : 'OFF'}`);
+      
+      toast.success(`Áudio ${newEnabled ? 'ligado' : 'desligado'}`);
     }
   }, [isAudioEnabled, localStreamRef, setIsAudioEnabled]);
 
