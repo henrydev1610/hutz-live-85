@@ -82,12 +82,19 @@ export class ConnectionHandler {
           audioTracks: stream.getAudioTracks().length
         });
 
-        // IMMEDIATE callback trigger
+        // IMMEDIATE callback trigger with retry mechanism
         if (this.streamCallback) {
           console.log(`🚀 IMMEDIATE: Triggering stream callback for ${participantId}`);
           this.streamCallback(participantId, stream);
         } else {
           console.error(`❌ CRITICAL: No stream callback set when receiving stream from ${participantId}`);
+          // Retry callback after short delay
+          setTimeout(() => {
+            if (this.streamCallback) {
+              console.log(`🔄 RETRY: Triggering delayed stream callback for ${participantId}`);
+              this.streamCallback(participantId, stream);
+            }
+          }, 100);
         }
       } else {
         console.warn(`⚠️ Track received from ${participantId} but no streams attached`);

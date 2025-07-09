@@ -1,7 +1,8 @@
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import LivePageContainer from '@/components/live/LivePageContainer';
+import ConnectionHealthMonitor from '@/components/live/ConnectionHealthMonitor';
 import { useLivePageState } from '@/hooks/live/useLivePageState';
 import { useParticipantManagement } from '@/hooks/live/useParticipantManagement';
 import { useQRCodeGeneration } from '@/hooks/live/useQRCodeGeneration';
@@ -13,6 +14,7 @@ import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessa
 const LivePage: React.FC = () => {
   const { toast } = useToast();
   const state = useLivePageState();
+  const [showHealthMonitor, setShowHealthMonitor] = useState(false);
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
   
@@ -139,19 +141,35 @@ const LivePage: React.FC = () => {
   ]);
 
   return (
-    <LivePageContainer
-      state={state}
-      participantManagement={participantManagement}
-      transmissionOpen={state.transmissionOpen}
-      sessionId={state.sessionId}
-      onStartTransmission={() => openTransmissionWindow(state, updateTransmissionParticipants)}
-      onFinishTransmission={() => finishTransmission(state, closeFinalAction)}
-      onFileSelect={handleFileSelect}
-      onRemoveImage={removeBackgroundImage}
-      onGenerateQRCode={() => handleGenerateQRCode(state)}
-      onQRCodeToTransmission={() => handleQRCodeToTransmission(state.setQrCodeVisible)}
-      closeFinalAction={closeFinalAction}
-    />
+    <div className="relative">
+      <LivePageContainer
+        state={state}
+        participantManagement={participantManagement}
+        transmissionOpen={state.transmissionOpen}
+        sessionId={state.sessionId}
+        onStartTransmission={() => openTransmissionWindow(state, updateTransmissionParticipants)}
+        onFinishTransmission={() => finishTransmission(state, closeFinalAction)}
+        onFileSelect={handleFileSelect}
+        onRemoveImage={removeBackgroundImage}
+        onGenerateQRCode={() => handleGenerateQRCode(state)}
+        onQRCodeToTransmission={() => handleQRCodeToTransmission(state.setQrCodeVisible)}
+        closeFinalAction={closeFinalAction}
+      />
+      
+      {/* Health Monitor */}
+      <ConnectionHealthMonitor 
+        isVisible={showHealthMonitor}
+        onClose={() => setShowHealthMonitor(false)}
+      />
+      
+      {/* Debug Button */}
+      <button
+        onClick={() => setShowHealthMonitor(!showHealthMonitor)}
+        className="fixed bottom-4 left-4 bg-blue-500 text-white p-2 rounded-full text-xs z-50"
+      >
+        Debug
+      </button>
+    </div>
   );
 };
 
