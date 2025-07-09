@@ -1,5 +1,5 @@
 
-import signalingService from '@/services/WebSocketSignalingService';
+import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { ConnectionHandler } from './ConnectionHandler';
 
 export class SignalingHandler {
@@ -35,7 +35,7 @@ export class SignalingHandler {
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       
-      signalingService.sendAnswer(participantId, answer);
+      unifiedWebSocketService.sendAnswer(participantId, answer);
       console.log('📥 Answer sent to:', participantId);
     } catch (error) {
       console.error('❌ Failed to handle offer:', error);
@@ -89,7 +89,7 @@ export class SignalingHandler {
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         console.log('🧊 Sending ICE candidate to:', participantId);
-        signalingService.sendIceCandidate(participantId, event.candidate);
+        unifiedWebSocketService.sendIceCandidate(participantId, event.candidate);
       }
     };
     

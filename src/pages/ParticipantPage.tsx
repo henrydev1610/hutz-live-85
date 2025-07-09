@@ -9,7 +9,7 @@ import ParticipantConnectionStatus from '@/components/participant/ParticipantCon
 import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
-import signalingService from '@/services/WebSocketSignalingService';
+import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 const ParticipantPage = () => {
   console.log('🎯 PARTICIPANT PAGE: Starting render');
@@ -28,7 +28,7 @@ const ParticipantPage = () => {
   // Monitor signaling service status
   useEffect(() => {
     const checkSignalingStatus = () => {
-      const status = signalingService.getConnectionStatus();
+      const status = unifiedWebSocketService.getConnectionStatus();
       setSignalingStatus(status);
     };
 

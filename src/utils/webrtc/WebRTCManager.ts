@@ -1,4 +1,4 @@
-import signalingService from '@/services/WebSocketSignalingService';
+import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { ConnectionHandler } from './ConnectionHandler';
 import { SignalingHandler } from './SignalingHandler';
 import { ParticipantManager } from './ParticipantManager';
@@ -59,7 +59,7 @@ export class WebRTCManager {
     this.isHost = true;
 
     try {
-      await signalingService.connect();
+      await unifiedWebSocketService.connect();
       
       this.callbacksManager.setupHostCallbacks(
         (data) => {
@@ -84,7 +84,7 @@ export class WebRTCManager {
         this.signalingHandler.handleIceCandidate.bind(this.signalingHandler)
       );
 
-      await signalingService.joinRoom(sessionId, this.participantId);
+      await unifiedWebSocketService.joinRoom(sessionId, this.participantId);
       console.log(`✅ UNIFIED HOST: Connected to signaling server (Mobile: ${this.isMobile})`);
       
     } catch (error) {
@@ -120,7 +120,7 @@ export class WebRTCManager {
         }
       }
 
-      await signalingService.connect();
+      await unifiedWebSocketService.connect();
 
       // Setup callbacks específicos para mobile
       this.callbacksManager.setupParticipantCallbacks(
@@ -148,7 +148,7 @@ export class WebRTCManager {
         this.signalingHandler.handleIceCandidate.bind(this.signalingHandler)
       );
 
-      await signalingService.joinRoom(sessionId, participantId);
+      await unifiedWebSocketService.joinRoom(sessionId, participantId);
       console.log(`✅ UNIFIED PARTICIPANT: Connected to signaling server (Mobile: ${this.isMobile})`);
       
       // No mobile, aguardar antes de notificar stream
@@ -167,7 +167,7 @@ export class WebRTCManager {
           connectionType: 'unified'
         };
         
-        signalingService.notifyStreamStarted(participantId, streamInfo);
+        unifiedWebSocketService.notifyStreamStarted(participantId, streamInfo);
         console.log(`📡 UNIFIED: Stream notification sent (Mobile: ${this.isMobile})`);
       }
       
@@ -212,7 +212,7 @@ export class WebRTCManager {
     }
     
     this.participantManager.cleanup();
-    signalingService.disconnect();
+    unifiedWebSocketService.disconnect();
     
     this.roomId = null;
     this.participantId = null;

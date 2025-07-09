@@ -1,4 +1,4 @@
-import mobileSignalingService from '@/services/MobileWebSocketService';
+import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 interface MobileWebRTCConfig {
   iceServers: RTCIceServer[];
@@ -39,7 +39,7 @@ export class MobileWebRTCManager {
     this.localStream = stream || null;
 
     // Setup signaling callbacks
-    mobileSignalingService.setCallbacks({
+    unifiedWebSocketService.setCallbacks({
       onOffer: async (data) => {
         console.log('📱 MOBILE WebRTC: Received offer');
         await this.handleOffer(data);
@@ -52,9 +52,9 @@ export class MobileWebRTCManager {
         console.log('📱 MOBILE WebRTC: Received ICE candidate');
         await this.handleIceCandidate(data);
       },
-      onUserConnected: async (data) => {
+      onUserConnected: async (userId: string) => {
         console.log('📱 MOBILE WebRTC: User connected, creating peer connection');
-        await this.createPeerConnection(data.userId || data.socketId);
+        await this.createPeerConnection(userId);
       }
     });
 
@@ -88,7 +88,7 @@ export class MobileWebRTCManager {
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         console.log('📱 MOBILE WebRTC: Sending ICE candidate');
-        mobileSignalingService.sendIceCandidate(remoteParticipantId, event.candidate);
+        unifiedWebSocketService.sendIceCandidate(remoteParticipantId, event.candidate);
       }
     };
 
@@ -114,7 +114,7 @@ export class MobileWebRTCManager {
       await peerConnection.setLocalDescription(answer);
       console.log('📱 MOBILE WebRTC: Answer created and set');
 
-      mobileSignalingService.sendAnswer(fromUserId, answer);
+      unifiedWebSocketService.sendAnswer(fromUserId, answer);
       console.log('📱 MOBILE WebRTC: Answer sent');
     } catch (error) {
       console.error('📱 MOBILE WebRTC: Error handling offer:', error);

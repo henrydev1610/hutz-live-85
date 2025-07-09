@@ -1,5 +1,5 @@
 
-import signalingService from '@/services/WebSocketSignalingService';
+import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 export class ConnectionHandler {
   private peerConnections: Map<string, RTCPeerConnection>;
@@ -45,7 +45,7 @@ export class ConnectionHandler {
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         console.log(`🧊 Sending ICE candidate to: ${participantId}`);
-        signalingService.sendIceCandidate(participantId, event.candidate);
+        unifiedWebSocketService.sendIceCandidate(participantId, event.candidate);
       }
     };
 
@@ -146,7 +146,7 @@ export class ConnectionHandler {
       await peerConnection.setLocalDescription(offer);
       console.log(`📤 Sending offer to: ${participantId}`);
       
-      signalingService.sendOffer(participantId, offer);
+      unifiedWebSocketService.sendOffer(participantId, offer);
     } catch (error) {
       console.error(`❌ Failed to create/send offer to ${participantId}:`, error);
       throw error;

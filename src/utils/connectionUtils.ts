@@ -29,10 +29,18 @@ export const getWebSocketURL = (): string => {
     return wsUrl;
   }
   
-  // Other production/preview environments
+  // Production/staging environments with fallback logic
   const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${wsProtocol}//${host}`;
-  console.log(`🔗 CONNECTION: Using generic WebSocket URL: ${wsUrl}`);
+  let wsUrl = `${wsProtocol}//${host}`;
+  
+  // Add fallback ports for different environments
+  if (protocol === 'https:' && !host.includes(':')) {
+    wsUrl = `${wsProtocol}//${host}:443`;
+  } else if (protocol === 'http:' && !host.includes(':')) {
+    wsUrl = `${wsProtocol}//${host}:3001`;
+  }
+  
+  console.log(`🔗 CONNECTION: Using WebSocket URL: ${wsUrl}`);
   return wsUrl;
 };
 

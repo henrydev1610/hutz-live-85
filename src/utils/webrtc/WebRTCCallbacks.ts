@@ -1,5 +1,5 @@
 
-import signalingService from '@/services/WebSocketSignalingService';
+import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { toast } from 'sonner';
 
 export class WebRTCCallbacks {
@@ -26,7 +26,7 @@ export class WebRTCCallbacks {
   ) {
     console.log('🎯 Setting up HOST callbacks with stream event listeners');
     
-    signalingService.setCallbacks({
+    unifiedWebSocketService.setCallbacks({
       onUserConnected,
       onUserDisconnected,
       onParticipantsUpdate,
@@ -34,25 +34,10 @@ export class WebRTCCallbacks {
       onAnswer,
       onIceCandidate,
       // NEW: Stream event callbacks
-      onStreamStarted: (data) => {
-        console.log('🎥 HOST: Stream started event received:', data);
+      onStreamStarted: (participantId, streamInfo) => {
+        console.log('🎥 HOST: Stream started event received:', participantId, streamInfo);
         if (this.onParticipantJoinCallback) {
-          this.onParticipantJoinCallback(data.participantId);
-        }
-      },
-      onVideoStream: (data) => {
-        console.log('📹 HOST: Video stream event received:', data);
-        // This would be triggered when a participant's video stream is ready
-        if (this.onStreamCallback && data.stream) {
-          this.onStreamCallback(data.participantId, data.stream);
-        }
-      },
-      onParticipantVideo: (data) => {
-        console.log('🎬 HOST: Participant video event received:', data);
-        // Handle participant video updates
-        if (this.onStreamCallback && data.hasStream) {
-          // We need to get the actual stream from WebRTC connection
-          console.log('📡 HOST: Participant has video stream available');
+          this.onParticipantJoinCallback(participantId);
         }
       },
       onError: (error) => {
@@ -74,21 +59,15 @@ export class WebRTCCallbacks {
   ) {
     console.log('🎯 Setting up PARTICIPANT callbacks for:', participantId);
     
-    signalingService.setCallbacks({
+    unifiedWebSocketService.setCallbacks({
       onUserConnected,
       onParticipantsUpdate,
       onOffer,
       onAnswer,
       onIceCandidate,
       // NEW: Stream event callbacks for participants
-      onStreamStarted: (data) => {
-        console.log('🎥 PARTICIPANT: Stream started event received:', data);
-      },
-      onVideoStream: (data) => {
-        console.log('📹 PARTICIPANT: Video stream event received:', data);
-      },
-      onParticipantVideo: (data) => {
-        console.log('🎬 PARTICIPANT: Participant video event received:', data);
+      onStreamStarted: (participantId, streamInfo) => {
+        console.log('🎥 PARTICIPANT: Stream started event received:', participantId, streamInfo);
       },
       onError: (error) => {
         console.error('❌ Participant signaling error:', error);
@@ -107,7 +86,7 @@ export class WebRTCCallbacks {
       this.onStreamCallback(participantId, stream);
       
       // Notify signaling server about the stream
-      signalingService.notifyStreamStarted(participantId, {
+      unifiedWebSocketService.notifyStreamStarted(participantId, {
         streamId: stream.id,
         trackCount: stream.getTracks().length,
         hasVideo: stream.getVideoTracks().length > 0,

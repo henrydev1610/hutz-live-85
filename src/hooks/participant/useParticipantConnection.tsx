@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react';
 import { toast } from "sonner";
 import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
-import mobileSignalingService from '@/services/MobileWebSocketService';
+import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 export const useParticipantConnection = (sessionId: string | undefined, participantId: string) => {
@@ -18,82 +18,95 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       return;
     }
 
-    console.log(`📱 MOBILE CONNECTION: Starting connection process`);
+    console.log(`🔗 PARTICIPANT CONNECTION: Starting connection process`);
     setIsConnecting(true);
     setConnectionStatus('connecting');
     setError(null);
 
     try {
       // Setup callbacks primeiro
-      mobileSignalingService.setCallbacks({
+      unifiedWebSocketService.setCallbacks({
         onConnected: () => {
-          console.log('📱 MOBILE CONNECTION: WebSocket connected successfully');
+          console.log('🔗 PARTICIPANT CONNECTION: WebSocket connected successfully');
           setConnectionStatus('connected');
         },
+        onDisconnected: () => {
+          console.log('🔗 PARTICIPANT CONNECTION: WebSocket disconnected');
+          setConnectionStatus('disconnected');
+          setIsConnected(false);
+        },
         onConnectionFailed: (error) => {
-          console.error('📱 MOBILE CONNECTION: WebSocket connection failed:', error);
+          console.error('🔗 PARTICIPANT CONNECTION: WebSocket connection failed:', error);
           setConnectionStatus('failed');
           setError('Falha na conexão WebSocket');
         }
       });
 
-      // Etapa 1: Conectar WebSocket mobile
-      console.log(`📱 MOBILE CONNECTION: Connecting WebSocket`);
-      await mobileSignalingService.connect();
+      // Etapa 1: Conectar WebSocket
+      console.log(`🔗 PARTICIPANT CONNECTION: Connecting WebSocket`);
+      await unifiedWebSocketService.connect();
       
-      if (!mobileSignalingService.isReady()) {
-        throw new Error('Mobile WebSocket connection failed');
+      if (!unifiedWebSocketService.isReady()) {
+        throw new Error('WebSocket connection failed');
       }
-      console.log(`✅ MOBILE CONNECTION: WebSocket connected`);
+      console.log(`✅ PARTICIPANT CONNECTION: WebSocket connected`);
 
       // Etapa 2: Join room
-      console.log(`📱 MOBILE CONNECTION: Joining room`);
-      await mobileSignalingService.joinRoom(sessionId, participantId);
-      console.log(`✅ MOBILE CONNECTION: Joined room`);
+      console.log(`🔗 PARTICIPANT CONNECTION: Joining room`);
+      await unifiedWebSocketService.joinRoom(sessionId, participantId);
+      console.log(`✅ PARTICIPANT CONNECTION: Joined room`);
 
       // Etapa 3: Conectar WebRTC (permitir sem stream)
-      console.log(`📱 MOBILE CONNECTION: Initializing WebRTC`);
+      console.log(`🔗 PARTICIPANT CONNECTION: Initializing WebRTC`);
       if (stream) {
-        console.log(`📱 MOBILE CONNECTION: Connecting with media stream`);
+        console.log(`🔗 PARTICIPANT CONNECTION: Connecting with media stream`);
         await initParticipantWebRTC(sessionId, participantId, stream);
-        toast.success('📱 Mobile conectado com mídia!');
+        toast.success('📱 Conectado com mídia!');
       } else {
-        console.log(`📱 MOBILE CONNECTION: Connecting in degraded mode (no media)`);
+        console.log(`🔗 PARTICIPANT CONNECTION: Connecting in degraded mode (no media)`);
         await initParticipantWebRTC(sessionId, participantId);
-        toast.success('📱 Mobile conectado (modo degradado)!');
+        toast.success('📱 Conectado (modo degradado)!');
       }
-      console.log(`✅ MOBILE CONNECTION: WebRTC initialized`);
+      console.log(`✅ PARTICIPANT CONNECTION: WebRTC initialized`);
       
       setIsConnected(true);
       setConnectionStatus('connected');
       
     } catch (error) {
-      console.error(`❌ MOBILE CONNECTION: Connection failed:`, error);
+      console.error(`❌ PARTICIPANT CONNECTION: Connection failed:`, error);
       setConnectionStatus('failed');
       
-      let errorMessage = 'Erro na conexão mobile';
+      let errorMessage = 'Erro na conexão';
       if (error instanceof Error) {
         errorMessage = error.message;
       }
       
       setError(errorMessage);
-      toast.error('📱 Falha na conexão mobile. Verifique sua internet.');
+      toast.error('📱 Falha na conexão. Tentando reconectar...');
+      
+      // Retry with exponential backoff
+      setTimeout(() => {
+        if (!isConnected) {
+          console.log('🔄 PARTICIPANT CONNECTION: Retrying connection...');
+          connectToSession(stream);
+        }
+      }, 3000);
     } finally {
       setIsConnecting(false);
     }
-  }, [sessionId, participantId]);
+  }, [sessionId, participantId, isConnected]);
 
   const disconnectFromSession = useCallback(() => {
-    console.log(`📱 MOBILE CONNECTION: Disconnecting`);
+    console.log(`🔗 PARTICIPANT CONNECTION: Disconnecting`);
     
     try {
       cleanupWebRTC();
-      mobileSignalingService.disconnect();
+      unifiedWebSocketService.disconnect();
       setIsConnected(false);
       setConnectionStatus('disconnected');
       toast.success('Desconectado da sessão');
     } catch (error) {
-      console.error(`❌ MOBILE CONNECTION: Error disconnecting:`, error);
+      console.error(`❌ PARTICIPANT CONNECTION: Error disconnecting:`, error);
       toast.error('Erro ao desconectar');
     }
   }, []);
