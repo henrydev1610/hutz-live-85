@@ -93,8 +93,9 @@ class UnifiedWebSocketService {
 
     return new Promise((resolve, reject) => {
       const connectionTimeout = setTimeout(() => {
+        this.disconnect(); // Use disconnect instead of cleanup
         reject(new Error('Connection timeout'));
-      }, 10000);
+      }, 20000); // Aumentado para 20s
 
       this.socket = io(url, {
         transports: ['websocket', 'polling'],
@@ -221,6 +222,8 @@ class UnifiedWebSocketService {
   }
 
   async joinRoom(roomId: string, userId: string): Promise<void> {
+    console.log(`🚪 WEBSOCKET: Joining room ${roomId} as ${userId}`);
+    
     if (!this.isConnected()) {
       console.log('🔗 CONNECTION: Not connected, connecting first...');
       await this.connect();
@@ -230,23 +233,89 @@ class UnifiedWebSocketService {
       throw new Error('Failed to establish connection');
     }
 
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Join room timeout'));
-      }, 5000);
+    this.currentRoomId = roomId;
+    this.currentUserId = userId;
 
-      this.socket!.emit('join-room', { roomId, userId }, (response: any) => {
-        clearTimeout(timeout);
+    return new Promise((resolve, reject) => {
+      const joinTimeout = setTimeout(() => {
+        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
+        reject(new Error('Join room timeout'));
+      }, 30000); // Aumentado para 30s
+
+      // Success handler
+      const handleJoinSuccess = (data: any) => {
+        console.log(`✅ WEBSOCKET: Successfully joined room ${roomId}:`, data);
+        clearTimeout(joinTimeout);
+        this.socket?.off('room_joined', handleJoinSuccess);
+        this.socket?.off('join-room-response', handleJoinResponse);
+        this.socket?.off('error', handleJoinError);
+        resolve();
+      };
+
+      // Response handler for different event types
+      const handleJoinResponse = (response: any) => {
+        console.log(`📡 WEBSOCKET: Join room response:`, response);
         if (response?.success) {
-          console.log(`✅ ROOM: Successfully joined room ${roomId}`);
-          this.currentRoomId = roomId;
-          this.currentUserId = userId;
+          clearTimeout(joinTimeout);
+          this.socket?.off('room_joined', handleJoinSuccess);
+          this.socket?.off('join-room-response', handleJoinResponse);
+          this.socket?.off('error', handleJoinError);
           resolve();
         } else {
-          console.error('❌ ROOM: Failed to join room:', response?.error);
           reject(new Error(response?.error || 'Failed to join room'));
         }
-      });
+      };
+
+      // Error handler
+      const handleJoinError = (error: any) => {
+        console.error(`❌ WEBSOCKET: Failed to join room ${roomId}:`, error);
+        clearTimeout(joinTimeout);
+        this.socket?.off('room_joined', handleJoinSuccess);
+        this.socket?.off('join-room-response', handleJoinResponse);
+        this.socket?.off('error', handleJoinError);
+        reject(new Error(`Failed to join room: ${error.message || error}`));
+      };
+
+      // Setup listeners for different possible event names
+      this.socket?.once('room_joined', handleJoinSuccess);
+      this.socket?.once('join-room-response', handleJoinResponse);
+      this.socket?.once('error', handleJoinError);
+
+      // Send join request with multiple formats for compatibility
+      const sendJoinRequest = (attempt = 1) => {
+        console.log(`📡 WEBSOCKET: Sending join request (attempt ${attempt})`);
+        
+        try {
+          // Try multiple event formats for compatibility
+          this.socket?.emit('join_room', { 
+            roomId, 
+            userId,
+            timestamp: Date.now(),
+            attempt
+          });
+          
+          this.socket?.emit('join-room', { 
+            roomId, 
+            userId,
+            timestamp: Date.now(),
+            attempt
+          });
+          
+          // Auto-retry after delay if no response
+          if (attempt < 3) {
+            setTimeout(() => {
+              if (this.currentRoomId === roomId) { // Still trying to join same room
+                sendJoinRequest(attempt + 1);
+              }
+            }, 5000 * attempt);
+          }
+        } catch (error) {
+          console.error(`❌ WEBSOCKET: Error sending join request:`, error);
+          handleJoinError(error);
+        }
+      };
+
+      sendJoinRequest();
     });
   }
 
