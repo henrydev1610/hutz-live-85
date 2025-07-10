@@ -3,6 +3,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Camera, CameraOff, Mic, MicOff, Monitor } from "lucide-react";
+import MediaDiagnostics from './MediaDiagnostics';
 
 interface ParticipantVideoPreviewProps {
   localVideoRef: React.RefObject<HTMLVideoElement>;
@@ -11,6 +12,8 @@ interface ParticipantVideoPreviewProps {
   hasScreenShare: boolean;
   isVideoEnabled: boolean;
   isAudioEnabled: boolean;
+  localStream?: MediaStream | null;
+  onRetryMedia?: () => Promise<void>;
 }
 
 const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
@@ -19,9 +22,24 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
   hasAudio,
   hasScreenShare,
   isVideoEnabled,
-  isAudioEnabled
+  isAudioEnabled,
+  localStream,
+  onRetryMedia
 }) => {
+  const showDiagnostics = !hasVideo && !hasAudio;
+  
   return (
+    <>
+      {showDiagnostics && onRetryMedia && (
+        <MediaDiagnostics
+          isVisible={true}
+          onRetryMedia={onRetryMedia}
+          hasVideo={hasVideo}
+          hasAudio={hasAudio}
+          stream={localStream || null}
+        />
+      )}
+    
     <Card className="mb-6 bg-black/30 border-white/10">
       <CardHeader>
         <CardTitle className="text-white">Sua Transmissão</CardTitle>
