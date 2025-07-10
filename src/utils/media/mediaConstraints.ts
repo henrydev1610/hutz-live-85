@@ -1,8 +1,23 @@
-export const getMobileConstraints = (): MediaStreamConstraints[] => [
-  // Tentativa 1: Configuração básica e permissiva para mobile
+import { detectMobile, getCameraPreference } from './deviceDetection';
+
+export const getDeviceSpecificConstraints = (): MediaStreamConstraints[] => {
+  const isMobile = detectMobile();
+  const cameraPreference = getCameraPreference();
+  
+  console.log('📱 Getting constraints for:', { isMobile, cameraPreference });
+  
+  if (isMobile) {
+    return getMobileConstraints(cameraPreference);
+  } else {
+    return getDesktopConstraints();
+  }
+};
+
+export const getMobileConstraints = (preferredFacing: 'user' | 'environment' = 'user'): MediaStreamConstraints[] => [
+  // Tentativa 1: Câmera preferida do usuário com qualidade média
   {
     video: {
-      facingMode: 'user',
+      facingMode: preferredFacing,
       width: { ideal: 480, max: 800 },
       height: { ideal: 360, max: 600 },
       frameRate: { ideal: 15, max: 25 }
@@ -13,75 +28,13 @@ export const getMobileConstraints = (): MediaStreamConstraints[] => [
       autoGainControl: true
     }
   },
-  // Tentativa 2: Vídeo simples sem áudio
+  // Tentativa 2: Câmera alternativa (se user não funcionar, tenta environment e vice-versa)
   {
     video: {
-      facingMode: 'user',
-      width: { ideal: 320, max: 480 },
-      height: { ideal: 240, max: 360 }
-    },
-    audio: false
-  },
-  // Tentativa 3: Câmera traseira básica
-  {
-    video: {
-      facingMode: 'environment',
-      width: { ideal: 320, max: 480 },
-      height: { ideal: 240, max: 360 }
-    },
-    audio: false
-  },
-  // Tentativa 4: Vídeo ultra-básico frontal
-  {
-    video: {
-      facingMode: 'user'
-    },
-    audio: false
-  },
-  // Tentativa 5: Vídeo ultra-básico traseiro
-  {
-    video: {
-      facingMode: 'environment'
-    },
-    audio: false
-  },
-  // Tentativa 6: Qualquer vídeo sem especificações
-  {
-    video: true,
-    audio: false
-  },
-  // Tentativa 7: Vídeo vazio (aceita qualquer coisa)
-  {
-    video: {},
-    audio: false
-  },
-  // Tentativa 8: Apenas áudio de qualidade
-  {
-    video: false,
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true
-    }
-  },
-  // Tentativa 9: Apenas áudio básico
-  {
-    video: false,
-    audio: true
-  },
-  // Tentativa 10: ULTRA-FALLBACK - aceita qualquer mídia
-  {
-    video: { optional: [] } as any,
-    audio: { optional: [] } as any
-  }
-];
-
-export const getDesktopConstraints = (): MediaStreamConstraints[] => [
-  // Tentativa 1: Desktop com qualidade média-boa
-  {
-    video: {
-      width: { ideal: 640, max: 1280 },
-      height: { ideal: 480, max: 720 },
-      frameRate: { ideal: 24, max: 30 }
+      facingMode: preferredFacing === 'user' ? 'environment' : 'user',
+      width: { ideal: 480, max: 800 },
+      height: { ideal: 360, max: 600 },
+      frameRate: { ideal: 15, max: 25 }
     },
     audio: {
       echoCancellation: true,
@@ -89,24 +42,79 @@ export const getDesktopConstraints = (): MediaStreamConstraints[] => [
       autoGainControl: true
     }
   },
-  // Tentativa 2: Qualidade básica 
+  // Tentativa 3: Câmera preferida sem áudio
+  {
+    video: {
+      facingMode: preferredFacing,
+      width: { ideal: 320, max: 480 },
+      height: { ideal: 240, max: 360 }
+    },
+    audio: false
+  },
+  // Tentativa 4: Câmera alternativa sem áudio
+  {
+    video: {
+      facingMode: preferredFacing === 'user' ? 'environment' : 'user',
+      width: { ideal: 320, max: 480 },
+      height: { ideal: 240, max: 360 }
+    },
+    audio: false
+  },
+  // Tentativa 5: Qualquer câmera móvel disponível
+  {
+    video: {
+      width: { ideal: 320, max: 480 },
+      height: { ideal: 240, max: 360 }
+    },
+    audio: false
+  },
+  // Tentativa 6: Vídeo ultra-básico sem especificações
+  {
+    video: true,
+    audio: false
+  },
+  // Tentativa 7: Apenas áudio
+  {
+    video: false,
+    audio: true
+  }
+];
+
+export const getDesktopConstraints = (): MediaStreamConstraints[] => [
+  // Tentativa 1: Desktop com qualidade boa - SEM facingMode (usa webcam padrão)
+  {
+    video: {
+      width: { ideal: 640, max: 1280 },
+      height: { ideal: 480, max: 720 },
+      frameRate: { ideal: 24, max: 30 }
+      // Nota: Não usa facingMode no desktop
+    },
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true
+    }
+  },
+  // Tentativa 2: Desktop qualidade média - SEM facingMode
   {
     video: {
       width: { ideal: 480, max: 640 },
       height: { ideal: 360, max: 480 },
       frameRate: { ideal: 15, max: 24 }
+      // Nota: Não usa facingMode no desktop
     },
     audio: true
   },
-  // Tentativa 3: Vídeo básico sem áudio
+  // Tentativa 3: Desktop básico sem áudio - SEM facingMode
   {
     video: {
       width: { max: 480 },
       height: { max: 360 }
+      // Nota: Não usa facingMode no desktop
     },
     audio: false
   },
-  // Tentativa 4: Vídeo ultra-simples
+  // Tentativa 4: Vídeo ultra-simples para desktop
   {
     video: {
       width: { ideal: 320 },
@@ -119,27 +127,9 @@ export const getDesktopConstraints = (): MediaStreamConstraints[] => [
     video: true,
     audio: false
   },
-  // Tentativa 6: Vídeo sem constraints específicos
-  {
-    video: {},
-    audio: false
-  },
-  // Tentativa 7: Apenas áudio com qualidade
-  {
-    video: false,
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true
-    }
-  },
-  // Tentativa 8: Apenas áudio básico
+  // Tentativa 6: Apenas áudio
   {
     video: false,
     audio: true
-  },
-  // Tentativa 9: ULTRA-FALLBACK - aceita qualquer mídia
-  {
-    video: { optional: [] } as any,
-    audio: { optional: [] } as any
   }
 ];

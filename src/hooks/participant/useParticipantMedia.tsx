@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { toast } from "sonner";
-import { detectMobile, checkMediaDevicesSupport } from '@/utils/media/deviceDetection';
+import { detectMobile, checkMediaDevicesSupport, setCameraPreference } from '@/utils/media/deviceDetection';
 import { getUserMediaWithFallback } from '@/utils/media/getUserMediaFallback';
 import { setupVideoElement } from '@/utils/media/videoPlayback';
 import { useMediaState } from './useMediaState';
@@ -222,6 +222,91 @@ export const useParticipantMedia = () => {
     }
   }, [initializeMedia, localStreamRef, setHasVideo, setHasAudio]);
 
+  const switchCamera = useCallback(async (facing: 'user' | 'environment') => {
+    const isMobile = detectMobile();
+    
+    if (!isMobile) {
+      console.warn('📱 Camera switching only available on mobile devices');
+      toast.warning('Troca de câmera disponível apenas em dispositivos móveis');
+      return;
+    }
+
+    console.log(`📱 CAMERA SWITCH: Switching to ${facing} camera`);
+    
+    try {
+      // Stop current stream
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => {
+          console.log(`🛑 Stopping ${track.kind} track:`, track.label);
+          track.stop();
+        });
+        localStreamRef.current = null;
+      }
+
+      // Clear video element
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+
+      // Set new camera preference
+      setCameraPreference(facing);
+      
+      // Get new stream with new camera
+      console.log(`📱 CAMERA SWITCH: Getting new stream with ${facing} camera...`);
+      const newStream = await getUserMediaWithFallback();
+      
+      if (!newStream) {
+        throw new Error(`Não foi possível acessar a câmera ${facing === 'user' ? 'frontal' : 'traseira'}`);
+      }
+
+      // Update state
+      localStreamRef.current = newStream;
+      const videoTracks = newStream.getVideoTracks();
+      const audioTracks = newStream.getAudioTracks();
+      
+      console.log(`📱 CAMERA SWITCH: New stream obtained:`, {
+        videoTracks: videoTracks.length,
+        audioTracks: audioTracks.length,
+        facing: facing,
+        videoSettings: videoTracks[0]?.getSettings()
+      });
+      
+      setHasVideo(videoTracks.length > 0);
+      setHasAudio(audioTracks.length > 0);
+      setIsVideoEnabled(videoTracks.length > 0);
+      setIsAudioEnabled(audioTracks.length > 0);
+      
+      // Setup video element
+      if (localVideoRef.current && videoTracks.length > 0) {
+        await setupVideoElement(localVideoRef.current, newStream);
+      }
+      
+      toast.success(`📱 Câmera ${facing === 'user' ? 'frontal' : 'traseira'} ativada!`, {
+        duration: 3000
+      });
+      
+      return newStream;
+      
+    } catch (error) {
+      console.error(`❌ CAMERA SWITCH: Failed to switch to ${facing}:`, error);
+      
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      toast.error(`❌ Falha ao trocar câmera: ${errorMsg}`, {
+        duration: 4000
+      });
+      
+      // Try to reinitialize with original preference
+      try {
+        console.log('🔄 CAMERA SWITCH: Attempting recovery...');
+        await retryMediaInitialization();
+      } catch (recoveryError) {
+        console.error('❌ CAMERA SWITCH: Recovery also failed:', recoveryError);
+      }
+      
+      throw error;
+    }
+  }, [localStreamRef, localVideoRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, retryMediaInitialization]);
+
   return {
     hasVideo,
     hasAudio,
@@ -232,6 +317,7 @@ export const useParticipantMedia = () => {
     localStreamRef,
     initializeMedia,
     retryMediaInitialization,
+    switchCamera,
     ...mediaControls
   };
 };

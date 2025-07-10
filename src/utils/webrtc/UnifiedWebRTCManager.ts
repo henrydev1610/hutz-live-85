@@ -318,12 +318,17 @@ export class UnifiedWebRTCManager {
     this.isHost = false;
 
     try {
-      // Setup local stream
+      // IMPORTANT: Only use stream provided by useParticipantMedia - no local media creation
       if (stream) {
         this.localStream = stream;
-        console.log(`📹 UNIFIED: Using provided stream:`, stream.getTracks().length, 'tracks');
+        console.log(`📹 UNIFIED: Using provided stream from useParticipantMedia:`, {
+          tracks: stream.getTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length,
+          videoSettings: stream.getVideoTracks()[0]?.getSettings()
+        });
       } else {
-        await this.setupLocalStream();
+        console.warn(`⚠️ UNIFIED: No stream provided - participant must initialize media first`);
       }
 
       this.updateConnectionState('websocket', 'connecting');
@@ -343,21 +348,6 @@ export class UnifiedWebRTCManager {
       console.error(`❌ UNIFIED PARTICIPANT: Failed to initialize:`, error);
       this.updateConnectionState('websocket', 'failed');
       throw error;
-    }
-  }
-
-  private async setupLocalStream() {
-    const constraints = this.isMobile ? {
-      video: { facingMode: 'user' },
-      audio: true
-    } : MEDIA_CONSTRAINTS;
-
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      this.localStream = mediaStream;
-      console.log(`📹 UNIFIED: Local stream obtained:`, mediaStream.getTracks().length, 'tracks');
-    } catch (error) {
-      console.warn(`⚠️ UNIFIED: Could not get media stream:`, error);
     }
   }
 

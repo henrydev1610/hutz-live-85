@@ -1,5 +1,5 @@
 import { detectMobile, checkMediaDevicesSupport } from './deviceDetection';
-import { getMobileConstraints, getDesktopConstraints } from './mediaConstraints';
+import { getDeviceSpecificConstraints } from './mediaConstraints';
 import { handleMediaError } from './mediaErrorHandling';
 
 export const getUserMediaWithFallback = async (): Promise<MediaStream | null> => {
@@ -62,10 +62,10 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
     console.warn('⚠️ MEDIA: Could not enumerate devices:', error);
   }
 
-  const constraintsList = isMobile ? getMobileConstraints() : getDesktopConstraints();
+  const constraintsList = getDeviceSpecificConstraints();
   let lastError: any = null;
   
-  console.log(`🎯 MEDIA: Starting ${constraintsList.length} constraint attempts`);
+  console.log(`🎯 MEDIA: Starting ${constraintsList.length} constraint attempts for ${isMobile ? 'MOBILE' : 'DESKTOP'} device`);
 
   for (let i = 0; i < constraintsList.length; i++) {
     const constraints = constraintsList[i];
