@@ -1,10 +1,17 @@
 import { detectMobile, checkMediaDevicesSupport } from './deviceDetection';
 import { getDeviceSpecificConstraints } from './mediaConstraints';
 import { handleMediaError } from './mediaErrorHandling';
+import { logDeviceInfo, logMediaConstraintsAttempt, logStreamSuccess, logStreamError } from './deviceDebugger';
 
 export const getUserMediaWithFallback = async (): Promise<MediaStream | null> => {
   const isMobile = detectMobile();
-  console.log(`📱 MEDIA: Initializing media for ${isMobile ? 'MOBILE' : 'DESKTOP'}`);
+  const deviceType = isMobile ? 'mobile' : 'desktop';
+  
+  // Log comprehensive device info for debugging
+  logDeviceInfo();
+  
+  console.log(`🎬 MEDIA FALLBACK: Starting ROBUST attempt for ${deviceType.toUpperCase()}`);
+  console.log(`🎯 DEVICE DETECTION RESULT: ${deviceType} (isMobile: ${isMobile})`);
   console.log(`📱 MEDIA: User agent: ${navigator.userAgent}`);
   console.log(`📱 MEDIA: Platform: ${navigator.platform}`);
 
@@ -65,14 +72,16 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
   const constraintsList = getDeviceSpecificConstraints();
   let lastError: any = null;
   
-  console.log(`🎯 MEDIA: Starting ${constraintsList.length} constraint attempts for ${isMobile ? 'MOBILE' : 'DESKTOP'} device`);
+  console.log(`🎯 MEDIA: Starting ${constraintsList.length} constraint attempts for ${deviceType.toUpperCase()} device`);
 
   for (let i = 0; i < constraintsList.length; i++) {
     const constraints = constraintsList[i];
     
+    // Log detailed attempt info
+    logMediaConstraintsAttempt(constraints, i + 1, deviceType);
+    
     try {
       console.log(`🎥 MEDIA: === ATTEMPT ${i + 1}/${constraintsList.length} ===`);
-      console.log(`🎥 MEDIA: Constraints:`, JSON.stringify(constraints, null, 2));
 
       // Delay progressivo entre tentativas
       if (i > 0) {
@@ -118,13 +127,52 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
         audioTracks: audioTracks.length,
         activeTracks: activeTracks.length,
         attempt: i + 1,
-        isMobile
+        deviceType: deviceType.toUpperCase()
       });
-
-      // Log detalhado dos tracks
-      tracks.forEach((track, idx) => {
-        console.log(`📹 MEDIA: Track ${idx + 1}: ${track.kind} - ${track.label || 'unlabeled'} - ${track.readyState} - enabled: ${track.enabled}`);
-      });
+      
+      // Log detailed success info
+      logStreamSuccess(stream, deviceType);
+      
+      // CRITICAL: Verify we got the right camera for mobile
+      if (isMobile && videoTracks.length > 0) {
+        const videoTrack = videoTracks[0];
+        const settings = videoTrack.getSettings();
+        console.log(`📱 MOBILE CAMERA VERIFICATION:`, {
+          facingMode: settings.facingMode,
+          deviceId: settings.deviceId,
+          label: videoTrack.label,
+          isExpectedMobile: !!settings.facingMode,
+          width: settings.width,
+          height: settings.height
+        });
+        
+        if (!settings.facingMode) {
+          console.warn(`⚠️ MOBILE WARNING: No facingMode detected! This might be desktop camera being used.`);
+          console.warn(`⚠️ MOBILE WARNING: Expected mobile camera with facingMode, but got settings:`, settings);
+        } else {
+          console.log(`✅ MOBILE SUCCESS: Got mobile camera with facingMode: ${settings.facingMode}`);
+        }
+      }
+      
+      // CRITICAL: Verify desktop doesn't have facingMode
+      if (!isMobile && videoTracks.length > 0) {
+        const videoTrack = videoTracks[0];
+        const settings = videoTrack.getSettings();
+        console.log(`🖥️ DESKTOP CAMERA VERIFICATION:`, {
+          facingMode: settings.facingMode,
+          deviceId: settings.deviceId,
+          label: videoTrack.label,
+          isExpectedDesktop: !settings.facingMode,
+          width: settings.width,
+          height: settings.height
+        });
+        
+        if (settings.facingMode) {
+          console.warn(`⚠️ DESKTOP WARNING: Unexpected facingMode detected! This might be mobile camera logic being used.`);
+        } else {
+          console.log(`✅ DESKTOP SUCCESS: Got desktop webcam without facingMode`);
+        }
+      }
 
       // Configurar listeners de monitoramento
       tracks.forEach(track => {
@@ -154,20 +202,12 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
       
     } catch (error) {
       lastError = error;
-      const errorName = error instanceof Error ? error.name : 'UnknownError';
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      
-      console.error(`❌ MEDIA: Attempt ${i + 1} failed:`, {
-        name: errorName,
-        message: errorMessage,
-        constraint: constraints,
-        isMobile,
-        deviceInfo
-      });
+      logStreamError(lastError as Error, i + 1, deviceType);
       
       handleMediaError(error, isMobile, i + 1, constraintsList.length);
       
       // Lógica específica para diferentes tipos de erro
+      const errorName = error instanceof Error ? error.name : 'UnknownError';
       if (errorName === 'NotAllowedError') {
         console.warn('⚠️ MEDIA: Permission denied - trying audio-only fallbacks');
         // Continuar, mas pular para tentativas só de áudio
@@ -182,7 +222,7 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
       } else if (errorName === 'OverconstrainedError' || errorName === 'ConstraintNotSatisfiedError') {
         console.warn('⚠️ MEDIA: Constraints too restrictive - trying simpler ones');
         // Continuar com constraints mais simples
-      } else if (errorMessage.includes('timeout')) {
+      } else if (lastError?.message?.includes('timeout')) {
         console.warn('⚠️ MEDIA: Timeout - device may be slow, trying next constraint');
         // Continuar com próxima tentativa
       }

@@ -14,13 +14,13 @@ export const getDeviceSpecificConstraints = (): MediaStreamConstraints[] => {
 };
 
 export const getMobileConstraints = (preferredFacing: 'user' | 'environment' = 'user'): MediaStreamConstraints[] => [
-  // Tentativa 1: Câmera preferida do usuário com qualidade média
+  // 🎯 Tentativa 1: MOBILE - Câmera específica com facingMode OBRIGATÓRIO
   {
     video: {
-      facingMode: preferredFacing,
-      width: { ideal: 480, max: 800 },
-      height: { ideal: 360, max: 600 },
-      frameRate: { ideal: 15, max: 25 }
+      facingMode: { exact: preferredFacing }, // EXACT para forçar câmera específica
+      width: { ideal: 640, max: 1280 },
+      height: { ideal: 480, max: 720 },
+      frameRate: { ideal: 24, max: 30 }
     },
     audio: {
       echoCancellation: true,
@@ -28,13 +28,13 @@ export const getMobileConstraints = (preferredFacing: 'user' | 'environment' = '
       autoGainControl: true
     }
   },
-  // Tentativa 2: Câmera alternativa (se user não funcionar, tenta environment e vice-versa)
+  // 🔄 Tentativa 2: MOBILE - Câmera alternativa com facingMode IDEAL (mais flexível)
   {
     video: {
-      facingMode: preferredFacing === 'user' ? 'environment' : 'user',
+      facingMode: { ideal: preferredFacing },
       width: { ideal: 480, max: 800 },
       height: { ideal: 360, max: 600 },
-      frameRate: { ideal: 15, max: 25 }
+      frameRate: { ideal: 20, max: 30 }
     },
     audio: {
       echoCancellation: true,
@@ -42,21 +42,24 @@ export const getMobileConstraints = (preferredFacing: 'user' | 'environment' = '
       autoGainControl: true
     }
   },
-  // Tentativa 3: Câmera preferida sem áudio
+  // 🔄 Tentativa 3: MOBILE - Câmera oposta com EXACT
   {
     video: {
-      facingMode: preferredFacing,
-      width: { ideal: 320, max: 480 },
-      height: { ideal: 240, max: 360 }
+      facingMode: { exact: preferredFacing === 'user' ? 'environment' : 'user' },
+      width: { ideal: 480, max: 800 },
+      height: { ideal: 360, max: 600 }
     },
-    audio: false
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true
+    }
   },
-  // Tentativa 4: Câmera alternativa sem áudio
+  // 📱 Tentativa 4: MOBILE - Câmera preferida básica sem áudio
   {
     video: {
-      facingMode: preferredFacing === 'user' ? 'environment' : 'user',
-      width: { ideal: 320, max: 480 },
-      height: { ideal: 240, max: 360 }
+      facingMode: { ideal: preferredFacing },
+      width: { ideal: 320, max: 640 },
+      height: { ideal: 240, max: 480 }
     },
     audio: false
   },
@@ -81,13 +84,14 @@ export const getMobileConstraints = (preferredFacing: 'user' | 'environment' = '
 ];
 
 export const getDesktopConstraints = (): MediaStreamConstraints[] => [
-  // Tentativa 1: Desktop com qualidade boa - SEM facingMode (usa webcam padrão)
+  // 🖥️ Tentativa 1: DESKTOP - Webcam padrão SEM facingMode (IMPORTANTE!)
   {
     video: {
-      width: { ideal: 640, max: 1280 },
-      height: { ideal: 480, max: 720 },
-      frameRate: { ideal: 24, max: 30 }
-      // Nota: Não usa facingMode no desktop
+      // ❌ NUNCA usar facingMode no desktop - causa conflito com mobile
+      width: { ideal: 1280, max: 1920 },
+      height: { ideal: 720, max: 1080 },
+      frameRate: { ideal: 30, max: 60 }
+      // ✅ SEM facingMode - usa webcam padrão do desktop
     },
     audio: {
       echoCancellation: true,
@@ -95,22 +99,25 @@ export const getDesktopConstraints = (): MediaStreamConstraints[] => [
       autoGainControl: true
     }
   },
-  // Tentativa 2: Desktop qualidade média - SEM facingMode
+  // 🖥️ Tentativa 2: DESKTOP - Qualidade média SEM facingMode
+  {
+    video: {
+      width: { ideal: 640, max: 1280 },
+      height: { ideal: 480, max: 720 },
+      frameRate: { ideal: 24, max: 30 }
+      // ✅ SEM facingMode - webcam desktop padrão
+    },
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true
+    }
+  },
+  // 🖥️ Tentativa 3: DESKTOP - Básico sem áudio SEM facingMode
   {
     video: {
       width: { ideal: 480, max: 640 },
-      height: { ideal: 360, max: 480 },
-      frameRate: { ideal: 15, max: 24 }
-      // Nota: Não usa facingMode no desktop
-    },
-    audio: true
-  },
-  // Tentativa 3: Desktop básico sem áudio - SEM facingMode
-  {
-    video: {
-      width: { max: 480 },
-      height: { max: 360 }
-      // Nota: Não usa facingMode no desktop
+      height: { ideal: 360, max: 480 }
+      // ✅ SEM facingMode - webcam desktop
     },
     audio: false
   },
