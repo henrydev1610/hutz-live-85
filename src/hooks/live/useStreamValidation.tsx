@@ -12,11 +12,14 @@ export const useStreamValidation = () => {
       audioTracks: stream.getAudioTracks().length
     });
     
-    if (!stream.active || stream.getVideoTracks().length === 0) {
-      console.warn('⚠️ Received inactive stream or stream without video tracks');
+    // Accept all streams - let video elements handle display logic
+    if (!stream || stream.getTracks().length === 0) {
+      console.warn('⚠️ Received empty stream');
       return false;
     }
     
+    // Accept inactive streams and streams without video - they might become active later
+    console.log('✅ Stream accepted for processing');
     return true;
   }, []);
 

@@ -114,37 +114,76 @@ export const useDirectVideoCreation = ({
     return true;
   }, [stream, participantId, containerId, createVideoElementDirect]);
 
+  // Enhanced effect to handle stream changes and retry logic
   useEffect(() => {
     if (!stream) return;
 
-    // Reset retry count when stream changes
-    retryCountRef.current = 0;
+    let retryCount = 0;
+    const maxRetries = 5;
+    const baseDelay = 500;
+    let retryTimeout: NodeJS.Timeout;
 
-    const attemptVideoCreation = () => {
-      const success = tryCreateVideo();
+    const attemptVideoCreation = async () => {
+      console.log(`🎬 Attempting video creation for ${participantId} (attempt ${retryCount + 1})`);
       
-      if (!success && retryCountRef.current < maxRetries) {
-        retryCountRef.current++;
-        console.log(`🔄 DIRECT: Retry ${retryCountRef.current}/${maxRetries} for ${participantId}`);
-        setTimeout(attemptVideoCreation, 200 * retryCountRef.current); // Exponential backoff
-      } else if (!success) {
-        console.error(`❌ DIRECT: Failed to create video after ${maxRetries} retries for ${participantId}`);
+      try {
+        const success = tryCreateVideo();
+        
+        if (success) {
+          console.log(`✅ Video creation successful for ${participantId}`);
+          return;
+        }
+        
+        if (retryCount < maxRetries) {
+          retryCount++;
+          const delay = baseDelay * Math.pow(1.5, retryCount - 1);
+          console.log(`⏰ Retrying video creation in ${delay}ms for ${participantId}`);
+          
+          retryTimeout = setTimeout(attemptVideoCreation, delay);
+        } else {
+          console.error(`❌ Max retries exceeded for ${participantId}`);
+        }
+      } catch (error) {
+        console.error(`❌ Error during video creation attempt for ${participantId}:`, error);
+        
+        if (retryCount < maxRetries) {
+          retryCount++;
+          const delay = baseDelay * Math.pow(2, retryCount - 1);
+          retryTimeout = setTimeout(attemptVideoCreation, delay);
+        }
       }
     };
 
-    // Initial attempt
-    attemptVideoCreation();
+    // Multiple strategies for DOM readiness
+    const startCreation = () => {
+      // Strategy 1: Immediate if DOM is ready
+      if (document.readyState === 'complete') {
+        attemptVideoCreation();
+        return;
+      }
+      
+      // Strategy 2: Wait for DOMContentLoaded
+      if (document.readyState === 'loading') {
+        const domHandler = () => {
+          document.removeEventListener('DOMContentLoaded', domHandler);
+          setTimeout(attemptVideoCreation, 100); // Small delay for React rendering
+        };
+        document.addEventListener('DOMContentLoaded', domHandler);
+      } else {
+        // Strategy 3: Interactive state - wait a bit for full readiness
+        setTimeout(attemptVideoCreation, 200);
+      }
+    };
 
-    // Also retry when DOM is fully loaded
-    if (document.readyState !== 'complete') {
-      const handleLoad = () => {
-        setTimeout(attemptVideoCreation, 100);
-      };
-      window.addEventListener('load', handleLoad);
-      return () => window.removeEventListener('load', handleLoad);
-    }
+    startCreation();
 
-  }, [stream, tryCreateVideo]);
+    // Cleanup
+    return () => {
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+    };
+  }, [stream, participantId, tryCreateVideo]);
 
-  return { createVideoElementDirect };
+  return { createVideoElementDirect, tryCreateVideo };
 };

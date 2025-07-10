@@ -1,7 +1,8 @@
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Participant } from './ParticipantGrid';
 import { useDirectVideoCreation } from '@/hooks/live/useDirectVideoCreation';
+import { useVideoHeartbeat } from '@/hooks/live/useVideoHeartbeat';
 
 interface ParticipantVideoContainerProps {
   participant: Participant;
@@ -17,10 +18,31 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
   const containerId = `preview-participant-video-${participant.id}`;
 
   // Use direct video creation hook
-  useDirectVideoCreation({
+  const { tryCreateVideo } = useDirectVideoCreation({
     participantId: participant.id,
     stream: stream || null,
     containerId
+  });
+
+  // Video health monitoring callbacks
+  const handleVideoLost = useCallback((participantId: string) => {
+    console.error('💔 Video lost detected for:', participantId);
+    // Try to recreate video
+    setTimeout(() => {
+      tryCreateVideo();
+    }, 1000);
+  }, [tryCreateVideo]);
+
+  const handleVideoRestored = useCallback((participantId: string) => {
+    console.log('💚 Video restored for:', participantId);
+  }, []);
+
+  // Use video heartbeat for health monitoring
+  const { isHealthy } = useVideoHeartbeat({
+    participantId: participant.id,
+    stream: stream || null,
+    onVideoLost: handleVideoLost,
+    onVideoRestored: handleVideoRestored
   });
 
   // Manual video creation as fallback
@@ -108,24 +130,30 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     >
       {/* DEBUG: Informações de debug SEMPRE visíveis */}
       <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-1 rounded z-30">
-        {participant.hasVideo ? 'HAS_VIDEO' : 'NO_VIDEO'} | {participant.active ? 'ACTIVE' : 'INACTIVE'}
+        {participant.hasVideo ? 'HAS_VIDEO' : 'NO_VIDEO'} | {participant.active ? 'ACTIVE' : 'INACTIVE'} | {isHealthy ? '💚' : '💔'}
       </div>
       
-      {/* Show placeholder when participant is active but no video is playing */}
-      {participant.active && stream && !hasPlayingVideo() && (
+      {/* Show placeholder when participant is active but no video is playing or unhealthy */}
+      {participant.active && stream && (!hasPlayingVideo() || !isHealthy) && (
         <div className="absolute inset-0 flex items-center justify-center z-10 bg-gray-800/60">
           <div className="text-center text-white/70">
-            <svg className="w-8 h-8 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            <svg className={`w-8 h-8 mx-auto mb-1 ${!isHealthy ? 'text-red-400' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {!isHealthy ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L5.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              )}
             </svg>
             <p className="text-xs font-medium">{participant.name || `P${index + 1}`}</p>
             <p className="text-xs text-green-400 mt-1">● Conectado</p>
-            <p className="text-xs text-yellow-400 mt-1">Processando vídeo...</p>
+            <p className={`text-xs mt-1 ${!isHealthy ? 'text-red-400' : 'text-yellow-400'}`}>
+              {!isHealthy ? 'Vídeo perdido' : 'Processando vídeo...'}
+            </p>
             <button 
               onClick={createVideoManually}
-              className="mt-2 px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+              className={`mt-2 px-2 py-1 text-white text-xs rounded hover:opacity-80 ${!isHealthy ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-500 hover:bg-blue-600'}`}
             >
-              Forçar Vídeo
+              {!isHealthy ? 'Recuperar Vídeo' : 'Forçar Vídeo'}
             </button>
           </div>
         </div>
