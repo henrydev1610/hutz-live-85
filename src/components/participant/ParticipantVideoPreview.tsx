@@ -39,8 +39,8 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
           stream={localStream || null}
         />
       )}
-    
-    <Card className="mb-6 bg-black/30 border-white/10">
+      
+      <Card className="mb-6 bg-black/30 border-white/10">
       <CardHeader>
         <CardTitle className="text-white">Sua Transmissão</CardTitle>
       </CardHeader>
@@ -90,6 +90,7 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
         </div>
       </CardContent>
     </Card>
+    </>
   );
 };
 
