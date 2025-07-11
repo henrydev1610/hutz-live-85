@@ -5,6 +5,7 @@ import LivePreview from '@/components/live/LivePreview';
 import TransmissionControls from '@/components/live/TransmissionControls';
 import LiveControlTabs from '@/components/live/LiveControlTabs';
 import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
+import StreamDebugPanel from '@/components/live/StreamDebugPanel';
 import { Participant } from '@/components/live/ParticipantGrid';
 import { useConnectionStatus } from '@/hooks/live/useConnectionStatus';
 
@@ -40,7 +41,14 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
   const activeStreams = Object.keys(state.participantStreams).length;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <>
+      {/* PHASE 4: Debug Panel */}
+      <StreamDebugPanel 
+        participantList={state.participantList}
+        participantStreams={state.participantStreams}
+      />
+      
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <div className="space-y-6">
         <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10">
           <CardHeader className="flex flex-row justify-between items-center">
@@ -145,6 +153,7 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
         </Card>
       </div>
     </div>
+    </>
   );
 };
 

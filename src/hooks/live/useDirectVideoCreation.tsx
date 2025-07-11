@@ -81,66 +81,25 @@ export const useDirectVideoCreation = ({
     video.srcObject = mediaStream;
     container.appendChild(video);
 
-    // CRITICAL: Enhanced play logic with mobile-specific handling
+    // PHASE 2 FIX: Simplified single-strategy play logic
     const playVideo = async () => {
       try {
-        console.log(`▶️ DIRECT: [${participantId}] Attempting to play video`);
-        
-        // Force load if needed (mobile compatibility)
-        if (video.readyState < 2) {
-          video.load();
-          await new Promise(resolve => {
-            const handler = () => {
-              video.removeEventListener('loadeddata', handler);
-              resolve(void 0);
-            };
-            video.addEventListener('loadeddata', handler);
-            setTimeout(resolve, 2000); // Timeout fallback
-          });
-        }
-        
+        console.log(`▶️ PHASE2: [${participantId}] SINGLE attempt to play video`);
         await video.play();
-        console.log(`✅ DIRECT: [${participantId}] Video playing successfully`);
-        
-        // CRITICAL: Force visible for mobile
+        console.log(`✅ PHASE2: [${participantId}] Video playing successfully`);
         container.style.opacity = '1';
         
       } catch (error) {
-        console.error(`⚠️ DIRECT: [${participantId}] Play failed:`, error);
-        
-        // Multiple retry strategies
-        setTimeout(async () => {
-          try {
-            console.log(`🔄 DIRECT: [${participantId}] Strategy 1: Retrying play`);
-            await video.play();
-          } catch (retryError) {
-            console.log(`🔄 DIRECT: [${participantId}] Strategy 2: Force reload and play`);
-            video.load();
-            setTimeout(() => {
-              video.play().catch(e => console.error(`❌ DIRECT: [${participantId}] All strategies failed:`, e));
-            }, 500);
-          }
-        }, 100);
+        console.error(`❌ PHASE2: [${participantId}] Play failed:`, error);
+        // Single fallback - no complex retries
+        setTimeout(() => video.play().catch(e => 
+          console.error(`❌ PHASE2: [${participantId}] Final play failed:`, e)
+        ), 100);
       }
     };
 
-    // Multiple event-driven play attempts
+    // SINGLE play attempt only - no multiple events
     playVideo();
-    
-    video.addEventListener('loadedmetadata', () => {
-      console.log(`📱 DIRECT: [${participantId}] Metadata loaded, attempting play`);
-      playVideo();
-    });
-    
-    video.addEventListener('canplay', () => {
-      console.log(`📱 DIRECT: [${participantId}] Can play, attempting play`);
-      playVideo();
-    });
-    
-    video.addEventListener('loadeddata', () => {
-      console.log(`📱 DIRECT: [${participantId}] Data loaded, attempting play`);
-      playVideo();
-    });
 
     return video;
   }, [participantId, containerId]);

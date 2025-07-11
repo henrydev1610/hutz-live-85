@@ -37,6 +37,23 @@ export const useParticipantManagement = ({
     transmissionWindowRef
   });
 
+  // PHASE 3 FIX: Force participant update when stream arrives
+  const enhancedHandleParticipantStream = (participantId: string, stream: MediaStream) => {
+    console.log(`🎯 PHASE3: [${participantId}] FORCE updating participant with stream`);
+    
+    // CRITICAL: Force participant to have video and be active
+    setParticipantList(prev => prev.map(p => 
+      p.id === participantId 
+        ? { ...p, hasVideo: true, active: true, selected: true }
+        : p
+    ));
+    
+    // Call original handler
+    handleParticipantStream(participantId, stream);
+    
+    console.log(`✅ PHASE3: [${participantId}] Participant forced to active with video`);
+  };
+
   const { 
     handleParticipantJoin, 
     handleParticipantSelect, 
@@ -75,17 +92,17 @@ export const useParticipantManagement = ({
     participantStreams
   });
 
-  // Set up WebRTC callbacks immediately
+  // Set up WebRTC callbacks immediately with enhanced stream handler
   useEffect(() => {
-    console.log('🔧 Setting up IMMEDIATE WebRTC callbacks');
+    console.log('🔧 Setting up IMMEDIATE WebRTC callbacks with PHASE3 enhancement');
     
-    setStreamCallback(handleParticipantStream);
+    setStreamCallback(enhancedHandleParticipantStream);
     setParticipantJoinCallback(handleParticipantJoin);
     
     return () => {
       console.log('🧹 Cleaning up WebRTC callbacks');
     };
-  }, [sessionId, handleParticipantStream, handleParticipantJoin]);
+  }, [sessionId, enhancedHandleParticipantStream, handleParticipantJoin]);
 
   const testConnection = () => {
     console.log('🧪 Testing WebRTC connection...');
@@ -141,7 +158,7 @@ export const useParticipantManagement = ({
     handleParticipantSelect,
     handleParticipantRemove,
     handleParticipantJoin,
-    handleParticipantStream,
+    handleParticipantStream: enhancedHandleParticipantStream,
     testConnection,
     transferStreamToTransmission
   };
