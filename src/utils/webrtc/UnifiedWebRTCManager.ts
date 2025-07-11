@@ -20,10 +20,10 @@ interface RetryConfig {
 }
 
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 5,
-  initialDelay: 1000,
-  maxDelay: 30000,
-  multiplier: 2
+  maxRetries: 10, // More retry attempts
+  initialDelay: 500, // Faster initial retry
+  maxDelay: 15000, // Lower max delay
+  multiplier: 1.5 // Slower exponential growth
 };
 
 export class UnifiedWebRTCManager {
@@ -97,7 +97,7 @@ export class UnifiedWebRTCManager {
   private setupHealthMonitoring() {
     this.healthCheckInterval = setInterval(() => {
       this.performHealthCheck();
-    }, 10000); // Check every 10 seconds
+    }, 5000); // Check every 5 seconds for faster recovery
   }
 
   private performHealthCheck() {
@@ -148,12 +148,18 @@ export class UnifiedWebRTCManager {
   }
 
   private async handleWebSocketFailure() {
-    console.log('🔄 WebSocket connection failed, attempting recovery...');
+    console.log('🔄 WebSocket connection failed, attempting immediate recovery...');
     
+    // Immediate retry without delay for critical failures
     try {
       await this.reconnectWebSocket();
     } catch (error) {
-      console.error('❌ WebSocket recovery failed:', error);
+      console.error('❌ WebSocket recovery failed, scheduling retry:', error);
+      
+      // Schedule retry with exponential backoff
+      setTimeout(() => {
+        this.handleWebSocketFailure();
+      }, this.retryConfig.initialDelay);
     }
   }
 

@@ -24,7 +24,19 @@ export const useLivePageState = () => {
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  // Auto-generate sessionId and persist in sessionStorage
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    const existing = sessionStorage.getItem('liveSessionId');
+    if (existing && !existing.includes('early-host-') && !existing.includes('temp-host-')) {
+      console.log('🔄 Recovering existing session:', existing);
+      return existing;
+    }
+    
+    const newId = `live-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    console.log('🆕 Generated new session ID:', newId);
+    sessionStorage.setItem('liveSessionId', newId);
+    return newId;
+  });
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 

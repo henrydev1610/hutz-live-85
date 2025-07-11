@@ -140,12 +140,47 @@ export const useLivePageEffects = ({
     }
   }, [sessionId]);
 
-  // NEW: Initialize WebRTC only when we have a proper sessionId
+  // NEW: Auto-reconnection monitoring effect
   useEffect(() => {
-    // Skip early initialization to avoid timeout errors
-    console.log('🔧 HOST: Skipping early WebRTC initialization to prevent timeout errors');
-    console.log('📝 HOST: WebRTC will initialize when sessionId is available');
-  }, []);
+    if (!sessionId) return;
+    
+    const checkWebRTCHealth = setInterval(() => {
+      console.log('🔍 HOST: Checking WebRTC health...');
+      
+      // Check if WebRTC is still connected
+      const webrtcManager = require('@/utils/webrtc').getWebRTCManager();
+      if (webrtcManager) {
+        const state = webrtcManager.getConnectionState();
+        console.log('📊 HOST: Connection state:', state);
+        
+        if (state.overall === 'failed' || state.websocket === 'failed') {
+          console.log('🔄 HOST: Detected failed connection, attempting recovery...');
+          
+          // Re-initialize WebRTC
+          initHostWebRTC(sessionId).then(result => {
+            if (result && result.webrtc) {
+              console.log('✅ HOST: WebRTC recovery successful');
+              
+              result.webrtc.setOnStreamCallback((participantId, stream) => {
+                console.log('🎥 HOST: RECOVERY STREAM RECEIVED from:', participantId);
+                handleParticipantStream(participantId, stream);
+                setTimeout(() => updateTransmissionParticipants(), 200);
+              });
+              
+              result.webrtc.setOnParticipantJoinCallback((participantId) => {
+                console.log('👤 HOST: RECOVERY PARTICIPANT JOIN:', participantId);
+                handleParticipantJoin(participantId);
+              });
+            }
+          }).catch(error => {
+            console.error('❌ HOST: WebRTC recovery failed:', error);
+          });
+        }
+      }
+    }, 15000); // Check every 15 seconds
+    
+    return () => clearInterval(checkWebRTCHealth);
+  }, [sessionId]);
 
   // Monitor participant streams changes
   useEffect(() => {
