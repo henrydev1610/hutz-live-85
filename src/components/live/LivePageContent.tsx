@@ -6,6 +6,7 @@ import TransmissionControls from '@/components/live/TransmissionControls';
 import LiveControlTabs from '@/components/live/LiveControlTabs';
 import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
 import { Participant } from '@/components/live/ParticipantGrid';
+import { useConnectionStatus } from '@/hooks/live/useConnectionStatus';
 
 interface LivePageContentProps {
   state: any;
@@ -32,6 +33,8 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
   onGenerateQRCode,
   onQRCodeToTransmission
 }) => {
+  const { webrtcConnected, websocketConnected } = useConnectionStatus();
+  
   // Calculate real participants and active streams
   const realParticipants = state.participantList.filter((p: Participant) => !p.id.startsWith('placeholder-'));
   const activeStreams = Object.keys(state.participantStreams).length;
@@ -103,6 +106,8 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
           participantCount={realParticipants.length}
           activeStreams={activeStreams}
           onTestConnection={participantManagement.testConnection}
+          webrtcConnected={webrtcConnected}
+          websocketConnected={websocketConnected}
         />
       </div>
       

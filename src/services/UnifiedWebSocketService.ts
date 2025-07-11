@@ -224,10 +224,10 @@ class UnifiedWebSocketService {
   async joinRoom(roomId: string, userId: string): Promise<void> {
     console.log(`🚪 WEBSOCKET: Joining room ${roomId} as ${userId}`);
     
-    // CRITICAL FIX: Skip join if roomId looks like a temporary/invalid session
-    if (roomId.includes('early-host-') || roomId.includes('temp-host-')) {
-      console.log(`⏭️ WEBSOCKET: Skipping join for temporary session: ${roomId}`);
-      return; // Don't attempt to join temporary sessions
+    // Validate room ID and user ID
+    if (!roomId || roomId.trim() === '' || !userId || userId.trim() === '') {
+      console.warn(`⚠️ WEBSOCKET: Invalid room or user ID provided: roomId=${roomId}, userId=${userId}`);
+      throw new Error('Invalid room or user ID');
     }
     
     if (!this.isConnected()) {

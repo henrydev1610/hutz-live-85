@@ -301,22 +301,47 @@ export class UnifiedWebRTCManager {
 
   async initializeAsHost(sessionId: string): Promise<void> {
     console.log(`🏠 UNIFIED: Initializing as host for session: ${sessionId}`);
+    console.log(`🔍 UNIFIED: Session validation - format check: ${sessionId.startsWith('live-session-') ? 'VALID' : 'INVALID'}`);
+    
+    if (!sessionId || sessionId.trim() === '') {
+      console.error('❌ UNIFIED: Invalid session ID provided:', sessionId);
+      throw new Error('Invalid session ID provided');
+    }
+    
     this.roomId = sessionId;
     this.participantId = `host-${Date.now()}`;
     this.isHost = true;
 
     try {
+      console.log('🔄 UNIFIED: Step 1 - Updating connection state to connecting...');
       this.updateConnectionState('websocket', 'connecting');
+      
+      console.log('🔄 UNIFIED: Step 2 - Connecting to WebSocket service...');
       await unifiedWebSocketService.connect();
+      console.log('✅ UNIFIED: WebSocket connected successfully');
+      
+      console.log('🔄 UNIFIED: Step 3 - Setting up WebSocket callbacks...');
       this.setupWebSocketCallbacks();
+      console.log('✅ UNIFIED: WebSocket callbacks configured');
+      
+      console.log('🔄 UNIFIED: Step 4 - Joining room...');
       await unifiedWebSocketService.joinRoom(sessionId, this.participantId);
+      console.log('✅ UNIFIED: Successfully joined room');
       
       this.updateConnectionState('websocket', 'connected');
-      console.log(`✅ UNIFIED HOST: Connected to signaling server`);
+      this.updateConnectionState('webrtc', 'connected'); // Also mark WebRTC as connected for host
+      
+      console.log(`🎉 UNIFIED HOST: Full initialization complete for session: ${sessionId}`);
       
     } catch (error) {
-      console.error(`❌ UNIFIED HOST: Failed to initialize:`, error);
+      console.error(`❌ UNIFIED HOST: Failed to initialize for session ${sessionId}:`, error);
+      console.error('🔍 UNIFIED HOST: Error details:', {
+        sessionId,
+        participantId: this.participantId,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error'
+      });
       this.updateConnectionState('websocket', 'failed');
+      this.updateConnectionState('webrtc', 'failed');
       throw error;
     }
   }

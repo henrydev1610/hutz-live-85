@@ -27,12 +27,15 @@ export const useLivePageState = () => {
   // Auto-generate sessionId and persist in sessionStorage
   const [sessionId, setSessionId] = useState<string | null>(() => {
     const existing = sessionStorage.getItem('liveSessionId');
-    if (existing && !existing.includes('early-host-') && !existing.includes('temp-host-')) {
+    if (existing && existing.startsWith('live-session-')) {
       console.log('🔄 Recovering existing session:', existing);
       return existing;
     }
     
-    const newId = `live-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // Generate clean session ID that won't conflict with validation
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substr(2, 9);
+    const newId = `live-session-${timestamp}-${randomId}`;
     console.log('🆕 Generated new session ID:', newId);
     sessionStorage.setItem('liveSessionId', newId);
     return newId;

@@ -21,13 +21,17 @@ interface ConnectionDiagnosticsProps {
   participantCount: number;
   activeStreams: number;
   onTestConnection: () => void;
+  webrtcConnected?: boolean;
+  websocketConnected?: boolean;
 }
 
 const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
   sessionId,
   participantCount,
   activeStreams,
-  onTestConnection
+  onTestConnection,
+  webrtcConnected = false,
+  websocketConnected = false
 }) => {
   const { toast } = useToast();
   const [isTestingConnection, setIsTestingConnection] = useState(false);
@@ -66,6 +70,8 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
 
   const getConnectionStatus = () => {
     if (!sessionId) return { status: 'disconnected', label: 'Desconectado', color: 'destructive' };
+    if (!websocketConnected) return { status: 'disconnected', label: 'WebSocket desconectado', color: 'destructive' };
+    if (!webrtcConnected) return { status: 'partial', label: 'WebRTC desconectado', color: 'secondary' };
     if (activeStreams > 0) return { status: 'connected', label: 'Conectado com vídeo', color: 'default' };
     if (participantCount > 0) return { status: 'partial', label: 'Conectado sem vídeo', color: 'secondary' };
     return { status: 'waiting', label: 'Aguardando participantes', color: 'outline' };
@@ -107,6 +113,30 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
           <div>
             <span className="text-muted-foreground">Participantes:</span>
             <p className="font-semibold">{participantCount}</p>
+          </div>
+        </div>
+
+        {/* Connection Details */}
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="text-muted-foreground">WebSocket:</span>
+            <p className="flex items-center gap-1">
+              {websocketConnected ? (
+                <><CheckCircle className="h-3 w-3 text-green-500" /> Conectado</>
+              ) : (
+                <><XCircle className="h-3 w-3 text-red-500" /> Desconectado</>
+              )}
+            </p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">WebRTC:</span>
+            <p className="flex items-center gap-1">
+              {webrtcConnected ? (
+                <><CheckCircle className="h-3 w-3 text-green-500" /> Conectado</>
+              ) : (
+                <><XCircle className="h-3 w-3 text-red-500" /> Desconectado</>
+              )}
+            </p>
           </div>
         </div>
 
