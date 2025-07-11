@@ -60,7 +60,7 @@ export const useLivePageEffects = ({
     };
   }, [sessionId, localStream]);
 
-  // Enhanced session initialization effect
+  // Enhanced session initialization effect - Start WebRTC immediately on mount
   useEffect(() => {
     if (sessionId) {
       console.log('🚀 HOST: INITIALIZING SESSION:', sessionId);
@@ -139,6 +139,36 @@ export const useLivePageEffects = ({
       };
     }
   }, [sessionId]);
+
+  // NEW: Initialize WebRTC immediately when page loads (even without sessionId)
+  useEffect(() => {
+    console.log('🚀 HOST: Early WebRTC initialization for incoming connections');
+    
+    // Initialize WebRTC in "host listening mode" 
+    initHostWebRTC('temp-host-session').then(result => {
+      if (result && result.webrtc) {
+        console.log('✅ HOST: Early WebRTC initialized - ready to receive connections');
+        
+        result.webrtc.setOnStreamCallback((participantId, stream) => {
+          console.log('🎥 HOST: EARLY STREAM RECEIVED from:', participantId);
+          handleParticipantStream(participantId, stream);
+          
+          setTimeout(() => {
+            updateTransmissionParticipants();
+          }, 200);
+        });
+        
+        result.webrtc.setOnParticipantJoinCallback((participantId) => {
+          console.log('👤 HOST: EARLY PARTICIPANT JOIN:', participantId);
+          handleParticipantJoin(participantId);
+        });
+      } else {
+        console.error('❌ HOST: Failed to initialize early WebRTC');
+      }
+    }).catch(error => {
+      console.error('❌ HOST: Early WebRTC initialization error:', error);
+    });
+  }, []); // Run only once on mount
 
   // Monitor participant streams changes
   useEffect(() => {
