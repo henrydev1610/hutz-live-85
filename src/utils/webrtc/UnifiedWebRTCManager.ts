@@ -3,6 +3,7 @@ import { ConnectionHandler } from './ConnectionHandler';
 import { SignalingHandler } from './SignalingHandler';
 import { ParticipantManager } from './ParticipantManager';
 import { WebRTCCallbacks } from './WebRTCCallbacks';
+import { StreamUpdater } from './StreamUpdater';
 import { MEDIA_CONSTRAINTS } from './WebRTCConfig';
 
 interface ConnectionState {
@@ -72,6 +73,9 @@ export class UnifiedWebRTCManager {
     this.callbacksManager = new WebRTCCallbacks();
     this.connectionHandler = new ConnectionHandler(this.peerConnections, () => this.localStream);
     this.signalingHandler = new SignalingHandler(this.peerConnections, new Map());
+    
+    // Setup StreamUpdater with our peer connections
+    StreamUpdater.setPeerConnections(this.peerConnections);
     
     // Link signaling handler with connection handler
     this.signalingHandler.setConnectionHandler(this.connectionHandler);
@@ -418,6 +422,48 @@ export class UnifiedWebRTCManager {
 
   getConnectionMetrics() {
     return new Map(this.connectionMetrics);
+  }
+
+  /**
+   * Updates the local stream and forces renegotiation with all connected peers
+   * CRITICAL: Call this when camera stream is updated (e.g., rear camera acquired)
+   */
+  async updateLocalStream(newStream: MediaStream): Promise<void> {
+    console.log('🔄 UNIFIED: Updating local stream in all connections', {
+      oldStreamId: this.localStream?.id || 'none',
+      newStreamId: newStream.id,
+      connectionCount: this.peerConnections.size
+    });
+
+    // Update our local stream reference
+    this.localStream = newStream;
+
+    // Update all existing peer connections with the new stream
+    try {
+      await StreamUpdater.updateStreamInAllConnections(newStream);
+      console.log('✅ UNIFIED: Local stream updated successfully in all connections');
+    } catch (error) {
+      console.error('❌ UNIFIED: Failed to update local stream:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Updates only video tracks using replaceTrack (faster for camera switching)
+   */
+  async updateVideoTrack(newStream: MediaStream): Promise<void> {
+    console.log('🎥 UNIFIED: Updating video track in all connections');
+
+    // Update our local stream reference
+    this.localStream = newStream;
+
+    try {
+      await StreamUpdater.updateVideoTrackInAllConnections(newStream);
+      console.log('✅ UNIFIED: Video track updated successfully in all connections');
+    } catch (error) {
+      console.error('❌ UNIFIED: Failed to update video track:', error);
+      throw error;
+    }
   }
 
   cleanup() {

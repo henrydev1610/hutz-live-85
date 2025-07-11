@@ -60,6 +60,31 @@ export const getWebRTCManager = () => {
   return webrtcManager;
 };
 
+/**
+ * Updates the local stream in all WebRTC connections
+ * CRITICAL: Call this when camera stream changes (e.g., rear camera acquired)
+ */
+export const updateWebRTCStream = async (newStream: MediaStream): Promise<void> => {
+  if (webrtcManager) {
+    console.log('🔄 WEBRTC: Updating stream via global manager');
+    await webrtcManager.updateLocalStream(newStream);
+  } else {
+    console.warn('⚠️ WEBRTC: No manager available to update stream');
+  }
+};
+
+/**
+ * Updates only video track using replaceTrack (faster for camera switching)
+ */
+export const updateWebRTCVideoTrack = async (newStream: MediaStream): Promise<void> => {
+  if (webrtcManager) {
+    console.log('🎥 WEBRTC: Updating video track via global manager');
+    await webrtcManager.updateVideoTrack(newStream);
+  } else {
+    console.warn('⚠️ WEBRTC: No manager available to update video track');
+  }
+};
+
 export const cleanupWebRTC = () => {
   if (webrtcManager) {
     webrtcManager.cleanup();

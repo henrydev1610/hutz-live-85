@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { detectMobileAggressively, checkMediaDevicesSupport, setCameraPreference } from '@/utils/media/deviceDetection';
 import { getUserMediaWithFallback } from '@/utils/media/getUserMediaFallback';
 import { setupVideoElement } from '@/utils/media/videoPlayback';
+import { updateWebRTCStream } from '@/utils/webrtc';
 import { useMediaState } from './useMediaState';
 import { useMediaControls } from './useMediaControls';
 
@@ -76,7 +77,26 @@ export const useParticipantMedia = () => {
       
       // Setup video element
       if (localVideoRef.current && videoTracks.length > 0) {
+        console.log('📺 MEDIA: Setting up local video preview with rear camera stream');
         await setupVideoElement(localVideoRef.current, stream);
+        
+        // Force video element to display camera correctly
+        setTimeout(() => {
+          if (localVideoRef.current) {
+            console.log('📺 MEDIA: Forcing video play after setup');
+            localVideoRef.current.play().catch(e => console.warn('Play retry failed:', e));
+          }
+        }, 500);
+      }
+      
+      // CRITICAL: Update WebRTC connections with new stream
+      try {
+        console.log('🔄 MEDIA: Updating WebRTC connections with new camera stream');
+        await updateWebRTCStream(stream);
+        console.log('✅ MEDIA: WebRTC connections updated with rear camera stream');
+      } catch (webrtcError) {
+        console.warn('⚠️ MEDIA: Failed to update WebRTC connections (may not be connected yet):', webrtcError);
+        // Not critical - WebRTC might not be initialized yet
       }
       
       const deviceType = isMobile ? '📱 Mobile' : '🖥️ Desktop';
