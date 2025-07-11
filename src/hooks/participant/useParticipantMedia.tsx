@@ -41,6 +41,8 @@ export const useParticipantMedia = () => {
     
     try {
       console.log(`🎬 MEDIA: Starting ${isMobile ? 'MOBILE' : 'DESKTOP'} camera initialization`);
+      console.log(`🔒 HTTPS Check: ${window.location.protocol}`);
+      console.log(`📱 User Agent: ${navigator.userAgent}`);
       
       if (!checkMediaDevicesSupport()) {
         throw new Error('getUserMedia not supported');

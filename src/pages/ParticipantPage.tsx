@@ -129,6 +129,8 @@ const ParticipantPage = () => {
           hasScreenShare={media.hasScreenShare}
           isVideoEnabled={media.isVideoEnabled}
           isAudioEnabled={media.isAudioEnabled}
+          localStream={media.localStreamRef.current}
+          onRetryMedia={handleRetryMedia}
         />
 
         {/* Controls */}

@@ -35,7 +35,7 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
       <MobileCameraDebugger
         localStream={localStream}
         onForceRetry={onRetryMedia}
-        isVisible={false}
+        isVisible={true}
       />
       
       {showDiagnostics && onRetryMedia && (
