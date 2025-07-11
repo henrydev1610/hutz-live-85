@@ -5,12 +5,13 @@ export const detectMobileAggressively = (): boolean => {
   const urlParams = new URLSearchParams(window.location.search);
   const hasQRParam = urlParams.has('qr') || urlParams.get('qr') === 'true';
   const hasMobileParam = urlParams.has('mobile') || urlParams.get('mobile') === 'true';
-  const isQRAccess = hasQRParam || hasMobileParam || 
+  const hasAutostartParam = urlParams.get('autostart') === 'true';
+  const isQRAccess = hasQRParam || hasMobileParam || hasAutostartParam ||
     document.referrer.includes('qr') || 
     sessionStorage.getItem('accessedViaQR') === 'true';
     
   if (isQRAccess) {
-    console.log('📱 SIMPLE MOBILE: QR access detected - MOBILE device');
+    console.log('📱 SIMPLE MOBILE: QR/autostart access detected - MOBILE device');
     sessionStorage.setItem('accessedViaQR', 'true');
     return true;
   }
@@ -28,6 +29,7 @@ export const detectMobileAggressively = (): boolean => {
   
   console.log('📱 SIMPLE Mobile Detection:', {
     isQRAccess,
+    hasAutostartParam,
     mobileUA,
     hasTouchScreen,
     detectedMobile,
@@ -63,6 +65,19 @@ export const forceDeviceType = (type: 'mobile' | 'desktop' | 'auto'): void => {
   }
   console.log(`🔧 Device type forced to: ${type}`);
   console.log('🔄 Refresh the page to apply changes');
+};
+
+// HTTPS verification for mobile
+export const checkHTTPSForMobile = (): boolean => {
+  const isMobile = detectMobileAggressively();
+  const isHTTPS = window.location.protocol === 'https:';
+  
+  if (isMobile && !isHTTPS) {
+    console.error('❌ HTTPS: Mobile camera requires HTTPS connection!');
+    return false;
+  }
+  
+  return true;
 };
 
 // Make available globally for debugging

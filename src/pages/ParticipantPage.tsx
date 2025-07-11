@@ -43,9 +43,24 @@ const ParticipantPage = () => {
     console.log('🚀 PARTICIPANT PAGE: Auto-initializing for session:', sessionId);
     
     if (sessionId) {
-      autoConnectToSession().catch(error => {
-        console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
-      });
+      // Check for autostart parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const shouldAutostart = urlParams.get('autostart') === 'true';
+      const isMobileAccess = urlParams.get('mobile') === 'true' || urlParams.get('qr') === 'true';
+      
+      console.log('🎯 AUTOSTART: Checking params:', { shouldAutostart, isMobileAccess });
+      
+      if (shouldAutostart && isMobileAccess) {
+        console.log('🚀 AUTOSTART: Mobile auto-initialization detected');
+        autoConnectToSession().catch(error => {
+          console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
+        });
+      } else {
+        console.log('🔧 MANUAL: Regular initialization (no autostart)');
+        autoConnectToSession().catch(error => {
+          console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
+        });
+      }
     }
     
     return () => {
