@@ -38,16 +38,11 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
     setLastTestResult(null);
     
     try {
-      // Test getUserMedia
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      
+      // Only test connectivity, not camera access for host
       toast({
-        title: "Teste de câmera bem-sucedido",
-        description: "Sua câmera está funcionando corretamente"
+        title: "Teste de conectividade bem-sucedido",
+        description: "Conexão WebRTC funcionando corretamente"
       });
-      
-      // Clean up test stream
-      stream.getTracks().forEach(track => track.stop());
       
       // Call the provided test function
       onTestConnection();

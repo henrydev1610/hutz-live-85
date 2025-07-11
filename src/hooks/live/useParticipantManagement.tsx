@@ -105,25 +105,35 @@ export const useParticipantManagement = ({
       return [...filtered, testParticipant];
     });
     
-    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-      .then(stream => {
-        console.log('✅ Test stream obtained:', stream.getTracks().length, 'tracks');
-        
-        handleParticipantStream(testParticipant.id, stream);
-        
-        setTimeout(() => {
-          stream.getTracks().forEach(track => track.stop());
-          setParticipantList(prev => prev.filter(p => p.id !== testParticipant.id));
-          setParticipantStreams(prev => {
-            const updated = { ...prev };
-            delete updated[testParticipant.id];
-            return updated;
-          });
-        }, 10000);
-      })
-      .catch(err => {
-        console.error('❌ Test connection failed:', err);
+    // Don't request camera from host - use placeholder for test
+    console.log('✅ Test participant added without camera request');
+    
+    // Create a simple placeholder stream instead of requesting camera
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#666';
+      ctx.font = '20px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('Test Participant', canvas.width / 2, canvas.height / 2);
+    }
+    
+    const placeholderStream = canvas.captureStream(30);
+    handleParticipantStream(testParticipant.id, placeholderStream);
+    
+    setTimeout(() => {
+      placeholderStream.getTracks().forEach(track => track.stop());
+      setParticipantList(prev => prev.filter(p => p.id !== testParticipant.id));
+      setParticipantStreams(prev => {
+        const updated = { ...prev };
+        delete updated[testParticipant.id];
+        return updated;
       });
+    }, 10000);
   };
 
   return {

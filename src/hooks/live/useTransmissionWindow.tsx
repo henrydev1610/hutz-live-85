@@ -222,32 +222,15 @@ export const useTransmissionWindow = () => {
               videoElement.style.willChange = 'transform';
               videoElement.style.transition = 'none';
               
-              // CRITICAL: Try to get real stream from host via getUserMedia clone
-              try {
-                console.log("🎯 TRANSMISSION: Attempting to get user media for display");
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                  video: true, 
-                  audio: false 
-                });
-                
-                videoElement.srcObject = stream;
-                console.log("✅ TRANSMISSION: Video stream assigned successfully");
-                
-                videoElement.onloadedmetadata = () => {
-                  console.log("📊 TRANSMISSION: Video metadata loaded for", participantId);
-                  videoElement.play().catch(err => {
-                    console.warn("⚠️ TRANSMISSION: Video play failed:", err);
-                  });
-                };
-                
-              } catch (mediaError) {
-                console.warn("⚠️ TRANSMISSION: Cannot access media, using placeholder");
-                // Fallback to placeholder if no media access
-                if (!window.localPlaceholderStream) {
-                  window.localPlaceholderStream = createPlaceholderStream();
-                }
-                if (window.localPlaceholderStream) {
-                  videoElement.srcObject = window.localPlaceholderStream;
+              // Use placeholder instead of requesting host camera
+              console.log("🎯 TRANSMISSION: Using placeholder for participant video slot");
+              
+              // Always use placeholder - no camera request from host
+              if (!window.localPlaceholderStream) {
+                window.localPlaceholderStream = createPlaceholderStream();
+              }
+              if (window.localPlaceholderStream) {
+                videoElement.srcObject = window.localPlaceholderStream;
                 }
               }
                 
