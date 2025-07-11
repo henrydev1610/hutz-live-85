@@ -140,38 +140,12 @@ export const useLivePageEffects = ({
     }
   }, [sessionId]);
 
-  // NEW: Initialize WebRTC immediately when page loads (even without sessionId)
+  // NEW: Initialize WebRTC only when we have a proper sessionId
   useEffect(() => {
-    console.log('🚀 HOST: Early WebRTC initialization for incoming connections');
-    
-    // Use a proper session ID or generate one
-    const earlySessionId = sessionId || `early-host-${Date.now()}`;
-    
-    // Initialize WebRTC in "host listening mode" 
-    initHostWebRTC(earlySessionId).then(result => {
-      if (result && result.webrtc) {
-        console.log('✅ HOST: Early WebRTC initialized - ready to receive connections');
-        
-        result.webrtc.setOnStreamCallback((participantId, stream) => {
-          console.log('🎥 HOST: EARLY STREAM RECEIVED from:', participantId);
-          handleParticipantStream(participantId, stream);
-          
-          setTimeout(() => {
-            updateTransmissionParticipants();
-          }, 200);
-        });
-        
-        result.webrtc.setOnParticipantJoinCallback((participantId) => {
-          console.log('👤 HOST: EARLY PARTICIPANT JOIN:', participantId);
-          handleParticipantJoin(participantId);
-        });
-      } else {
-        console.error('❌ HOST: Failed to initialize early WebRTC');
-      }
-    }).catch(error => {
-      console.error('❌ HOST: Early WebRTC initialization error:', error);
-    });
-  }, []); // Run only once on mount
+    // Skip early initialization to avoid timeout errors
+    console.log('🔧 HOST: Skipping early WebRTC initialization to prevent timeout errors');
+    console.log('📝 HOST: WebRTC will initialize when sessionId is available');
+  }, []);
 
   // Monitor participant streams changes
   useEffect(() => {

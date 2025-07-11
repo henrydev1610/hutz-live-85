@@ -8,6 +8,12 @@ export const initHostWebRTC = async (sessionId: string) => {
   try {
     console.log('🚀 Initializing host WebRTC for session:', sessionId);
     
+    // CRITICAL FIX: Don't initialize for temporary sessions
+    if (sessionId.includes('early-host-') || sessionId.includes('temp-host-')) {
+      console.log('⏭️ WEBRTC: Skipping initialization for temporary session:', sessionId);
+      return { webrtc: null }; // Return null for temporary sessions
+    }
+    
     if (webrtcManager) {
       console.log('🧹 Cleaning up existing WebRTC manager');
       webrtcManager.cleanup();

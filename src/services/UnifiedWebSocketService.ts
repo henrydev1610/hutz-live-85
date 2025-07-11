@@ -224,6 +224,12 @@ class UnifiedWebSocketService {
   async joinRoom(roomId: string, userId: string): Promise<void> {
     console.log(`🚪 WEBSOCKET: Joining room ${roomId} as ${userId}`);
     
+    // CRITICAL FIX: Skip join if roomId looks like a temporary/invalid session
+    if (roomId.includes('early-host-') || roomId.includes('temp-host-')) {
+      console.log(`⏭️ WEBSOCKET: Skipping join for temporary session: ${roomId}`);
+      return; // Don't attempt to join temporary sessions
+    }
+    
     if (!this.isConnected()) {
       console.log('🔗 CONNECTION: Not connected, connecting first...');
       await this.connect();
@@ -240,7 +246,7 @@ class UnifiedWebSocketService {
       const joinTimeout = setTimeout(() => {
         console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
         reject(new Error('Join room timeout'));
-      }, 30000); // Aumentado para 30s
+      }, 15000); // Reduced back to 15s to fail faster
 
       // Success handler
       const handleJoinSuccess = (data: any) => {
