@@ -60,6 +60,11 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
             muted
             playsInline
             className="w-full h-full object-cover"
+            style={{ backgroundColor: 'black' }}
+            onLoadedMetadata={() => console.log('📺 VIDEO: Metadata loaded')}
+            onCanPlay={() => console.log('📺 VIDEO: Can play')}
+            onPlaying={() => console.log('📺 VIDEO: Playing')}
+            onError={(e) => console.error('📺 VIDEO: Error', e)}
           />
           
           {(!hasVideo || !isVideoEnabled) && (

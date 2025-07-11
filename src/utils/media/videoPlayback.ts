@@ -1,27 +1,76 @@
-import { detectMobile } from './deviceDetection';
+import { detectMobileAggressively } from './deviceDetection';
 
 export const setupVideoElement = async (videoElement: HTMLVideoElement, stream: MediaStream): Promise<void> => {
-  const isMobile = detectMobile();
+  const isMobile = detectMobileAggressively();
   
+  console.log('📺 SETUP VIDEO: Starting video element setup', {
+    isMobile,
+    streamId: stream.id,
+    streamActive: stream.active,
+    videoTracks: stream.getVideoTracks().length
+  });
+  
+  // Clear any existing stream first
+  if (videoElement.srcObject) {
+    console.log('📺 SETUP VIDEO: Clearing existing srcObject');
+    videoElement.srcObject = null;
+  }
+  
+  // Set new stream
   videoElement.srcObject = stream;
   
+  // Ensure all necessary properties are set
+  videoElement.playsInline = true;
+  videoElement.muted = true;
+  videoElement.autoplay = true;
+  
   try {
-    // No mobile, configurar propriedades específicas do vídeo
-    if (isMobile) {
-      videoElement.playsInline = true;
-      videoElement.muted = true;
-      videoElement.autoplay = true;
+    console.log('📺 SETUP VIDEO: Attempting to play video...');
+    await videoElement.play();
+    console.log(`✅ SETUP VIDEO: Video playing successfully (Mobile: ${isMobile})`);
+    
+    // Verify video is actually playing
+    if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+      console.log(`✅ SETUP VIDEO: Video dimensions: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+    } else {
+      console.warn('⚠️ SETUP VIDEO: Video dimensions are 0x0 - may still be loading');
     }
     
-    await videoElement.play();
-    console.log(`✅ MEDIA: Local video playing (Mobile: ${isMobile})`);
   } catch (playError) {
-    console.warn(`⚠️ MEDIA: Video play warning (Mobile: ${isMobile}):`, playError);
-    // No mobile, tentar forçar o play
+    console.error(`❌ SETUP VIDEO: Play failed (Mobile: ${isMobile}):`, playError);
+    
+    // Force retry for mobile
     if (isMobile) {
-      setTimeout(() => {
-        videoElement.play().catch(e => console.warn('Retry play failed:', e));
+      console.log('📱 SETUP VIDEO: Forcing mobile retry...');
+      setTimeout(async () => {
+        try {
+          await videoElement.play();
+          console.log('✅ SETUP VIDEO: Mobile retry successful');
+        } catch (retryError) {
+          console.error('❌ SETUP VIDEO: Mobile retry failed:', retryError);
+        }
       }, 1000);
     }
   }
+  
+  // Add event listeners for debugging
+  videoElement.addEventListener('loadedmetadata', () => {
+    console.log('📺 VIDEO EVENT: Metadata loaded', {
+      videoWidth: videoElement.videoWidth,
+      videoHeight: videoElement.videoHeight,
+      duration: videoElement.duration
+    });
+  });
+  
+  videoElement.addEventListener('canplay', () => {
+    console.log('📺 VIDEO EVENT: Can play');
+  });
+  
+  videoElement.addEventListener('playing', () => {
+    console.log('📺 VIDEO EVENT: Playing started');
+  });
+  
+  videoElement.addEventListener('error', (error) => {
+    console.error('📺 VIDEO EVENT: Error occurred', error);
+  });
 };
