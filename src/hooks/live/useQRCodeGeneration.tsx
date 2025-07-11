@@ -71,7 +71,7 @@ export const useQRCodeGeneration = () => {
         console.log("Backend failed, generating QR Code locally as fallback...");
         const fallbackSessionId = generateSessionId();
         const frontendUrl = window.location.origin;
-        const fallbackUrl = `${frontendUrl}/participant/${fallbackSessionId}`;
+        const fallbackUrl = `${frontendUrl}/participant/${fallbackSessionId}?mobile=true&qr=true`;
         console.log(`🔗 QR FALLBACK: Generated URL: ${fallbackUrl}`);
         
         const qrDataUrl = await QRCode.toDataURL(fallbackUrl, {

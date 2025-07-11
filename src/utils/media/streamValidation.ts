@@ -93,6 +93,18 @@ export const rejectNonMobileStream = async (stream: MediaStream, isMobile: boole
   
   if (!verification.isValid && verification.shouldRetry) {
     console.error(`🚫 REJECTING: Desktop camera detected on mobile device, stopping stream`);
+    
+    // Dispatch event for UI alert
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('mobileDesktopCameraDetected', {
+        detail: { 
+          reason: 'Desktop camera on mobile device',
+          shouldRetry: true,
+          timestamp: Date.now()
+        }
+      }));
+    }
+    
     stream.getTracks().forEach(track => track.stop());
     return null;
   }

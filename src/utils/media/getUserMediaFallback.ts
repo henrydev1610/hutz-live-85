@@ -26,26 +26,45 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
     throw new Error('getUserMedia não é suportado neste navegador');
   }
 
-  // CRITICAL: Mobile-specific camera targeting
+  // CRITICAL: Mobile-specific camera targeting with retry logic
   if (isMobile) {
-    console.log('📱 MEDIA FALLBACK: MOBILE DEVICE - Using specialized mobile camera acquisition');
+    console.log('📱 MEDIA FALLBACK: MOBILE DEVICE - Using ABSOLUTE mobile camera acquisition');
     
-    try {
-      const { forceMobileCamera } = await import('./mobileMediaDetector');
-      const preferredFacing = getCameraPreference();
-      console.log(`📱 MEDIA FALLBACK: Attempting to force mobile camera: ${preferredFacing}`);
-      
-      const mobileStream = await forceMobileCamera(preferredFacing);
-      
-      if (mobileStream) {
-        console.log('🎉 MEDIA FALLBACK: MOBILE CAMERA SUCCESSFULLY ACQUIRED!');
-        return mobileStream;
-      } else {
-        console.warn('⚠️ MEDIA FALLBACK: Mobile camera acquisition failed, falling back to generic constraints');
+    for (let mobileAttempt = 0; mobileAttempt < 3; mobileAttempt++) {
+      try {
+        const { forceMobileCamera } = await import('./mobileMediaDetector');
+        const preferredFacing = getCameraPreference();
+        console.log(`📱 MEDIA FALLBACK: Mobile attempt ${mobileAttempt + 1}/3 - forcing camera: ${preferredFacing}`);
+        
+        const mobileStream = await forceMobileCamera(preferredFacing);
+        
+        if (mobileStream) {
+          // RIGOROUS validation for mobile streams
+          const { rejectNonMobileStream } = await import('./streamValidation');
+          const validatedStream = await rejectNonMobileStream(mobileStream, true);
+          
+          if (validatedStream) {
+            console.log('🎉 MEDIA FALLBACK: MOBILE CAMERA SUCCESSFULLY ACQUIRED AND VALIDATED!');
+            return validatedStream;
+          } else {
+            console.error(`❌ MOBILE ATTEMPT ${mobileAttempt + 1}: Stream rejected - desktop camera detected`);
+            // Continue retry loop
+          }
+        } else {
+          console.warn(`⚠️ MOBILE ATTEMPT ${mobileAttempt + 1}: Mobile camera acquisition returned null`);
+        }
+      } catch (mobileError) {
+        console.error(`❌ MOBILE ATTEMPT ${mobileAttempt + 1}: Mobile camera detector failed:`, mobileError);
       }
-    } catch (mobileError) {
-      console.error('❌ MEDIA FALLBACK: Mobile camera detector failed:', mobileError);
+      
+      // Wait before retry
+      if (mobileAttempt < 2) {
+        console.log(`⏳ MOBILE RETRY: Waiting 1s before attempt ${mobileAttempt + 2}`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
+    
+    console.error('❌ MEDIA FALLBACK: ALL MOBILE ATTEMPTS FAILED - falling back to generic constraints');
   }
 
   // Wait for mobile permissions

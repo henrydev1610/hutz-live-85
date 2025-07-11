@@ -20,6 +20,7 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [showDesktopAlert, setShowDesktopAlert] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [retryAttempts, setRetryAttempts] = useState(0);
 
   useEffect(() => {
     if (localStream) {
@@ -52,6 +53,7 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
     const handleDesktopCameraDetected = (event: CustomEvent) => {
       console.error('🚨 DESKTOP CAMERA DETECTED ON MOBILE:', event.detail);
       setShowDesktopAlert(true);
+      setRetryAttempts(prev => prev + 1);
     };
 
     window.addEventListener('mobileDesktopCameraDetected' as any, handleDesktopCameraDetected);
@@ -92,10 +94,12 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription className="space-y-3">
             <div>
-              <strong>Câmera Desktop Detectada!</strong>
+              <strong>Câmera Desktop Detectada! (Tentativa {retryAttempts})</strong>
               <br />
               Foi detectada uma câmera de desktop em um dispositivo móvel. 
               Isso pode indicar que você está acessando de um computador ou que a câmera móvel não foi ativada corretamente.
+              <br />
+              <small className="text-red-300">Acesse APENAS via QR Code para garantir câmera móvel.</small>
             </div>
             <div className="flex gap-2">
               <Button 

@@ -1,10 +1,12 @@
 export const detectMobileAggressively = (): boolean => {
   // ULTRA AGGRESSIVE Mobile Detection - Single strong indicator sufficient
   
-  // 1. QR CODE ACCESS Detection - If accessed via QR, it's 100% mobile
-  const isQRAccess = document.referrer.includes('qr') || 
-    window.location.search.includes('qr') || 
-    window.location.search.includes('mobile') ||
+  // 1. QR CODE ACCESS Detection - Check URL parameters first
+  const urlParams = new URLSearchParams(window.location.search);
+  const hasQRParam = urlParams.has('qr') || urlParams.get('qr') === 'true';
+  const hasMobileParam = urlParams.has('mobile') || urlParams.get('mobile') === 'true';
+  const isQRAccess = hasQRParam || hasMobileParam || 
+    document.referrer.includes('qr') || 
     sessionStorage.getItem('accessedViaQR') === 'true';
     
   if (isQRAccess) {
@@ -39,15 +41,15 @@ export const detectMobileAggressively = (): boolean => {
   // 7. PLATFORM Check - Explicit mobile platforms
   const mobilePlatform = /Android|iPhone|iPad|iPod/i.test(navigator.platform);
   
-  // AGGRESSIVE LOGIC: Only ONE strong indicator needed
+  // BALANCED LOGIC: Require 2+ indicators unless QR access
   const isMobileByUA = isMobileUA; // Strong indicator
   const isMobileByFeatures = hasTouchScreen && (hasOrientationAPI || hasDeviceMotion); // Mobile features
   const isMobileByViewport = mobileViewport && hasTouchScreen; // Mobile screen + touch
   const isMobileByPlatform = mobilePlatform && hasTouchScreen; // Platform + touch
   
-  // FINAL DECISION: Single strong evidence sufficient
+  // FINAL DECISION: 2+ strong indicators OR QR access
   const strongMobileEvidence = [isMobileByUA, isMobileByFeatures, isMobileByViewport, isMobileByPlatform].filter(Boolean).length;
-  const detectedMobile = strongMobileEvidence >= 1; // Only 1 strong indicator needed
+  const detectedMobile = isQRAccess || strongMobileEvidence >= 2; // QR access OR 2+ indicators
   
   // FORCE OVERRIDE for debugging
   const forceDevice = localStorage.getItem('forceDeviceType');

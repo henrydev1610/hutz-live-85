@@ -70,10 +70,12 @@ export const isTrueMobileDevice = async (): Promise<boolean> => {
 export const forceMobileCamera = async (preferredFacing: 'user' | 'environment' = 'user'): Promise<MediaStream | null> => {
   console.log('🎯 FORCE MOBILE CAMERA: Starting AGGRESSIVE mobile-specific camera acquisition');
   
-  // Check for QR access first
-  const isQRAccess = document.referrer.includes('qr') || 
-    window.location.search.includes('qr') || 
-    window.location.search.includes('mobile') ||
+  // Check for QR access first - URL parameters priority
+  const urlParams = new URLSearchParams(window.location.search);
+  const hasQRParam = urlParams.has('qr') || urlParams.get('qr') === 'true';
+  const hasMobileParam = urlParams.has('mobile') || urlParams.get('mobile') === 'true';
+  const isQRAccess = hasQRParam || hasMobileParam || 
+    document.referrer.includes('qr') || 
     sessionStorage.getItem('accessedViaQR') === 'true';
     
   if (isQRAccess) {
