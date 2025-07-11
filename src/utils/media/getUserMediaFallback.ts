@@ -1,13 +1,14 @@
 // Main getUserMedia fallback orchestrator
-import { detectMobile, checkMediaDevicesSupport, getCameraPreference } from './deviceDetection';
+import { detectMobileAggressively, checkMediaDevicesSupport, getCameraPreference } from './deviceDetection';
 import { getDeviceSpecificConstraints } from './mediaConstraints';
 import { logDeviceInfo } from './deviceDebugger';
 import { checkMediaPermissions, waitForMobilePermissions } from './permissions';
 import { enumerateMediaDevices } from './deviceEnumeration';
 import { attemptStreamAcquisition, processStreamError, emergencyFallback } from './streamAcquisition';
+import { rejectNonMobileStream } from './streamValidation';
 
 export const getUserMediaWithFallback = async (): Promise<MediaStream | null> => {
-  const isMobile = detectMobile();
+  const isMobile = detectMobileAggressively();
   const deviceType = isMobile ? 'mobile' : 'desktop';
   
   // Comprehensive logging
@@ -72,7 +73,15 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
         deviceType
       );
       
-      return stream;
+      // CRITICAL: Validate mobile stream has mobile camera
+      const validatedStream = await rejectNonMobileStream(stream, isMobile);
+      
+      if (!validatedStream && isMobile) {
+        console.error(`❌ MOBILE STREAM REJECTED: Desktop camera detected on mobile, retrying...`);
+        throw new Error('Desktop camera detected on mobile device');
+      }
+      
+      return validatedStream || stream;
       
     } catch (error) {
       lastError = error;

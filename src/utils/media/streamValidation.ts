@@ -34,9 +34,9 @@ export const logStreamDetails = (stream: MediaStream, attempt: number, deviceTyp
   });
 };
 
-export const verifyCameraType = (stream: MediaStream, isMobile: boolean): void => {
+export const verifyCameraType = (stream: MediaStream, isMobile: boolean): { isValid: boolean; shouldRetry: boolean } => {
   const videoTracks = stream.getVideoTracks();
-  if (videoTracks.length === 0) return;
+  if (videoTracks.length === 0) return { isValid: true, shouldRetry: false };
   
   const videoTrack = videoTracks[0];
   const settings = videoTrack.getSettings();
@@ -52,10 +52,20 @@ export const verifyCameraType = (stream: MediaStream, isMobile: boolean): void =
     });
     
     if (!settings.facingMode) {
-      console.warn(`⚠️ MOBILE WARNING: No facingMode detected! This might be desktop camera being used.`);
-      console.warn(`⚠️ MOBILE WARNING: Expected mobile camera with facingMode, but got settings:`, settings);
+      console.error(`❌ MOBILE CRITICAL: No facingMode detected! Desktop camera on mobile device!`);
+      console.error(`❌ MOBILE CRITICAL: Expected mobile camera with facingMode, but got settings:`, settings);
+      
+      // Show visual alert to user
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('mobileDesktopCameraDetected', {
+          detail: { settings, deviceId: settings.deviceId }
+        }));
+      }
+      
+      return { isValid: false, shouldRetry: true };
     } else {
       console.log(`✅ MOBILE SUCCESS: Got mobile camera with facingMode: ${settings.facingMode}`);
+      return { isValid: true, shouldRetry: false };
     }
   } else {
     console.log(`🖥️ DESKTOP CAMERA VERIFICATION:`, {
@@ -72,7 +82,22 @@ export const verifyCameraType = (stream: MediaStream, isMobile: boolean): void =
     } else {
       console.log(`✅ DESKTOP SUCCESS: Got desktop webcam without facingMode`);
     }
+    return { isValid: true, shouldRetry: false };
   }
+};
+
+export const rejectNonMobileStream = async (stream: MediaStream, isMobile: boolean): Promise<MediaStream | null> => {
+  if (!isMobile) return stream;
+  
+  const verification = verifyCameraType(stream, isMobile);
+  
+  if (!verification.isValid && verification.shouldRetry) {
+    console.error(`🚫 REJECTING: Desktop camera detected on mobile device, stopping stream`);
+    stream.getTracks().forEach(track => track.stop());
+    return null;
+  }
+  
+  return stream;
 };
 
 export const setupStreamMonitoring = (stream: MediaStream): void => {

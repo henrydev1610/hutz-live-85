@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Camera, CameraOff, Mic, MicOff, Monitor } from "lucide-react";
 import MediaDiagnostics from './MediaDiagnostics';
+import { MobileCameraDebugger } from './MobileCameraDebugger';
 
 interface ParticipantVideoPreviewProps {
   localVideoRef: React.RefObject<HTMLVideoElement>;
@@ -30,6 +31,13 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
   
   return (
     <>
+      {/* Mobile Camera Debugger - Always available */}
+      <MobileCameraDebugger
+        localStream={localStream}
+        onForceRetry={onRetryMedia}
+        isVisible={false}
+      />
+      
       {showDiagnostics && onRetryMedia && (
         <MediaDiagnostics
           isVisible={true}

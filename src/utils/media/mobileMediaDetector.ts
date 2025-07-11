@@ -1,8 +1,8 @@
 // Ultra-specific mobile camera detection and enforcement
-import { detectMobile } from './deviceDetection';
+import { detectMobileAggressively } from './deviceDetection';
 
 export const isTrueMobileDevice = async (): Promise<boolean> => {
-  const basicMobile = detectMobile();
+  const basicMobile = detectMobileAggressively();
   
   if (!basicMobile) {
     console.log('📱 MOBILE DETECTOR: Not detected as mobile by basic detection');
@@ -68,13 +68,24 @@ export const isTrueMobileDevice = async (): Promise<boolean> => {
 };
 
 export const forceMobileCamera = async (preferredFacing: 'user' | 'environment' = 'user'): Promise<MediaStream | null> => {
-  console.log('🎯 FORCE MOBILE CAMERA: Starting mobile-specific camera acquisition');
+  console.log('🎯 FORCE MOBILE CAMERA: Starting AGGRESSIVE mobile-specific camera acquisition');
   
-  const isActuallyMobile = await isTrueMobileDevice();
-  
-  if (!isActuallyMobile) {
-    console.warn('⚠️ FORCE MOBILE CAMERA: Device verification failed, not a true mobile device');
-    return null;
+  // Check for QR access first
+  const isQRAccess = document.referrer.includes('qr') || 
+    window.location.search.includes('qr') || 
+    window.location.search.includes('mobile') ||
+    sessionStorage.getItem('accessedViaQR') === 'true';
+    
+  if (isQRAccess) {
+    console.log('🎯 FORCE MOBILE CAMERA: QR ACCESS DETECTED - BYPASSING DEVICE VERIFICATION');
+    sessionStorage.setItem('accessedViaQR', 'true');
+  } else {
+    const isActuallyMobile = await isTrueMobileDevice();
+    
+    if (!isActuallyMobile) {
+      console.warn('⚠️ FORCE MOBILE CAMERA: Device verification failed, not a true mobile device');
+      return null;
+    }
   }
   
   const mobileConstraints: MediaStreamConstraints[] = [

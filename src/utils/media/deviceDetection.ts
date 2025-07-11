@@ -1,48 +1,61 @@
-export const detectMobile = (): boolean => {
-  // ULTRA ROBUST Mobile Detection - Zero false positives allowed
+export const detectMobileAggressively = (): boolean => {
+  // ULTRA AGGRESSIVE Mobile Detection - Single strong indicator sufficient
   
-  // 1. STRICT User Agent Check - Primary mobile indicators
+  // 1. QR CODE ACCESS Detection - If accessed via QR, it's 100% mobile
+  const isQRAccess = document.referrer.includes('qr') || 
+    window.location.search.includes('qr') || 
+    window.location.search.includes('mobile') ||
+    sessionStorage.getItem('accessedViaQR') === 'true';
+    
+  if (isQRAccess) {
+    console.log('🎯 AGGRESSIVE MOBILE: QR access detected - FORCING mobile');
+    sessionStorage.setItem('accessedViaQR', 'true');
+    return true;
+  }
+  
+  // 2. STRICT User Agent Check - Primary mobile indicators
   const mobileUA = /Android|iPhone|iPad|iPod|Mobile Safari|Mobile|Mobi/i.test(navigator.userAgent);
   const tabletUA = /iPad|Android.*Tablet|Windows.*Touch/i.test(navigator.userAgent);
   const isMobileUA = mobileUA || tabletUA;
   
-  // 2. MANDATORY Touch Support - Mobile devices MUST have touch
+  // 3. MANDATORY Touch Support - Mobile devices MUST have touch
   const hasTouchScreen = 'ontouchstart' in window && navigator.maxTouchPoints > 0;
   
-  // 3. VIEWPORT Analysis - Mobile screens are typically portrait and smaller
+  // 4. VIEWPORT Analysis - Mobile screens are typically portrait and smaller
   const { innerWidth, innerHeight } = window;
   const isPortrait = innerHeight > innerWidth;
   const isSmallScreen = Math.max(innerWidth, innerHeight) <= 1024;
   const mobileViewport = isPortrait && isSmallScreen;
   
-  // 4. DEVICE Properties - Mobile-specific features
+  // 5. DEVICE Properties - Mobile-specific features
   const hasOrientationAPI = 'orientation' in window;
   const hasDeviceMotion = 'DeviceMotionEvent' in window;
   const highDPI = window.devicePixelRatio >= 2;
   
-  // 5. NETWORK - Mobile connections
+  // 6. NETWORK - Mobile connections
   const connectionInfo = (navigator as any).connection;
   const slowConnection = connectionInfo && (connectionInfo.effectiveType === 'slow-2g' || connectionInfo.effectiveType === '2g' || connectionInfo.effectiveType === '3g');
   
-  // 6. PLATFORM Check - Explicit mobile platforms
+  // 7. PLATFORM Check - Explicit mobile platforms
   const mobilePlatform = /Android|iPhone|iPad|iPod/i.test(navigator.platform);
   
-  // CRITICAL LOGIC: ALL mobile indicators must align
+  // AGGRESSIVE LOGIC: Only ONE strong indicator needed
   const isMobileByUA = isMobileUA; // Strong indicator
   const isMobileByFeatures = hasTouchScreen && (hasOrientationAPI || hasDeviceMotion); // Mobile features
   const isMobileByViewport = mobileViewport && hasTouchScreen; // Mobile screen + touch
   const isMobileByPlatform = mobilePlatform && hasTouchScreen; // Platform + touch
   
-  // FINAL DECISION: Multiple evidence points required
+  // FINAL DECISION: Single strong evidence sufficient
   const strongMobileEvidence = [isMobileByUA, isMobileByFeatures, isMobileByViewport, isMobileByPlatform].filter(Boolean).length;
-  const detectedMobile = strongMobileEvidence >= 2; // Require at least 2 strong indicators
+  const detectedMobile = strongMobileEvidence >= 1; // Only 1 strong indicator needed
   
   // FORCE OVERRIDE for debugging
   const forceDevice = localStorage.getItem('forceDeviceType');
   const finalResult = forceDevice === 'mobile' ? true : forceDevice === 'desktop' ? false : detectedMobile;
   
   // DETAILED LOGGING for debugging camera issues
-  console.log('🔍 ULTRA ROBUST Mobile Detection Analysis:', {
+  console.log('🎯 ULTRA AGGRESSIVE Mobile Detection Analysis:', {
+    isQRAccess,
     userAgent: navigator.userAgent,
     platform: navigator.platform,
     url: window.location.href,
@@ -81,7 +94,7 @@ export const detectMobile = (): boolean => {
       byViewport: isMobileByViewport,
       byPlatform: isMobileByPlatform,
       strongEvidence: strongMobileEvidence,
-      threshold: '>=2'
+      threshold: '>=1 (AGGRESSIVE)'
     },
     
     // Final Results
@@ -101,6 +114,9 @@ export const detectMobile = (): boolean => {
   
   return finalResult;
 };
+
+// Backward compatibility
+export const detectMobile = detectMobileAggressively;
 
 export const checkMediaDevicesSupport = (): boolean => {
   return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
