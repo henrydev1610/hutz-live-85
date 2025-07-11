@@ -91,12 +91,35 @@ export const useParticipantMedia = () => {
       
       // CRITICAL: Update WebRTC connections with new stream
       try {
-        console.log('🔄 MEDIA: Updating WebRTC connections with new camera stream');
+        console.log('🔄 MEDIA: Updating WebRTC connections with mobile camera stream');
+        console.log('🎥 MEDIA: Stream to send:', {
+          streamId: stream.id,
+          active: stream.active,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length
+        });
+        
         await updateWebRTCStream(stream);
-        console.log('✅ MEDIA: WebRTC connections updated with rear camera stream');
+        console.log('✅ MEDIA: WebRTC connections updated with mobile camera stream');
+        
+        // Force immediate stream validation
+        setTimeout(() => {
+          const videoTracks = stream.getVideoTracks();
+          if (videoTracks.length > 0) {
+            const track = videoTracks[0];
+            console.log('🔍 MEDIA: Validating stream after WebRTC update:', {
+              trackId: track.id,
+              enabled: track.enabled,
+              readyState: track.readyState,
+              muted: track.muted
+            });
+          }
+        }, 1000);
+        
       } catch (webrtcError) {
-        console.warn('⚠️ MEDIA: Failed to update WebRTC connections (may not be connected yet):', webrtcError);
-        // Not critical - WebRTC might not be initialized yet
+        console.error('❌ MEDIA: CRITICAL - Failed to update WebRTC connections:', webrtcError);
+        // This is critical - without this the stream won't be sent
+        throw new Error(`WebRTC stream update failed: ${webrtcError.message}`);
       }
       
       const deviceType = isMobile ? '📱 Mobile' : '🖥️ Desktop';

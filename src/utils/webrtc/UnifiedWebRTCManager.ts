@@ -444,12 +444,16 @@ export class UnifiedWebRTCManager {
     // Update our local stream reference
     this.localStream = newStream;
 
+    // CRITICAL: Ensure StreamUpdater has access to peer connections
+    StreamUpdater.setPeerConnections(this.peerConnections);
+    
     // Update all existing peer connections with the new stream
     try {
+      console.log('🔄 UNIFIED: CRITICAL - Starting stream update for mobile camera');
       await StreamUpdater.updateStreamInAllConnections(newStream);
-      console.log('✅ UNIFIED: Local stream updated successfully in all connections');
+      console.log('✅ UNIFIED: CRITICAL - Local stream updated successfully in all connections');
     } catch (error) {
-      console.error('❌ UNIFIED: Failed to update local stream:', error);
+      console.error('❌ UNIFIED: CRITICAL - Failed to update local stream:', error);
       throw error;
     }
   }

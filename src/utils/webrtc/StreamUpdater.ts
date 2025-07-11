@@ -73,36 +73,40 @@ export class StreamUpdater {
         peerConnection.addTrack(track, newStream);
       });
 
-      // Step 3: Create new offer and trigger renegotiation
-      console.log(`📤 STREAM UPDATER: Creating offer for renegotiation with ${participantId}`);
+      // Step 3: CRITICAL - Force immediate renegotiation for mobile camera
+      console.log(`📤 STREAM UPDATER: CRITICAL - Creating offer for mobile renegotiation with ${participantId}`);
+      
+      // Add small delay to ensure tracks are properly added
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       const offer = await peerConnection.createOffer({
         offerToReceiveVideo: true,
-        offerToReceiveAudio: true
+        offerToReceiveAudio: true,
+        iceRestart: true // Force ICE restart for better connectivity
       });
 
+      console.log(`🔧 STREAM UPDATER: Setting local description for ${participantId}`);
       await peerConnection.setLocalDescription(offer);
       
-      // Wait for ICE gathering to complete
-      if (peerConnection.iceGatheringState !== 'complete') {
-        console.log(`🧊 STREAM UPDATER: Waiting for ICE gathering for ${participantId}`);
-        await new Promise<void>((resolve) => {
-          const checkIceGathering = () => {
-            if (peerConnection.iceGatheringState === 'complete') {
-              resolve();
-            } else {
-              setTimeout(checkIceGathering, 100);
-            }
-          };
-          peerConnection.onicegatheringstatechange = checkIceGathering;
-          checkIceGathering();
-        });
-      }
-
-      // Step 4: Send the new offer
-      console.log(`📡 STREAM UPDATER: Sending renegotiation offer to ${participantId}`);
+      // CRITICAL: Don't wait for ICE gathering - send immediately for mobile
+      console.log(`📡 STREAM UPDATER: CRITICAL - Sending immediate renegotiation offer to ${participantId}`);
       unifiedWebSocketService.sendOffer(participantId, peerConnection.localDescription!);
       
-      console.log(`✅ STREAM UPDATER: Successfully updated connection for ${participantId}`);
+      // Optional: Wait for ICE gathering in background for better quality
+      setTimeout(() => {
+        if (peerConnection.iceGatheringState !== 'complete') {
+          console.log(`🧊 STREAM UPDATER: Background ICE gathering for ${participantId}`);
+          const checkIceGathering = () => {
+            if (peerConnection.iceGatheringState === 'complete' && peerConnection.localDescription) {
+              console.log(`🧊 STREAM UPDATER: ICE complete, sending updated offer to ${participantId}`);
+              unifiedWebSocketService.sendOffer(participantId, peerConnection.localDescription);
+            }
+          };
+          peerConnection.addEventListener('icegatheringstatechange', checkIceGathering, { once: true });
+        }
+      }, 0);
+      
+      console.log(`✅ STREAM UPDATER: CRITICAL - Successfully initiated renegotiation for ${participantId}`);
 
     } catch (error) {
       console.error(`❌ STREAM UPDATER: Failed to update connection for ${participantId}:`, error);
