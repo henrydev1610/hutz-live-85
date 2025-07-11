@@ -1,66 +1,103 @@
 export const detectMobile = (): boolean => {
-  // ROBUST Mobile Detection - Multiple checks to ensure accuracy
+  // ULTRA ROBUST Mobile Detection - Zero false positives allowed
   
-  // 1. User Agent Check (Primary indicator)
-  const userAgentMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  // 1. STRICT User Agent Check - Primary mobile indicators
+  const mobileUA = /Android|iPhone|iPad|iPod|Mobile Safari|Mobile|Mobi/i.test(navigator.userAgent);
+  const tabletUA = /iPad|Android.*Tablet|Windows.*Touch/i.test(navigator.userAgent);
+  const isMobileUA = mobileUA || tabletUA;
   
-  // 2. Touch Support Check
-  const hasTouchScreen = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  // 2. MANDATORY Touch Support - Mobile devices MUST have touch
+  const hasTouchScreen = 'ontouchstart' in window && navigator.maxTouchPoints > 0;
   
-  // 3. Viewport Check - Mobile typically has smaller screens
-  const smallViewport = window.innerWidth <= 768 && window.innerHeight <= 1024;
+  // 3. VIEWPORT Analysis - Mobile screens are typically portrait and smaller
+  const { innerWidth, innerHeight } = window;
+  const isPortrait = innerHeight > innerWidth;
+  const isSmallScreen = Math.max(innerWidth, innerHeight) <= 1024;
+  const mobileViewport = isPortrait && isSmallScreen;
   
-  // 4. Screen properties check
-  const mobileScreenRatio = window.screen ? (window.screen.height / window.screen.width) > 1.3 : false;
-  
-  // 5. Orientation API Check (mostly mobile devices)
+  // 4. DEVICE Properties - Mobile-specific features
   const hasOrientationAPI = 'orientation' in window;
+  const hasDeviceMotion = 'DeviceMotionEvent' in window;
+  const highDPI = window.devicePixelRatio >= 2;
   
-  // 6. Device pixel ratio check (mobile devices often have high DPI)
-  const highDPI = window.devicePixelRatio && window.devicePixelRatio > 1.5;
+  // 5. NETWORK - Mobile connections
+  const connectionInfo = (navigator as any).connection;
+  const slowConnection = connectionInfo && (connectionInfo.effectiveType === 'slow-2g' || connectionInfo.effectiveType === '2g' || connectionInfo.effectiveType === '3g');
   
-  // 7. Platform check
-  const mobileNavigator = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.platform);
+  // 6. PLATFORM Check - Explicit mobile platforms
+  const mobilePlatform = /Android|iPhone|iPad|iPod/i.test(navigator.platform);
   
-  // ROBUST LOGIC: Multiple factors must align for mobile detection
-  const isMobileByUA = userAgentMobile || mobileNavigator;
-  const isMobileByFeatures = hasTouchScreen && (smallViewport || hasOrientationAPI);
-  const isMobileByScreen = mobileScreenRatio && smallViewport;
+  // CRITICAL LOGIC: ALL mobile indicators must align
+  const isMobileByUA = isMobileUA; // Strong indicator
+  const isMobileByFeatures = hasTouchScreen && (hasOrientationAPI || hasDeviceMotion); // Mobile features
+  const isMobileByViewport = mobileViewport && hasTouchScreen; // Mobile screen + touch
+  const isMobileByPlatform = mobilePlatform && hasTouchScreen; // Platform + touch
   
-  // Final decision: User Agent OR (Touch + Mobile Features)
-  const isMobile = isMobileByUA || (isMobileByFeatures || isMobileByScreen);
+  // FINAL DECISION: Multiple evidence points required
+  const strongMobileEvidence = [isMobileByUA, isMobileByFeatures, isMobileByViewport, isMobileByPlatform].filter(Boolean).length;
+  const detectedMobile = strongMobileEvidence >= 2; // Require at least 2 strong indicators
   
-  // FORCE OVERRIDE for debugging - check localStorage
+  // FORCE OVERRIDE for debugging
   const forceDevice = localStorage.getItem('forceDeviceType');
-  const finalResult = forceDevice === 'mobile' ? true : forceDevice === 'desktop' ? false : isMobile;
+  const finalResult = forceDevice === 'mobile' ? true : forceDevice === 'desktop' ? false : detectedMobile;
   
-  console.log('🔍 ROBUST Device Detection:', {
+  // DETAILED LOGGING for debugging camera issues
+  console.log('🔍 ULTRA ROBUST Mobile Detection Analysis:', {
     userAgent: navigator.userAgent,
     platform: navigator.platform,
+    url: window.location.href,
     
-    // Detection factors
-    userAgentMobile,
-    mobileNavigator,
+    // Core Detection Results
+    mobileUA,
+    tabletUA,
+    isMobileUA,
+    
+    // Touch and Interaction
     hasTouchScreen,
-    smallViewport: `${window.innerWidth}x${window.innerHeight} <= 768x1024 = ${smallViewport}`,
-    mobileScreenRatio: window.screen ? `${window.screen.height}/${window.screen.width} = ${(window.screen.height / window.screen.width).toFixed(2)} > 1.3 = ${mobileScreenRatio}` : 'N/A',
-    hasOrientationAPI,
-    highDPI: `${window.devicePixelRatio} > 1.5 = ${highDPI}`,
     maxTouchPoints: navigator.maxTouchPoints,
     
-    // Logic results
-    isMobileByUA,
-    isMobileByFeatures,
-    isMobileByScreen,
-    calculatedResult: isMobile,
+    // Viewport Analysis
+    viewport: `${innerWidth}x${innerHeight}`,
+    isPortrait,
+    isSmallScreen,
+    mobileViewport,
     
-    // Override
+    // Device Features
+    hasOrientationAPI,
+    hasDeviceMotion,
+    highDPI: `${window.devicePixelRatio}x`,
+    
+    // Connection
+    slowConnection,
+    connectionType: connectionInfo?.effectiveType,
+    
+    // Platform
+    mobilePlatform,
+    
+    // Decision Matrix
+    evidencePoints: {
+      byUA: isMobileByUA,
+      byFeatures: isMobileByFeatures,
+      byViewport: isMobileByViewport,
+      byPlatform: isMobileByPlatform,
+      strongEvidence: strongMobileEvidence,
+      threshold: '>=2'
+    },
+    
+    // Final Results
+    detectedMobile,
     forceDevice,
-    FINAL_RESULT: finalResult
+    FINAL_MOBILE_RESULT: finalResult
   });
   
-  // Save detection result for consistency
-  localStorage.setItem('detectedDeviceType', finalResult ? 'mobile' : 'desktop');
+  // Store result with timestamp for consistency
+  const detectionResult = {
+    isMobile: finalResult,
+    timestamp: Date.now(),
+    userAgent: navigator.userAgent,
+    viewport: `${innerWidth}x${innerHeight}`
+  };
+  localStorage.setItem('mobileDetection', JSON.stringify(detectionResult));
   
   return finalResult;
 };

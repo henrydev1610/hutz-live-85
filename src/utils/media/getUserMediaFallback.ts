@@ -10,14 +10,40 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
   // Log comprehensive device info for debugging
   logDeviceInfo();
   
-  console.log(`🎬 MEDIA FALLBACK: Starting ROBUST attempt for ${deviceType.toUpperCase()}`);
+  console.log(`🎬 MEDIA FALLBACK: Starting ULTRA ROBUST attempt for ${deviceType.toUpperCase()}`);
   console.log(`🎯 DEVICE DETECTION RESULT: ${deviceType} (isMobile: ${isMobile})`);
   console.log(`📱 MEDIA: User agent: ${navigator.userAgent}`);
   console.log(`📱 MEDIA: Platform: ${navigator.platform}`);
+  console.log(`📱 MEDIA: URL: ${window.location.href}`);
+  console.log(`📱 MEDIA: Viewport: ${window.innerWidth}x${window.innerHeight}`);
 
   if (!checkMediaDevicesSupport()) {
     console.error('❌ MEDIA: getUserMedia não é suportado neste navegador');
     throw new Error('getUserMedia não é suportado neste navegador');
+  }
+
+  // CRITICAL: For mobile devices, use ultra-specific mobile camera targeting
+  if (isMobile) {
+    console.log('📱 MEDIA FALLBACK: MOBILE DEVICE - Using specialized mobile camera acquisition');
+    
+    try {
+      const { forceMobileCamera } = await import('./mobileMediaDetector');
+      const { getCameraPreference } = await import('./deviceDetection');
+      
+      const preferredFacing = getCameraPreference();
+      console.log(`📱 MEDIA FALLBACK: Attempting to force mobile camera: ${preferredFacing}`);
+      
+      const mobileStream = await forceMobileCamera(preferredFacing);
+      
+      if (mobileStream) {
+        console.log('🎉 MEDIA FALLBACK: MOBILE CAMERA SUCCESSFULLY ACQUIRED!');
+        return mobileStream;
+      } else {
+        console.warn('⚠️ MEDIA FALLBACK: Mobile camera acquisition failed, falling back to generic constraints');
+      }
+    } catch (mobileError) {
+      console.error('❌ MEDIA FALLBACK: Mobile camera detector failed:', mobileError);
+    }
   }
 
   // Aguardar tempo inicial no mobile para permissões serem processadas
