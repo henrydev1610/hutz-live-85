@@ -64,40 +64,72 @@ export class ConnectionHandler {
       }
     };
 
-    // CRITICAL: Stream handling for incoming tracks
+    // CRITICAL: Enhanced stream handling for incoming tracks with mobile optimization
     peerConnection.ontrack = (event) => {
-      console.log(`🎥 CRITICAL: Track received from ${participantId}:`, {
+      console.log(`🎥 MOBILE-CRITICAL: Track received from ${participantId}:`, {
         kind: event.track.kind,
         trackId: event.track.id,
         streamCount: event.streams.length,
-        streamIds: event.streams.map(s => s.id)
+        streamIds: event.streams.map(s => s.id),
+        readyState: event.track.readyState,
+        enabled: event.track.enabled
       });
 
       if (event.streams && event.streams.length > 0) {
         const stream = event.streams[0];
-        console.log(`📹 CRITICAL: Processing stream from ${participantId}:`, {
+        console.log(`📹 MOBILE-CRITICAL: Processing stream from ${participantId}:`, {
           streamId: stream.id,
           trackCount: stream.getTracks().length,
           videoTracks: stream.getVideoTracks().length,
-          audioTracks: stream.getAudioTracks().length
+          audioTracks: stream.getAudioTracks().length,
+          streamActive: stream.active
         });
 
-        // IMMEDIATE callback trigger with retry mechanism
-        if (this.streamCallback) {
-          console.log(`🚀 IMMEDIATE: Triggering stream callback for ${participantId}`);
-          this.streamCallback(participantId, stream);
-        } else {
-          console.error(`❌ CRITICAL: No stream callback set when receiving stream from ${participantId}`);
-          // Retry callback after short delay
-          setTimeout(() => {
-            if (this.streamCallback) {
-              console.log(`🔄 RETRY: Triggering delayed stream callback for ${participantId}`);
+        // Enhanced callback trigger with multiple fallbacks for mobile
+        const triggerCallback = () => {
+          if (this.streamCallback) {
+            console.log(`🚀 MOBILE-IMMEDIATE: Triggering stream callback for ${participantId}`);
+            try {
               this.streamCallback(participantId, stream);
+            } catch (error) {
+              console.error(`❌ Stream callback error for ${participantId}:`, error);
+              // Retry once more if callback fails
+              setTimeout(() => {
+                if (this.streamCallback) {
+                  this.streamCallback(participantId, stream);
+                }
+              }, 50);
             }
-          }, 100);
-        }
+          } else {
+            console.error(`❌ MOBILE-CRITICAL: No stream callback set for ${participantId}`);
+          }
+        };
+
+        // Immediate trigger
+        triggerCallback();
+        
+        // Backup trigger after minimal delay to ensure mobile streams are captured
+        setTimeout(() => {
+          console.log(`🔄 MOBILE-BACKUP: Backup trigger for ${participantId}`);
+          triggerCallback();
+        }, 100);
+
+        // Additional backup for problematic mobile connections
+        setTimeout(() => {
+          console.log(`🔄 MOBILE-FINAL: Final backup trigger for ${participantId}`);
+          triggerCallback();
+        }, 500);
+        
       } else {
-        console.warn(`⚠️ Track received from ${participantId} but no streams attached`);
+        console.warn(`⚠️ MOBILE: Track received from ${participantId} but no streams attached`);
+        // Try to create stream from track for mobile compatibility
+        if (event.track) {
+          const syntheticStream = new MediaStream([event.track]);
+          console.log(`🔧 MOBILE-FIX: Created synthetic stream for ${participantId}`);
+          if (this.streamCallback) {
+            this.streamCallback(participantId, syntheticStream);
+          }
+        }
       }
     };
 

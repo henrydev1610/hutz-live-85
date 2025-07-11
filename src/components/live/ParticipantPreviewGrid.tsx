@@ -17,18 +17,49 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
 }) => {
   const { generateUniqueKey } = useUniqueKeyGenerator();
   
-  // Memoizar cálculos para evitar re-renderizações desnecessárias
+  // Simplified calculation prioritizing streams and mobile participants
   const { gridCols, selectedParticipants, emptySlots } = useMemo(() => {
     const cols = Math.ceil(Math.sqrt(Math.max(participantCount, 1)));
-    const selected = participantList
-      .filter(p => (p.selected || p.hasVideo || p.active) && !p.id.includes('placeholder'))
+    
+    // CRITICAL: Prioritize participants with streams (especially mobile)
+    const participantsWithStreams = participantList.filter(p => {
+      const hasStream = participantStreams[p.id];
+      const isNonPlaceholder = !p.id.includes('placeholder');
+      const hasVideoOrActive = p.hasVideo || p.active || p.selected;
+      
+      console.log(`🔍 MOBILE-FILTER: ${p.id}:`, {
+        hasStream: !!hasStream,
+        isNonPlaceholder,
+        hasVideoOrActive,
+        isMobile: p.isMobile,
+        shouldShow: hasStream && isNonPlaceholder
+      });
+      
+      // Show if has stream OR is marked as having video/active
+      return isNonPlaceholder && (hasStream || hasVideoOrActive);
+    });
+    
+    const selected = participantsWithStreams
       .sort((a, b) => {
-        // Prioritize active participants first, then by connection time
+        // PRIORITY 1: Participants with actual streams
+        const aHasStream = !!participantStreams[a.id];
+        const bHasStream = !!participantStreams[b.id];
+        if (aHasStream && !bHasStream) return -1;
+        if (!aHasStream && bHasStream) return 1;
+        
+        // PRIORITY 2: Mobile participants
+        if (a.isMobile && !b.isMobile) return -1;
+        if (!a.isMobile && b.isMobile) return 1;
+        
+        // PRIORITY 3: Active participants
         if (a.active && !b.active) return -1;
         if (!a.active && b.active) return 1;
-        return (a.connectedAt || a.joinedAt) - (b.connectedAt || b.joinedAt);
+        
+        // PRIORITY 4: Connection time
+        return (a.connectedAt || a.joinedAt || 0) - (b.connectedAt || b.joinedAt || 0);
       })
       .slice(0, participantCount);
+      
     const empty = Math.max(0, participantCount - selected.length);
     
     return {
@@ -36,7 +67,7 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
       selectedParticipants: selected,
       emptySlots: empty
     };
-  }, [participantList, participantCount]);
+  }, [participantList, participantCount, participantStreams]);
 
   console.log('🎭 FIXED: ParticipantPreviewGrid render:', {
     totalParticipants: participantList.length,
