@@ -41,23 +41,14 @@ const MobileCameraStreamProcessor: React.FC<MobileCameraStreamProcessorProps> = 
         // Assign stream
         videoElement.srcObject = stream;
 
-        // Wait for metadata and play
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error('Mobile video metadata timeout'));
-          }, 5000);
+        // Setup event listeners first
+        videoElement.onloadedmetadata = () => {
+          console.log(`📱 MOBILE-READY: Metadata loaded for ${participantId}`);
+        };
 
-          videoElement.onloadedmetadata = () => {
-            clearTimeout(timeout);
-            console.log(`📱 MOBILE-READY: Metadata loaded for ${participantId}`);
-            resolve();
-          };
-
-          videoElement.onerror = () => {
-            clearTimeout(timeout);
-            reject(new Error('Mobile video metadata error'));
-          };
-        });
+        videoElement.onerror = (e) => {
+          console.error(`📱 MOBILE-ERROR: Video error for ${participantId}:`, e);
+        };
 
         // Attempt to play with mobile-specific handling
         try {
