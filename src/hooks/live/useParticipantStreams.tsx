@@ -32,10 +32,23 @@ export const useParticipantStreams = ({
   // Process function for buffered streams
   const processStreamSafely = useCallback(async (participantId: string, stream: MediaStream): Promise<boolean> => {
     try {
-      console.log('🎯 CRITICAL: Processing stream for:', participantId);
+      console.log('🎯 CRITICAL: [STREAM_PROCESSING] Starting for:', participantId, {
+        streamId: stream.id,
+        active: stream.active,
+        videoTracks: stream.getVideoTracks().length,
+        audioTracks: stream.getAudioTracks().length,
+        trackStates: stream.getTracks().map(t => ({
+          id: t.id,
+          kind: t.kind,
+          enabled: t.enabled,
+          readyState: t.readyState,
+          muted: t.muted
+        }))
+      });
       
       // Update stream state immediately
       updateStreamState(participantId, stream);
+      console.log('✅ CRITICAL: [STREAM_PROCESSING] Stream state updated for:', participantId);
       
       // Wait for DOM to be ready
       await new Promise(resolve => {
@@ -50,14 +63,19 @@ export const useParticipantStreams = ({
         }
       });
       
+      console.log('🎯 CRITICAL: [STREAM_PROCESSING] DOM ready, updating video elements for:', participantId);
+      
       // Process video update with timeout
       await Promise.race([
         updateVideoElementsImmediately(participantId, stream, transmissionWindowRef),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Video processing timeout')), 5000))
       ]);
       
+      console.log('✅ CRITICAL: [STREAM_PROCESSING] Video elements updated for:', participantId);
+      
       // Send to transmission window
       await sendStreamToTransmission(participantId, stream, transmissionWindowRef);
+      console.log('✅ CRITICAL: [STREAM_PROCESSING] Stream sent to transmission for:', participantId);
       
       // Success notification
       toast({
@@ -65,10 +83,10 @@ export const useParticipantStreams = ({
         description: `${participantId.substring(0, 8)} está transmitindo vídeo`,
       });
       
-      console.log('✅ CRITICAL: Stream processing completed for:', participantId);
+      console.log('✅ CRITICAL: [STREAM_PROCESSING] Processing completed successfully for:', participantId);
       return true;
     } catch (error) {
-      console.error('❌ Error processing stream for:', participantId, error);
+      console.error('❌ CRITICAL: [STREAM_PROCESSING] Error processing stream for:', participantId, error);
       
       // Error notification only for final failures
       if (error.message !== 'Video processing timeout') {
@@ -83,20 +101,30 @@ export const useParticipantStreams = ({
   }, [updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast]);
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
-    console.log('🎬 CRITICAL: Handling participant stream for:', participantId);
+    console.log('🎬 CRITICAL: [STREAM_HANDLER] New participant stream received:', participantId, {
+      streamId: stream.id,
+      active: stream.active,
+      videoTracks: stream.getVideoTracks().length,
+      audioTracks: stream.getAudioTracks().length,
+      timestamp: new Date().toISOString()
+    });
     
     if (!validateStream(stream, participantId)) {
-      console.warn('❌ Stream validation failed for:', participantId);
+      console.warn('❌ [STREAM_HANDLER] Stream validation failed for:', participantId);
       return;
     }
+
+    console.log('✅ [STREAM_HANDLER] Stream validation passed for:', participantId);
 
     // Try immediate processing first
     const success = await processStreamSafely(participantId, stream);
     
     if (!success) {
       // Add to buffer for retry
-      console.log('📦 Adding to buffer for retry:', participantId);
+      console.log('📦 [STREAM_HANDLER] Processing failed, adding to buffer for retry:', participantId);
       addToBuffer(participantId, stream);
+    } else {
+      console.log('✅ [STREAM_HANDLER] Stream processing successful for:', participantId);
     }
   }, [validateStream, processStreamSafely, addToBuffer]);
 

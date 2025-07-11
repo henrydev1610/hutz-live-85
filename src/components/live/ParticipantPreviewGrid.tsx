@@ -20,30 +20,77 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   // Memoizar cálculos para evitar re-renderizações desnecessárias
   const { gridCols, selectedParticipants, emptySlots } = useMemo(() => {
     const cols = Math.ceil(Math.sqrt(Math.max(participantCount, 1)));
+    
+    console.log('🎭 CRITICAL: [GRID_FILTER] Processing participants:', {
+      totalParticipants: participantList.length,
+      participantCount,
+      allParticipants: participantList.map(p => ({
+        id: p.id,
+        name: p.name,
+        active: p.active,
+        selected: p.selected,
+        hasVideo: p.hasVideo,
+        hasStream: !!participantStreams[p.id],
+        streamId: participantStreams[p.id]?.id
+      }))
+    });
+    
+    // FIXED: More inclusive filter to show connected participants with streams
     const selected = participantList
-      .filter(p => (p.selected || p.hasVideo || p.active) && !p.id.includes('placeholder'))
+      .filter(p => {
+        const isPlaceholder = p.id.includes('placeholder');
+        const hasStream = !!participantStreams[p.id];
+        const isActiveOrSelected = p.active || p.selected || p.hasVideo;
+        
+        // Include if: not placeholder AND (has stream OR is active/selected)
+        const shouldInclude = !isPlaceholder && (hasStream || isActiveOrSelected);
+        
+        console.log(`🔍 [GRID_FILTER] Participant ${p.id}:`, {
+          isPlaceholder,
+          hasStream,
+          isActiveOrSelected,
+          shouldInclude,
+          streamTracks: hasStream ? participantStreams[p.id].getTracks().length : 0
+        });
+        
+        return shouldInclude;
+      })
       .sort((a, b) => {
-        // Prioritize active participants first, then by connection time
+        // Prioritize participants with streams first, then active, then by connection time
+        const aHasStream = !!participantStreams[a.id];
+        const bHasStream = !!participantStreams[b.id];
+        
+        if (aHasStream && !bHasStream) return -1;
+        if (!aHasStream && bHasStream) return 1;
         if (a.active && !b.active) return -1;
         if (!a.active && b.active) return 1;
         return (a.connectedAt || a.joinedAt) - (b.connectedAt || b.joinedAt);
       })
       .slice(0, participantCount);
+    
     const empty = Math.max(0, participantCount - selected.length);
+    
+    console.log('✅ CRITICAL: [GRID_FILTER] Final selection:', {
+      selectedCount: selected.length,
+      selectedIds: selected.map(p => p.id),
+      emptySlots: empty
+    });
     
     return {
       gridCols: cols,
       selectedParticipants: selected,
       emptySlots: empty
     };
-  }, [participantList, participantCount]);
+  }, [participantList, participantCount, participantStreams]);
 
-  console.log('🎭 FIXED: ParticipantPreviewGrid render:', {
+  console.log('🎭 CRITICAL: [PREVIEW_GRID] Rendering with:', {
     totalParticipants: participantList.length,
     selectedParticipants: selectedParticipants.length,
     participantCount,
     gridCols,
-    emptySlots
+    emptySlots,
+    availableStreams: Object.keys(participantStreams).length,
+    selectedWithStreams: selectedParticipants.filter(p => participantStreams[p.id]).length
   });
 
   return (

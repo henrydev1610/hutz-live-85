@@ -15,12 +15,12 @@ export const useDirectVideoCreation = ({
   const maxRetries = 5;
 
   const createVideoElementDirect = useCallback((container: HTMLElement, mediaStream: MediaStream) => {
-    console.log(`🎬 DIRECT: Creating video for ${participantId} in ${containerId}`);
+    console.log(`🎬 DIRECT: [${participantId}] Creating video element in ${containerId}`);
     
     // Remove any existing video first
     const existingVideo = container.querySelector('video');
     if (existingVideo) {
-      console.log(`🧹 DIRECT: Removing existing video for ${participantId}`);
+      console.log(`🧹 DIRECT: [${participantId}] Removing existing video`);
       existingVideo.remove();
     }
 
@@ -45,20 +45,48 @@ export const useDirectVideoCreation = ({
       background: transparent !important;
     `;
 
+    // Enhanced event logging
+    video.addEventListener('loadstart', () => {
+      console.log(`📱 DIRECT: [${participantId}] Video loadstart`);
+    });
+    
+    video.addEventListener('loadedmetadata', () => {
+      console.log(`📱 DIRECT: [${participantId}] Video metadata loaded`, {
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        duration: video.duration
+      });
+    });
+    
+    video.addEventListener('canplay', () => {
+      console.log(`📱 DIRECT: [${participantId}] Video can play`);
+    });
+    
+    video.addEventListener('playing', () => {
+      console.log(`✅ DIRECT: [${participantId}] Video is playing!`);
+    });
+    
+    video.addEventListener('error', (e) => {
+      console.error(`❌ DIRECT: [${participantId}] Video error:`, e, video.error);
+    });
+
     // Set stream and append to container
+    console.log(`🔗 DIRECT: [${participantId}] Setting srcObject and appending to container`);
     video.srcObject = mediaStream;
     container.appendChild(video);
 
-    // Force play
+    // Force play with enhanced error handling
     const playVideo = async () => {
       try {
+        console.log(`▶️ DIRECT: [${participantId}] Attempting to play video`);
         await video.play();
-        console.log(`✅ DIRECT: Video playing for ${participantId}`);
+        console.log(`✅ DIRECT: [${participantId}] Video playing successfully`);
       } catch (error) {
-        console.log(`⚠️ DIRECT: Play failed for ${participantId}:`, error);
+        console.error(`⚠️ DIRECT: [${participantId}] Play failed:`, error);
         // Retry after short delay
         setTimeout(() => {
-          video.play().catch(e => console.log(`⚠️ DIRECT: Retry failed:`, e));
+          console.log(`🔄 DIRECT: [${participantId}] Retrying play`);
+          video.play().catch(e => console.error(`❌ DIRECT: [${participantId}] Retry failed:`, e));
         }, 100);
       }
     };
@@ -73,43 +101,62 @@ export const useDirectVideoCreation = ({
   }, [participantId, containerId]);
 
   const tryCreateVideo = useCallback(() => {
+    console.log(`🎯 DIRECT: [${participantId}] Trying to create video...`);
+    
     if (!stream) {
-      console.log(`🚫 DIRECT: No stream for ${participantId}`);
+      console.log(`🚫 DIRECT: [${participantId}] No stream available`);
       return false;
     }
 
-    // More lenient stream validation - just check if stream exists
+    // Enhanced stream validation
     const hasValidTracks = stream.getTracks().length > 0;
-    if (!hasValidTracks) {
-      console.log(`🚫 DIRECT: No tracks in stream for ${participantId}`, {
-        streamId: stream.id,
-        tracks: stream.getTracks().length
-      });
-      return false;
-    }
-
-    console.log(`🎯 DIRECT: Processing stream for ${participantId}`, {
+    const videoTracks = stream.getVideoTracks();
+    const audioTracks = stream.getAudioTracks();
+    
+    console.log(`🔍 DIRECT: [${participantId}] Stream analysis:`, {
       streamId: stream.id,
       active: stream.active,
-      videoTracks: stream.getVideoTracks().length,
-      audioTracks: stream.getAudioTracks().length,
-      totalTracks: stream.getTracks().length
+      totalTracks: stream.getTracks().length,
+      videoTracks: videoTracks.length,
+      audioTracks: audioTracks.length,
+      videoTrackStates: videoTracks.map(t => ({ 
+        id: t.id, 
+        enabled: t.enabled, 
+        readyState: t.readyState,
+        muted: t.muted 
+      }))
     });
+    
+    if (!hasValidTracks) {
+      console.log(`🚫 DIRECT: [${participantId}] No tracks in stream`);
+      return false;
+    }
 
     const container = document.getElementById(containerId);
     if (!container) {
-      console.log(`⚠️ DIRECT: Container ${containerId} not found for ${participantId}`);
+      console.log(`⚠️ DIRECT: [${participantId}] Container ${containerId} not found`);
       return false;
     }
 
-    // Check if video already exists and is playing
+    // Check if video already exists and is playing correctly
     const existingVideo = container.querySelector('video') as HTMLVideoElement;
-    if (existingVideo && existingVideo.srcObject === stream && !existingVideo.paused) {
-      console.log(`✅ DIRECT: Video already playing for ${participantId}`);
-      return true;
+    if (existingVideo) {
+      console.log(`🔍 DIRECT: [${participantId}] Existing video state:`, {
+        srcObject: !!existingVideo.srcObject,
+        sameStream: existingVideo.srcObject === stream,
+        paused: existingVideo.paused,
+        readyState: existingVideo.readyState,
+        videoWidth: existingVideo.videoWidth,
+        videoHeight: existingVideo.videoHeight
+      });
+      
+      if (existingVideo.srcObject === stream && !existingVideo.paused && existingVideo.readyState >= 2) {
+        console.log(`✅ DIRECT: [${participantId}] Video already playing correctly`);
+        return true;
+      }
     }
 
-    console.log(`✅ DIRECT: Creating video for ${participantId}`);
+    console.log(`🎬 DIRECT: [${participantId}] Creating new video element`);
     createVideoElementDirect(container, stream);
     return true;
   }, [stream, participantId, containerId, createVideoElementDirect]);
