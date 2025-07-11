@@ -32,12 +32,21 @@ export class ParticipantManager {
     }
   }
 
-  updateParticipantsList(participants: any[]) {
+  updateParticipantsList(participants: any) {
     console.log('🔄 Updating participants list with:', participants);
+    
+    // CRITICAL FIX: Validate that participants is an array
+    if (!participants) {
+      console.warn('⚠️ No participants data received');
+      return;
+    }
+    
+    // Ensure participants is an array
+    const participantsArray = Array.isArray(participants) ? participants : [participants];
     
     this.participants.clear();
     
-    participants.forEach(participant => {
+    participantsArray.forEach(participant => {
       const participantId = participant.userId || participant.id || participant.socketId;
       const participantData = {
         id: participantId,

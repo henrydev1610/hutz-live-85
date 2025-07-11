@@ -144,8 +144,11 @@ export const useLivePageEffects = ({
   useEffect(() => {
     console.log('🚀 HOST: Early WebRTC initialization for incoming connections');
     
+    // Use a proper session ID or generate one
+    const earlySessionId = sessionId || `early-host-${Date.now()}`;
+    
     // Initialize WebRTC in "host listening mode" 
-    initHostWebRTC('temp-host-session').then(result => {
+    initHostWebRTC(earlySessionId).then(result => {
       if (result && result.webrtc) {
         console.log('✅ HOST: Early WebRTC initialized - ready to receive connections');
         
