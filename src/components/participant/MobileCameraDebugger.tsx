@@ -39,10 +39,11 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
       const urlParams = new URLSearchParams(window.location.search);
       const isQRAccess = urlParams.has('qr') || urlParams.has('mobile') || sessionStorage.getItem('accessedViaQR') === 'true';
       
-      let streamInfo = { hasVideo: false, hasAudio: false, videoLabel: '', cameraType: 'unknown' };
+      let streamInfo = { hasVideo: false, hasAudio: false, videoLabel: '', cameraType: 'unknown', facingMode: 'unknown' };
       let permissionInfo = { camera: 'unknown', microphone: 'unknown' };
+      let deviceInfo = { videoInputs: 0, audioInputs: 0, backCamera: null, frontCamera: null };
       
-      // Verificar permissões se possível
+      // 🔐 ENHANCED: Check permissions with better info
       try {
         if (navigator.permissions) {
           const cameraPermission = await navigator.permissions.query({ name: 'camera' as PermissionName });
@@ -56,19 +57,57 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
         console.warn('Debug: Could not check permissions', permError);
       }
       
+      // 📱 ENHANCED: Get device enumeration info
+      try {
+        if (navigator.mediaDevices?.enumerateDevices) {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoInputs = devices.filter(d => d.kind === 'videoinput');
+          const audioInputs = devices.filter(d => d.kind === 'audioinput');
+          
+          const backCamera = videoInputs.find(d => /back|rear|environment/i.test(d.label || ''));
+          const frontCamera = videoInputs.find(d => /front|user|selfie/i.test(d.label || ''));
+          
+          deviceInfo = {
+            videoInputs: videoInputs.length,
+            audioInputs: audioInputs.length,
+            backCamera: backCamera ? { label: backCamera.label || 'Unlabeled', id: backCamera.deviceId } : null,
+            frontCamera: frontCamera ? { label: frontCamera.label || 'Unlabeled', id: frontCamera.deviceId } : null
+          };
+        }
+      } catch (deviceError) {
+        console.warn('Debug: Could not enumerate devices', deviceError);
+      }
+      
+      // 🎯 ENHANCED: Get stream info with facingMode details
       if (localStream) {
         const videoTracks = localStream.getVideoTracks();
         const audioTracks = localStream.getAudioTracks();
         
-        streamInfo = {
-          hasVideo: videoTracks.length > 0,
-          hasAudio: audioTracks.length > 0,
-          videoLabel: videoTracks[0]?.label || 'Unknown',
-          cameraType: videoTracks[0]?.label?.toLowerCase().includes('front') || 
-                     videoTracks[0]?.label?.toLowerCase().includes('user') ? 'front' :
-                     videoTracks[0]?.label?.toLowerCase().includes('back') || 
-                     videoTracks[0]?.label?.toLowerCase().includes('environment') ? 'back' : 'unknown'
-        };
+        if (videoTracks.length > 0) {
+          const videoTrack = videoTracks[0];
+          const settings = videoTrack.getSettings();
+          
+          streamInfo = {
+            hasVideo: true,
+            hasAudio: audioTracks.length > 0,
+            videoLabel: videoTrack.label || 'Unknown',
+            facingMode: settings.facingMode || 'unknown',
+            cameraType: settings.facingMode === 'environment' ? '🎯 BACK' :
+                       settings.facingMode === 'user' ? '👤 FRONT' :
+                       videoTrack.label?.toLowerCase().includes('back') || 
+                       videoTrack.label?.toLowerCase().includes('environment') ? '🎯 BACK' :
+                       videoTrack.label?.toLowerCase().includes('front') || 
+                       videoTrack.label?.toLowerCase().includes('user') ? '👤 FRONT' : '❓ UNKNOWN'
+          };
+        } else {
+          streamInfo = {
+            hasVideo: false,
+            hasAudio: audioTracks.length > 0,
+            videoLabel: 'No video track',
+            facingMode: 'none',
+            cameraType: 'none'
+          };
+        }
       }
 
       setDebugInfo({
@@ -76,9 +115,11 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
         isMobile,
         hasTouch,
         isQRAccess,
+        isHTTPS: window.location.protocol === 'https:',
         viewport: `${window.innerWidth}x${window.innerHeight}`,
         streamInfo,
         permissionInfo,
+        deviceInfo,
         retryCount,
         lastError
       });
@@ -166,7 +207,17 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
             <span>Camera: {debugInfo.streamInfo?.hasVideo ? 'ACTIVE' : 'NOT FOUND'}</span>
           </div>
           
-          {/* Mostrar informações de permissões */}
+          {/* 🔒 HTTPS Status */}
+          <div className="flex items-center gap-2 ml-5 text-xs">
+            {debugInfo.isHTTPS ? (
+              <CheckCircle className="h-3 w-3 text-green-400" />
+            ) : (
+              <XCircle className="h-3 w-3 text-red-400" />
+            )}
+            <span>HTTPS: {debugInfo.isHTTPS ? 'SECURE' : 'INSECURE (Required for mobile)'}</span>
+          </div>
+          
+          {/* 🔐 Enhanced permission info */}
           {debugInfo.permissionInfo && (
             <div className="text-gray-300 ml-5 text-xs">
               <div className="flex items-center gap-1">
@@ -181,9 +232,27 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
             </div>
           )}
           
+          {/* 📱 Device enumeration info */}
+          {debugInfo.deviceInfo && (
+            <div className="text-gray-300 ml-5 text-xs space-y-1">
+              <div>Devices: 📷 {debugInfo.deviceInfo.videoInputs} | 🎤 {debugInfo.deviceInfo.audioInputs}</div>
+              {debugInfo.deviceInfo.backCamera && (
+                <div className="text-green-300">🎯 Back: {debugInfo.deviceInfo.backCamera.label}</div>
+              )}
+              {debugInfo.deviceInfo.frontCamera && (
+                <div className="text-blue-300">👤 Front: {debugInfo.deviceInfo.frontCamera.label}</div>
+              )}
+              {!debugInfo.deviceInfo.backCamera && !debugInfo.deviceInfo.frontCamera && debugInfo.deviceInfo.videoInputs > 0 && (
+                <div className="text-yellow-300">⚠️ No labeled cameras found</div>
+              )}
+            </div>
+          )}
+          
+          {/* 🎯 Active camera info */}
           {debugInfo.streamInfo?.hasVideo && (
-            <div className="text-gray-300 ml-5">
-              <div>Type: {debugInfo.streamInfo.cameraType}</div>
+            <div className="text-gray-300 ml-5 text-xs space-y-1">
+              <div className="font-semibold">Active Camera: {debugInfo.streamInfo.cameraType}</div>
+              <div>FacingMode: {debugInfo.streamInfo.facingMode}</div>
               <div className="truncate">Device: {debugInfo.streamInfo.videoLabel}</div>
             </div>
           )}

@@ -1,6 +1,7 @@
 // SIMPLIFIED getUserMedia with separate mobile/desktop logic
 import { detectMobileAggressively, checkMediaDevicesSupport } from './deviceDetection';
 import { ensurePermissionsBeforeStream } from './streamAcquisition';
+import { enumerateMediaDevices, findBackCamera } from './deviceEnumeration';
 
 export const getUserMediaWithFallback = async (): Promise<MediaStream | null> => {
   const isMobile = detectMobileAggressively();
@@ -9,6 +10,13 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
   console.log(`🎬 CAMERA: Starting ${deviceType} camera acquisition`);
   console.log(`📱 Device Info: ${navigator.userAgent}`);
   console.log(`📱 URL: ${window.location.href}`);
+  console.log(`🔒 HTTPS: ${window.location.protocol === 'https:'}`);
+
+  // 🔒 CRITICAL: Check HTTPS for mobile
+  if (isMobile && window.location.protocol !== 'https:') {
+    console.error('❌ HTTPS: Mobile camera requires HTTPS!');
+    throw new Error('Camera access requires HTTPS on mobile devices');
+  }
 
   // Check basic support
   if (!checkMediaDevicesSupport()) {
@@ -29,8 +37,8 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
     let stream: MediaStream | null = null;
     
     if (isMobile) {
-      console.log('📱 CAMERA: Using MOBILE camera logic');
-      stream = await getMobileStream();
+      console.log('📱 CAMERA: Using MOBILE camera logic with BACK camera priority');
+      stream = await getMobileStreamWithBackCamera();
     } else {
       console.log('🖥️ CAMERA: Using DESKTOP camera logic');
       stream = await getDesktopStream();
@@ -50,48 +58,101 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
   }
 };
 
-const getMobileStream = async (): Promise<MediaStream | null> => {
-  console.log('📱 MOBILE: Starting mobile camera acquisition');
+const getMobileStreamWithBackCamera = async (): Promise<MediaStream | null> => {
+  console.log('📱 MOBILE: Starting mobile camera acquisition with BACK camera priority');
   
-  // CRÍTICO: Constraints simplificadas para resolver "NOT FOUND"
-  const constraints: MediaStreamConstraints[] = [
-    // ATTEMPT 1: BÁSICO - Mais simples possível
-    {
-      video: true,
-      audio: true
-    },
-    // ATTEMPT 2: User camera com IDEAL (não EXACT)
-    {
-      video: { facingMode: { ideal: 'user' } },
-      audio: true
-    },
-    // ATTEMPT 3: Environment camera com IDEAL
-    {
-      video: { facingMode: { ideal: 'environment' } },
-      audio: true
-    },
-    // ATTEMPT 4: Apenas vídeo básico
-    {
-      video: true,
-      audio: false
+  // 🎯 STEP 1: Try to enumerate devices first to find specific back camera
+  let backCamera: MediaDeviceInfo | undefined;
+  
+  try {
+    const deviceInfo = await enumerateMediaDevices();
+    backCamera = deviceInfo.backCamera;
+    
+    if (backCamera) {
+      console.log('🎯 MOBILE: Found back camera device:', backCamera.label);
+    } else {
+      console.log('🎯 MOBILE: No specific back camera found, using facingMode fallback');
     }
-  ];
+  } catch (error) {
+    console.warn('⚠️ MOBILE: Device enumeration failed, using facingMode only:', error);
+  }
+  
+  // 🎯 STEP 2: Build constraints with BACK CAMERA PRIORITY
+  const constraints: MediaStreamConstraints[] = [];
+  
+  // 🥇 PRIORITY 1: Use specific back camera deviceId if found
+  if (backCamera && backCamera.deviceId) {
+    constraints.push({
+      video: { deviceId: { exact: backCamera.deviceId } },
+      audio: false // Start without audio for higher success rate
+    });
+  }
+  
+  // 🥈 PRIORITY 2: EXACT environment facingMode
+  constraints.push({
+    video: { facingMode: { exact: 'environment' } },
+    audio: false
+  });
+  
+  // 🥉 PRIORITY 3: IDEAL environment facingMode  
+  constraints.push({
+    video: { facingMode: { ideal: 'environment' } },
+    audio: false
+  });
+  
+  // 🏅 PRIORITY 4: Basic video (any camera)
+  constraints.push({
+    video: true,
+    audio: false
+  });
+  
+  // 💔 PRIORITY 5: Front camera fallback (ideal user)
+  constraints.push({
+    video: { facingMode: { ideal: 'user' } },
+    audio: false
+  });
 
+  // 🎯 STEP 3: Try each constraint with timeout
   for (let i = 0; i < constraints.length; i++) {
     try {
       console.log(`📱 MOBILE ATTEMPT ${i + 1}/${constraints.length}:`, constraints[i]);
-      const stream = await navigator.mediaDevices.getUserMedia(constraints[i]);
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 15000)
+      );
+      
+      const streamPromise = navigator.mediaDevices.getUserMedia(constraints[i]);
+      const stream = await Promise.race([streamPromise, timeoutPromise]);
       
       if (stream && stream.getVideoTracks().length > 0) {
-        console.log('✅ MOBILE: Successfully acquired mobile camera');
+        const videoTrack = stream.getVideoTracks()[0];
+        const settings = videoTrack.getSettings();
+        
+        console.log('✅ MOBILE: Successfully acquired camera:', {
+          label: videoTrack.label,
+          facingMode: settings.facingMode || 'unknown',
+          deviceId: settings.deviceId || 'unknown'
+        });
+        
+        // 🎯 Check if this is actually the back camera
+        if (settings.facingMode === 'environment' || 
+            (backCamera && settings.deviceId === backCamera.deviceId)) {
+          console.log('🎯 SUCCESS: Back camera confirmed!');
+        } else {
+          console.log('📱 INFO: Using available camera (may not be back camera)');
+        }
+        
         return stream;
       }
     } catch (error) {
       console.warn(`❌ MOBILE ATTEMPT ${i + 1} failed:`, error);
+      // Wait 1 second between attempts to avoid overwhelming the system
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
   
-  console.error('❌ MOBILE: All attempts failed');
+  console.error('❌ MOBILE: All attempts failed - no camera available');
   return null;
 };
 
