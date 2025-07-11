@@ -1,5 +1,6 @@
 // SIMPLIFIED getUserMedia with separate mobile/desktop logic
 import { detectMobileAggressively, checkMediaDevicesSupport } from './deviceDetection';
+import { ensurePermissionsBeforeStream } from './streamAcquisition';
 
 export const getUserMediaWithFallback = async (): Promise<MediaStream | null> => {
   const isMobile = detectMobileAggressively();
@@ -13,6 +14,15 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
   if (!checkMediaDevicesSupport()) {
     console.error('❌ CAMERA: getUserMedia not supported');
     throw new Error('getUserMedia not supported');
+  }
+
+  // CRÍTICO: Verificar e solicitar permissões antes de tentar aquisição
+  console.log('🔐 CAMERA: Ensuring permissions before acquisition...');
+  const permissionsOk = await ensurePermissionsBeforeStream(isMobile);
+  
+  if (!permissionsOk) {
+    console.error('❌ CAMERA: Permissions not granted - will likely get "NOT FOUND"');
+    // Continue mesmo assim para tentar, pois alguns browsers são inconsistentes
   }
 
   try {
@@ -43,23 +53,24 @@ export const getUserMediaWithFallback = async (): Promise<MediaStream | null> =>
 const getMobileStream = async (): Promise<MediaStream | null> => {
   console.log('📱 MOBILE: Starting mobile camera acquisition');
   
+  // CRÍTICO: Constraints simplificadas para resolver "NOT FOUND"
   const constraints: MediaStreamConstraints[] = [
-    // Try user camera first
-    {
-      video: { facingMode: 'user' },
-      audio: true
-    },
-    // Try environment camera
-    {
-      video: { facingMode: 'environment' },
-      audio: true
-    },
-    // Fallback without facingMode
+    // ATTEMPT 1: BÁSICO - Mais simples possível
     {
       video: true,
       audio: true
     },
-    // Last resort - video only
+    // ATTEMPT 2: User camera com IDEAL (não EXACT)
+    {
+      video: { facingMode: { ideal: 'user' } },
+      audio: true
+    },
+    // ATTEMPT 3: Environment camera com IDEAL
+    {
+      video: { facingMode: { ideal: 'environment' } },
+      audio: true
+    },
+    // ATTEMPT 4: Apenas vídeo básico
     {
       video: true,
       audio: false

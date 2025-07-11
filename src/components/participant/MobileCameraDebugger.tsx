@@ -33,13 +33,28 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
   const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
-    const updateDebugInfo = () => {
+    const updateDebugInfo = async () => {
       const isMobile = /Android|iPhone|iPad|iPod|Mobile Safari|Mobile|Mobi/i.test(navigator.userAgent);
       const hasTouch = 'ontouchstart' in window;
       const urlParams = new URLSearchParams(window.location.search);
       const isQRAccess = urlParams.has('qr') || urlParams.has('mobile') || sessionStorage.getItem('accessedViaQR') === 'true';
       
       let streamInfo = { hasVideo: false, hasAudio: false, videoLabel: '', cameraType: 'unknown' };
+      let permissionInfo = { camera: 'unknown', microphone: 'unknown' };
+      
+      // Verificar permissões se possível
+      try {
+        if (navigator.permissions) {
+          const cameraPermission = await navigator.permissions.query({ name: 'camera' as PermissionName });
+          const micPermission = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+          permissionInfo = {
+            camera: cameraPermission.state,
+            microphone: micPermission.state
+          };
+        }
+      } catch (permError) {
+        console.warn('Debug: Could not check permissions', permError);
+      }
       
       if (localStream) {
         const videoTracks = localStream.getVideoTracks();
@@ -63,6 +78,7 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
         isQRAccess,
         viewport: `${window.innerWidth}x${window.innerHeight}`,
         streamInfo,
+        permissionInfo,
         retryCount,
         lastError
       });
@@ -149,6 +165,21 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
             )}
             <span>Camera: {debugInfo.streamInfo?.hasVideo ? 'ACTIVE' : 'NOT FOUND'}</span>
           </div>
+          
+          {/* Mostrar informações de permissões */}
+          {debugInfo.permissionInfo && (
+            <div className="text-gray-300 ml-5 text-xs">
+              <div className="flex items-center gap-1">
+                <span>Permissions:</span>
+                <Badge variant={debugInfo.permissionInfo.camera === 'granted' ? 'default' : 'destructive'} className="text-xs">
+                  📷 {debugInfo.permissionInfo.camera}
+                </Badge>
+                <Badge variant={debugInfo.permissionInfo.microphone === 'granted' ? 'default' : 'secondary'} className="text-xs">
+                  🎤 {debugInfo.permissionInfo.microphone}
+                </Badge>
+              </div>
+            </div>
+          )}
           
           {debugInfo.streamInfo?.hasVideo && (
             <div className="text-gray-300 ml-5">

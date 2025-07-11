@@ -2,6 +2,7 @@
 import { handleMediaError } from './mediaErrorHandling';
 import { logMediaConstraintsAttempt, logStreamSuccess, logStreamError } from './deviceDebugger';
 import { validateStream, logStreamDetails, verifyCameraType, setupStreamMonitoring, stabilizeStream } from './streamValidation';
+import { requestMediaPermissions, checkMediaPermissions } from './permissions';
 
 export const attemptStreamAcquisition = async (
   constraints: MediaStreamConstraints,
@@ -102,4 +103,42 @@ export const emergencyFallback = async (): Promise<MediaStream | null> => {
   }
   
   return null;
+};
+
+export const ensurePermissionsBeforeStream = async (isMobile: boolean): Promise<boolean> => {
+  console.log('🔐 PERMISSIONS: Ensuring permissions before stream acquisition...');
+  
+  try {
+    // 1. Verificar permissões atuais
+    const permissions = await checkMediaPermissions();
+    console.log('🔐 PERMISSIONS: Current status:', permissions);
+    
+    // 2. Se câmera já está permitida, não fazer nada
+    if (permissions.camera === 'granted') {
+      console.log('✅ PERMISSIONS: Camera already granted');
+      return true;
+    }
+    
+    // 3. Se câmera está negada, avisar o usuário
+    if (permissions.camera === 'denied') {
+      console.error('❌ PERMISSIONS: Camera denied - this will cause "NOT FOUND" error');
+      throw new Error('Câmera bloqueada - verifique as configurações do navegador');
+    }
+    
+    // 4. Se status é desconhecido, solicitar permissões
+    console.log('🔐 PERMISSIONS: Status unknown, requesting permissions...');
+    const granted = await requestMediaPermissions(isMobile);
+    
+    if (!granted) {
+      console.error('❌ PERMISSIONS: Permission request failed');
+      return false;
+    }
+    
+    console.log('✅ PERMISSIONS: All permissions ensured successfully');
+    return true;
+    
+  } catch (error) {
+    console.error('❌ PERMISSIONS: Failed to ensure permissions:', error);
+    return false;
+  }
 };
