@@ -43,24 +43,17 @@ const ParticipantPage = () => {
     console.log('🚀 PARTICIPANT PAGE: Auto-initializing for session:', sessionId);
     
     if (sessionId) {
-      // Check for autostart parameter
-      const urlParams = new URLSearchParams(window.location.search);
-      const shouldAutostart = urlParams.get('autostart') === 'true';
-      const isMobileAccess = urlParams.get('mobile') === 'true' || urlParams.get('qr') === 'true';
+      // ALWAYS auto-start for mobile participation
+      console.log('🚀 CRITICAL: Force auto-initialization for mobile participation');
       
-      console.log('🎯 AUTOSTART: Checking params:', { shouldAutostart, isMobileAccess });
-      
-      if (shouldAutostart && isMobileAccess) {
-        console.log('🚀 AUTOSTART: Mobile auto-initialization detected');
+      // Add delay to ensure DOM is ready
+      const timer = setTimeout(() => {
         autoConnectToSession().catch(error => {
           console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
         });
-      } else {
-        console.log('🔧 MANUAL: Regular initialization (no autostart)');
-        autoConnectToSession().catch(error => {
-          console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
-        });
-      }
+      }, 1000);
+      
+      return () => clearTimeout(timer);
     }
     
     return () => {
@@ -74,11 +67,36 @@ const ParticipantPage = () => {
 
   const autoConnectToSession = async () => {
     try {
+      console.log('🎥 CRITICAL: Starting mobile camera acquisition');
+      
+      // Force camera initialization with mobile constraints
       const stream = await media.initializeMedia();
-      // Conectar sempre, mesmo que stream seja null (modo degradado)
+      
+      if (stream) {
+        console.log('✅ CRITICAL: Camera stream acquired successfully:', {
+          streamId: stream.id,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length,
+          active: stream.active
+        });
+      } else {
+        console.warn('⚠️ CRITICAL: No camera stream acquired - will connect without media');
+      }
+      
+      // Connect to session with stream
       await connection.connectToSession(stream);
+      
+      console.log('✅ CRITICAL: Participant connected successfully');
+      
     } catch (error) {
       console.error('❌ PARTICIPANT: Auto-connection failed:', error);
+      // Still try to connect without media
+      try {
+        await connection.connectToSession(null);
+        console.log('📱 FALLBACK: Connected without media');
+      } catch (fallbackError) {
+        console.error('❌ FALLBACK: Complete connection failure:', fallbackError);
+      }
     }
   };
 

@@ -35,25 +35,30 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
       }))
     });
     
-    // CRITICAL: Enhanced filter to prioritize participants with active streams
+    // CRITICAL: Priority filter - ALWAYS show participants with streams first
     const selected = participantList
       .filter(p => {
         const isPlaceholder = p.id.includes('placeholder');
         const hasStream = !!participantStreams[p.id];
-        const isActiveOrSelected = p.active || p.selected || p.hasVideo;
-        const isConnectedParticipant = p.id.includes('participant-') || p.id.includes('mobile-');
+        const isMobileParticipant = p.id.includes('participant-') || p.id.includes('mobile-');
+        const isActive = p.active === true;
         
-        // CRITICAL: Include if not placeholder AND has valid stream OR is legitimate participant
-        const shouldInclude = !isPlaceholder && (hasStream || isActiveOrSelected || isConnectedParticipant);
+        // CRITICAL: Include ANY real participant (not placeholder)
+        // Priority: 1) Has stream, 2) Mobile participant, 3) Active participant
+        const shouldInclude = !isPlaceholder && (hasStream || isMobileParticipant || isActive);
         
-        console.log(`🔍 [GRID_FILTER] Participant ${p.id}:`, {
+        console.log(`🔍 CRITICAL [GRID_FILTER] ${p.id}:`, {
           isPlaceholder,
           hasStream,
-          isActiveOrSelected,
-          isConnectedParticipant,
+          isMobileParticipant,
+          isActive,
           shouldInclude,
-          streamTracks: hasStream ? participantStreams[p.id].getTracks().length : 0,
-          streamActive: hasStream ? participantStreams[p.id].active : false
+          streamInfo: hasStream ? {
+            streamId: participantStreams[p.id].id,
+            tracks: participantStreams[p.id].getTracks().length,
+            videoTracks: participantStreams[p.id].getVideoTracks().length,
+            active: participantStreams[p.id].active
+          } : 'NO_STREAM'
         });
         
         return shouldInclude;
