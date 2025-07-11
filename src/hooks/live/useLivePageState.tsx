@@ -24,22 +24,7 @@ export const useLivePageState = () => {
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
-  // Auto-generate sessionId and persist in sessionStorage
-  const [sessionId, setSessionId] = useState<string | null>(() => {
-    const existing = sessionStorage.getItem('liveSessionId');
-    if (existing && existing.startsWith('live-session-')) {
-      console.log('🔄 Recovering existing session:', existing);
-      return existing;
-    }
-    
-    // Generate clean session ID that won't conflict with validation
-    const timestamp = Date.now();
-    const randomId = Math.random().toString(36).substr(2, 9);
-    const newId = `live-session-${timestamp}-${randomId}`;
-    console.log('🆕 Generated new session ID:', newId);
-    sessionStorage.setItem('liveSessionId', newId);
-    return newId;
-  });
+  const [sessionId, setSessionId] = useState<string | null>(null);
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 

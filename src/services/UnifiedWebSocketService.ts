@@ -1,6 +1,5 @@
 import { io, Socket } from 'socket.io-client';
 import { getWebSocketURL } from '@/utils/connectionUtils';
-import { validateParticipantId } from '@/utils/participantIdGenerator';
 
 export interface UnifiedSignalingCallbacks {
   onConnected?: () => void;
@@ -225,17 +224,6 @@ class UnifiedWebSocketService {
   async joinRoom(roomId: string, userId: string): Promise<void> {
     console.log(`🚪 WEBSOCKET: Joining room ${roomId} as ${userId}`);
     
-    // Validate room ID and user ID
-    if (!roomId || roomId.trim() === '') {
-      console.error(`❌ WEBSOCKET: Invalid room ID provided: ${roomId}`);
-      throw new Error('Invalid room ID');
-    }
-    
-    if (!validateParticipantId(userId)) {
-      console.error(`❌ WEBSOCKET: Invalid participant ID provided: ${userId}`);
-      throw new Error(`Invalid participant ID: ${userId}`);
-    }
-    
     if (!this.isConnected()) {
       console.log('🔗 CONNECTION: Not connected, connecting first...');
       await this.connect();
@@ -252,7 +240,7 @@ class UnifiedWebSocketService {
       const joinTimeout = setTimeout(() => {
         console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
         reject(new Error('Join room timeout'));
-      }, 15000); // Reduced back to 15s to fail faster
+      }, 30000); // Aumentado para 30s
 
       // Success handler
       const handleJoinSuccess = (data: any) => {

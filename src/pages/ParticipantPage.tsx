@@ -10,7 +10,6 @@ import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPr
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
-import { generateParticipantId, validateParticipantId } from '@/utils/participantIdGenerator';
 
 const ParticipantPage = () => {
   console.log('🎯 PARTICIPANT PAGE: Starting render');
@@ -20,18 +19,7 @@ const ParticipantPage = () => {
   
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
   
-  const [participantId] = useState(() => {
-    const id = generateParticipantId();
-    console.log('🆔 PARTICIPANT: Generated ID:', id);
-    
-    // Validate the generated ID
-    if (!validateParticipantId(id)) {
-      console.error('❌ PARTICIPANT: Generated invalid ID, this should not happen!');
-      throw new Error('Failed to generate valid participant ID');
-    }
-    
-    return id;
-  });
+  const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
 
   const connection = useParticipantConnection(sessionId, participantId);
@@ -55,17 +43,9 @@ const ParticipantPage = () => {
     console.log('🚀 PARTICIPANT PAGE: Auto-initializing for session:', sessionId);
     
     if (sessionId) {
-      // ALWAYS auto-start for mobile participation
-      console.log('🚀 CRITICAL: Force auto-initialization for mobile participation');
-      
-      // Add delay to ensure DOM is ready
-      const timer = setTimeout(() => {
-        autoConnectToSession().catch(error => {
-          console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
-        });
-      }, 1000);
-      
-      return () => clearTimeout(timer);
+      autoConnectToSession().catch(error => {
+        console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
+      });
     }
     
     return () => {
@@ -79,36 +59,11 @@ const ParticipantPage = () => {
 
   const autoConnectToSession = async () => {
     try {
-      console.log('🎥 CRITICAL: Starting mobile camera acquisition');
-      
-      // Force camera initialization with mobile constraints
       const stream = await media.initializeMedia();
-      
-      if (stream) {
-        console.log('✅ CRITICAL: Camera stream acquired successfully:', {
-          streamId: stream.id,
-          videoTracks: stream.getVideoTracks().length,
-          audioTracks: stream.getAudioTracks().length,
-          active: stream.active
-        });
-      } else {
-        console.warn('⚠️ CRITICAL: No camera stream acquired - will connect without media');
-      }
-      
-      // Connect to session with stream
+      // Conectar sempre, mesmo que stream seja null (modo degradado)
       await connection.connectToSession(stream);
-      
-      console.log('✅ CRITICAL: Participant connected successfully');
-      
     } catch (error) {
       console.error('❌ PARTICIPANT: Auto-connection failed:', error);
-      // Still try to connect without media
-      try {
-        await connection.connectToSession(null);
-        console.log('📱 FALLBACK: Connected without media');
-      } catch (fallbackError) {
-        console.error('❌ FALLBACK: Complete connection failure:', fallbackError);
-      }
     }
   };
 

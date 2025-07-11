@@ -115,7 +115,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         
         console.log(`✅ PARTICIPANT CONNECTION: WebRTC initialized successfully`);
         
-        // CRITICAL: Verificar se o stream local foi enviado corretamente
+        // Verificar se o stream local foi enviado corretamente
         if (stream) {
           console.log(`🎥 PARTICIPANT CONNECTION: Local stream details:`, {
             streamId: stream.id,
@@ -126,25 +126,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
               kind: t.kind,
               enabled: t.enabled,
               readyState: t.readyState,
-              muted: t.muted,
-              label: t.label
+              muted: t.muted
             }))
           });
-          
-          // CRITICAL: Force immediate stream validation for mobile
-          if (isMobile) {
-            console.log('📱 CRITICAL: Forcing mobile stream validation');
-            
-            setTimeout(async () => {
-              try {
-                console.log('🔄 MOBILE: Re-sending stream after initialization');
-                await webrtc.updateLocalStream(stream);
-                console.log('✅ MOBILE: Stream re-sent successfully');
-              } catch (updateError) {
-                console.error('❌ MOBILE: Failed to re-send stream:', updateError);
-              }
-            }, 2000);
-          }
         }
         
         setIsConnected(true);

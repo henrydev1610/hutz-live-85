@@ -8,12 +8,6 @@ export const initHostWebRTC = async (sessionId: string) => {
   try {
     console.log('🚀 Initializing host WebRTC for session:', sessionId);
     
-    // Validate session ID exists and is not empty
-    if (!sessionId || sessionId.trim() === '') {
-      console.warn('⚠️ WEBRTC: Invalid session ID provided:', sessionId);
-      return { webrtc: null };
-    }
-    
     if (webrtcManager) {
       console.log('🧹 Cleaning up existing WebRTC manager');
       webrtcManager.cleanup();
@@ -64,31 +58,6 @@ export const setParticipantJoinCallback = (callback: (participantId: string) => 
 
 export const getWebRTCManager = () => {
   return webrtcManager;
-};
-
-/**
- * Updates the local stream in all WebRTC connections
- * CRITICAL: Call this when camera stream changes (e.g., rear camera acquired)
- */
-export const updateWebRTCStream = async (newStream: MediaStream): Promise<void> => {
-  if (webrtcManager) {
-    console.log('🔄 WEBRTC: Updating stream via global manager');
-    await webrtcManager.updateLocalStream(newStream);
-  } else {
-    console.warn('⚠️ WEBRTC: No manager available to update stream');
-  }
-};
-
-/**
- * Updates only video track using replaceTrack (faster for camera switching)
- */
-export const updateWebRTCVideoTrack = async (newStream: MediaStream): Promise<void> => {
-  if (webrtcManager) {
-    console.log('🎥 WEBRTC: Updating video track via global manager');
-    await webrtcManager.updateVideoTrack(newStream);
-  } else {
-    console.warn('⚠️ WEBRTC: No manager available to update video track');
-  }
 };
 
 export const cleanupWebRTC = () => {

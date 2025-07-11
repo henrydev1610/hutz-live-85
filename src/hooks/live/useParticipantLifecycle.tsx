@@ -26,12 +26,6 @@ export const useParticipantLifecycle = ({
   const handleParticipantJoin = useCallback((participantId: string) => {
     console.log("🚀 CRITICAL: FORCE Participant joined:", participantId);
     
-    // CRITICAL FIX: Validate participantId before using substring
-    if (!participantId || typeof participantId !== 'string') {
-      console.error('❌ Invalid participantId received:', participantId);
-      return;
-    }
-    
     setParticipantList(prev => {
       const exists = prev.some(p => p.id === participantId);
       if (exists) {
@@ -50,7 +44,7 @@ export const useParticipantLifecycle = ({
       const placeholderIndex = prev.findIndex(p => p.id.startsWith('placeholder-') && !p.active);
       if (placeholderIndex !== -1) {
         const updated = [...prev];
-        const participantName = `Participante ${participantId.substring(0, 8) || 'Unknown'}`;
+        const participantName = `Participante ${participantId.substring(0, 8)}`;
         updated[placeholderIndex] = {
           id: participantId,
           name: participantName,
@@ -77,7 +71,7 @@ export const useParticipantLifecycle = ({
       }
       
       // Add new participant if no placeholder available
-      const participantName = `Participante ${participantId.substring(0, 8) || 'Unknown'}`;
+      const participantName = `Participante ${participantId.substring(0, 8)}`;
       const newParticipant = {
         id: participantId,
         name: participantName,

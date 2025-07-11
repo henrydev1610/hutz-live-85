@@ -15,28 +15,24 @@ export const useDirectVideoCreation = ({
   const maxRetries = 5;
 
   const createVideoElementDirect = useCallback((container: HTMLElement, mediaStream: MediaStream) => {
-    console.log(`🎬 DIRECT: [${participantId}] Creating video element in ${containerId}`);
+    console.log(`🎬 DIRECT: Creating video for ${participantId} in ${containerId}`);
     
-    // Remove any existing video first and force cleanup
-    const existingVideos = container.querySelectorAll('video');
-    existingVideos.forEach(video => {
-      console.log(`🧹 DIRECT: [${participantId}] Removing existing video`);
-      if (video.srcObject) {
-        video.srcObject = null;
-      }
-      video.remove();
-    });
+    // Remove any existing video first
+    const existingVideo = container.querySelector('video');
+    if (existingVideo) {
+      console.log(`🧹 DIRECT: Removing existing video for ${participantId}`);
+      existingVideo.remove();
+    }
 
-    // CRITICAL: Create new video element with mobile-optimized settings
+    // Create new video element
     const video = document.createElement('video');
     video.autoplay = true;
     video.playsInline = true;
     video.muted = true;
     video.controls = false;
-    video.preload = 'metadata';
     video.className = 'w-full h-full object-cover absolute inset-0 z-10';
     
-    // CRITICAL: Force styles with mobile compatibility
+    // Force styles
     video.style.cssText = `
       display: block !important;
       width: 100% !important;
@@ -47,120 +43,73 @@ export const useDirectVideoCreation = ({
       left: 0 !important;
       z-index: 10 !important;
       background: transparent !important;
-      transform: translateZ(0) !important;
-      -webkit-transform: translateZ(0) !important;
     `;
 
-    // Enhanced event logging
-    video.addEventListener('loadstart', () => {
-      console.log(`📱 DIRECT: [${participantId}] Video loadstart`);
-    });
-    
-    video.addEventListener('loadedmetadata', () => {
-      console.log(`📱 DIRECT: [${participantId}] Video metadata loaded`, {
-        videoWidth: video.videoWidth,
-        videoHeight: video.videoHeight,
-        duration: video.duration
-      });
-    });
-    
-    video.addEventListener('canplay', () => {
-      console.log(`📱 DIRECT: [${participantId}] Video can play`);
-    });
-    
-    video.addEventListener('playing', () => {
-      console.log(`✅ DIRECT: [${participantId}] Video is playing!`);
-    });
-    
-    video.addEventListener('error', (e) => {
-      console.error(`❌ DIRECT: [${participantId}] Video error:`, e, video.error);
-    });
-
     // Set stream and append to container
-    console.log(`🔗 DIRECT: [${participantId}] Setting srcObject and appending to container`);
     video.srcObject = mediaStream;
     container.appendChild(video);
 
-    // PHASE 2 FIX: Simplified single-strategy play logic
+    // Force play
     const playVideo = async () => {
       try {
-        console.log(`▶️ PHASE2: [${participantId}] SINGLE attempt to play video`);
         await video.play();
-        console.log(`✅ PHASE2: [${participantId}] Video playing successfully`);
-        container.style.opacity = '1';
-        
+        console.log(`✅ DIRECT: Video playing for ${participantId}`);
       } catch (error) {
-        console.error(`❌ PHASE2: [${participantId}] Play failed:`, error);
-        // Single fallback - no complex retries
-        setTimeout(() => video.play().catch(e => 
-          console.error(`❌ PHASE2: [${participantId}] Final play failed:`, e)
-        ), 100);
+        console.log(`⚠️ DIRECT: Play failed for ${participantId}:`, error);
+        // Retry after short delay
+        setTimeout(() => {
+          video.play().catch(e => console.log(`⚠️ DIRECT: Retry failed:`, e));
+        }, 100);
       }
     };
 
-    // SINGLE play attempt only - no multiple events
+    // Try to play immediately and on events
     playVideo();
+    
+    video.addEventListener('loadedmetadata', playVideo);
+    video.addEventListener('canplay', playVideo);
 
     return video;
   }, [participantId, containerId]);
 
   const tryCreateVideo = useCallback(() => {
-    console.log(`🎯 DIRECT: [${participantId}] Trying to create video...`);
-    
     if (!stream) {
-      console.log(`🚫 DIRECT: [${participantId}] No stream available`);
+      console.log(`🚫 DIRECT: No stream for ${participantId}`);
       return false;
     }
 
-    // Enhanced stream validation
+    // More lenient stream validation - just check if stream exists
     const hasValidTracks = stream.getTracks().length > 0;
-    const videoTracks = stream.getVideoTracks();
-    const audioTracks = stream.getAudioTracks();
-    
-    console.log(`🔍 DIRECT: [${participantId}] Stream analysis:`, {
-      streamId: stream.id,
-      active: stream.active,
-      totalTracks: stream.getTracks().length,
-      videoTracks: videoTracks.length,
-      audioTracks: audioTracks.length,
-      videoTrackStates: videoTracks.map(t => ({ 
-        id: t.id, 
-        enabled: t.enabled, 
-        readyState: t.readyState,
-        muted: t.muted 
-      }))
-    });
-    
     if (!hasValidTracks) {
-      console.log(`🚫 DIRECT: [${participantId}] No tracks in stream`);
+      console.log(`🚫 DIRECT: No tracks in stream for ${participantId}`, {
+        streamId: stream.id,
+        tracks: stream.getTracks().length
+      });
       return false;
     }
+
+    console.log(`🎯 DIRECT: Processing stream for ${participantId}`, {
+      streamId: stream.id,
+      active: stream.active,
+      videoTracks: stream.getVideoTracks().length,
+      audioTracks: stream.getAudioTracks().length,
+      totalTracks: stream.getTracks().length
+    });
 
     const container = document.getElementById(containerId);
     if (!container) {
-      console.log(`⚠️ DIRECT: [${participantId}] Container ${containerId} not found`);
+      console.log(`⚠️ DIRECT: Container ${containerId} not found for ${participantId}`);
       return false;
     }
 
-    // Check if video already exists and is playing correctly
+    // Check if video already exists and is playing
     const existingVideo = container.querySelector('video') as HTMLVideoElement;
-    if (existingVideo) {
-      console.log(`🔍 DIRECT: [${participantId}] Existing video state:`, {
-        srcObject: !!existingVideo.srcObject,
-        sameStream: existingVideo.srcObject === stream,
-        paused: existingVideo.paused,
-        readyState: existingVideo.readyState,
-        videoWidth: existingVideo.videoWidth,
-        videoHeight: existingVideo.videoHeight
-      });
-      
-      if (existingVideo.srcObject === stream && !existingVideo.paused && existingVideo.readyState >= 2) {
-        console.log(`✅ DIRECT: [${participantId}] Video already playing correctly`);
-        return true;
-      }
+    if (existingVideo && existingVideo.srcObject === stream && !existingVideo.paused) {
+      console.log(`✅ DIRECT: Video already playing for ${participantId}`);
+      return true;
     }
 
-    console.log(`🎬 DIRECT: [${participantId}] Creating new video element`);
+    console.log(`✅ DIRECT: Creating video for ${participantId}`);
     createVideoElementDirect(container, stream);
     return true;
   }, [stream, participantId, containerId, createVideoElementDirect]);

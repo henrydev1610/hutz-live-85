@@ -20,77 +20,30 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   // Memoizar cálculos para evitar re-renderizações desnecessárias
   const { gridCols, selectedParticipants, emptySlots } = useMemo(() => {
     const cols = Math.ceil(Math.sqrt(Math.max(participantCount, 1)));
-    
-    console.log('🎭 CRITICAL: [GRID_FILTER] Processing participants:', {
-      totalParticipants: participantList.length,
-      participantCount,
-      allParticipants: participantList.map(p => ({
-        id: p.id,
-        name: p.name,
-        active: p.active,
-        selected: p.selected,
-        hasVideo: p.hasVideo,
-        hasStream: !!participantStreams[p.id],
-        streamId: participantStreams[p.id]?.id
-      }))
-    });
-    
-    // PHASE 1 FIX: ALWAYS show participants with streams - NO EXCEPTIONS
     const selected = participantList
-      .filter(p => {
-        const isPlaceholder = p.id.includes('placeholder');
-        const hasStream = !!participantStreams[p.id];
-        
-        // CRITICAL SIMPLIFICATION: Any non-placeholder participant gets through
-        // If they have a stream, they MUST be shown
-        const shouldInclude = !isPlaceholder;
-        
-        console.log(`🔍 PHASE1 [SIMPLE_FILTER] ${p.id}:`, {
-          isPlaceholder,
-          hasStream,
-          shouldInclude,
-          streamActive: hasStream ? participantStreams[p.id].active : false,
-          videoTracks: hasStream ? participantStreams[p.id].getVideoTracks().length : 0
-        });
-        
-        return shouldInclude;
-      })
+      .filter(p => (p.selected || p.hasVideo || p.active) && !p.id.includes('placeholder'))
       .sort((a, b) => {
-        // Prioritize participants with streams first, then active, then by connection time
-        const aHasStream = !!participantStreams[a.id];
-        const bHasStream = !!participantStreams[b.id];
-        
-        if (aHasStream && !bHasStream) return -1;
-        if (!aHasStream && bHasStream) return 1;
+        // Prioritize active participants first, then by connection time
         if (a.active && !b.active) return -1;
         if (!a.active && b.active) return 1;
         return (a.connectedAt || a.joinedAt) - (b.connectedAt || b.joinedAt);
       })
       .slice(0, participantCount);
-    
     const empty = Math.max(0, participantCount - selected.length);
-    
-    console.log('✅ CRITICAL: [GRID_FILTER] Final selection:', {
-      selectedCount: selected.length,
-      selectedIds: selected.map(p => p.id),
-      emptySlots: empty
-    });
     
     return {
       gridCols: cols,
       selectedParticipants: selected,
       emptySlots: empty
     };
-  }, [participantList, participantCount, participantStreams]);
+  }, [participantList, participantCount]);
 
-  console.log('🎭 CRITICAL: [PREVIEW_GRID] Rendering with:', {
+  console.log('🎭 FIXED: ParticipantPreviewGrid render:', {
     totalParticipants: participantList.length,
     selectedParticipants: selectedParticipants.length,
     participantCount,
     gridCols,
-    emptySlots,
-    availableStreams: Object.keys(participantStreams).length,
-    selectedWithStreams: selectedParticipants.filter(p => participantStreams[p.id]).length
+    emptySlots
   });
 
   return (

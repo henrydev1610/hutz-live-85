@@ -3,11 +3,7 @@ import { ConnectionHandler } from './ConnectionHandler';
 import { SignalingHandler } from './SignalingHandler';
 import { ParticipantManager } from './ParticipantManager';
 import { WebRTCCallbacks } from './WebRTCCallbacks';
-import { StreamUpdater } from './StreamUpdater';
-import { MobileOptimizer } from './MobileOptimizer';
-import { StreamValidator } from './StreamValidator';
 import { MEDIA_CONSTRAINTS } from './WebRTCConfig';
-import { generateHostId, validateParticipantId, sanitizeParticipantId } from '@/utils/participantIdGenerator';
 
 interface ConnectionState {
   websocket: 'disconnected' | 'connecting' | 'connected' | 'failed';
@@ -23,10 +19,10 @@ interface RetryConfig {
 }
 
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 10, // More retry attempts
-  initialDelay: 500, // Faster initial retry
-  maxDelay: 15000, // Lower max delay
-  multiplier: 1.5 // Slower exponential growth
+  maxRetries: 5,
+  initialDelay: 1000,
+  maxDelay: 30000,
+  multiplier: 2
 };
 
 export class UnifiedWebRTCManager {
@@ -77,9 +73,6 @@ export class UnifiedWebRTCManager {
     this.connectionHandler = new ConnectionHandler(this.peerConnections, () => this.localStream);
     this.signalingHandler = new SignalingHandler(this.peerConnections, new Map());
     
-    // Setup StreamUpdater with our peer connections
-    StreamUpdater.setPeerConnections(this.peerConnections);
-    
     // Link signaling handler with connection handler
     this.signalingHandler.setConnectionHandler(this.connectionHandler);
     
@@ -100,7 +93,7 @@ export class UnifiedWebRTCManager {
   private setupHealthMonitoring() {
     this.healthCheckInterval = setInterval(() => {
       this.performHealthCheck();
-    }, 5000); // Check every 5 seconds for faster recovery
+    }, 10000); // Check every 10 seconds
   }
 
   private performHealthCheck() {
@@ -151,18 +144,12 @@ export class UnifiedWebRTCManager {
   }
 
   private async handleWebSocketFailure() {
-    console.log('🔄 WebSocket connection failed, attempting immediate recovery...');
+    console.log('🔄 WebSocket connection failed, attempting recovery...');
     
-    // Immediate retry without delay for critical failures
     try {
       await this.reconnectWebSocket();
     } catch (error) {
-      console.error('❌ WebSocket recovery failed, scheduling retry:', error);
-      
-      // Schedule retry with exponential backoff
-      setTimeout(() => {
-        this.handleWebSocketFailure();
-      }, this.retryConfig.initialDelay);
+      console.error('❌ WebSocket recovery failed:', error);
     }
   }
 
@@ -304,150 +291,61 @@ export class UnifiedWebRTCManager {
 
   async initializeAsHost(sessionId: string): Promise<void> {
     console.log(`🏠 UNIFIED: Initializing as host for session: ${sessionId}`);
-    console.log(`🔍 UNIFIED: Device info:`, MobileOptimizer.getDeviceInfo());
-    
-    if (!sessionId || sessionId.trim() === '') {
-      console.error('❌ UNIFIED: Invalid session ID provided:', sessionId);
-      throw new Error('Invalid session ID provided');
-    }
-    
     this.roomId = sessionId;
-    this.participantId = generateHostId();
+    this.participantId = `host-${Date.now()}`;
     this.isHost = true;
-    
-    console.log('🆔 HOST: Generated host ID:', this.participantId);
-
-    // Get mobile-optimized settings
-    const optimizedSettings = MobileOptimizer.getOptimizedSettings();
-    console.log(`🔧 UNIFIED: Using optimized settings:`, optimizedSettings.timeouts);
 
     try {
-      console.log('🔄 UNIFIED: Step 1 - Updating connection state to connecting...');
       this.updateConnectionState('websocket', 'connecting');
-      
-      console.log('🔄 UNIFIED: Step 2 - Connecting to WebSocket service...');
-      const connectPromise = unifiedWebSocketService.connect();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('WebSocket timeout')), optimizedSettings.timeouts.initialization)
-      );
-      
-      await Promise.race([connectPromise, timeoutPromise]);
-      console.log('✅ UNIFIED: WebSocket connected successfully');
-      
-      console.log('🔄 UNIFIED: Step 3 - Setting up WebSocket callbacks...');
+      await unifiedWebSocketService.connect();
       this.setupWebSocketCallbacks();
-      console.log('✅ UNIFIED: WebSocket callbacks configured');
-      
-      console.log('🔄 UNIFIED: Step 4 - Joining room...');
-      const joinPromise = unifiedWebSocketService.joinRoom(sessionId, this.participantId);
-      const joinTimeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Join room timeout')), optimizedSettings.timeouts.connection)
-      );
-      
-      await Promise.race([joinPromise, joinTimeoutPromise]);
-      console.log('✅ UNIFIED: Successfully joined room');
+      await unifiedWebSocketService.joinRoom(sessionId, this.participantId);
       
       this.updateConnectionState('websocket', 'connected');
-      this.updateConnectionState('webrtc', 'connected'); // Also mark WebRTC as connected for host
-      
-      console.log(`🎉 UNIFIED HOST: Full initialization complete for session: ${sessionId}`);
+      console.log(`✅ UNIFIED HOST: Connected to signaling server`);
       
     } catch (error) {
-      console.error(`❌ UNIFIED HOST: Failed to initialize for session ${sessionId}:`, error);
-      console.error('🔍 UNIFIED HOST: Error details:', {
-        sessionId,
-        participantId: this.participantId,
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-        deviceInfo: MobileOptimizer.getDeviceInfo()
-      });
+      console.error(`❌ UNIFIED HOST: Failed to initialize:`, error);
       this.updateConnectionState('websocket', 'failed');
-      this.updateConnectionState('webrtc', 'failed');
       throw error;
     }
   }
 
   async initializeAsParticipant(sessionId: string, participantId: string, stream?: MediaStream): Promise<void> {
     console.log(`👤 UNIFIED: Initializing as participant ${participantId} for session ${sessionId}`);
-    console.log(`🔍 UNIFIED: Device info:`, MobileOptimizer.getDeviceInfo());
-    
     this.roomId = sessionId;
-    this.participantId = sanitizeParticipantId(participantId);
+    this.participantId = participantId;
     this.isHost = false;
-    
-    console.log('🆔 PARTICIPANT: Using sanitized ID:', this.participantId);
-    
-    // Final validation
-    if (!validateParticipantId(this.participantId)) {
-      throw new Error(`Invalid participant ID after sanitization: ${this.participantId}`);
-    }
-
-    // Get mobile-optimized settings
-    const optimizedSettings = MobileOptimizer.getOptimizedSettings();
 
     try {
-      // CRITICAL: Validate and optimize stream if provided
+      // IMPORTANT: Only use stream provided by useParticipantMedia - no local media creation
       if (stream) {
-        console.log(`📹 UNIFIED: Validating provided stream...`);
-        
-        // Validate stream quality
-        const validation = await StreamValidator.validateStream(stream);
-        console.log(`🔍 UNIFIED: Stream validation result:`, validation);
-        
-        if (!validation.isValid) {
-          console.warn(`⚠️ UNIFIED: Stream validation failed:`, validation.issues);
-          throw new Error(`Invalid stream: ${validation.issues.join(', ')}`);
-        }
-        
-        // Apply mobile optimizations if needed
-        const optimizedStream = MobileOptimizer.optimizeStreamForMobile(stream);
-        this.localStream = optimizedStream;
-        
-        console.log(`📹 UNIFIED: Using optimized stream:`, {
-          tracks: optimizedStream.getTracks().length,
-          videoTracks: optimizedStream.getVideoTracks().length,
-          audioTracks: optimizedStream.getAudioTracks().length,
-          videoSettings: optimizedStream.getVideoTracks()[0]?.getSettings(),
-          validationScore: validation.score
+        this.localStream = stream;
+        console.log(`📹 UNIFIED: Using provided stream from useParticipantMedia:`, {
+          tracks: stream.getTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length,
+          videoSettings: stream.getVideoTracks()[0]?.getSettings()
         });
       } else {
         console.warn(`⚠️ UNIFIED: No stream provided - participant must initialize media first`);
       }
 
       this.updateConnectionState('websocket', 'connecting');
-      
-      // Use optimized timeouts for mobile
-      const connectPromise = unifiedWebSocketService.connect();
-      const connectTimeout = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('WebSocket connection timeout')), optimizedSettings.timeouts.initialization)
-      );
-      
-      await Promise.race([connectPromise, connectTimeout]);
+      await unifiedWebSocketService.connect();
       this.setupWebSocketCallbacks();
-      
-      const joinPromise = unifiedWebSocketService.joinRoom(sessionId, participantId);
-      const joinTimeout = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Join room timeout')), optimizedSettings.timeouts.connection)
-      );
-      
-      await Promise.race([joinPromise, joinTimeout]);
+      await unifiedWebSocketService.joinRoom(sessionId, participantId);
       
       this.updateConnectionState('websocket', 'connected');
       console.log(`✅ UNIFIED PARTICIPANT: Connected to signaling server`);
       
-      // Notify stream if available with mobile-specific delay
+      // Notify stream if available
       if (this.localStream) {
         await this.notifyLocalStream();
       }
       
     } catch (error) {
       console.error(`❌ UNIFIED PARTICIPANT: Failed to initialize:`, error);
-      console.error('🔍 UNIFIED PARTICIPANT: Error details:', {
-        sessionId,
-        participantId,
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-        hasStream: !!stream,
-        deviceInfo: MobileOptimizer.getDeviceInfo()
-      });
       this.updateConnectionState('websocket', 'failed');
       throw error;
     }
@@ -520,64 +418,6 @@ export class UnifiedWebRTCManager {
 
   getConnectionMetrics() {
     return new Map(this.connectionMetrics);
-  }
-
-  /**
-   * Updates the local stream and forces renegotiation with all connected peers
-   * CRITICAL: Call this when camera stream is updated (e.g., rear camera acquired)
-   */
-  async updateLocalStream(newStream: MediaStream): Promise<void> {
-    console.log('🔄 UNIFIED: Updating local stream in all connections');
-    
-    // Validate new stream first
-    const validation = await StreamValidator.validateStream(newStream);
-    if (!validation.isValid) {
-      console.error('❌ UNIFIED: Cannot update with invalid stream:', validation.issues);
-      throw new Error(`Invalid stream: ${validation.issues.join(', ')}`);
-    }
-    
-    // Apply mobile optimizations
-    const optimizedStream = MobileOptimizer.optimizeStreamForMobile(newStream);
-    
-    console.log('🔄 UNIFIED: Stream update details:', {
-      oldStreamId: this.localStream?.id || 'none',
-      newStreamId: newStream.id,
-      connectionCount: this.peerConnections.size
-    });
-
-    // Update our local stream reference
-    this.localStream = newStream;
-
-    // CRITICAL: Ensure StreamUpdater has access to peer connections
-    StreamUpdater.setPeerConnections(this.peerConnections);
-    
-    // Update all existing peer connections with the new stream
-    try {
-      console.log('🔄 UNIFIED: CRITICAL - Starting stream update for mobile camera');
-      await StreamUpdater.updateStreamInAllConnections(newStream);
-      console.log('✅ UNIFIED: CRITICAL - Local stream updated successfully in all connections');
-    } catch (error) {
-      console.error('❌ UNIFIED: CRITICAL - Failed to update local stream:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Updates only video tracks using replaceTrack (faster for camera switching)
-   */
-  async updateVideoTrack(newStream: MediaStream): Promise<void> {
-    console.log('🎥 UNIFIED: Updating video track in all connections');
-
-    // Update our local stream reference
-    this.localStream = newStream;
-
-    try {
-      await StreamUpdater.updateVideoTrackInAllConnections(newStream);
-      console.log('✅ UNIFIED: Video track updated successfully in all connections');
-    } catch (error) {
-      console.error('❌ UNIFIED: Failed to update video track:', error);
-      throw error;
-    }
   }
 
   cleanup() {

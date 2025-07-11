@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
-import { initHostWebRTC, getWebRTCManager } from '@/utils/webrtc';
+import { initHostWebRTC } from '@/utils/webrtc';
 
 interface UseLivePageEffectsProps {
   sessionId: string | null;
@@ -60,7 +60,7 @@ export const useLivePageEffects = ({
     };
   }, [sessionId, localStream]);
 
-  // Enhanced session initialization effect - Start WebRTC immediately on mount
+  // Enhanced session initialization effect
   useEffect(() => {
     if (sessionId) {
       console.log('🚀 HOST: INITIALIZING SESSION:', sessionId);
@@ -139,70 +139,6 @@ export const useLivePageEffects = ({
       };
     }
   }, [sessionId]);
-
-  // NEW: Enhanced auto-reconnection monitoring effect
-  useEffect(() => {
-    if (!sessionId) return;
-    
-    const checkWebRTCHealth = setInterval(() => {
-      console.log('🔍 HOST: CRITICAL - Checking WebRTC health...');
-      
-      // Check if WebRTC is still connected
-      const webrtcManager = getWebRTCManager();
-      if (webrtcManager) {
-        const state = webrtcManager.getConnectionState();
-        console.log('📊 HOST: Connection state:', state);
-        
-        // Also check if we have active streams but no participants showing video
-        const currentParticipants = participantList.filter(p => !p.id.startsWith('placeholder-'));
-        const participantsWithVideo = currentParticipants.filter(p => p.hasVideo);
-        
-        console.log('👥 HOST: Participants status:', {
-          total: currentParticipants.length,
-          withVideo: participantsWithVideo.length,
-          activeStreams: Object.keys(participantStreams).length
-        });
-        
-        // CRITICAL: If we have participants but no video, force recovery
-        const needsRecovery = state.overall === 'failed' || 
-                             state.websocket === 'failed' ||
-                             (currentParticipants.length > 0 && participantsWithVideo.length === 0);
-        
-        if (needsRecovery) {
-          console.log('🚨 HOST: CRITICAL - Connection needs recovery, attempting fix...');
-          
-          // Re-initialize WebRTC
-          initHostWebRTC(sessionId).then(result => {
-            if (result && result.webrtc) {
-              console.log('✅ HOST: CRITICAL - WebRTC recovery successful');
-              
-              result.webrtc.setOnStreamCallback((participantId, stream) => {
-                console.log('🎥 HOST: CRITICAL - RECOVERY STREAM RECEIVED from:', participantId);
-                console.log('🔍 HOST: Stream details:', {
-                  streamId: stream.id,
-                  active: stream.active,
-                  videoTracks: stream.getVideoTracks().length,
-                  audioTracks: stream.getAudioTracks().length
-                });
-                
-                handleParticipantStream(participantId, stream);
-                setTimeout(() => updateTransmissionParticipants(), 200);
-              });
-              
-              result.webrtc.setOnParticipantJoinCallback((participantId) => {
-                console.log('👤 HOST: CRITICAL - RECOVERY PARTICIPANT JOIN:', participantId);
-                handleParticipantJoin(participantId);
-              });
-            }
-          }).catch(error => {
-            console.error('❌ HOST: CRITICAL - WebRTC recovery failed:', error);
-          });
-        }
-      }
-    }, 10000); // Check every 10 seconds for faster detection
-    
-    return () => clearInterval(checkWebRTCHealth);
-  }, [sessionId, participantList, participantStreams]);
 
   // Monitor participant streams changes
   useEffect(() => {

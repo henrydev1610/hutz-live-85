@@ -5,9 +5,7 @@ import LivePreview from '@/components/live/LivePreview';
 import TransmissionControls from '@/components/live/TransmissionControls';
 import LiveControlTabs from '@/components/live/LiveControlTabs';
 import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
-import StreamDebugPanel from '@/components/live/StreamDebugPanel';
 import { Participant } from '@/components/live/ParticipantGrid';
-import { useConnectionStatus } from '@/hooks/live/useConnectionStatus';
 
 interface LivePageContentProps {
   state: any;
@@ -34,21 +32,12 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
   onGenerateQRCode,
   onQRCodeToTransmission
 }) => {
-  const { webrtcConnected, websocketConnected } = useConnectionStatus();
-  
   // Calculate real participants and active streams
   const realParticipants = state.participantList.filter((p: Participant) => !p.id.startsWith('placeholder-'));
   const activeStreams = Object.keys(state.participantStreams).length;
 
   return (
-    <>
-      {/* PHASE 4: Debug Panel */}
-      <StreamDebugPanel 
-        participantList={state.participantList}
-        participantStreams={state.participantStreams}
-      />
-      
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <div className="space-y-6">
         <Card className="bg-secondary/40 backdrop-blur-lg border border-white/10">
           <CardHeader className="flex flex-row justify-between items-center">
@@ -91,7 +80,7 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
               onFileSelect={onFileSelect}
               onRemoveImage={onRemoveImage}
               fileInputRef={state.fileInputRef}
-              qrCodeGenerated={!!state.qrCodeURL}
+              qrCodeGenerated={!!sessionId}
               qrCodeVisible={state.qrCodeVisible}
               qrCodeURL={state.qrCodeURL}
               finalAction={state.finalAction}
@@ -114,8 +103,6 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
           participantCount={realParticipants.length}
           activeStreams={activeStreams}
           onTestConnection={participantManagement.testConnection}
-          webrtcConnected={webrtcConnected}
-          websocketConnected={websocketConnected}
         />
       </div>
       
@@ -153,7 +140,6 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
         </Card>
       </div>
     </div>
-    </>
   );
 };
 

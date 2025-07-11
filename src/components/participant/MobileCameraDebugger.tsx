@@ -24,7 +24,7 @@ interface MobileCameraDebuggerProps {
 export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
   localStream,
   onForceRetry,
-  isVisible = true // Always visible by default for mobile debugging
+  isVisible = false
 }) => {
   const [debugInfo, setDebugInfo] = useState<any>({});
   const [isDebugVisible, setIsDebugVisible] = useState(isVisible);

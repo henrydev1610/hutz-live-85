@@ -1,6 +1,5 @@
 // SIMPLIFIED getUserMedia with separate mobile/desktop logic
 import { detectMobileAggressively, checkMediaDevicesSupport } from './deviceDetection';
-import { MOBILE_MEDIA_CONSTRAINTS, MEDIA_CONSTRAINTS } from '@/utils/webrtc/WebRTCConfig';
 import { ensurePermissionsBeforeStream } from './streamAcquisition';
 import { enumerateMediaDevices, findBackCamera } from './deviceEnumeration';
 
@@ -81,47 +80,35 @@ const getMobileStreamWithBackCamera = async (): Promise<MediaStream | null> => {
   // 🎯 STEP 2: Build constraints with BACK CAMERA PRIORITY
   const constraints: MediaStreamConstraints[] = [];
   
-  // 🥇 PRIORITY 1: Use specific back camera deviceId if found with optimized settings
+  // 🥇 PRIORITY 1: Use specific back camera deviceId if found
   if (backCamera && backCamera.deviceId) {
     constraints.push({
-      video: { 
-        deviceId: { exact: backCamera.deviceId },
-        ...MOBILE_MEDIA_CONSTRAINTS.video
-      },
+      video: { deviceId: { exact: backCamera.deviceId } },
       audio: false // Start without audio for higher success rate
     });
   }
   
-  // 🥈 PRIORITY 2: EXACT environment facingMode with optimized settings
+  // 🥈 PRIORITY 2: EXACT environment facingMode
   constraints.push({
-    video: { 
-      facingMode: { exact: 'environment' },
-      ...MOBILE_MEDIA_CONSTRAINTS.video
-    },
+    video: { facingMode: { exact: 'environment' } },
     audio: false
   });
   
-  // 🥉 PRIORITY 3: IDEAL environment facingMode with optimized settings
+  // 🥉 PRIORITY 3: IDEAL environment facingMode  
   constraints.push({
-    video: { 
-      facingMode: { ideal: 'environment' },
-      ...MOBILE_MEDIA_CONSTRAINTS.video
-    },
+    video: { facingMode: { ideal: 'environment' } },
     audio: false
   });
   
-  // 🏅 PRIORITY 4: Basic video with mobile constraints
+  // 🏅 PRIORITY 4: Basic video (any camera)
   constraints.push({
-    video: MOBILE_MEDIA_CONSTRAINTS.video,
+    video: true,
     audio: false
   });
   
-  // 💔 PRIORITY 5: Front camera fallback with mobile constraints
+  // 💔 PRIORITY 5: Front camera fallback (ideal user)
   constraints.push({
-    video: { 
-      facingMode: { ideal: 'user' },
-      ...MOBILE_MEDIA_CONSTRAINTS.video
-    },
+    video: { facingMode: { ideal: 'user' } },
     audio: false
   });
 
@@ -173,10 +160,10 @@ const getDesktopStream = async (): Promise<MediaStream | null> => {
   console.log('🖥️ DESKTOP: Starting desktop camera acquisition');
   
   const constraints: MediaStreamConstraints[] = [
-    // Desktop - optimized constraints
+    // Desktop - NO facingMode
     {
-      video: MEDIA_CONSTRAINTS.video,
-      audio: MEDIA_CONSTRAINTS.audio
+      video: { width: 1280, height: 720 },
+      audio: true
     },
     // Basic desktop constraints
     {

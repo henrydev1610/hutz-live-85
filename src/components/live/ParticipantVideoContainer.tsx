@@ -104,8 +104,8 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     return video && video.srcObject === stream && !video.paused;
   };
 
-  // Debug info with enhanced stream checking
-  console.log(`🎭 CRITICAL: [VIDEO_CONTAINER] Rendering ${participant.id}:`, {
+  // Debug info
+  console.log(`🎭 RENDER: ParticipantVideoContainer for ${participant.id}`, {
     containerId,
     active: participant.active,
     hasVideo: participant.hasVideo,
@@ -113,11 +113,7 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     name: participant.name,
     hasStream: !!stream,
     streamId: stream?.id,
-    streamActive: stream?.active,
-    videoTracks: stream?.getVideoTracks().length || 0,
-    audioTracks: stream?.getAudioTracks().length || 0,
-    hasPlayingVideo: hasPlayingVideo(),
-    containerExists: !!document.getElementById(containerId)
+    hasPlayingVideo: hasPlayingVideo()
   });
 
   return (
@@ -134,20 +130,8 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     >
       {/* DEBUG: Informações de debug SEMPRE visíveis */}
       <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-1 rounded z-30">
-        {stream ? `STREAM:${stream.getVideoTracks().length}V/${stream.getAudioTracks().length}A` : 'NO_STREAM'} | {participant.active ? 'ACTIVE' : 'INACTIVE'} | {isHealthy ? '💚' : '💔'}
+        {participant.hasVideo ? 'HAS_VIDEO' : 'NO_VIDEO'} | {participant.active ? 'ACTIVE' : 'INACTIVE'} | {isHealthy ? '💚' : '💔'}
       </div>
-      
-      {/* Emergency manual creation button when we have stream but no video */}
-      {stream && !hasPlayingVideo() && (
-        <div className="absolute top-1 left-1 z-30">
-          <button 
-            onClick={createVideoManually}
-            className="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-          >
-            🎬 FORÇAR
-          </button>
-        </div>
-      )}
       
       {/* Show placeholder when participant is active but no video is playing or unhealthy */}
       {participant.active && stream && (!hasPlayingVideo() || !isHealthy) && (
