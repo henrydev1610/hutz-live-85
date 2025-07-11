@@ -7,6 +7,7 @@ import { StreamUpdater } from './StreamUpdater';
 import { MobileOptimizer } from './MobileOptimizer';
 import { StreamValidator } from './StreamValidator';
 import { MEDIA_CONSTRAINTS } from './WebRTCConfig';
+import { generateHostId, validateParticipantId, sanitizeParticipantId } from '@/utils/participantIdGenerator';
 
 interface ConnectionState {
   websocket: 'disconnected' | 'connecting' | 'connected' | 'failed';
@@ -311,8 +312,10 @@ export class UnifiedWebRTCManager {
     }
     
     this.roomId = sessionId;
-    this.participantId = `host-${Date.now()}`;
+    this.participantId = generateHostId();
     this.isHost = true;
+    
+    console.log('🆔 HOST: Generated host ID:', this.participantId);
 
     // Get mobile-optimized settings
     const optimizedSettings = MobileOptimizer.getOptimizedSettings();
@@ -368,8 +371,15 @@ export class UnifiedWebRTCManager {
     console.log(`🔍 UNIFIED: Device info:`, MobileOptimizer.getDeviceInfo());
     
     this.roomId = sessionId;
-    this.participantId = participantId;
+    this.participantId = sanitizeParticipantId(participantId);
     this.isHost = false;
+    
+    console.log('🆔 PARTICIPANT: Using sanitized ID:', this.participantId);
+    
+    // Final validation
+    if (!validateParticipantId(this.participantId)) {
+      throw new Error(`Invalid participant ID after sanitization: ${this.participantId}`);
+    }
 
     // Get mobile-optimized settings
     const optimizedSettings = MobileOptimizer.getOptimizedSettings();

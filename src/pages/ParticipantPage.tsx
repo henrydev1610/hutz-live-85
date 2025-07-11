@@ -10,6 +10,7 @@ import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPr
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+import { generateParticipantId, validateParticipantId } from '@/utils/participantIdGenerator';
 
 const ParticipantPage = () => {
   console.log('🎯 PARTICIPANT PAGE: Starting render');
@@ -19,7 +20,18 @@ const ParticipantPage = () => {
   
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
   
-  const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+  const [participantId] = useState(() => {
+    const id = generateParticipantId();
+    console.log('🆔 PARTICIPANT: Generated ID:', id);
+    
+    // Validate the generated ID
+    if (!validateParticipantId(id)) {
+      console.error('❌ PARTICIPANT: Generated invalid ID, this should not happen!');
+      throw new Error('Failed to generate valid participant ID');
+    }
+    
+    return id;
+  });
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
 
   const connection = useParticipantConnection(sessionId, participantId);

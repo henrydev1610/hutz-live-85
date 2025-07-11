@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
-import { initHostWebRTC } from '@/utils/webrtc';
+import { initHostWebRTC, getWebRTCManager } from '@/utils/webrtc';
 
 interface UseLivePageEffectsProps {
   sessionId: string | null;
@@ -148,7 +148,7 @@ export const useLivePageEffects = ({
       console.log('🔍 HOST: CRITICAL - Checking WebRTC health...');
       
       // Check if WebRTC is still connected
-      const webrtcManager = require('@/utils/webrtc').getWebRTCManager();
+      const webrtcManager = getWebRTCManager();
       if (webrtcManager) {
         const state = webrtcManager.getConnectionState();
         console.log('📊 HOST: Connection state:', state);

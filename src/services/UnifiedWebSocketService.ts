@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { getWebSocketURL } from '@/utils/connectionUtils';
+import { validateParticipantId } from '@/utils/participantIdGenerator';
 
 export interface UnifiedSignalingCallbacks {
   onConnected?: () => void;
@@ -225,9 +226,14 @@ class UnifiedWebSocketService {
     console.log(`🚪 WEBSOCKET: Joining room ${roomId} as ${userId}`);
     
     // Validate room ID and user ID
-    if (!roomId || roomId.trim() === '' || !userId || userId.trim() === '') {
-      console.warn(`⚠️ WEBSOCKET: Invalid room or user ID provided: roomId=${roomId}, userId=${userId}`);
-      throw new Error('Invalid room or user ID');
+    if (!roomId || roomId.trim() === '') {
+      console.error(`❌ WEBSOCKET: Invalid room ID provided: ${roomId}`);
+      throw new Error('Invalid room ID');
+    }
+    
+    if (!validateParticipantId(userId)) {
+      console.error(`❌ WEBSOCKET: Invalid participant ID provided: ${userId}`);
+      throw new Error(`Invalid participant ID: ${userId}`);
     }
     
     if (!this.isConnected()) {
