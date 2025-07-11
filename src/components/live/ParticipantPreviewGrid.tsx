@@ -35,22 +35,25 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
       }))
     });
     
-    // FIXED: More inclusive filter to show connected participants with streams
+    // CRITICAL: Enhanced filter to prioritize participants with active streams
     const selected = participantList
       .filter(p => {
         const isPlaceholder = p.id.includes('placeholder');
         const hasStream = !!participantStreams[p.id];
         const isActiveOrSelected = p.active || p.selected || p.hasVideo;
+        const isConnectedParticipant = p.id.includes('participant-') || p.id.includes('mobile-');
         
-        // Include if: not placeholder AND (has stream OR is active/selected)
-        const shouldInclude = !isPlaceholder && (hasStream || isActiveOrSelected);
+        // CRITICAL: Include if not placeholder AND has valid stream OR is legitimate participant
+        const shouldInclude = !isPlaceholder && (hasStream || isActiveOrSelected || isConnectedParticipant);
         
         console.log(`🔍 [GRID_FILTER] Participant ${p.id}:`, {
           isPlaceholder,
           hasStream,
           isActiveOrSelected,
+          isConnectedParticipant,
           shouldInclude,
-          streamTracks: hasStream ? participantStreams[p.id].getTracks().length : 0
+          streamTracks: hasStream ? participantStreams[p.id].getTracks().length : 0,
+          streamActive: hasStream ? participantStreams[p.id].active : false
         });
         
         return shouldInclude;

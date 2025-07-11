@@ -1,20 +1,9 @@
-
-import React, { useState } from 'react';
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/components/ui/use-toast";
-import { 
-  Wifi, 
-  WifiOff, 
-  TestTube, 
-  CheckCircle, 
-  XCircle, 
-  AlertTriangle,
-  RefreshCw,
-  Video,
-  Monitor
-} from 'lucide-react';
+import React from 'react';
+import { AlertCircle, CheckCircle, Wifi, WifiOff, RefreshCw, Download } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useConnectionStatus } from '@/hooks/live/useConnectionStatus';
+import { useConnectionDiagnostics } from '@/hooks/live/useConnectionDiagnostics';
 
 interface ConnectionDiagnosticsProps {
   sessionId: string | null;
@@ -33,158 +22,177 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
   webrtcConnected = false,
   websocketConnected = false
 }) => {
-  const { toast } = useToast();
-  const [isTestingConnection, setIsTestingConnection] = useState(false);
-  const [lastTestResult, setLastTestResult] = useState<'success' | 'error' | null>(null);
+  // Using diagnostics hook for real-time status
+  
+  const {
+    metrics,
+    performance,
+    diagnosticLogs,
+    runDiagnosticCheck,
+    forceReconnect,
+    clearLogs,
+    exportDiagnostics
+  } = useConnectionDiagnostics();
 
-  const handleTestConnection = async () => {
-    setIsTestingConnection(true);
-    setLastTestResult(null);
+  const getOverallStatus = () => {
+    const status = metrics.overall.status;
+    const healthScore = metrics.overall.healthScore;
     
-    try {
-      // Only test connectivity, not camera access for host
-      toast({
-        title: "Teste de conectividade bem-sucedido",
-        description: "Conexão WebRTC funcionando corretamente"
-      });
-      
-      // Call the provided test function
-      onTestConnection();
-      
-      setLastTestResult('success');
-      
-    } catch (error) {
-      console.error('Test connection failed:', error);
-      
-      toast({
-        title: "Erro no teste de conexão",
-        description: "Verifique as permissões da câmera",
-        variant: "destructive"
-      });
-      
-      setLastTestResult('error');
-    } finally {
-      setIsTestingConnection(false);
+    if (status === 'connected' && healthScore >= 80) {
+      return { status: 'connected', color: 'text-green-500', icon: CheckCircle, label: 'Conectado' };
+    } else if (status === 'connected' && healthScore >= 50) {
+      return { status: 'partial', color: 'text-yellow-500', icon: AlertCircle, label: 'Parcial' };
+    } else if (status === 'connecting') {
+      return { status: 'connecting', color: 'text-blue-500', icon: RefreshCw, label: 'Conectando' };
+    } else {
+      return { status: 'disconnected', color: 'text-red-500', icon: WifiOff, label: 'Desconectado' };
     }
   };
 
-  const getConnectionStatus = () => {
-    if (!sessionId) return { status: 'disconnected', label: 'Desconectado', color: 'destructive' };
-    if (!websocketConnected) return { status: 'disconnected', label: 'WebSocket desconectado', color: 'destructive' };
-    if (!webrtcConnected) return { status: 'partial', label: 'WebRTC desconectado', color: 'secondary' };
-    if (activeStreams > 0) return { status: 'connected', label: 'Conectado com vídeo', color: 'default' };
-    if (participantCount > 0) return { status: 'partial', label: 'Conectado sem vídeo', color: 'secondary' };
-    return { status: 'waiting', label: 'Aguardando participantes', color: 'outline' };
-  };
-
-  const connectionStatus = getConnectionStatus();
+  const overall = getOverallStatus();
+  const OverallIcon = overall.icon;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Monitor className="h-5 w-5" />
-          Diagnósticos de Conexão
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Connection Status */}
+    <Card className="w-full">
+      <CardContent className="p-4 space-y-4">
+        {/* Header with overall status */}
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Status da Conexão:</span>
           <div className="flex items-center gap-2">
-            {connectionStatus.status === 'connected' && <CheckCircle className="h-4 w-4 text-green-500" />}
-            {connectionStatus.status === 'partial' && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
-            {connectionStatus.status === 'disconnected' && <XCircle className="h-4 w-4 text-red-500" />}
-            {connectionStatus.status === 'waiting' && <Wifi className="h-4 w-4 text-blue-500" />}
-            <Badge variant={connectionStatus.color as any}>
-              {connectionStatus.label}
-            </Badge>
+            <OverallIcon className={`h-5 w-5 ${overall.color} ${overall.status === 'connecting' ? 'animate-spin' : ''}`} />
+            <span className="font-medium">Status da Conexão</span>
+            <span className={`text-sm ${overall.color}`}>({overall.label})</span>
           </div>
-        </div>
-
-        {/* Session Info */}
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <span className="text-muted-foreground">Sessão:</span>
-            <p className="font-mono text-xs truncate">
-              {sessionId ? sessionId.substring(0, 8) + '...' : 'Nenhuma'}
-            </p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Participantes:</span>
-            <p className="font-semibold">{participantCount}</p>
-          </div>
-        </div>
-
-        {/* Connection Details */}
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <span className="text-muted-foreground">WebSocket:</span>
-            <p className="flex items-center gap-1">
-              {websocketConnected ? (
-                <><CheckCircle className="h-3 w-3 text-green-500" /> Conectado</>
-              ) : (
-                <><XCircle className="h-3 w-3 text-red-500" /> Desconectado</>
-              )}
-            </p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">WebRTC:</span>
-            <p className="flex items-center gap-1">
-              {webrtcConnected ? (
-                <><CheckCircle className="h-3 w-3 text-green-500" /> Conectado</>
-              ) : (
-                <><XCircle className="h-3 w-3 text-red-500" /> Desconectado</>
-              )}
-            </p>
-          </div>
-        </div>
-
-        {/* Stream Info */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Streams Ativos:</span>
-          <div className="flex items-center gap-1">
-            <Video className="h-4 w-4" />
-            <span className="font-semibold">{activeStreams}</span>
-          </div>
-        </div>
-
-        {/* Test Connection Button */}
-        <div className="pt-4 border-t">
-          <Button 
-            onClick={handleTestConnection}
-            disabled={isTestingConnection}
-            className="w-full"
-            variant={lastTestResult === 'success' ? 'default' : 'outline'}
-          >
-            {isTestingConnection ? (
-              <>
-                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                Testando...
-              </>
-            ) : (
-              <>
-                <TestTube className="mr-2 h-4 w-4" />
-                Testar Conexão de Vídeo
-              </>
-            )}
-          </Button>
           
-          {lastTestResult && (
-            <div className="mt-2 text-center text-sm">
-              {lastTestResult === 'success' ? (
-                <span className="text-green-600">✅ Teste bem-sucedido</span>
-              ) : (
-                <span className="text-red-600">❌ Teste falhou</span>
+          <div className="flex items-center gap-2">
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={runDiagnosticCheck}
+              className="text-xs"
+            >
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Verificar
+            </Button>
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={exportDiagnostics}
+              className="text-xs"
+            >
+              <Download className="h-3 w-3 mr-1" />
+              Exportar
+            </Button>
+          </div>
+        </div>
+
+        {/* Detailed status */}
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="space-y-2">
+            {/* WebSocket Status */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Wifi className={`h-4 w-4 ${metrics.websocket.status === 'connected' ? 'text-green-500' : 'text-red-500'}`} />
+                <span>WebSocket</span>
+              </div>
+              <span className={`text-xs font-medium ${
+                metrics.websocket.status === 'connected' ? 'text-green-500' : 
+                metrics.websocket.status === 'connecting' ? 'text-blue-500' : 'text-red-500'
+              }`}>
+                {metrics.websocket.status === 'connected' ? 'Conectado' :
+                 metrics.websocket.status === 'connecting' ? 'Conectando' : 'Desconectado'}
+              </span>
+            </div>
+            
+            {/* WebRTC Status */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className={`h-2 w-2 rounded-full ${
+                  metrics.webrtc.status === 'connected' ? 'bg-green-500' : 'bg-red-500'
+                }`} />
+                <span>WebRTC</span>
+              </div>
+              <span className={`text-xs font-medium ${
+                metrics.webrtc.status === 'connected' ? 'text-green-500' : 
+                metrics.webrtc.status === 'connecting' ? 'text-blue-500' : 'text-red-500'
+              }`}>
+                {metrics.webrtc.status === 'connected' ? 'Conectado' :
+                 metrics.webrtc.status === 'connecting' ? 'Conectando' : 'Desconectado'}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {/* Health Score */}
+            <div className="flex items-center justify-between">
+              <span>Saúde da Conexão</span>
+              <span className={`text-xs font-medium ${
+                metrics.overall.healthScore >= 80 ? 'text-green-500' :
+                metrics.overall.healthScore >= 50 ? 'text-yellow-500' : 'text-red-500'
+              }`}>
+                {metrics.overall.healthScore}%
+              </span>
+            </div>
+            
+            {/* Participants */}
+            <div className="flex items-center justify-between">
+              <span>Participantes</span>
+              <span className="text-xs font-medium">
+                {metrics.webrtc.peerCount} conectado{metrics.webrtc.peerCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Session info */}
+        <div className="text-xs text-gray-500 border-t pt-2">
+          <div className="flex items-center justify-between">
+            <span>Sessão: {sessionId ? sessionId.substring(0, 12) + '...' : 'Nenhuma'}</span>
+            <span>Streams: {activeStreams}</span>
+          </div>
+        </div>
+
+        {/* Performance metrics */}
+        {performance.networkQuality !== 'poor' && (
+          <div className="text-xs text-gray-500 border-t pt-2">
+            <div className="flex items-center justify-between">
+              <span>Qualidade da Rede: <span className="font-medium">{performance.networkQuality}</span></span>
+              {performance.memoryUsage > 0 && (
+                <span>Memória: <span className="font-medium">{performance.memoryUsage}%</span></span>
               )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* WebRTC Support Check */}
-        <div className="text-xs text-muted-foreground">
-          <p>WebRTC: {typeof RTCPeerConnection !== 'undefined' ? '✅ Suportado' : '❌ Não suportado'}</p>
-          <p>getUserMedia: {navigator.mediaDevices?.getUserMedia ? '✅ Disponível' : '❌ Indisponível'}</p>
+        {/* Connection issues */}
+        {(metrics.websocket.lastError || metrics.webrtc.lastError) && (
+          <div className="text-xs text-red-500 border-t pt-2">
+            {metrics.websocket.lastError && (
+              <div>WebSocket: {metrics.websocket.lastError}</div>
+            )}
+            {metrics.webrtc.lastError && (
+              <div>WebRTC: {metrics.webrtc.lastError}</div>
+            )}
+          </div>
+        )}
+
+        {/* Recovery options */}
+        {metrics.overall.healthScore < 50 && (
+          <div className="border-t pt-2">
+            <Button 
+              size="sm" 
+              variant="destructive" 
+              onClick={forceReconnect}
+              className="w-full text-xs"
+            >
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Forçar Reconexão
+            </Button>
+          </div>
+        )}
+        
+        {/* Diagnostic info */}
+        <div className="text-xs text-gray-500 border-t pt-2">
+          <div>Última verificação: {new Date(metrics.overall.lastCheck).toLocaleTimeString()}</div>
         </div>
       </CardContent>
     </Card>

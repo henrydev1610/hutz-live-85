@@ -17,22 +17,26 @@ export const useDirectVideoCreation = ({
   const createVideoElementDirect = useCallback((container: HTMLElement, mediaStream: MediaStream) => {
     console.log(`🎬 DIRECT: [${participantId}] Creating video element in ${containerId}`);
     
-    // Remove any existing video first
-    const existingVideo = container.querySelector('video');
-    if (existingVideo) {
+    // Remove any existing video first and force cleanup
+    const existingVideos = container.querySelectorAll('video');
+    existingVideos.forEach(video => {
       console.log(`🧹 DIRECT: [${participantId}] Removing existing video`);
-      existingVideo.remove();
-    }
+      if (video.srcObject) {
+        video.srcObject = null;
+      }
+      video.remove();
+    });
 
-    // Create new video element
+    // CRITICAL: Create new video element with mobile-optimized settings
     const video = document.createElement('video');
     video.autoplay = true;
     video.playsInline = true;
     video.muted = true;
     video.controls = false;
+    video.preload = 'metadata';
     video.className = 'w-full h-full object-cover absolute inset-0 z-10';
     
-    // Force styles
+    // CRITICAL: Force styles with mobile compatibility
     video.style.cssText = `
       display: block !important;
       width: 100% !important;
@@ -43,6 +47,8 @@ export const useDirectVideoCreation = ({
       left: 0 !important;
       z-index: 10 !important;
       background: transparent !important;
+      transform: translateZ(0) !important;
+      -webkit-transform: translateZ(0) !important;
     `;
 
     // Enhanced event logging
@@ -75,27 +81,66 @@ export const useDirectVideoCreation = ({
     video.srcObject = mediaStream;
     container.appendChild(video);
 
-    // Force play with enhanced error handling
+    // CRITICAL: Enhanced play logic with mobile-specific handling
     const playVideo = async () => {
       try {
         console.log(`▶️ DIRECT: [${participantId}] Attempting to play video`);
+        
+        // Force load if needed (mobile compatibility)
+        if (video.readyState < 2) {
+          video.load();
+          await new Promise(resolve => {
+            const handler = () => {
+              video.removeEventListener('loadeddata', handler);
+              resolve(void 0);
+            };
+            video.addEventListener('loadeddata', handler);
+            setTimeout(resolve, 2000); // Timeout fallback
+          });
+        }
+        
         await video.play();
         console.log(`✅ DIRECT: [${participantId}] Video playing successfully`);
+        
+        // CRITICAL: Force visible for mobile
+        container.style.opacity = '1';
+        
       } catch (error) {
         console.error(`⚠️ DIRECT: [${participantId}] Play failed:`, error);
-        // Retry after short delay
-        setTimeout(() => {
-          console.log(`🔄 DIRECT: [${participantId}] Retrying play`);
-          video.play().catch(e => console.error(`❌ DIRECT: [${participantId}] Retry failed:`, e));
+        
+        // Multiple retry strategies
+        setTimeout(async () => {
+          try {
+            console.log(`🔄 DIRECT: [${participantId}] Strategy 1: Retrying play`);
+            await video.play();
+          } catch (retryError) {
+            console.log(`🔄 DIRECT: [${participantId}] Strategy 2: Force reload and play`);
+            video.load();
+            setTimeout(() => {
+              video.play().catch(e => console.error(`❌ DIRECT: [${participantId}] All strategies failed:`, e));
+            }, 500);
+          }
         }, 100);
       }
     };
 
-    // Try to play immediately and on events
+    // Multiple event-driven play attempts
     playVideo();
     
-    video.addEventListener('loadedmetadata', playVideo);
-    video.addEventListener('canplay', playVideo);
+    video.addEventListener('loadedmetadata', () => {
+      console.log(`📱 DIRECT: [${participantId}] Metadata loaded, attempting play`);
+      playVideo();
+    });
+    
+    video.addEventListener('canplay', () => {
+      console.log(`📱 DIRECT: [${participantId}] Can play, attempting play`);
+      playVideo();
+    });
+    
+    video.addEventListener('loadeddata', () => {
+      console.log(`📱 DIRECT: [${participantId}] Data loaded, attempting play`);
+      playVideo();
+    });
 
     return video;
   }, [participantId, containerId]);
