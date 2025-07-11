@@ -2,9 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Camera, CameraOff, AlertTriangle, RefreshCw, Smartphone, Monitor } from "lucide-react";
-import { detectMobileAggressively, forceDeviceType } from '@/utils/media/deviceDetection';
+import { 
+  Camera, 
+  RefreshCw, 
+  AlertTriangle, 
+  CheckCircle, 
+  XCircle,
+  Smartphone,
+  Monitor,
+  EyeOff,
+  Bug
+} from "lucide-react";
+import { toast } from "sonner";
 
 interface MobileCameraDebuggerProps {
   localStream?: MediaStream | null;
@@ -17,191 +26,176 @@ export const MobileCameraDebugger: React.FC<MobileCameraDebuggerProps> = ({
   onForceRetry,
   isVisible = false
 }) => {
-  const [debugInfo, setDebugInfo] = useState<any>(null);
-  const [showDesktopAlert, setShowDesktopAlert] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<any>({});
+  const [isDebugVisible, setIsDebugVisible] = useState(isVisible);
+  const [retryCount, setRetryCount] = useState(0);
   const [isRetrying, setIsRetrying] = useState(false);
-  const [retryAttempts, setRetryAttempts] = useState(0);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (localStream) {
-      const videoTracks = localStream.getVideoTracks();
-      if (videoTracks.length > 0) {
-        const videoTrack = videoTracks[0];
-        const settings = videoTrack.getSettings();
-        const isMobile = detectMobileAggressively();
+    const updateDebugInfo = () => {
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile Safari|Mobile|Mobi/i.test(navigator.userAgent);
+      const hasTouch = 'ontouchstart' in window;
+      const urlParams = new URLSearchParams(window.location.search);
+      const isQRAccess = urlParams.has('qr') || urlParams.has('mobile') || sessionStorage.getItem('accessedViaQR') === 'true';
+      
+      let streamInfo = { hasVideo: false, hasAudio: false, videoLabel: '', cameraType: 'unknown' };
+      
+      if (localStream) {
+        const videoTracks = localStream.getVideoTracks();
+        const audioTracks = localStream.getAudioTracks();
         
-        setDebugInfo({
-          trackLabel: videoTrack.label,
-          deviceId: settings.deviceId,
-          facingMode: settings.facingMode,
-          width: settings.width,
-          height: settings.height,
-          isMobile,
-          isDesktopCameraOnMobile: isMobile && !settings.facingMode
-        });
-
-        // Show alert if desktop camera detected on mobile
-        if (isMobile && !settings.facingMode) {
-          setShowDesktopAlert(true);
-        }
+        streamInfo = {
+          hasVideo: videoTracks.length > 0,
+          hasAudio: audioTracks.length > 0,
+          videoLabel: videoTracks[0]?.label || 'Unknown',
+          cameraType: videoTracks[0]?.label?.toLowerCase().includes('front') || 
+                     videoTracks[0]?.label?.toLowerCase().includes('user') ? 'front' :
+                     videoTracks[0]?.label?.toLowerCase().includes('back') || 
+                     videoTracks[0]?.label?.toLowerCase().includes('environment') ? 'back' : 'unknown'
+        };
       }
-    }
-  }, [localStream]);
 
-  useEffect(() => {
-    // Listen for desktop camera detected events
-    const handleDesktopCameraDetected = (event: CustomEvent) => {
-      console.error('🚨 DESKTOP CAMERA DETECTED ON MOBILE:', event.detail);
-      setShowDesktopAlert(true);
-      setRetryAttempts(prev => prev + 1);
+      setDebugInfo({
+        userAgent: navigator.userAgent,
+        isMobile,
+        hasTouch,
+        isQRAccess,
+        viewport: `${window.innerWidth}x${window.innerHeight}`,
+        streamInfo,
+        retryCount,
+        lastError
+      });
     };
 
-    window.addEventListener('mobileDesktopCameraDetected' as any, handleDesktopCameraDetected);
-    
-    return () => {
-      window.removeEventListener('mobileDesktopCameraDetected' as any, handleDesktopCameraDetected);
-    };
-  }, []);
+    updateDebugInfo();
+    const interval = setInterval(updateDebugInfo, 2000);
+    return () => clearInterval(interval);
+  }, [localStream, retryCount, lastError]);
 
   const handleForceRetry = async () => {
-    if (!onForceRetry) return;
+    if (!onForceRetry || isRetrying) return;
     
     setIsRetrying(true);
+    setRetryCount(prev => prev + 1);
+    setLastError(null);
+    
     try {
+      toast.info(`Retry ${retryCount + 1} - Getting ${debugInfo.isMobile ? 'mobile' : 'desktop'} camera...`);
       await onForceRetry();
-      setShowDesktopAlert(false);
+      toast.success('Camera retry completed!');
     } catch (error) {
-      console.error('Force retry failed:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      setLastError(errorMsg);
+      toast.error(`Retry failed: ${errorMsg}`);
     } finally {
       setIsRetrying(false);
     }
   };
 
-  const handleForceMobile = () => {
-    forceDeviceType('mobile');
-    window.location.reload();
+  const toggleDebugVisibility = () => {
+    setIsDebugVisible(!isDebugVisible);
   };
 
-  if (!isVisible && !showDesktopAlert && !debugInfo?.isDesktopCameraOnMobile) {
-    return null;
+  if (!isDebugVisible) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={toggleDebugVisibility}
+        className="fixed top-4 right-4 z-50 bg-black/50 text-white hover:bg-black/70"
+      >
+        <Bug className="h-4 w-4" />
+      </Button>
+    );
   }
 
-  return (
-    <div className="space-y-4">
-      {/* Desktop Camera Alert */}
-      {showDesktopAlert && (
-        <Alert className="bg-red-900/20 border-red-500/50 text-red-100">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription className="space-y-3">
-            <div>
-              <strong>Câmera Desktop Detectada! (Tentativa {retryAttempts})</strong>
-              <br />
-              Foi detectada uma câmera de desktop em um dispositivo móvel. 
-              Isso pode indicar que você está acessando de um computador ou que a câmera móvel não foi ativada corretamente.
-              <br />
-              <small className="text-red-300">Acesse APENAS via QR Code para garantir câmera móvel.</small>
-            </div>
-            <div className="flex gap-2">
-              <Button 
-                onClick={handleForceRetry}
-                disabled={isRetrying}
-                size="sm" 
-                variant="destructive"
-              >
-                {isRetrying ? (
-                  <>
-                    <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                    Tentando...
-                  </>
-                ) : (
-                  <>
-                    <Camera className="h-3 w-3 mr-1" />
-                    Forçar Câmera Móvel
-                  </>
-                )}
-              </Button>
-              <Button 
-                onClick={handleForceMobile}
-                size="sm" 
-                variant="outline"
-                className="bg-orange-900/20 border-orange-500/50 text-orange-100"
-              >
-                <Smartphone className="h-3 w-3 mr-1" />
-                Forçar Modo Móvel
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
+  const getStatusColor = () => {
+    if (lastError) return 'destructive';
+    if (debugInfo.streamInfo?.hasVideo) return 'default';
+    return 'destructive';
+  };
 
-      {/* Debug Info Card */}
-      {debugInfo && isVisible && (
-        <Card className="bg-black/30 border-white/10">
-          <CardHeader>
-            <CardTitle className="text-white text-sm flex items-center gap-2">
-              <Camera className="h-4 w-4" />
-              Debug da Câmera
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="text-white/70">Dispositivo:</div>
-              <div className="text-white flex items-center gap-1">
-                {debugInfo.isMobile ? (
-                  <>
-                    <Smartphone className="h-3 w-3" />
-                    Móvel
-                  </>
-                ) : (
-                  <>
-                    <Monitor className="h-3 w-3" />
-                    Desktop
-                  </>
-                )}
-              </div>
-              
-              <div className="text-white/70">FacingMode:</div>
-              <div className="text-white">
-                {debugInfo.facingMode ? (
-                  <Badge variant="default" className="text-xs">
-                    {debugInfo.facingMode}
-                  </Badge>
-                ) : (
-                  <Badge variant="destructive" className="text-xs">
-                    Ausente
-                  </Badge>
-                )}
-              </div>
-              
-              <div className="text-white/70">Resolução:</div>
-              <div className="text-white">
-                {debugInfo.width}x{debugInfo.height}
-              </div>
-              
-              <div className="text-white/70">Câmera:</div>
-              <div className="text-white">
-                {debugInfo.isDesktopCameraOnMobile ? (
-                  <Badge variant="destructive" className="text-xs">
-                    <CameraOff className="h-3 w-3 mr-1" />
-                    Desktop no Móvel
-                  </Badge>
-                ) : (
-                  <Badge variant="default" className="text-xs">
-                    <Camera className="h-3 w-3 mr-1" />
-                    Correto
-                  </Badge>
-                )}
-              </div>
-            </div>
-            
-            {debugInfo.trackLabel && (
-              <div className="text-xs text-white/50 truncate">
-                Label: {debugInfo.trackLabel}
-              </div>
+  return (
+    <Card className="fixed top-4 right-4 z-50 w-80 max-h-96 overflow-y-auto bg-black/90 text-white border-white/20">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Bug className="h-4 w-4" />
+            Camera Debug
+          </CardTitle>
+          <Button variant="ghost" size="sm" onClick={toggleDebugVisibility}>
+            <EyeOff className="h-3 w-3" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 text-xs">
+        <div className="flex items-center gap-2">
+          <Badge variant={debugInfo.isMobile ? 'default' : 'secondary'}>
+            {debugInfo.isMobile ? <Smartphone className="h-3 w-3" /> : <Monitor className="h-3 w-3" />}
+            {debugInfo.isMobile ? 'MOBILE' : 'DESKTOP'}
+          </Badge>
+          <Badge variant={debugInfo.isQRAccess ? 'default' : 'secondary'}>
+            {debugInfo.isQRAccess ? 'QR' : 'Direct'}
+          </Badge>
+        </div>
+
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            {debugInfo.streamInfo?.hasVideo ? (
+              <CheckCircle className="h-3 w-3 text-green-400" />
+            ) : (
+              <XCircle className="h-3 w-3 text-red-400" />
             )}
-          </CardContent>
-        </Card>
-      )}
-    </div>
+            <span>Camera: {debugInfo.streamInfo?.hasVideo ? 'ACTIVE' : 'NOT FOUND'}</span>
+          </div>
+          
+          {debugInfo.streamInfo?.hasVideo && (
+            <div className="text-gray-300 ml-5">
+              <div>Type: {debugInfo.streamInfo.cameraType}</div>
+              <div className="truncate">Device: {debugInfo.streamInfo.videoLabel}</div>
+            </div>
+          )}
+        </div>
+
+        {lastError && (
+          <div className="bg-red-900/50 p-2 rounded text-red-200">
+            <div className="flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              <span className="font-semibold">Error:</span>
+            </div>
+            <div className="text-xs mt-1">{lastError}</div>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          {onForceRetry && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleForceRetry}
+              disabled={isRetrying}
+              className="text-xs"
+            >
+              {isRetrying ? (
+                <RefreshCw className="h-3 w-3 animate-spin" />
+              ) : (
+                <Camera className="h-3 w-3" />
+              )}
+              Retry {retryCount > 0 && `(${retryCount})`}
+            </Button>
+          )}
+        </div>
+
+        <details className="text-xs">
+          <summary className="cursor-pointer text-gray-400">Device Info</summary>
+          <div className="mt-2 space-y-1 text-gray-300">
+            <div>UA: {debugInfo.userAgent?.substring(0, 40)}...</div>
+            <div>Viewport: {debugInfo.viewport}</div>
+            <div>Touch: {debugInfo.hasTouch ? 'Yes' : 'No'}</div>
+          </div>
+        </details>
+      </CardContent>
+    </Card>
   );
 };

@@ -1,134 +1,148 @@
-// Main getUserMedia fallback orchestrator
-import { detectMobileAggressively, checkMediaDevicesSupport, getCameraPreference } from './deviceDetection';
-import { getDeviceSpecificConstraints } from './mediaConstraints';
-import { logDeviceInfo } from './deviceDebugger';
-import { checkMediaPermissions, waitForMobilePermissions } from './permissions';
-import { enumerateMediaDevices } from './deviceEnumeration';
-import { attemptStreamAcquisition, processStreamError, emergencyFallback } from './streamAcquisition';
-import { rejectNonMobileStream } from './streamValidation';
+// SIMPLIFIED getUserMedia with separate mobile/desktop logic
+import { detectMobileAggressively, checkMediaDevicesSupport } from './deviceDetection';
 
 export const getUserMediaWithFallback = async (): Promise<MediaStream | null> => {
   const isMobile = detectMobileAggressively();
-  const deviceType = isMobile ? 'mobile' : 'desktop';
+  const deviceType = isMobile ? 'MOBILE' : 'DESKTOP';
   
-  // Comprehensive logging
-  logDeviceInfo();
-  console.log(`🎬 MEDIA FALLBACK: Starting ULTRA ROBUST attempt for ${deviceType.toUpperCase()}`);
-  console.log(`🎯 DEVICE DETECTION: ${deviceType} (isMobile: ${isMobile})`);
-  console.log(`📱 CONTEXT: UA: ${navigator.userAgent}`);
-  console.log(`📱 CONTEXT: Platform: ${navigator.platform}`);
-  console.log(`📱 CONTEXT: URL: ${window.location.href}`);
-  console.log(`📱 CONTEXT: Viewport: ${window.innerWidth}x${window.innerHeight}`);
+  console.log(`🎬 CAMERA: Starting ${deviceType} camera acquisition`);
+  console.log(`📱 Device Info: ${navigator.userAgent}`);
+  console.log(`📱 URL: ${window.location.href}`);
 
   // Check basic support
   if (!checkMediaDevicesSupport()) {
-    console.error('❌ MEDIA: getUserMedia não é suportado neste navegador');
-    throw new Error('getUserMedia não é suportado neste navegador');
+    console.error('❌ CAMERA: getUserMedia not supported');
+    throw new Error('getUserMedia not supported');
   }
 
-  // CRITICAL: Mobile-specific camera targeting with retry logic
-  if (isMobile) {
-    console.log('📱 MEDIA FALLBACK: MOBILE DEVICE - Using ABSOLUTE mobile camera acquisition');
+  try {
+    let stream: MediaStream | null = null;
     
-    for (let mobileAttempt = 0; mobileAttempt < 3; mobileAttempt++) {
-      try {
-        const { forceMobileCamera } = await import('./mobileMediaDetector');
-        const preferredFacing = getCameraPreference();
-        console.log(`📱 MEDIA FALLBACK: Mobile attempt ${mobileAttempt + 1}/3 - forcing camera: ${preferredFacing}`);
-        
-        const mobileStream = await forceMobileCamera(preferredFacing);
-        
-        if (mobileStream) {
-          // RIGOROUS validation for mobile streams
-          const { rejectNonMobileStream } = await import('./streamValidation');
-          const validatedStream = await rejectNonMobileStream(mobileStream, true);
-          
-          if (validatedStream) {
-            console.log('🎉 MEDIA FALLBACK: MOBILE CAMERA SUCCESSFULLY ACQUIRED AND VALIDATED!');
-            return validatedStream;
-          } else {
-            console.error(`❌ MOBILE ATTEMPT ${mobileAttempt + 1}: Stream rejected - desktop camera detected`);
-            // Continue retry loop
-          }
-        } else {
-          console.warn(`⚠️ MOBILE ATTEMPT ${mobileAttempt + 1}: Mobile camera acquisition returned null`);
-        }
-      } catch (mobileError) {
-        console.error(`❌ MOBILE ATTEMPT ${mobileAttempt + 1}: Mobile camera detector failed:`, mobileError);
-      }
-      
-      // Wait before retry
-      if (mobileAttempt < 2) {
-        console.log(`⏳ MOBILE RETRY: Waiting 1s before attempt ${mobileAttempt + 2}`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+    if (isMobile) {
+      console.log('📱 CAMERA: Using MOBILE camera logic');
+      stream = await getMobileStream();
+    } else {
+      console.log('🖥️ CAMERA: Using DESKTOP camera logic');
+      stream = await getDesktopStream();
     }
     
-    console.error('❌ MEDIA FALLBACK: ALL MOBILE ATTEMPTS FAILED - falling back to generic constraints');
+    if (stream && validateStream(stream)) {
+      console.log(`✅ CAMERA: ${deviceType} camera acquired successfully`);
+      return stream;
+    } else {
+      console.error(`❌ CAMERA: ${deviceType} camera acquisition failed`);
+      return null;
+    }
+    
+  } catch (error) {
+    console.error(`❌ CAMERA: ${deviceType} error:`, error);
+    return null;
   }
+};
 
-  // Wait for mobile permissions
-  await waitForMobilePermissions(isMobile);
-
-  // Check permissions
-  const permissions = await checkMediaPermissions();
-
-  // Enumerate devices
-  const deviceInfo = await enumerateMediaDevices();
-
-  // Get constraints and start attempts
-  const constraintsList = getDeviceSpecificConstraints();
-  let lastError: any = null;
+const getMobileStream = async (): Promise<MediaStream | null> => {
+  console.log('📱 MOBILE: Starting mobile camera acquisition');
   
-  console.log(`🎯 MEDIA: Starting ${constraintsList.length} constraint attempts for ${deviceType.toUpperCase()}`);
+  const constraints: MediaStreamConstraints[] = [
+    // Try user camera first
+    {
+      video: { facingMode: 'user' },
+      audio: true
+    },
+    // Try environment camera
+    {
+      video: { facingMode: 'environment' },
+      audio: true
+    },
+    // Fallback without facingMode
+    {
+      video: true,
+      audio: true
+    },
+    // Last resort - video only
+    {
+      video: true,
+      audio: false
+    }
+  ];
 
-  for (let i = 0; i < constraintsList.length; i++) {
+  for (let i = 0; i < constraints.length; i++) {
     try {
-      const stream = await attemptStreamAcquisition(
-        constraintsList[i],
-        i + 1,
-        constraintsList.length,
-        isMobile,
-        deviceType
-      );
+      console.log(`📱 MOBILE ATTEMPT ${i + 1}/${constraints.length}:`, constraints[i]);
+      const stream = await navigator.mediaDevices.getUserMedia(constraints[i]);
       
-      // CRITICAL: Validate mobile stream has mobile camera
-      const validatedStream = await rejectNonMobileStream(stream, isMobile);
-      
-      if (!validatedStream && isMobile) {
-        console.error(`❌ MOBILE STREAM REJECTED: Desktop camera detected on mobile, retrying...`);
-        throw new Error('Desktop camera detected on mobile device');
+      if (stream && stream.getVideoTracks().length > 0) {
+        console.log('✅ MOBILE: Successfully acquired mobile camera');
+        return stream;
       }
-      
-      return validatedStream || stream;
-      
     } catch (error) {
-      lastError = error;
-      const skipToIndex = processStreamError(error, i + 1, constraintsList, isMobile, deviceType);
-      
-      // Handle skip logic
-      if (skipToIndex > i) {
-        i = skipToIndex - 1; // -1 because loop will increment
-      }
+      console.warn(`❌ MOBILE ATTEMPT ${i + 1} failed:`, error);
     }
   }
+  
+  console.error('❌ MOBILE: All attempts failed');
+  return null;
+};
 
-  // All attempts failed
-  console.error(`❌ MEDIA: ALL ${constraintsList.length} ATTEMPTS FAILED`);
-  console.error(`❌ MEDIA: Final error:`, {
-    name: lastError?.name,
-    message: lastError?.message,
-    isMobile,
-    deviceInfo,
-    permissions
+const getDesktopStream = async (): Promise<MediaStream | null> => {
+  console.log('🖥️ DESKTOP: Starting desktop camera acquisition');
+  
+  const constraints: MediaStreamConstraints[] = [
+    // Desktop - NO facingMode
+    {
+      video: { width: 1280, height: 720 },
+      audio: true
+    },
+    // Basic desktop constraints
+    {
+      video: true,
+      audio: true
+    },
+    // Video only fallback
+    {
+      video: true,
+      audio: false
+    }
+  ];
+
+  for (let i = 0; i < constraints.length; i++) {
+    try {
+      console.log(`🖥️ DESKTOP ATTEMPT ${i + 1}/${constraints.length}:`, constraints[i]);
+      const stream = await navigator.mediaDevices.getUserMedia(constraints[i]);
+      
+      if (stream && stream.getVideoTracks().length > 0) {
+        console.log('✅ DESKTOP: Successfully acquired desktop camera');
+        return stream;
+      }
+    } catch (error) {
+      console.warn(`❌ DESKTOP ATTEMPT ${i + 1} failed:`, error);
+    }
+  }
+  
+  console.error('❌ DESKTOP: All attempts failed');
+  return null;
+};
+
+const validateStream = (stream: MediaStream | null): boolean => {
+  if (!stream) {
+    console.error('❌ VALIDATION: No stream provided');
+    return false;
+  }
+  
+  const videoTracks = stream.getVideoTracks();
+  const audioTracks = stream.getAudioTracks();
+  
+  if (videoTracks.length === 0) {
+    console.error('❌ VALIDATION: No video tracks found');
+    return false;
+  }
+  
+  console.log('✅ VALIDATION: Stream is valid', {
+    videoTracks: videoTracks.length,
+    audioTracks: audioTracks.length,
+    videoEnabled: videoTracks[0]?.enabled,
+    audioEnabled: audioTracks[0]?.enabled
   });
   
-  // Emergency fallback
-  const emergencyStream = await emergencyFallback();
-  if (emergencyStream) {
-    return emergencyStream;
-  }
-
-  console.warn(`⚠️ MEDIA: Returning null - entering degraded mode`);
-  return null;
+  return true;
 };
