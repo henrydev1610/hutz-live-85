@@ -71,8 +71,13 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
 
   const getConnectionStatus = () => {
     if (!sessionId) return { status: 'disconnected', label: 'Desconectado', color: 'destructive' };
-    if (activeStreams > 0) return { status: 'connected', label: 'Conectado com vídeo', color: 'default' };
-    if (participantCount > 0) return { status: 'partial', label: 'Conectado sem vídeo', color: 'secondary' };
+    
+    // Check if we have WebRTC connections even without streams counted
+    const hasWebRTCConnections = participantCount > 0;
+    const hasActiveStreams = activeStreams > 0;
+    
+    if (hasActiveStreams) return { status: 'connected', label: 'Conectado com vídeo', color: 'default' };
+    if (hasWebRTCConnections) return { status: 'connected', label: 'Conectado', color: 'default' };
     return { status: 'waiting', label: 'Aguardando participantes', color: 'outline' };
   };
 
