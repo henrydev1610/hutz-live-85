@@ -35,6 +35,12 @@ export class ParticipantManager {
   updateParticipantsList(participants: any[]) {
     console.log('🔄 Updating participants list with:', participants);
     
+    // Garantir que participants é um array
+    if (!Array.isArray(participants)) {
+      console.warn('⚠️ Participants is not an array:', participants);
+      return;
+    }
+    
     this.participants.clear();
     
     participants.forEach(participant => {
