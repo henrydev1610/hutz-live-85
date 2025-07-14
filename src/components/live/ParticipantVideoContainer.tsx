@@ -112,8 +112,11 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     hasVideo: participant.hasVideo,
     selected: participant.selected,
     name: participant.name,
+    isMobile: participant.isMobile,
     hasStream: !!stream,
     streamId: stream?.id,
+    videoTracks: stream?.getVideoTracks().length || 0,
+    audioTracks: stream?.getAudioTracks().length || 0,
     hasPlayingVideo: hasPlayingVideo()
   });
 

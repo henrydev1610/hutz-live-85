@@ -27,7 +27,7 @@ const ParticipantPage = () => {
   const media = useParticipantMedia();
   
   // 🚨 CRÍTICO: Forçar câmera mobile imediatamente
-  const mobileCamera = useMobileCameraForcer();
+  const mobileCamera = useMobileCameraForcer(sessionId, participantId);
 
   // Monitor signaling service status
   useEffect(() => {

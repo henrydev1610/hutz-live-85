@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from "sonner";
+import { UnifiedWebRTCManager } from '@/utils/webrtc/UnifiedWebRTCManager';
+import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
-export const useMobileCameraForcer = () => {
+export const useMobileCameraForcer = (sessionId?: string, participantId?: string) => {
   const [isMobile, setIsMobile] = useState(false);
   const [hasStream, setHasStream] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +54,29 @@ export const useMobileCameraForcer = () => {
         console.log('📺 MOBILE CAMERA: Video element connected');
       }
 
-      toast.success('📱 Câmera móvel ativada com sucesso!');
+      // 4. CRÍTICO: Iniciar transmissão WebRTC imediatamente
+      if (sessionId && participantId) {
+        console.log('🚀 MOBILE CAMERA: Starting immediate WebRTC transmission');
+        try {
+          const webrtcManager = new UnifiedWebRTCManager();
+          await webrtcManager.initializeAsParticipant(sessionId, participantId, stream);
+          console.log('✅ MOBILE CAMERA: WebRTC initialized with mobile stream');
+          
+          // Notificar que stream está disponível via WebSocket
+          unifiedWebSocketService.notifyStreamStarted(participantId, {
+            streamId: stream.id,
+            trackCount: stream.getTracks().length,
+            hasVideo: stream.getVideoTracks().length > 0,
+            hasAudio: stream.getAudioTracks().length > 0,
+            isMobile: true
+          });
+          
+        } catch (webrtcError) {
+          console.error('❌ MOBILE CAMERA: WebRTC initialization failed:', webrtcError);
+        }
+      }
+
+      toast.success('📱 Câmera móvel ativada e transmitindo!');
 
     } catch (error) {
       console.error('❌ MOBILE CAMERA: Failed to initialize:', error);

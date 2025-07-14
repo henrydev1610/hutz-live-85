@@ -32,6 +32,8 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
         isMobile: p.isMobile,
         active: p.active,
         hasVideo: p.hasVideo,
+        streamId: participantStreams[p.id]?.id,
+        videoTracks: participantStreams[p.id]?.getVideoTracks().length || 0,
         WILL_SHOW: hasStream && isRealParticipant
       });
       
