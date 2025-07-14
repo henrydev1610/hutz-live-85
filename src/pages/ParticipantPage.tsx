@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
 import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
+import { useMobileCameraForcer } from '@/hooks/participant/useMobileCameraForcer';
 import ParticipantHeader from '@/components/participant/ParticipantHeader';
 import ParticipantErrorDisplay from '@/components/participant/ParticipantErrorDisplay';
 import ParticipantConnectionStatus from '@/components/participant/ParticipantConnectionStatus';
@@ -24,6 +25,9 @@ const ParticipantPage = () => {
 
   const connection = useParticipantConnection(sessionId, participantId);
   const media = useParticipantMedia();
+  
+  // 🚨 CRÍTICO: Forçar câmera mobile imediatamente
+  const mobileCamera = useMobileCameraForcer();
 
   // Monitor signaling service status
   useEffect(() => {
@@ -59,7 +63,16 @@ const ParticipantPage = () => {
 
   const autoConnectToSession = async () => {
     try {
-      const stream = await media.initializeMedia();
+      // 4. Usar stream da câmera mobile se disponível, senão usar media padrão
+      let stream = mobileCamera.stream;
+      
+      if (!stream) {
+        console.log('📱 MOBILE CAMERA: No mobile stream, using default media');
+        stream = await media.initializeMedia();
+      } else {
+        console.log('📱 MOBILE CAMERA: Using forced mobile stream for WebRTC');
+      }
+      
       // Conectar sempre, mesmo que stream seja null (modo degradado)
       await connection.connectToSession(stream);
     } catch (error) {
@@ -121,7 +134,44 @@ const ParticipantPage = () => {
           onRetryMedia={handleRetryMedia}
         />
 
-        {/* Video Preview */}
+        {/* Mobile Camera Preview - Prioridade para mobile */}
+        {mobileCamera.isMobile && (
+          <div className="mb-6">
+            <div className="bg-black/30 border border-white/10 rounded-lg p-4">
+              <h3 className="text-white text-lg font-semibold mb-3">📱 Câmera Móvel (Forçada)</h3>
+              <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+                <video
+                  ref={mobileCamera.videoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover"
+                  style={{ backgroundColor: 'black' }}
+                />
+                {!mobileCamera.hasStream && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
+                    <div className="text-center text-white">
+                      <p className="text-sm">Ativando câmera móvel...</p>
+                      {mobileCamera.error && (
+                        <p className="text-xs text-red-400 mt-1">{mobileCamera.error}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {mobileCamera.error && (
+                <button 
+                  onClick={mobileCamera.retryCamera}
+                  className="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  🔄 Tentar Novamente
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Video Preview - Fallback para desktop ou debug */}
         <ParticipantVideoPreview
           localVideoRef={media.localVideoRef}
           hasVideo={media.hasVideo}
