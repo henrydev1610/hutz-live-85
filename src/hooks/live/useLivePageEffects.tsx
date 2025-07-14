@@ -85,50 +85,83 @@ export const useLivePageEffects = ({
         }
       });
 
-      // Initialize WebRTC with enhanced logging
-      initHostWebRTC(sessionId).then(result => {
-        if (result && result.webrtc) {
-          console.log('✅ HOST: WebRTC initialized successfully');
+      // Initialize WebRTC with enhanced logging and error handling
+      const initializeWebRTC = async () => {
+        try {
+          const result = await initHostWebRTC(sessionId);
           
-          result.webrtc.setOnStreamCallback((participantId, stream) => {
-            console.log('🎥 HOST: RECEIVED STREAM from:', participantId, {
-              streamId: stream.id,
-              trackCount: stream.getTracks().length,
-              videoTracks: stream.getVideoTracks().length,
-              active: stream.active
+          if (result && result.webrtc) {
+            console.log('✅ HOST: WebRTC initialized successfully');
+            
+            result.webrtc.setOnStreamCallback((participantId, stream) => {
+              console.log('🎥 HOST: RECEIVED STREAM from:', participantId, {
+                streamId: stream?.id,
+                trackCount: stream?.getTracks()?.length || 0,
+                videoTracks: stream?.getVideoTracks()?.length || 0,
+                active: stream?.active
+              });
+              
+              // Verificações de segurança
+              if (!participantId || !stream) {
+                console.error('❌ HOST: Invalid stream callback parameters');
+                return;
+              }
+              
+              handleParticipantStream(participantId, stream);
+              
+              // Update transmission immediately
+              setTimeout(() => {
+                console.log('🔄 HOST: Updating transmission after stream received');
+                try {
+                  updateTransmissionParticipants();
+                } catch (error) {
+                  console.error('❌ HOST: Error updating transmission:', error);
+                }
+              }, 200);
             });
             
-            handleParticipantStream(participantId, stream);
+            result.webrtc.setOnParticipantJoinCallback((participantId) => {
+              console.log('👤 HOST: PARTICIPANT JOIN via WebRTC:', participantId);
+              
+              // Verificação de segurança
+              if (!participantId) {
+                console.error('❌ HOST: Invalid participant ID in join callback');
+                return;
+              }
+              
+              handleParticipantJoin(participantId);
+            });
             
-            // Update transmission immediately
-            setTimeout(() => {
-              console.log('🔄 HOST: Updating transmission after stream received');
-              updateTransmissionParticipants();
-            }, 200);
-          });
-          
-          result.webrtc.setOnParticipantJoinCallback((participantId) => {
-            console.log('👤 HOST: PARTICIPANT JOIN via WebRTC:', participantId);
-            handleParticipantJoin(participantId);
-          });
-        } else {
-          console.error('❌ HOST: Failed to initialize WebRTC');
+            // Success toast
+            toast({
+              title: "Sessão Iniciada",
+              description: "Aguardando participantes...",
+            });
+            
+          } else {
+            throw new Error('WebRTC initialization returned null');
+          }
+        } catch (error) {
+          console.error('❌ HOST: WebRTC initialization error:', error);
           
           toast({
-            title: "Erro de inicialização",
-            description: "Falha ao inicializar WebRTC. Verifique a conexão.",
+            title: "Erro WebRTC",
+            description: `Problema na inicialização: ${error?.message || 'Erro desconhecido'}`,
             variant: "destructive"
           });
+          
+          // Attempt recovery after delay
+          setTimeout(() => {
+            console.log('🔄 HOST: Attempting WebRTC recovery...');
+            initHostWebRTC(sessionId).catch(recoveryError => {
+              console.error('❌ HOST: Recovery failed:', recoveryError);
+            });
+          }, 5000);
         }
-      }).catch(error => {
-        console.error('❌ HOST: WebRTC initialization error:', error);
-        
-        toast({
-          title: "Erro WebRTC",
-          description: "Problema na inicialização do WebRTC",
-          variant: "destructive"
-        });
-      });
+      };
+      
+      // Call the async initialization
+      initializeWebRTC();
 
       return () => {
         console.log('🧹 HOST: Cleaning up session');

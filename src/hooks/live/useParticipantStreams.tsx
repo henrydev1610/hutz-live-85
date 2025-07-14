@@ -84,17 +84,30 @@ export const useParticipantStreams = ({
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
     console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
+    
+    // Verificações de segurança
+    if (!participantId || !stream) {
+      console.error('❌ CRITICAL: Invalid parameters for handleParticipantStream');
+      return;
+    }
+    
     console.log('🎬 STREAM-DETAILS:', {
       participantId,
       streamId: stream.id,
-      tracks: stream.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })),
+      tracks: stream.getTracks()?.map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })) || [],
       active: stream.active
     });
     
     // CRITICAL: Immediate participant state update with mobile detection
     setParticipantList(prev => {
+      // Verificação de segurança para prev
+      if (!Array.isArray(prev)) {
+        console.error('❌ CRITICAL: participantList is not an array:', prev);
+        return [];
+      }
+      
       const updated = prev.map(p => 
-        p.id === participantId 
+        p?.id === participantId 
           ? { 
               ...p, 
               hasVideo: true, 
@@ -107,7 +120,7 @@ export const useParticipantStreams = ({
       );
       
       // If participant doesn't exist, add it as mobile participant
-      if (!updated.find(p => p.id === participantId)) {
+      if (!updated.find(p => p?.id === participantId)) {
         const newParticipant = {
           id: participantId,
           name: `Mobile-${participantId.substring(0, 8)}`,
@@ -123,7 +136,8 @@ export const useParticipantStreams = ({
         console.log('🆕 MOBILE-NEW: Added new mobile participant:', newParticipant);
       }
       
-      console.log('🔄 MOBILE-STATE: Updated participant list. Mobile count:', updated.filter(p => p.isMobile).length);
+      const mobileCount = updated.filter(p => p?.isMobile).length;
+      console.log('🔄 MOBILE-STATE: Updated participant list. Mobile count:', mobileCount);  
       return updated;
     });
     
