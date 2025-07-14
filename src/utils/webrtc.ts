@@ -1,4 +1,3 @@
-
 import { UnifiedWebRTCManager } from './webrtc/UnifiedWebRTCManager';
 
 // Global WebRTC state
@@ -65,4 +64,22 @@ export const cleanupWebRTC = () => {
     webrtcManager.cleanup();
     webrtcManager = null;
   }
+};
+
+export const getWebRTCPeerConnections = (): Map<string, RTCPeerConnection> => {
+  if (webrtcManager) {
+    return webrtcManager.getPeerConnections();
+  }
+  return new Map();
+};
+
+export const getWebRTCConnectionState = () => {
+  if (webrtcManager) {
+    return webrtcManager.getConnectionState();
+  }
+  return {
+    websocket: 'disconnected' as const,
+    webrtc: 'disconnected' as const,
+    overall: 'disconnected' as const
+  };
 };

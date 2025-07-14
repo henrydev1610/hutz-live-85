@@ -424,6 +424,10 @@ export class UnifiedWebRTCManager {
     return new Map(this.connectionMetrics);
   }
 
+  getPeerConnections(): Map<string, RTCPeerConnection> {
+    return new Map(this.peerConnections);
+  }
+
   cleanup() {
     console.log(`🧹 UNIFIED: Cleaning up WebRTC manager`);
     

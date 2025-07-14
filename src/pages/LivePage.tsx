@@ -10,11 +10,14 @@ import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
+import { useWebRTCStabilityIntegration } from '@/hooks/live/useWebRTCStabilityIntegration';
+import { ConnectionStabilityIndicator } from '@/components/live/ConnectionStabilityIndicator';
 
 const LivePage: React.FC = () => {
   const { toast } = useToast();
   const state = useLivePageState();
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
+  const stability = useWebRTCStabilityIntegration();
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
   
