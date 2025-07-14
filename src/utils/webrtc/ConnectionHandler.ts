@@ -214,16 +214,32 @@ export class ConnectionHandler {
   startHeartbeat(participantId: string): void {
     console.log(`💓 Starting heartbeat for: ${participantId}`);
     
+    // Enhanced heartbeat frequency for mobile connections
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const heartbeatInterval = isMobile ? 5000 : 30000; // 5s for mobile, 30s for desktop
+    
+    console.log(`💓 MOBILE-OPTIMIZED: Using ${heartbeatInterval}ms heartbeat for ${participantId} (${isMobile ? 'Mobile' : 'Desktop'})`);
+    
     const interval = setInterval(() => {
       const peerConnection = this.peerConnections.get(participantId);
       if (peerConnection && peerConnection.connectionState === 'connected') {
         console.log(`💓 Heartbeat sent to: ${participantId}`);
-        // Could send heartbeat via data channel or signaling
+        // Enhanced heartbeat for mobile - check connection quality
+        if (isMobile) {
+          // Send ping via data channel or check ICE connection state
+          console.log(`📱 MOBILE HEARTBEAT: Connection state: ${peerConnection.connectionState}, ICE state: ${peerConnection.iceConnectionState}`);
+          
+          // If ICE connection is not stable, trigger recovery
+          if (peerConnection.iceConnectionState !== 'connected' && peerConnection.iceConnectionState !== 'completed') {
+            console.warn(`⚠️ MOBILE HEARTBEAT: Unstable ICE connection detected for ${participantId}: ${peerConnection.iceConnectionState}`);
+            this.handleConnectionFailure(participantId);
+          }
+        }
       } else {
         console.log(`💔 No active connection for heartbeat: ${participantId}`);
         this.clearHeartbeat(participantId);
       }
-    }, 30000); // 30 second heartbeat
+    }, heartbeatInterval);
     
     this.heartbeatIntervals.set(participantId, interval);
   }

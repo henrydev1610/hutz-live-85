@@ -91,9 +91,13 @@ export class UnifiedWebRTCManager {
   }
 
   private setupHealthMonitoring() {
+    // Aggressive health monitoring for mobile connections
+    const healthCheckInterval = this.isMobile ? 3000 : 10000; // 3s for mobile, 10s for desktop
+    console.log(`🏥 HEALTH MONITOR: Using ${healthCheckInterval}ms intervals for ${this.isMobile ? 'mobile' : 'desktop'} device`);
+    
     this.healthCheckInterval = setInterval(() => {
       this.performHealthCheck();
-    }, 10000); // Check every 10 seconds
+    }, healthCheckInterval);
   }
 
   private performHealthCheck() {
