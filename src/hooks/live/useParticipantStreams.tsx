@@ -83,12 +83,53 @@ export const useParticipantStreams = ({
   }, [updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast]);
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
-    console.log('🎬 CRITICAL: Handling participant stream for:', participantId);
+    console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
+    
+    // Force immediate participant state update for mobile streams
+    setParticipantList(prev => {
+      const updated = prev.map(p => 
+        p.id === participantId 
+          ? { 
+              ...p, 
+              hasVideo: true, 
+              active: true, 
+              selected: true,
+              connectedAt: Date.now(),
+              isMobile: true
+            }
+          : p
+      );
+      
+      // If participant doesn't exist, add it
+      if (!updated.find(p => p.id === participantId)) {
+        updated.push({
+          id: participantId,
+          name: `Mobile-${participantId.substring(0, 8)}`,
+          hasVideo: true,
+          active: true,
+          selected: true,
+          joinedAt: Date.now(),
+          lastActive: Date.now(),
+          connectedAt: Date.now(),
+          isMobile: true
+        });
+      }
+      
+      console.log('🔄 MOBILE-STATE: Updated participant list for:', participantId);
+      return updated;
+    });
     
     if (!validateStream(stream, participantId)) {
       console.warn('❌ Stream validation failed for:', participantId);
       return;
     }
+
+    // Force immediate stream state update
+    setParticipantStreams(prev => {
+      const updated = { ...prev, [participantId]: stream };
+      console.log('🔄 MOBILE-STREAM: Updated streams for:', participantId);
+      return updated;
+    });
 
     // Try immediate processing first
     const success = await processStreamSafely(participantId, stream);
@@ -98,7 +139,7 @@ export const useParticipantStreams = ({
       console.log('📦 Adding to buffer for retry:', participantId);
       addToBuffer(participantId, stream);
     }
-  }, [validateStream, processStreamSafely, addToBuffer]);
+  }, [validateStream, processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams]);
 
   // Process buffer periodically
   useEffect(() => {
