@@ -34,7 +34,10 @@ export const useParticipantManagement = ({
     setParticipantStreams,
     setParticipantList,
     updateVideoElementsImmediately,
-    transmissionWindowRef
+    transmissionWindowRef,
+    sessionId,
+    participantList,
+    participantStreams
   });
 
   const { 

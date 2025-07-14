@@ -76,11 +76,25 @@ export class UnifiedWebRTCManager {
     // Link signaling handler with connection handler
     this.signalingHandler.setConnectionHandler(this.connectionHandler);
     
-    // Setup stream callback chain
+    // Setup stream callback chain with mobile prioritization
     this.connectionHandler.setStreamCallback((participantId, stream) => {
       console.log(`🎥 UNIFIED: Stream received from ${participantId}`);
-      this.updateConnectionMetrics(participantId, { streamReceived: true });
-      this.callbacksManager.triggerStreamCallback(participantId, stream);
+      const participantInfo = this.participantManager.getParticipant(participantId);
+      
+      // Priority: Mobile streams are always processed
+      if (participantInfo?.isMobile) {
+        console.log(`📱 UNIFIED: Mobile stream prioritized from ${participantId}`);
+        this.updateConnectionMetrics(participantId, { streamReceived: true, isMobile: true });
+        this.callbacksManager.triggerStreamCallback(participantId, stream);
+      } else if (!participantInfo?.isMobile) {
+        console.log(`💻 UNIFIED: Desktop stream from ${participantId} - secondary priority`);
+        this.updateConnectionMetrics(participantId, { streamReceived: true, isMobile: false });
+        this.callbacksManager.triggerStreamCallback(participantId, stream);
+      } else {
+        console.log(`⚠️ UNIFIED: Unknown participant type for ${participantId}, processing anyway`);
+        this.updateConnectionMetrics(participantId, { streamReceived: true });
+        this.callbacksManager.triggerStreamCallback(participantId, stream);
+      }
     });
     
     this.connectionHandler.setParticipantJoinCallback((participantId) => {
@@ -243,7 +257,12 @@ export class UnifiedWebRTCManager {
         (data) => {
           console.log(`👤 UNIFIED HOST: New participant connected:`, data);
           const participantId = data.userId || data.id || data.socketId;
-          this.participantManager.addParticipant(participantId, data);
+          // Include isMobile detection in participant data
+          const participantData = {
+            ...data,
+            isMobile: data.isMobile || this.detectParticipantMobile(data)
+          };
+          this.participantManager.addParticipant(participantId, participantData);
           this.callbacksManager.triggerParticipantJoinCallback(participantId);
           this.connectionHandler.startHeartbeat(participantId);
         },
@@ -418,6 +437,21 @@ export class UnifiedWebRTCManager {
 
   getConnectionMetrics() {
     return new Map(this.connectionMetrics);
+  }
+
+  private detectParticipantMobile(data: any): boolean {
+    // Try to detect mobile from various data sources
+    if (data.userAgent) {
+      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(data.userAgent);
+    }
+    if (data.isMobile !== undefined) {
+      return data.isMobile;
+    }
+    return false;
+  }
+
+  getMobileParticipants() {
+    return this.participantManager.getMobileParticipants();
   }
 
   cleanup() {

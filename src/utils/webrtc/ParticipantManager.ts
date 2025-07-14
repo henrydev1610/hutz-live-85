@@ -17,7 +17,8 @@ export class ParticipantManager {
       active: true,
       hasVideo: false,
       selected: false,
-      browserType: data.browserType || 'unknown'
+      browserType: data.browserType || 'unknown',
+      isMobile: data.isMobile || false
     };
     
     console.log('➕ Adding participant:', participantId);
@@ -47,7 +48,8 @@ export class ParticipantManager {
         active: participant.active !== false,
         hasVideo: participant.hasVideo || false,
         selected: false,
-        browserType: participant.browserType || 'unknown'
+        browserType: participant.browserType || 'unknown',
+        isMobile: participant.isMobile || false
       };
       
       this.participants.set(participantId, participantData);
@@ -79,6 +81,14 @@ export class ParticipantManager {
 
   getParticipants() {
     return Array.from(this.participants.values());
+  }
+
+  getMobileParticipants() {
+    return Array.from(this.participants.values()).filter(p => p.isMobile);
+  }
+
+  getParticipant(participantId: string) {
+    return this.participants.get(participantId);
   }
 
   private notifyParticipantsChanged() {
