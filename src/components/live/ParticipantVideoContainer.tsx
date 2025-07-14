@@ -3,7 +3,6 @@ import React, { useCallback } from 'react';
 import { Participant } from './ParticipantGrid';
 import { useDirectVideoCreation } from '@/hooks/live/useDirectVideoCreation';
 import { useVideoHeartbeat } from '@/hooks/live/useVideoHeartbeat';
-import MobileCameraStreamProcessor from './MobileCameraStreamProcessor';
 
 interface ParticipantVideoContainerProps {
   participant: Participant;
@@ -112,11 +111,8 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     hasVideo: participant.hasVideo,
     selected: participant.selected,
     name: participant.name,
-    isMobile: participant.isMobile,
     hasStream: !!stream,
     streamId: stream?.id,
-    videoTracks: stream?.getVideoTracks().length || 0,
-    audioTracks: stream?.getAudioTracks().length || 0,
     hasPlayingVideo: hasPlayingVideo()
   });
 
@@ -132,20 +128,9 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
         backgroundColor: participant.hasVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
       }}
     >
-      {/* Mobile Camera Stream Processor for mobile participants */}
-      {participant.isMobile && stream && (
-        <MobileCameraStreamProcessor
-          participantId={participant.id}
-          stream={stream}
-          onStreamReady={(participantId, videoElement) => {
-            console.log(`📱 Mobile video ready for ${participantId}`);
-          }}
-        />
-      )}
-
       {/* DEBUG: Informações de debug SEMPRE visíveis */}
       <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-1 rounded z-30">
-        {participant.hasVideo ? 'HAS_VIDEO' : 'NO_VIDEO'} | {participant.active ? 'ACTIVE' : 'INACTIVE'} | {participant.isMobile ? '📱' : '💻'} | {isHealthy ? '💚' : '💔'}
+        {participant.hasVideo ? 'HAS_VIDEO' : 'NO_VIDEO'} | {participant.active ? 'ACTIVE' : 'INACTIVE'} | {isHealthy ? '💚' : '💔'}
       </div>
       
       {/* Show placeholder when participant is active but no video is playing or unhealthy */}

@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
-import { useWebRTCConnectionForcer } from './useWebRTCConnectionForcer';
+import { initHostWebRTC } from '@/utils/webrtc';
 
 interface UseLivePageEffectsProps {
   sessionId: string | null;
@@ -15,7 +15,6 @@ interface UseLivePageEffectsProps {
   handleParticipantJoin: (id: string) => void;
   handleParticipantStream: (id: string, stream: MediaStream) => void;
   setParticipantList: React.Dispatch<React.SetStateAction<Participant[]>>;
-  setParticipantStreams: React.Dispatch<React.SetStateAction<{[id: string]: MediaStream}>>;
   updateTransmissionParticipants: () => void;
   generateQRCode: (url: string, setQrCodeSvg: React.Dispatch<React.SetStateAction<string | null>>) => void;
   qrCodeURL: string;
@@ -32,7 +31,6 @@ export const useLivePageEffects = ({
   handleParticipantJoin,
   handleParticipantStream,
   setParticipantList,
-  setParticipantStreams,
   updateTransmissionParticipants,
   generateQRCode,
   qrCodeURL,
@@ -62,17 +60,6 @@ export const useLivePageEffects = ({
     };
   }, [sessionId, localStream]);
 
-  // CRITICAL: Use forced WebRTC connection
-  const { forceRefreshConnections } = useWebRTCConnectionForcer({
-    sessionId,
-    participantList,
-    setParticipantList,
-    participantStreams,
-    setParticipantStreams,
-    transmissionWindowRef,
-    updateTransmissionParticipants
-  });
-
   // Enhanced session initialization effect
   useEffect(() => {
     if (sessionId) {
@@ -96,6 +83,51 @@ export const useLivePageEffects = ({
             prev.map(p => p.id === id ? { ...p, active: true, lastActive: Date.now() } : p)
           );
         }
+      });
+
+      // Initialize WebRTC with enhanced logging
+      initHostWebRTC(sessionId).then(result => {
+        if (result && result.webrtc) {
+          console.log('✅ HOST: WebRTC initialized successfully');
+          
+          result.webrtc.setOnStreamCallback((participantId, stream) => {
+            console.log('🎥 HOST: RECEIVED STREAM from:', participantId, {
+              streamId: stream.id,
+              trackCount: stream.getTracks().length,
+              videoTracks: stream.getVideoTracks().length,
+              active: stream.active
+            });
+            
+            handleParticipantStream(participantId, stream);
+            
+            // Update transmission immediately
+            setTimeout(() => {
+              console.log('🔄 HOST: Updating transmission after stream received');
+              updateTransmissionParticipants();
+            }, 200);
+          });
+          
+          result.webrtc.setOnParticipantJoinCallback((participantId) => {
+            console.log('👤 HOST: PARTICIPANT JOIN via WebRTC:', participantId);
+            handleParticipantJoin(participantId);
+          });
+        } else {
+          console.error('❌ HOST: Failed to initialize WebRTC');
+          
+          toast({
+            title: "Erro de inicialização",
+            description: "Falha ao inicializar WebRTC. Verifique a conexão.",
+            variant: "destructive"
+          });
+        }
+      }).catch(error => {
+        console.error('❌ HOST: WebRTC initialization error:', error);
+        
+        toast({
+          title: "Erro WebRTC",
+          description: "Problema na inicialização do WebRTC",
+          variant: "destructive"
+        });
       });
 
       return () => {
@@ -127,8 +159,4 @@ export const useLivePageEffects = ({
       }, 300);
     }
   }, [participantStreams, participantList, transmissionOpen]);
-
-  return {
-    forceRefreshConnections
-  };
 };

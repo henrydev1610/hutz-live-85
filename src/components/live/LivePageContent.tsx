@@ -5,7 +5,6 @@ import LivePreview from '@/components/live/LivePreview';
 import TransmissionControls from '@/components/live/TransmissionControls';
 import LiveControlTabs from '@/components/live/LiveControlTabs';
 import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
-import StreamDebugPanel from '@/components/live/StreamDebugPanel';
 import { Participant } from '@/components/live/ParticipantGrid';
 
 interface LivePageContentProps {
@@ -140,20 +139,6 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
           </CardContent>
         </Card>
       </div>
-      
-      {/* Debug Panel for Mobile Stream Monitoring */}
-      <StreamDebugPanel
-        participantList={state.participantList}
-        participantStreams={state.participantStreams}
-        onForceRefresh={() => {
-          // Force refresh streams
-          state.participantList.forEach((p: Participant) => {
-            if (p.isMobile && state.participantStreams[p.id]) {
-              participantManagement.handleParticipantStream(p.id, state.participantStreams[p.id]);
-            }
-          });
-        }}
-      />
     </div>
   );
 };

@@ -27,7 +27,6 @@ export interface Participant {
   hasVideo?: boolean;
   isAdmin?: boolean;
   browserType?: string;
-  isMobile?: boolean;
 }
 
 interface ParticipantGridProps {

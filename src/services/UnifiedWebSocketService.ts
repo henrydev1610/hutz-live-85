@@ -224,11 +224,6 @@ class UnifiedWebSocketService {
   async joinRoom(roomId: string, userId: string): Promise<void> {
     console.log(`🚪 WEBSOCKET: Joining room ${roomId} as ${userId}`);
     
-    // Verificação de parâmetros
-    if (!roomId || !userId) {
-      throw new Error('Room ID and User ID are required');
-    }
-    
     if (!this.isConnected()) {
       console.log('🔗 CONNECTION: Not connected, connecting first...');
       await this.connect();
@@ -244,8 +239,8 @@ class UnifiedWebSocketService {
     return new Promise((resolve, reject) => {
       const joinTimeout = setTimeout(() => {
         console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
-        reject(new Error(`Join room timeout after 60 seconds for room: ${roomId}`));
-      }, 60000); // Aumentado para 60s para garantir conexão
+        reject(new Error('Join room timeout'));
+      }, 30000); // Aumentado para 30s
 
       // Success handler
       const handleJoinSuccess = (data: any) => {
@@ -253,7 +248,6 @@ class UnifiedWebSocketService {
         clearTimeout(joinTimeout);
         this.socket?.off('room_joined', handleJoinSuccess);
         this.socket?.off('join-room-response', handleJoinResponse);
-        this.socket?.off('join-room-error', handleJoinError);
         this.socket?.off('error', handleJoinError);
         resolve();
       };
@@ -261,21 +255,14 @@ class UnifiedWebSocketService {
       // Response handler for different event types
       const handleJoinResponse = (response: any) => {
         console.log(`📡 WEBSOCKET: Join room response:`, response);
-        if (response?.success || response?.status === 'joined') {
+        if (response?.success) {
           clearTimeout(joinTimeout);
           this.socket?.off('room_joined', handleJoinSuccess);
           this.socket?.off('join-room-response', handleJoinResponse);
-          this.socket?.off('join-room-error', handleJoinError);
           this.socket?.off('error', handleJoinError);
           resolve();
         } else {
-          console.error(`❌ WEBSOCKET: Join room failed:`, response);
-          clearTimeout(joinTimeout);
-          this.socket?.off('room_joined', handleJoinSuccess);
-          this.socket?.off('join-room-response', handleJoinResponse);
-          this.socket?.off('join-room-error', handleJoinError);
-          this.socket?.off('error', handleJoinError);
-          reject(new Error(response?.error || response?.message || 'Failed to join room'));
+          reject(new Error(response?.error || 'Failed to join room'));
         }
       };
 
@@ -285,15 +272,13 @@ class UnifiedWebSocketService {
         clearTimeout(joinTimeout);
         this.socket?.off('room_joined', handleJoinSuccess);
         this.socket?.off('join-room-response', handleJoinResponse);
-        this.socket?.off('join-room-error', handleJoinError);
         this.socket?.off('error', handleJoinError);
-        reject(new Error(`Failed to join room ${roomId}: ${error?.message || error}`));
+        reject(new Error(`Failed to join room: ${error.message || error}`));
       };
 
       // Setup listeners for different possible event names
       this.socket?.once('room_joined', handleJoinSuccess);
       this.socket?.once('join-room-response', handleJoinResponse);
-      this.socket?.once('join-room-error', handleJoinError);
       this.socket?.once('error', handleJoinError);
 
       // Send join request with multiple formats for compatibility

@@ -53,7 +53,7 @@ const LivePreview: React.FC<LivePreviewProps> = ({
         )}
       </div>
       
-      {/* Main participant grid display */}
+      {/* Participant grid preview */}
       <ParticipantPreviewGrid 
         participantList={participantList}
         participantCount={participantCount}

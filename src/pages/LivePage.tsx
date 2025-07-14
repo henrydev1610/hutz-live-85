@@ -78,7 +78,6 @@ const LivePage: React.FC = () => {
     handleParticipantJoin: participantManagement.handleParticipantJoin,
     handleParticipantStream: participantManagement.handleParticipantStream,
     setParticipantList: state.setParticipantList,
-    setParticipantStreams: state.setParticipantStreams,
     updateTransmissionParticipants,
     generateQRCode,
     qrCodeURL: state.qrCodeURL,

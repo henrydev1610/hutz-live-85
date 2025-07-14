@@ -7,54 +7,32 @@ import { useStreamTransmission } from './useStreamTransmission';
 import { useStreamStateManagement } from './useStreamStateManagement';
 import { useStreamBuffer } from './useStreamBuffer';
 
-import { useStreamTransmissionHandler } from './useStreamTransmissionHandler';
-
 interface UseParticipantStreamsProps {
   setParticipantStreams: React.Dispatch<React.SetStateAction<{[id: string]: MediaStream}>>;
   setParticipantList: React.Dispatch<React.SetStateAction<Participant[]>>;
   updateVideoElementsImmediately: (participantId: string, stream: MediaStream, transmissionWindowRef?: React.MutableRefObject<Window | null>) => void;
   transmissionWindowRef: React.MutableRefObject<Window | null>;
-  sessionId: string;
-  participantList: Participant[];
-  participantStreams: {[id: string]: MediaStream};
 }
 
 export const useParticipantStreams = ({
   setParticipantStreams,
   setParticipantList,
   updateVideoElementsImmediately,
-  transmissionWindowRef,
-  sessionId,
-  participantList,
-  participantStreams
+  transmissionWindowRef
 }: UseParticipantStreamsProps) => {
   const { toast } = useToast();
   const { validateStream } = useStreamValidation();
-  const { sendStreamToTransmission: legacySendStreamToTransmission } = useStreamTransmission();
+  const { sendStreamToTransmission } = useStreamTransmission();
   const { updateStreamState, updateTrackState } = useStreamStateManagement({
-    setParticipantStreams,  
+    setParticipantStreams,
     setParticipantList
   });
   const { addToBuffer, processBuffer, removeFromBuffer, cleanup } = useStreamBuffer();
-  
-  // New enhanced stream transmission handler with mobile priority
-  const { sendStreamToTransmission, updateTransmissionParticipants, forceRetransmitStreams } = useStreamTransmissionHandler({
-    sessionId,
-    transmissionWindowRef,
-    participantList,
-    participantStreams
-  });
 
-  // Process function for buffered streams with mobile priority
+  // Process function for buffered streams
   const processStreamSafely = useCallback(async (participantId: string, stream: MediaStream): Promise<boolean> => {
     try {
       console.log('🎯 CRITICAL: Processing stream for:', participantId);
-      
-      // Find participant info
-      const participant = participantList.find(p => p.id === participantId);
-      const isMobile = participant?.isMobile || false;
-      
-      console.log(`📱 CRITICAL: Participant ${participantId} is ${isMobile ? 'MOBILE' : 'DESKTOP'} device`);
       
       // Update stream state immediately
       updateStreamState(participantId, stream);
@@ -78,16 +56,16 @@ export const useParticipantStreams = ({
         new Promise((_, reject) => setTimeout(() => reject(new Error('Video processing timeout')), 5000))
       ]);
       
-      // Send to transmission window with mobile prioritization
-      sendStreamToTransmission(participantId, stream, isMobile);
+      // Send to transmission window
+      await sendStreamToTransmission(participantId, stream, transmissionWindowRef);
       
-      // Success notification with mobile indication
+      // Success notification
       toast({
-        title: `${isMobile ? '📱 Mobile' : '💻 Desktop'} Participante conectado!`,
-        description: `${participantId.substring(0, 8)} está transmitindo vídeo${isMobile ? ' (Prioridade Móvel)' : ''}`,
+        title: "Participante conectado!",
+        description: `${participantId.substring(0, 8)} está transmitindo vídeo`,
       });
       
-      console.log(`✅ CRITICAL: Stream processing completed for: ${participantId} (${isMobile ? 'MOBILE' : 'DESKTOP'})`);
+      console.log('✅ CRITICAL: Stream processing completed for:', participantId);
       return true;
     } catch (error) {
       console.error('❌ Error processing stream for:', participantId, error);
@@ -102,78 +80,15 @@ export const useParticipantStreams = ({
       }
       return false;
     }
-  }, [updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast, participantList]);
+  }, [updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast]);
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
-    console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
-    
-    // Verificações de segurança
-    if (!participantId || !stream) {
-      console.error('❌ CRITICAL: Invalid parameters for handleParticipantStream');
-      return;
-    }
-    
-    console.log('🎬 STREAM-DETAILS:', {
-      participantId,
-      streamId: stream.id,
-      tracks: stream.getTracks()?.map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })) || [],
-      active: stream.active
-    });
-    
-    // CRITICAL: Immediate participant state update with mobile detection
-    setParticipantList(prev => {
-      // Verificação de segurança para prev
-      if (!Array.isArray(prev)) {
-        console.error('❌ CRITICAL: participantList is not an array:', prev);
-        return [];
-      }
-      
-      const updated = prev.map(p => 
-        p?.id === participantId 
-          ? { 
-              ...p, 
-              hasVideo: true, 
-              active: true, 
-              selected: true,
-              connectedAt: Date.now(),
-              isMobile: true // FORCE mobile flag for stream participants
-            }
-          : p
-      );
-      
-      // If participant doesn't exist, add it as mobile participant
-      if (!updated.find(p => p?.id === participantId)) {
-        const newParticipant = {
-          id: participantId,
-          name: `Mobile-${participantId.substring(0, 8)}`,
-          hasVideo: true,
-          active: true,
-          selected: true,
-          joinedAt: Date.now(),
-          lastActive: Date.now(),
-          connectedAt: Date.now(),
-          isMobile: true
-        };
-        updated.push(newParticipant);
-        console.log('🆕 MOBILE-NEW: Added new mobile participant:', newParticipant);
-      }
-      
-      const mobileCount = updated.filter(p => p?.isMobile).length;
-      console.log('🔄 MOBILE-STATE: Updated participant list. Mobile count:', mobileCount);  
-      return updated;
-    });
+    console.log('🎬 CRITICAL: Handling participant stream for:', participantId);
     
     if (!validateStream(stream, participantId)) {
       console.warn('❌ Stream validation failed for:', participantId);
       return;
     }
-
-    // Force immediate stream state update
-    setParticipantStreams(prev => {
-      const updated = { ...prev, [participantId]: stream };
-      console.log('🔄 MOBILE-STREAM: Updated streams for:', participantId);
-      return updated;
-    });
 
     // Try immediate processing first
     const success = await processStreamSafely(participantId, stream);
@@ -183,7 +98,7 @@ export const useParticipantStreams = ({
       console.log('📦 Adding to buffer for retry:', participantId);
       addToBuffer(participantId, stream);
     }
-  }, [validateStream, processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams]);
+  }, [validateStream, processStreamSafely, addToBuffer]);
 
   // Process buffer periodically
   useEffect(() => {
@@ -213,9 +128,7 @@ export const useParticipantStreams = ({
       
       const stream = currentStreams[participantId];
       if (stream) {
-        const participant = participantList.find(p => p.id === participantId);
-        const isMobile = participant?.isMobile || false;
-        sendStreamToTransmission(participantId, stream, isMobile);
+        sendStreamToTransmission(participantId, stream, transmissionWindowRef);
         await updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
       }
     }, 100);
@@ -224,12 +137,6 @@ export const useParticipantStreams = ({
   return {
     handleParticipantStream,
     handleParticipantTrack,
-    sendStreamToTransmission: (participantId: string, stream: MediaStream) => {
-      const participant = participantList.find(p => p.id === participantId);
-      const isMobile = participant?.isMobile || false;
-      return sendStreamToTransmission(participantId, stream, isMobile);
-    },
-    updateTransmissionParticipants,
-    forceRetransmitStreams
+    sendStreamToTransmission
   };
 };

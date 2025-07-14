@@ -17,8 +17,7 @@ export class ParticipantManager {
       active: true,
       hasVideo: false,
       selected: false,
-      browserType: data.browserType || 'unknown',
-      isMobile: data.isMobile || false
+      browserType: data.browserType || 'unknown'
     };
     
     console.log('➕ Adding participant:', participantId);
@@ -33,39 +32,12 @@ export class ParticipantManager {
     }
   }
 
-  updateParticipantsList(participants: any) {
-    console.log('🔄 Updating participants list with:', participants, typeof participants);
-    
-    // CRITICAL: Ensure participants is always an array
-    if (!participants) {
-      console.warn('⚠️ PARTICIPANT MANAGER: No participants data received');
-      return;
-    }
-    
-    // Handle different participant data formats
-    let participantsArray: any[] = [];
-    if (Array.isArray(participants)) {
-      participantsArray = participants;
-    } else if (typeof participants === 'object') {
-      // If it's an object, try to extract participants array
-      if (participants.participants && Array.isArray(participants.participants)) {
-        participantsArray = participants.participants;
-      } else if (participants.data && Array.isArray(participants.data)) {
-        participantsArray = participants.data;
-      } else {
-        console.warn('⚠️ PARTICIPANT MANAGER: Participants data is not an array:', participants);
-        return;
-      }
-    } else {
-      console.error('❌ PARTICIPANT MANAGER: Invalid participants data type:', typeof participants, participants);
-      return;
-    }
-    
-    console.log('📋 PARTICIPANT MANAGER: Processing', participantsArray.length, 'participants');
+  updateParticipantsList(participants: any[]) {
+    console.log('🔄 Updating participants list with:', participants);
     
     this.participants.clear();
     
-    participantsArray.forEach(participant => {
+    participants.forEach(participant => {
       const participantId = participant.userId || participant.id || participant.socketId;
       const participantData = {
         id: participantId,
@@ -75,8 +47,7 @@ export class ParticipantManager {
         active: participant.active !== false,
         hasVideo: participant.hasVideo || false,
         selected: false,
-        browserType: participant.browserType || 'unknown',
-        isMobile: participant.isMobile || false
+        browserType: participant.browserType || 'unknown'
       };
       
       this.participants.set(participantId, participantData);
@@ -108,14 +79,6 @@ export class ParticipantManager {
 
   getParticipants() {
     return Array.from(this.participants.values());
-  }
-
-  getMobileParticipants() {
-    return Array.from(this.participants.values()).filter(p => p.isMobile);
-  }
-
-  getParticipant(participantId: string) {
-    return this.participants.get(participantId);
   }
 
   private notifyParticipantsChanged() {
