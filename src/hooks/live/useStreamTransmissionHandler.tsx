@@ -30,7 +30,7 @@ export const useStreamTransmissionHandler = ({
     };
   }, [sessionId]);
 
-  // Handle stream transmission to transmission window
+  // CRITICAL: Handle stream transmission with MOBILE PRIORITY
   const sendStreamToTransmission = (participantId: string, stream: MediaStream, isMobile: boolean = false) => {
     const participant = participantList.find(p => p.id === participantId);
     if (!participant) {
@@ -39,14 +39,18 @@ export const useStreamTransmissionHandler = ({
     }
 
     const streamKey = `${participantId}-${stream.id}`;
-    if (sentStreamsRef.current.has(streamKey)) {
-      console.log(`🔄 STREAM TRANSMISSION: Stream ${streamKey} already sent, skipping`);
+    
+    // MOBILE STREAMS: Always re-send to ensure priority
+    if (isMobile) {
+      console.log(`📱 STREAM TRANSMISSION: FORCE sending MOBILE stream for ${participantId} (priority override)`);
+    } else if (sentStreamsRef.current.has(streamKey)) {
+      console.log(`🔄 STREAM TRANSMISSION: Non-mobile stream ${streamKey} already sent, skipping`);
       return;
     }
 
-    console.log(`🎯 STREAM TRANSMISSION: Sending ${isMobile ? 'MOBILE' : 'DESKTOP'} stream for ${participantId}`);
+    console.log(`🎯 STREAM TRANSMISSION: Sending ${isMobile ? '📱 MOBILE' : '💻 DESKTOP'} stream for ${participantId}`);
 
-    // Send via broadcast channel
+    // Send via broadcast channel WITH PRIORITY FLAG
     if (channelRef.current) {
       channelRef.current.postMessage({
         type: 'video-stream',
@@ -62,20 +66,32 @@ export const useStreamTransmissionHandler = ({
       });
     }
 
-    // Send via window postMessage if transmission window is open
+    // CRITICAL: Send via window postMessage with IMMEDIATE RETRY for mobile
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      transmissionWindowRef.current.postMessage({
+      const message = {
         type: 'webrtc-stream',
         participantId,
         stream,
         isMobile,
         priorityMobile: isMobile,
         timestamp: Date.now()
-      }, '*');
+      };
+      
+      transmissionWindowRef.current.postMessage(message, '*');
+      
+      // MOBILE RETRY: Ensure mobile streams are delivered
+      if (isMobile) {
+        setTimeout(() => {
+          if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+            transmissionWindowRef.current.postMessage(message, '*');
+            console.log(`🔄 STREAM TRANSMISSION: MOBILE stream retry sent for ${participantId}`);
+          }
+        }, 500);
+      }
     }
 
     sentStreamsRef.current.add(streamKey);
-    console.log(`✅ STREAM TRANSMISSION: Stream sent for ${participantId} (${isMobile ? 'MOBILE' : 'DESKTOP'})`);
+    console.log(`✅ STREAM TRANSMISSION: ${isMobile ? '📱 MOBILE' : '💻 DESKTOP'} stream sent for ${participantId}`);
   };
 
   // Monitor participantStreams for new streams

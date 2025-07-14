@@ -197,7 +197,7 @@ export const useTransmissionWindow = () => {
             }
             keepAlive();
 
-            // ENHANCED: Create video element with better error handling and stream assignment
+            // CRITICAL: Create video element that ONLY accepts WebRTC streams
             async function createVideoElementFromStream(slotElement, participantId) {
               if (!slotElement) {
                 console.error("❌ TRANSMISSION: No slot element provided");
@@ -222,25 +222,25 @@ export const useTransmissionWindow = () => {
               videoElement.style.willChange = 'transform';
               videoElement.style.transition = 'none';
               
-              // PRIORITY: Wait for WebRTC stream instead of creating local stream
-              console.log("🎯 TRANSMISSION: Waiting for WebRTC stream for participant:", participantId);
+              // CRITICAL: NO PLACEHOLDER - Wait EXCLUSIVELY for WebRTC streams
+              console.log("🎯 TRANSMISSION: WAITING EXCLUSIVELY for WebRTC stream for participant:", participantId);
               
-              // Create placeholder first while waiting
-              if (!window.localPlaceholderStream) {
-                window.localPlaceholderStream = createPlaceholderStream();
-              }
-              if (window.localPlaceholderStream) {
-                videoElement.srcObject = window.localPlaceholderStream;
-                console.log("📺 TRANSMISSION: Placeholder stream assigned while waiting for WebRTC");
-              }
-              
-              // Setup listener for real WebRTC stream
+              // Setup ONLY for real WebRTC stream - NO LOCAL STREAMS
               window.waitingForStream = window.waitingForStream || {};
               window.waitingForStream[participantId] = {
                 videoElement,
                 slotElement,
                 timestamp: Date.now()
               };
+              
+              // Add timeout for mobile streams (10 seconds)
+              setTimeout(() => {
+                if (window.waitingForStream[participantId] && !videoElement.srcObject) {
+                  console.warn("⏰ TRANSMISSION: Timeout waiting for WebRTC stream for", participantId);
+                  // Show waiting indicator instead of local stream
+                  slotElement.innerHTML = '<div style="color: white; text-align: center; padding: 20px;">Aguardando stream móvel...</div>';
+                }
+              }, 10000);
               
               videoElement.onloadedmetadata = () => {
                 console.log("📊 TRANSMISSION: Video metadata loaded for", participantId);
@@ -251,13 +251,6 @@ export const useTransmissionWindow = () => {
                 
               slotElement.appendChild(videoElement);
               activeVideoElements[slotElement.id] = videoElement;
-              
-              // Force visibility
-              setTimeout(() => {
-                slotElement.style.background = 'transparent';
-                videoElement.style.opacity = '1';
-                videoElement.style.visibility = 'visible';
-              }, 100);
               
               return videoElement;
             }
@@ -348,16 +341,49 @@ export const useTransmissionWindow = () => {
                   }
                 }
               }
-              // Handle real WebRTC stream messages
+              // CRITICAL: Handle real WebRTC stream messages with MOBILE PRIORITY
               else if (data.type === 'webrtc-stream' && data.participantId && data.stream) {
-                console.log('🔗 TRANSMISSION: WebRTC stream received for', data.participantId);
+                console.log('🔗 TRANSMISSION: WebRTC stream received for', data.participantId, 'isMobile:', data.isMobile);
                 
-                // Replace placeholder with real stream
+                // MOBILE PRIORITY: Mobile streams get immediate assignment
+                if (data.isMobile || data.priorityMobile) {
+                  console.log('📱 TRANSMISSION: PRIORITY MOBILE stream detected for', data.participantId);
+                  
+                  // Find slot for this participant or assign new one
+                  let slotElement;
+                  if (participantSlots[data.participantId]) {
+                    const slotIndex = participantSlots[data.participantId];
+                    slotElement = document.getElementById("participant-slot-" + slotIndex);
+                  } else if (availableSlots.length > 0) {
+                    const slotIndex = availableSlots.shift();
+                    participantSlots[data.participantId] = slotIndex;
+                    slotElement = document.getElementById("participant-slot-" + slotIndex);
+                    console.log('📱 TRANSMISSION: New priority slot', slotIndex, 'assigned to mobile', data.participantId);
+                  }
+                  
+                  if (slotElement) {
+                    const existingVideo = slotElement.querySelector('video');
+                    if (existingVideo) {
+                      existingVideo.srcObject = data.stream;
+                      console.log('✅ TRANSMISSION: MOBILE stream IMMEDIATELY assigned to', data.participantId);
+                    } else {
+                      // Create new video element for mobile stream
+                      await createVideoElementFromStream(slotElement, data.participantId);
+                      const videoElement = slotElement.querySelector('video');
+                      if (videoElement) {
+                        videoElement.srcObject = data.stream;
+                        console.log('✅ TRANSMISSION: NEW video element created for MOBILE stream', data.participantId);
+                      }
+                    }
+                  }
+                }
+                
+                // Handle waiting streams (fallback for non-mobile)
                 if (window.waitingForStream && window.waitingForStream[data.participantId]) {
                   const { videoElement } = window.waitingForStream[data.participantId];
                   if (videoElement && data.stream) {
                     videoElement.srcObject = data.stream;
-                    console.log('✅ TRANSMISSION: Real WebRTC stream assigned to', data.participantId);
+                    console.log('✅ TRANSMISSION: WebRTC stream assigned to waiting video for', data.participantId);
                     delete window.waitingForStream[data.participantId];
                   }
                 }
