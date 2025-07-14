@@ -244,8 +244,8 @@ class UnifiedWebSocketService {
     return new Promise((resolve, reject) => {
       const joinTimeout = setTimeout(() => {
         console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
-        reject(new Error(`Join room timeout after 45 seconds for room: ${roomId}`));
-      }, 45000); // Aumentado para 45s
+        reject(new Error(`Join room timeout after 60 seconds for room: ${roomId}`));
+      }, 60000); // Aumentado para 60s para garantir conexão
 
       // Success handler
       const handleJoinSuccess = (data: any) => {

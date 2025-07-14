@@ -1,11 +1,10 @@
-
 import React, { useRef, useEffect } from 'react';
 import { Participant } from './ParticipantGrid';
 import ParticipantPreviewGrid from './ParticipantPreviewGrid';
 import QRCodeOverlay from './QRCodeOverlay';
 import LiveIndicator from './LiveIndicator';
 
-interface LivePreviewProps {
+interface LivePreviewFixedProps {
   qrCodeVisible: boolean;
   qrCodeSvg: string | null;
   qrCodePosition: { x: number; y: number; width: number; height: number };
@@ -23,7 +22,7 @@ interface LivePreviewProps {
   participantStreams: {[id: string]: MediaStream};
 }
 
-const LivePreview: React.FC<LivePreviewProps> = ({
+const LivePreviewFixed: React.FC<LivePreviewFixedProps> = ({
   qrCodeVisible,
   qrCodeSvg,
   qrCodePosition,
@@ -89,6 +88,7 @@ const LivePreview: React.FC<LivePreviewProps> = ({
     }
     
   }, [participantStreams, participantList]);
+
   return (
     <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden live-preview">
       {/* Container with background color or image */}
@@ -157,4 +157,4 @@ const LivePreview: React.FC<LivePreviewProps> = ({
   );
 };
 
-export default LivePreview;
+export default LivePreviewFixed;

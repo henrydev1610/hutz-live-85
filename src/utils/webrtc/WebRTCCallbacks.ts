@@ -33,11 +33,16 @@ export class WebRTCCallbacks {
       onOffer,
       onAnswer,
       onIceCandidate,
-      // NEW: Stream event callbacks
+      // NEW: Stream event callbacks WITH WebRTC initiation
       onStreamStarted: (participantId, streamInfo) => {
         console.log('🎥 HOST: Stream started event received:', participantId, streamInfo);
         if (this.onParticipantJoinCallback) {
           this.onParticipantJoinCallback(participantId);
+        }
+        // CRITICAL: Trigger WebRTC connection immediately for mobile devices
+        if (streamInfo?.isMobile) {
+          console.log('📱 MOBILE-CRITICAL: Initiating WebRTC call for mobile participant:', participantId);
+          // This will be handled by the connection manager
         }
       },
       onError: (error) => {
@@ -85,12 +90,13 @@ export class WebRTCCallbacks {
     if (this.onStreamCallback) {
       this.onStreamCallback(participantId, stream);
       
-      // Notify signaling server about the stream
+      // Notify signaling server about the stream with isMobile
       unifiedWebSocketService.notifyStreamStarted(participantId, {
         streamId: stream.id,
         trackCount: stream.getTracks().length,
         hasVideo: stream.getVideoTracks().length > 0,
-        hasAudio: stream.getAudioTracks().length > 0
+        hasAudio: stream.getAudioTracks().length > 0,
+        isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
       });
     } else {
       console.warn('⚠️ No stream callback set when trying to trigger');

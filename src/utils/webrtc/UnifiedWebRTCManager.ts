@@ -264,6 +264,13 @@ export class UnifiedWebRTCManager {
           };
           this.participantManager.addParticipant(participantId, participantData);
           this.callbacksManager.triggerParticipantJoinCallback(participantId);
+          
+          // CRITICAL FIX: Initiate WebRTC call immediately for mobile participants
+          if (participantData.isMobile) {
+            console.log('🚀 MOBILE-CRITICAL: Initiating call to mobile participant:', participantId);
+            this.connectionHandler.initiateCallWithRetry(participantId);
+          }
+          
           this.connectionHandler.startHeartbeat(participantId);
         },
         (data) => {
