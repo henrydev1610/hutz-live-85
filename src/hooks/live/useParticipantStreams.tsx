@@ -84,8 +84,14 @@ export const useParticipantStreams = ({
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
     console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
+    console.log('🎬 STREAM-DETAILS:', {
+      participantId,
+      streamId: stream.id,
+      tracks: stream.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })),
+      active: stream.active
+    });
     
-    // Force immediate participant state update for mobile streams
+    // CRITICAL: Immediate participant state update with mobile detection
     setParticipantList(prev => {
       const updated = prev.map(p => 
         p.id === participantId 
@@ -95,14 +101,14 @@ export const useParticipantStreams = ({
               active: true, 
               selected: true,
               connectedAt: Date.now(),
-              isMobile: true
+              isMobile: true // FORCE mobile flag for stream participants
             }
           : p
       );
       
-      // If participant doesn't exist, add it
+      // If participant doesn't exist, add it as mobile participant
       if (!updated.find(p => p.id === participantId)) {
-        updated.push({
+        const newParticipant = {
           id: participantId,
           name: `Mobile-${participantId.substring(0, 8)}`,
           hasVideo: true,
@@ -112,10 +118,12 @@ export const useParticipantStreams = ({
           lastActive: Date.now(),
           connectedAt: Date.now(),
           isMobile: true
-        });
+        };
+        updated.push(newParticipant);
+        console.log('🆕 MOBILE-NEW: Added new mobile participant:', newParticipant);
       }
       
-      console.log('🔄 MOBILE-STATE: Updated participant list for:', participantId);
+      console.log('🔄 MOBILE-STATE: Updated participant list. Mobile count:', updated.filter(p => p.isMobile).length);
       return updated;
     });
     

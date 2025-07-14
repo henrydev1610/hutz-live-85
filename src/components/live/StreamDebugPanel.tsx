@@ -105,30 +105,90 @@ const StreamDebugPanel: React.FC<StreamDebugPanelProps> = ({
             </div>
           </div>
 
+          {/* Mobile-Specific Debug Info */}
+          <div>
+            <h4 className="font-semibold text-pink-300 mb-1">Câmeras Móveis:</h4>
+            <div className="space-y-1 max-h-20 overflow-y-auto">
+              {participantList.filter(p => p.isMobile).map(p => (
+                <div key={p.id} className="flex justify-between items-center bg-pink-500/10 rounded px-2 py-1 text-xs">
+                  <span>{p.name || p.id.substring(0, 8)}</span>
+                  <div className="flex gap-1">
+                    {participantStreams[p.id] ? <span className="text-green-400">📹 ON</span> : <span className="text-red-400">📹 OFF</span>}
+                    {p.active ? <span className="text-green-400">●</span> : <span className="text-gray-400">●</span>}
+                  </div>
+                </div>
+              ))}
+              {participantList.filter(p => p.isMobile).length === 0 && (
+                <div className="text-gray-400 text-xs">Nenhuma câmera móvel detectada</div>
+              )}
+            </div>
+          </div>
+
           {/* Actions */}
-          <div className="flex gap-2">
-            <Button 
-              onClick={onForceRefresh}
-              size="sm" 
-              variant="outline"
-              className="flex-1 bg-blue-500/20 border-blue-500 text-blue-300 hover:bg-blue-500/30"
-            >
-              🔄 Refresh
-            </Button>
-            <Button 
-              onClick={() => {
-                participantList.forEach(p => {
-                  if (p.isMobile || p.hasVideo) {
-                    streamSynchronizer.forceSynchronization(p.id);
-                  }
-                });
-              }}
-              size="sm" 
-              variant="outline"
-              className="flex-1 bg-green-500/20 border-green-500 text-green-300 hover:bg-green-500/30"
-            >
-              ⚡ Force Sync
-            </Button>
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <Button 
+                onClick={onForceRefresh}
+                size="sm" 
+                variant="outline"
+                className="flex-1 bg-blue-500/20 border-blue-500 text-blue-300 hover:bg-blue-500/30"
+              >
+                🔄 Refresh All
+              </Button>
+              <Button 
+                onClick={() => {
+                  participantList.forEach(p => {
+                    if (p.isMobile || p.hasVideo) {
+                      streamSynchronizer.forceSynchronization(p.id);
+                    }
+                  });
+                }}
+                size="sm" 
+                variant="outline"
+                className="flex-1 bg-green-500/20 border-green-500 text-green-300 hover:bg-green-500/30"
+              >
+                ⚡ Force Sync
+              </Button>
+            </div>
+            
+            {/* Mobile-specific actions */}
+            <div className="flex gap-2">
+              <Button 
+                onClick={() => {
+                  // Force mobile camera refresh
+                  participantList.filter(p => p.isMobile).forEach(p => {
+                    console.log(`🔄 FORCE-MOBILE: Refreshing mobile participant ${p.id}`);
+                    if (participantStreams[p.id]) {
+                      // Re-trigger stream processing
+                      const stream = participantStreams[p.id];
+                      const videoElements = document.querySelectorAll(`video[data-participant="${p.id}"]`);
+                      videoElements.forEach(video => {
+                        const videoEl = video as HTMLVideoElement;
+                        videoEl.srcObject = stream;
+                        videoEl.play().catch(console.error);
+                      });
+                    }
+                  });
+                }}
+                size="sm" 
+                variant="outline"
+                className="flex-1 bg-pink-500/20 border-pink-500 text-pink-300 hover:bg-pink-500/30"
+              >
+                📱 Fix Mobile
+              </Button>
+              <Button 
+                onClick={() => {
+                  // Force display mobile participants
+                  console.log('🚀 FORCE-DISPLAY: Forcing mobile display');
+                  window.location.reload();
+                }}
+                size="sm" 
+                variant="outline"
+                className="flex-1 bg-red-500/20 border-red-500 text-red-300 hover:bg-red-500/30"
+              >
+                🚀 Force Display
+              </Button>
+            </div>
           </div>
 
           {/* Recovery Attempts */}

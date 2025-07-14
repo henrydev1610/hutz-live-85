@@ -50,26 +50,85 @@ const MobileCameraStreamProcessor: React.FC<MobileCameraStreamProcessorProps> = 
           console.error(`📱 MOBILE-ERROR: Video error for ${participantId}:`, e);
         };
 
-        // Attempt to play with mobile-specific handling
-        try {
-          await videoElement.play();
-          setIsPlaying(true);
-          console.log(`▶️ MOBILE-PLAYING: Video started for ${participantId}`);
-          
-          // Notify parent component
-          if (onStreamReady) {
-            onStreamReady(participantId, videoElement);
+        // Setup comprehensive event listeners with retry logic
+        let isReady = false;
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        const attemptPlayback = async () => {
+          try {
+            console.log(`📱 MOBILE-ATTEMPT: Playback attempt ${retryCount + 1} for ${participantId}`);
+            
+            videoElement.onloadedmetadata = () => {
+              console.log(`📱 MOBILE-READY: Metadata loaded for ${participantId}`);
+              isReady = true;
+            };
+
+            videoElement.onerror = (e) => {
+              console.error(`📱 MOBILE-ERROR: Video error for ${participantId}:`, e);
+            };
+            
+            videoElement.oncanplay = () => {
+              console.log(`📱 MOBILE-CANPLAY: Video ready to play for ${participantId}`);
+            };
+
+            // Wait for the video to be ready
+            if (!isReady) {
+              await new Promise((resolve) => {
+                const checkReady = () => {
+                  if (videoElement.readyState >= 2 || isReady) {
+                    resolve(undefined);
+                  } else {
+                    setTimeout(checkReady, 100);
+                  }
+                };
+                checkReady();
+              });
+            }
+
+            // Attempt to play
+            await videoElement.play();
+            setIsPlaying(true);
+            console.log(`▶️ MOBILE-PLAYING: Video started for ${participantId}`);
+            
+            // Notify parent component
+            if (onStreamReady) {
+              onStreamReady(participantId, videoElement);
+            }
+            return true;
+            
+          } catch (playError) {
+            console.warn(`📱 MOBILE-PLAYBACK-ERROR: Attempt ${retryCount + 1} failed for ${participantId}:`, playError);
+            
+            // Try muted playback
+            if (!videoElement.muted) {
+              videoElement.muted = true;
+              try {
+                await videoElement.play();
+                setIsPlaying(true);
+                console.log(`🔇 MOBILE-MUTED-SUCCESS: Video playing muted for ${participantId}`);
+                if (onStreamReady) {
+                  onStreamReady(participantId, videoElement);
+                }
+                return true;
+              } catch (mutedError) {
+                console.error(`❌ MOBILE-MUTED-FAILED: Muted playback failed for ${participantId}:`, mutedError);
+              }
+            }
+            
+            // Retry logic
+            if (retryCount < maxRetries) {
+              retryCount++;
+              console.log(`🔄 MOBILE-RETRY: Retrying in 1s for ${participantId} (${retryCount}/${maxRetries})`);
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              return attemptPlayback();
+            }
+            
+            throw playError;
           }
-        } catch (playError) {
-          console.log(`🔇 MOBILE-MUTED: Trying muted playback for ${participantId}`);
-          videoElement.muted = true;
-          await videoElement.play();
-          setIsPlaying(true);
-          
-          if (onStreamReady) {
-            onStreamReady(participantId, videoElement);
-          }
-        }
+        };
+
+        await attemptPlayback();
 
       } catch (error) {
         console.error(`❌ MOBILE-ERROR: Failed to setup video for ${participantId}:`, error);
