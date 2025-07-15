@@ -1,4 +1,3 @@
-
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 export class ConnectionHandler {
@@ -64,103 +63,67 @@ export class ConnectionHandler {
       }
     };
 
-    // CRITICAL: Enhanced stream handling for incoming tracks with mobile optimization
+    // CRITICAL FIX: Enhanced mobile optimization for stream handling
     peerConnection.ontrack = (event) => {
-      console.log(`🎥 MOBILE-CRITICAL: Track received from ${participantId}:`, {
-        kind: event.track.kind,
+      console.log(`🎥 CONNECTION: Track received from ${participantId}:`, {
+        track: event.track.kind,
+        streams: event.streams.length,
         trackId: event.track.id,
-        streamCount: event.streams.length,
-        streamIds: event.streams.map(s => s.id),
-        readyState: event.track.readyState,
-        enabled: event.track.enabled
+        trackSettings: event.track.getSettings ? event.track.getSettings() : null
       });
 
       if (event.streams && event.streams.length > 0) {
         const stream = event.streams[0];
-        console.log(`📹 MOBILE-CRITICAL: Processing stream from ${participantId}:`, {
-          streamId: stream.id,
-          trackCount: stream.getTracks().length,
-          videoTracks: stream.getVideoTracks().length,
-          audioTracks: stream.getAudioTracks().length,
-          streamActive: stream.active
-        });
-
-        // FASE 4: Enhanced logging and verification
-        console.log(`[MOBILE] Stream received from ${participantId}:`, {
-          streamId: stream.id,
-          trackCount: stream.getTracks().length,
-          videoTracks: stream.getVideoTracks().length,
-          audioTracks: stream.getAudioTracks().length,
-          streamActive: stream.active
-        });
-
-        // FASE 2: ENHANCED CALLBACK CHAIN FOR MOBILE
+        
+        // CRITICAL: RELAXED stream validation for mobile compatibility
+        const hasStream = !!stream;
+        const hasActiveTracks = stream?.getTracks().length > 0;
         const isMobileParticipant = participantId.includes('mobile-') || 
-                                   participantId.includes('Mobile') ||
-                                   sessionStorage.getItem('isMobile') === 'true';
+                                  participantId.includes('Mobile') ||
+                                  sessionStorage.getItem('isMobile') === 'true';
         
-        console.log(`📱 MOBILE-CALLBACK: Processing ${isMobileParticipant ? 'MOBILE' : 'DESKTOP'} participant: ${participantId}`);
+        console.log(`📱 MOBILE-CONNECTION: Stream validation for ${participantId}:`, {
+          hasStream,
+          hasActiveTracks,
+          streamActive: stream?.active,
+          isMobile: isMobileParticipant,
+          trackDetails: stream?.getTracks().map(t => ({ kind: t.kind, readyState: t.readyState, enabled: t.enabled }))
+        });
         
-        const triggerCallback = (attempt: number = 1) => {
-          if (this.streamCallback) {
-            console.log(`🚀 MOBILE-CALLBACK-${attempt}: Triggering stream callback for ${participantId}`);
-            console.log(`[HOST-MOBILE] Receiving stream from ${participantId}:`, {
-              streamId: stream.id,
-              trackCount: stream.getTracks().length,
-              videoTracks: stream.getVideoTracks().length,
-              audioTracks: stream.getAudioTracks().length,
-              isMobile: isMobileParticipant,
-              attempt: attempt
-            });
-            
-            try {
+        // CRITICAL: Accept any stream with tracks for mobile, regardless of active state
+        const shouldProcessStream = hasStream && hasActiveTracks;
+        
+        if (shouldProcessStream) {
+          console.log(`🎥 CONNECTION: Processing stream from ${participantId} (mobile: ${isMobileParticipant})`);
+          
+          // MOBILE-CRITICAL: Immediate callback for mobile streams with retry
+          const processStream = () => {
+            if (this.streamCallback) {
+              console.log(`📤 CONNECTION: Triggering stream callback for ${participantId}`);
               this.streamCallback(participantId, stream);
-              console.log(`✅ MOBILE-CALLBACK-${attempt}: Successfully triggered callback for ${participantId}`);
-            } catch (error) {
-              console.error(`❌ MOBILE-CALLBACK-${attempt}: Callback error for ${participantId}:`, error);
-              // Enhanced retry for mobile
-              if (attempt < 3) {
+              
+              // MOBILE-CRITICAL: Additional retry for mobile to ensure stream is processed
+              if (isMobileParticipant) {
                 setTimeout(() => {
-                  triggerCallback(attempt + 1);
-                }, 100 * attempt);
+                  console.log(`🔄 MOBILE-RETRY: Secondary callback for ${participantId}`);
+                  this.streamCallback!(participantId, stream);
+                }, 1500);
               }
+            } else {
+              console.warn(`⚠️ CONNECTION: No stream callback set for ${participantId}`);
             }
-          } else {
-            console.error(`❌ MOBILE-CRITICAL: No stream callback set for ${participantId} (attempt ${attempt})`);
-          }
-        };
-
-        // IMMEDIATE trigger - critical for mobile
-        triggerCallback(1);
-        
-        // ENHANCED backup triggers with exponential delays
-        setTimeout(() => {
-          console.log(`🔄 MOBILE-BACKUP-1: Backup trigger for ${participantId}`);
-          triggerCallback(2);
-        }, isMobileParticipant ? 50 : 100);
-
-        setTimeout(() => {
-          console.log(`🔄 MOBILE-BACKUP-2: Final backup trigger for ${participantId}`);
-          triggerCallback(3);
-        }, isMobileParticipant ? 200 : 500);
-        
-        // CRITICAL: Additional mobile-specific backup
-        if (isMobileParticipant) {
-          setTimeout(() => {
-            console.log(`🔄 MOBILE-EMERGENCY: Emergency backup for ${participantId}`);
-            triggerCallback(4);
-          }, 1000);
-        }
-        
-      } else {
-        console.warn(`⚠️ MOBILE: Track received from ${participantId} but no streams attached`);
-        // Try to create stream from track for mobile compatibility
-        if (event.track) {
-          const syntheticStream = new MediaStream([event.track]);
-          console.log(`🔧 MOBILE-FIX: Created synthetic stream for ${participantId}`);
-          if (this.streamCallback) {
-            this.streamCallback(participantId, syntheticStream);
-          }
+          };
+          
+          // MOBILE: Immediate processing for mobile, minimal delay for others
+          const processingDelay = isMobileParticipant ? 100 : 500;
+          setTimeout(processStream, processingDelay);
+          
+        } else {
+          console.warn(`⚠️ CONNECTION: Invalid stream from ${participantId}:`, {
+            stream: !!stream,
+            active: stream?.active,
+            tracks: stream?.getTracks().length
+          });
         }
       }
     };
@@ -191,13 +154,6 @@ export class ConnectionHandler {
           peerConnection.addTrack(track, localStream);
           console.log(`✅ MOBILE-CRITICAL: Successfully added ${track.kind} track`);
           
-          // FASE 3: Additional verification for mobile tracks
-          console.log(`[MOBILE] Stream track added to peer connection:`, {
-            trackCount: localStream.getTracks().length,
-            videoTracks: localStream.getVideoTracks().length,
-            audioTracks: localStream.getAudioTracks().length,
-            participantId: participantId
-          });
         } catch (trackError) {
           console.error(`❌ MOBILE-CRITICAL: Failed to add track:`, trackError);
         }

@@ -7,6 +7,7 @@ import { useStreamTransmission } from './useStreamTransmission';
 import { useStreamStateManagement } from './useStreamStateManagement';
 import { useStreamBuffer } from './useStreamBuffer';
 import { useMobileDebugger } from './useMobileDebugger';
+import { useMobileStreamProcessor } from './useMobileStreamProcessor';
 
 interface UseParticipantStreamsProps {
   setParticipantStreams: React.Dispatch<React.SetStateAction<{[id: string]: MediaStream}>>;
@@ -30,6 +31,7 @@ export const useParticipantStreams = ({
   });
   const { addToBuffer, processBuffer, removeFromBuffer, cleanup } = useStreamBuffer();
   const { debugInfo, updateDebugInfo } = useMobileDebugger();
+  const { processMobileStream, validateMobileStream } = useMobileStreamProcessor();
 
   // Process function for buffered streams
   const processStreamSafely = useCallback(async (participantId: string, stream: MediaStream): Promise<boolean> => {
@@ -87,7 +89,7 @@ export const useParticipantStreams = ({
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
     console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
     
-    // CRITICAL FIX: Enhanced stream validation and immediate processing
+    // CRITICAL FIX: RELAXED stream validation for mobile compatibility
     console.log(`[HOST] MOBILE-CRITICAL: Stream received from ${participantId}:`, {
       streamId: stream.id,
       trackCount: stream.getTracks().length,
@@ -97,17 +99,24 @@ export const useParticipantStreams = ({
       tracks: stream.getTracks().map(t => ({ kind: t.kind, id: t.id, readyState: t.readyState }))
     });
 
-    // CRITICAL: Validate stream IMMEDIATELY
-    if (!stream || !stream.active || stream.getTracks().length === 0) {
-      console.error(`❌ MOBILE-CRITICAL: Invalid stream received from ${participantId}`);
+    // CRITICAL: RELAXED validation - accept any stream with tracks
+    if (!stream || stream.getTracks().length === 0) {
+      console.error(`❌ MOBILE-CRITICAL: Invalid stream received from ${participantId} (no tracks)`);
       return;
     }
-      
-    // FASE 3: ENHANCED MOBILE DETECTION WITH MULTIPLE SOURCES
+    
+    // MOBILE-CRITICAL: Accept streams even if not "active" for mobile compatibility
     const isMobileParticipant = participantId.includes('mobile-') || 
-                                participantId.includes('Mobile') ||
-                                sessionStorage.getItem('isMobile') === 'true' ||
-                                sessionStorage.getItem('accessedViaQR') === 'true';
+                               participantId.includes('Mobile') ||
+                               sessionStorage.getItem('isMobile') === 'true' ||
+                               sessionStorage.getItem('accessedViaQR') === 'true';
+    
+    if (!stream.active && !isMobileParticipant) {
+      console.warn(`⚠️ Stream not active from ${participantId} (non-mobile), skipping`);
+      return;
+    }
+    
+    console.log(`✅ MOBILE-CRITICAL: Stream validation passed for ${participantId} (mobile: ${isMobileParticipant})`);
     
     console.log(`📱 MOBILE-DETECTION: Participant ${participantId} mobile status:`, {
       includesMobile: participantId.includes('mobile-'),
@@ -189,13 +198,29 @@ export const useParticipantStreams = ({
       return updated;
     });
 
-    // Try immediate processing first
-    const success = await processStreamSafely(participantId, stream);
+    // MOBILE-CRITICAL: Enhanced processing with mobile-specific handling
+    let success = false;
+    
+    if (isMobileParticipant) {
+      console.log('📱 MOBILE-CRITICAL: Processing mobile stream with specialized handler');
+      success = await processMobileStream(participantId, stream, updateVideoElementsImmediately);
+      
+      // If mobile processing fails, try standard processing as fallback
+      if (!success) {
+        console.log('🔄 MOBILE-FALLBACK: Trying standard processing for mobile stream');
+        success = await processStreamSafely(participantId, stream);
+      }
+    } else {
+      // Standard processing for desktop participants
+      success = await processStreamSafely(participantId, stream);
+    }
     
     if (!success) {
-      // Add to buffer for retry
-      console.log('📦 Adding to buffer for retry:', participantId);
+      // Add to buffer for retry with mobile priority
+      console.log(`📦 Adding to buffer for retry: ${participantId} (mobile: ${isMobileParticipant})`);
       addToBuffer(participantId, stream);
+    } else {
+      console.log(`✅ MOBILE-SUCCESS: Stream processing completed for ${participantId} (mobile: ${isMobileParticipant})`);
     }
   }, [validateStream, processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams]);
 
