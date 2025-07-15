@@ -143,13 +143,16 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
         backgroundColor: participant.hasVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
       }}
     >
-      {/* Mobile Camera Stream Processor for mobile participants */}
+      {/* MOBILE-CRITICAL: Force mobile processing for all mobile participants */}
       {participant.isMobile && stream && (
         <MobileCameraStreamProcessor
           participantId={participant.id}
           stream={stream}
           onStreamReady={(participantId, videoElement) => {
-            console.log(`📱 Mobile video ready for ${participantId}`);
+            console.log(`📱 MOBILE-CRITICAL: Mobile video ready for ${participantId}`);
+            // Force video to be visible immediately
+            videoElement.style.display = 'block';
+            videoElement.style.visibility = 'visible';
           }}
         />
       )}

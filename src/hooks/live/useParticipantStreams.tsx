@@ -101,14 +101,18 @@ export const useParticipantStreams = ({
       return;
     }
       
-    // CRITICAL FIX: Update participant state FIRST - synchronously
-    console.log(`🔄 MOBILE-CRITICAL: Updating participant state for ${participantId}`);
+    // MOBILE-CRITICAL: Force mobile detection and priority
+    const isMobileParticipant = participantId.includes('mobile') || 
+                                participantId.includes('Mobile') ||
+                                sessionStorage.getItem('isMobile') === 'true';
+    
+    console.log(`📱 MOBILE-CRITICAL: Updating participant state for ${participantId} (mobile: ${isMobileParticipant})`);
     setParticipantList(prev => {
       const existingIndex = prev.findIndex(p => p.id === participantId);
       let updated;
       
       if (existingIndex >= 0) {
-        // Update existing participant
+        // Update existing participant - FORCE mobile priority
         updated = [...prev];
         updated[existingIndex] = {
           ...updated[existingIndex],
@@ -117,24 +121,32 @@ export const useParticipantStreams = ({
           selected: true,
           connectedAt: Date.now(),
           lastActive: Date.now(),
-          isMobile: true
+          isMobile: isMobileParticipant,
+          name: isMobileParticipant ? `📱 Mobile-${participantId.substring(0, 8)}` : updated[existingIndex].name
         };
-        console.log(`✅ MOBILE-CRITICAL: Updated existing participant ${participantId}`);
+        console.log(`✅ MOBILE-CRITICAL: Updated existing participant ${participantId} (mobile: ${isMobileParticipant})`);
       } else {
-        // Add new participant
+        // Add new participant - FORCE mobile priority
         updated = [...prev, {
           id: participantId,
-          name: `Mobile-${participantId.substring(0, 8)}`,
+          name: isMobileParticipant ? `📱 Mobile-${participantId.substring(0, 8)}` : `Participant-${participantId.substring(0, 8)}`,
           hasVideo: true,
           active: true,
           selected: true,
           joinedAt: Date.now(),
           lastActive: Date.now(),
           connectedAt: Date.now(),
-          isMobile: true
+          isMobile: isMobileParticipant
         }];
-        console.log(`✅ MOBILE-CRITICAL: Added new participant ${participantId}`);
+        console.log(`✅ MOBILE-CRITICAL: Added new participant ${participantId} (mobile: ${isMobileParticipant})`);
       }
+      
+      // MOBILE-CRITICAL: Sort to ensure mobile participants are always first
+      updated.sort((a, b) => {
+        if (a.isMobile && !b.isMobile) return -1;
+        if (!a.isMobile && b.isMobile) return 1;
+        return (b.connectedAt || b.joinedAt || 0) - (a.connectedAt || a.joinedAt || 0);
+      });
       
       return updated;
     });

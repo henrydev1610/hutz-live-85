@@ -15,24 +15,37 @@ export const useDirectVideoCreation = ({
   const maxRetries = 5;
 
   const createVideoElementDirect = useCallback((container: HTMLElement, mediaStream: MediaStream) => {
-    console.log(`🎬 DIRECT: Creating video for ${participantId} in ${containerId}`);
+    // Enhanced mobile detection
+    const isMobile = participantId.includes('mobile') || 
+                     participantId.includes('Mobile') ||
+                     sessionStorage.getItem('isMobile') === 'true';
     
-    // Remove any existing video first
-    const existingVideo = container.querySelector('video');
-    if (existingVideo) {
-      console.log(`🧹 DIRECT: Removing existing video for ${participantId}`);
-      existingVideo.remove();
-    }
-
-    // Create new video element
+    console.log(`📱 MOBILE-DIRECT: Creating video for ${participantId} in ${containerId} (mobile: ${isMobile})`);
+    
+    // MOBILE-CRITICAL: Clear container completely
+    container.innerHTML = '';
+    
+    // Create new video element with mobile optimization
     const video = document.createElement('video');
     video.autoplay = true;
     video.playsInline = true;
     video.muted = true;
     video.controls = false;
-    video.className = 'w-full h-full object-cover absolute inset-0 z-10';
     
-    // Force styles
+    // MOBILE-CRITICAL: Higher z-index for mobile streams
+    const zIndex = isMobile ? 25 : 10;
+    video.className = `w-full h-full object-cover absolute inset-0 z-${zIndex}`;
+    
+    // MOBILE-CRITICAL: Enhanced mobile attributes
+    if (isMobile) {
+      video.setAttribute('webkit-playsinline', 'true');
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('x5-playsinline', 'true');
+      video.setAttribute('x5-video-player-type', 'h5');
+      video.setAttribute('x5-video-player-fullscreen', 'true');
+    }
+    
+    // MOBILE-CRITICAL: Force styles with mobile priority
     video.style.cssText = `
       display: block !important;
       width: 100% !important;
@@ -41,25 +54,39 @@ export const useDirectVideoCreation = ({
       position: absolute !important;
       top: 0 !important;
       left: 0 !important;
-      z-index: 10 !important;
+      z-index: ${zIndex} !important;
       background: transparent !important;
+      ${isMobile ? 'transform: scale(1.01) !important;' : ''}
     `;
 
     // Set stream and append to container
     video.srcObject = mediaStream;
     container.appendChild(video);
 
-    // Force play
+    // MOBILE-CRITICAL: Enhanced play logic for mobile
     const playVideo = async () => {
       try {
         await video.play();
-        console.log(`✅ DIRECT: Video playing for ${participantId}`);
+        console.log(`✅ MOBILE-DIRECT: Video playing for ${participantId} (mobile: ${isMobile})`);
+        
+        // MOBILE-CRITICAL: Verify video is actually playing
+        if (isMobile) {
+          setTimeout(() => {
+            if (video.paused || video.ended) {
+              console.log(`⚠️ MOBILE-DIRECT: Video not playing, forcing play again`);
+              video.play().catch(e => console.log(`⚠️ MOBILE-DIRECT: Force play failed:`, e));
+            }
+          }, 200);
+        }
       } catch (error) {
-        console.log(`⚠️ DIRECT: Play failed for ${participantId}:`, error);
-        // Retry after short delay
-        setTimeout(() => {
-          video.play().catch(e => console.log(`⚠️ DIRECT: Retry failed:`, e));
-        }, 100);
+        console.log(`⚠️ MOBILE-DIRECT: Play failed for ${participantId}:`, error);
+        // Multiple retry attempts for mobile
+        const retryAttempts = isMobile ? 3 : 1;
+        for (let i = 0; i < retryAttempts; i++) {
+          setTimeout(() => {
+            video.play().catch(e => console.log(`⚠️ MOBILE-DIRECT: Retry ${i + 1} failed:`, e));
+          }, 100 * (i + 1));
+        }
       }
     };
 
@@ -68,6 +95,12 @@ export const useDirectVideoCreation = ({
     
     video.addEventListener('loadedmetadata', playVideo);
     video.addEventListener('canplay', playVideo);
+    
+    // MOBILE-CRITICAL: Force play on various events
+    if (isMobile) {
+      video.addEventListener('loadeddata', playVideo);
+      video.addEventListener('canplaythrough', playVideo);
+    }
 
     return video;
   }, [participantId, containerId]);
