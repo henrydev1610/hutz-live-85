@@ -85,33 +85,44 @@ export const useParticipantStreams = ({
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
     console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
     
-    // FASE 3: Additional verification for mobile stream display
+    // CRITICAL FIX: Enhanced stream validation and immediate processing
     console.log(`[HOST] MOBILE-CRITICAL: Stream received from ${participantId}:`, {
       streamId: stream.id,
       trackCount: stream.getTracks().length,
       videoTracks: stream.getVideoTracks().length,
       audioTracks: stream.getAudioTracks().length,
-      streamActive: stream.active
+      streamActive: stream.active,
+      tracks: stream.getTracks().map(t => ({ kind: t.kind, id: t.id, readyState: t.readyState }))
     });
-    
-    // Force immediate participant state update for mobile streams
-    setParticipantList(prev => {
-      const updated = prev.map(p => 
-        p.id === participantId 
-          ? { 
-              ...p, 
-              hasVideo: true, 
-              active: true, 
-              selected: true,
-              connectedAt: Date.now(),
-              isMobile: true
-            }
-          : p
-      );
+
+    // CRITICAL: Validate stream IMMEDIATELY
+    if (!stream || !stream.active || stream.getTracks().length === 0) {
+      console.error(`❌ MOBILE-CRITICAL: Invalid stream received from ${participantId}`);
+      return;
+    }
       
-      // If participant doesn't exist, add it
-      if (!updated.find(p => p.id === participantId)) {
-        updated.push({
+    // CRITICAL FIX: Update participant state FIRST - synchronously
+    console.log(`🔄 MOBILE-CRITICAL: Updating participant state for ${participantId}`);
+    setParticipantList(prev => {
+      const existingIndex = prev.findIndex(p => p.id === participantId);
+      let updated;
+      
+      if (existingIndex >= 0) {
+        // Update existing participant
+        updated = [...prev];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          hasVideo: true,
+          active: true,
+          selected: true,
+          connectedAt: Date.now(),
+          lastActive: Date.now(),
+          isMobile: true
+        };
+        console.log(`✅ MOBILE-CRITICAL: Updated existing participant ${participantId}`);
+      } else {
+        // Add new participant
+        updated = [...prev, {
           id: participantId,
           name: `Mobile-${participantId.substring(0, 8)}`,
           hasVideo: true,
@@ -121,22 +132,21 @@ export const useParticipantStreams = ({
           lastActive: Date.now(),
           connectedAt: Date.now(),
           isMobile: true
-        });
+        }];
+        console.log(`✅ MOBILE-CRITICAL: Added new participant ${participantId}`);
       }
       
-      console.log('🔄 MOBILE-STATE: Updated participant list for:', participantId);
       return updated;
     });
-    
-    if (!validateStream(stream, participantId)) {
-      console.warn('❌ Stream validation failed for:', participantId);
-      return;
-    }
 
-    // Force immediate stream state update
+    // CRITICAL FIX: Update stream state IMMEDIATELY after participant update
+    console.log(`🔄 MOBILE-CRITICAL: Updating stream state for ${participantId}`);
     setParticipantStreams(prev => {
       const updated = { ...prev, [participantId]: stream };
-      console.log('🔄 MOBILE-STREAM: Updated streams for:', participantId);
+      console.log(`✅ MOBILE-CRITICAL: Stream state updated for ${participantId}`, {
+        streamId: stream.id,
+        totalStreams: Object.keys(updated).length
+      });
       return updated;
     });
 

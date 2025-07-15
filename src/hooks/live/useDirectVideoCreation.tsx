@@ -78,39 +78,54 @@ export const useDirectVideoCreation = ({
       return false;
     }
 
-    // More lenient stream validation - just check if stream exists
+    // CRITICAL: Enhanced stream validation for mobile
     const hasValidTracks = stream.getTracks().length > 0;
-    if (!hasValidTracks) {
-      console.log(`🚫 DIRECT: No tracks in stream for ${participantId}`, {
-        streamId: stream.id,
-        tracks: stream.getTracks().length
-      });
-      return false;
-    }
-
-    console.log(`🎯 DIRECT: Processing stream for ${participantId}`, {
+    const hasVideoTracks = stream.getVideoTracks().length > 0;
+    const isActive = stream.active;
+    
+    console.log(`🎯 MOBILE-CRITICAL: Stream validation for ${participantId}:`, {
       streamId: stream.id,
-      active: stream.active,
+      active: isActive,
+      hasValidTracks,
+      hasVideoTracks,
       videoTracks: stream.getVideoTracks().length,
       audioTracks: stream.getAudioTracks().length,
-      totalTracks: stream.getTracks().length
+      totalTracks: stream.getTracks().length,
+      trackStates: stream.getTracks().map(t => ({ kind: t.kind, readyState: t.readyState, enabled: t.enabled }))
     });
+
+    if (!hasValidTracks) {
+      console.log(`🚫 DIRECT: No valid tracks in stream for ${participantId}`);
+      return false;
+    }
 
     const container = document.getElementById(containerId);
     if (!container) {
       console.log(`⚠️ DIRECT: Container ${containerId} not found for ${participantId}`);
+      // Try to find container with more aggressive search
+      const altContainer = document.querySelector(`[data-participant-id="${participantId}"]`);
+      if (altContainer) {
+        console.log(`✅ DIRECT: Found alternative container for ${participantId}`);
+        createVideoElementDirect(altContainer as HTMLElement, stream);
+        return true;
+      }
       return false;
     }
 
-    // Check if video already exists and is playing
-    const existingVideo = container.querySelector('video') as HTMLVideoElement;
-    if (existingVideo && existingVideo.srcObject === stream && !existingVideo.paused) {
-      console.log(`✅ DIRECT: Video already playing for ${participantId}`);
-      return true;
-    }
-
-    console.log(`✅ DIRECT: Creating video for ${participantId}`);
+    // CRITICAL: Always recreate video for mobile to ensure proper display
+    console.log(`🎬 MOBILE-CRITICAL: Force creating fresh video for ${participantId}`);
     createVideoElementDirect(container, stream);
+    
+    // VERIFICATION: Check if video was created successfully
+    setTimeout(() => {
+      const video = container.querySelector('video') as HTMLVideoElement;
+      if (video && video.srcObject === stream) {
+        console.log(`✅ MOBILE-CRITICAL: Video verification successful for ${participantId}`);
+      } else {
+        console.error(`❌ MOBILE-CRITICAL: Video verification failed for ${participantId}`);
+      }
+    }, 100);
+    
     return true;
   }, [stream, participantId, containerId, createVideoElementDirect]);
 

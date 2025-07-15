@@ -105,6 +105,18 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     return video && video.srcObject === stream && !video.paused;
   };
 
+  // CRITICAL: Force video creation when stream is available
+  React.useEffect(() => {
+    if (stream && participant.active) {
+      console.log(`🚀 MOBILE-CRITICAL: Stream available for ${participant.id}, forcing video creation`);
+      
+      // Multiple attempts to ensure video creation
+      setTimeout(() => tryCreateVideo(), 100);
+      setTimeout(() => tryCreateVideo(), 500);
+      setTimeout(() => tryCreateVideo(), 1000);
+    }
+  }, [stream, participant.active, participant.id, tryCreateVideo]);
+
   // Debug info
   console.log(`🎭 RENDER: ParticipantVideoContainer for ${participant.id}`, {
     containerId,
@@ -114,6 +126,8 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     name: participant.name,
     hasStream: !!stream,
     streamId: stream?.id,
+    streamTracks: stream?.getTracks()?.length || 0,
+    streamVideoTracks: stream?.getVideoTracks()?.length || 0,
     hasPlayingVideo: hasPlayingVideo()
   });
 
