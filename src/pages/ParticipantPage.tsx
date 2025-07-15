@@ -9,6 +9,7 @@ import ParticipantConnectionStatus from '@/components/participant/ParticipantCon
 import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
+import WebRTCEmergencyDebugger from '@/components/live/WebRTCEmergencyDebugger';
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 const ParticipantPage = () => {
@@ -19,21 +20,42 @@ const ParticipantPage = () => {
   
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
   
-  // FASE 2: FORÇAR MOBILE ID
+  // FASE 2: FORÇAR MOBILE ID - CRITICAL FIX
   const [participantId] = useState(() => {
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-                     'ontouchstart' in window ||
-                     sessionStorage.getItem('accessedViaQR') === 'true';
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // CRITICAL: Enhanced mobile detection with QR parameter priority
+    const hasQRAccess = urlParams.has('qr') || 
+                       urlParams.get('qr') === 'true' ||
+                       sessionStorage.getItem('accessedViaQR') === 'true' ||
+                       document.referrer.includes('qr');
+    
+    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const hasTouchScreen = 'ontouchstart' in window && navigator.maxTouchPoints > 0;
+    
+    // CRITICAL: QR access ALWAYS indicates mobile, even on desktop
+    const isMobile = hasQRAccess || (isMobileDevice && hasTouchScreen);
     
     const baseId = `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const finalId = isMobile ? `mobile-${baseId}` : baseId;
     
-    // Store mobile status
+    // CRITICAL: Store mobile status with all flags
     if (isMobile) {
       sessionStorage.setItem('isMobile', 'true');
+      sessionStorage.setItem('accessedViaQR', 'true');
+      sessionStorage.setItem('participantType', 'mobile');
+      
+      // CRITICAL: Force mobile detection in WebRTC manager
+      window.localStorage.setItem('forceMobileDetection', 'true');
     }
     
-    console.log(`📱 PARTICIPANT-MOBILE: Generated ID: ${finalId} (mobile: ${isMobile})`);
+    console.log(`📱 PARTICIPANT-MOBILE: Generated ID: ${finalId}`, {
+      hasQRAccess,
+      isMobileDevice,
+      hasTouchScreen,
+      finalResult: isMobile
+    });
+    
     return finalId;
   });
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
@@ -250,6 +272,11 @@ const ParticipantPage = () => {
 
         {/* Instructions */}
         <ParticipantInstructions />
+        
+        {/* Emergency WebRTC Debugger */}
+        <div className="mt-6">
+          <WebRTCEmergencyDebugger isHost={false} />
+        </div>
       </div>
     </div>
   );

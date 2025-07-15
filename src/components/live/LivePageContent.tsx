@@ -7,6 +7,7 @@ import LiveControlTabs from '@/components/live/LiveControlTabs';
 import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
 import StreamDebugPanel from '@/components/live/StreamDebugPanel';
 import { MobileConnectionDebugger } from '@/components/live/MobileConnectionDebugger';
+import WebRTCEmergencyDebugger from '@/components/live/WebRTCEmergencyDebugger';
 import { Participant } from '@/components/live/ParticipantGrid';
 
 interface LivePageContentProps {

@@ -261,24 +261,65 @@ export class ConnectionHandler {
   }
 
   private async initiateCall(participantId: string): Promise<void> {
-    console.log(`📞 Initiating call to: ${participantId}`);
+    console.log(`📞 MOBILE-CRITICAL: Initiating call to: ${participantId}`);
 
     const peerConnection = this.createPeerConnection(participantId);
     
     try {
-      const offer = await peerConnection.createOffer({
+      // CRITICAL: Enhanced mobile offer creation with aggressive constraints
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      
+      const offerOptions = isMobile ? {
+        offerToReceiveVideo: true,
+        offerToReceiveAudio: true,
+        voiceActivityDetection: false,
+        iceRestart: true
+      } : {
         offerToReceiveVideo: true,
         offerToReceiveAudio: true
-      });
+      };
+      
+      console.log(`📞 MOBILE-CRITICAL: Creating offer with options:`, offerOptions);
+      const offer = await peerConnection.createOffer(offerOptions);
       
       await peerConnection.setLocalDescription(offer);
-      console.log(`📤 Sending offer to: ${participantId}`);
+      console.log(`📤 MOBILE-CRITICAL: Sending offer to: ${participantId}`);
       
       unifiedWebSocketService.sendOffer(participantId, offer);
+      
+      // CRITICAL: Force connection state monitoring for mobile
+      if (isMobile) {
+        console.log('📱 MOBILE-CRITICAL: Starting enhanced connection monitoring...');
+        this.startEnhancedMobileMonitoring(participantId, peerConnection);
+      }
+      
     } catch (error) {
-      console.error(`❌ Failed to create/send offer to ${participantId}:`, error);
+      console.error(`❌ MOBILE-CRITICAL: Failed to create/send offer to ${participantId}:`, error);
       throw error;
     }
+  }
+  
+  private startEnhancedMobileMonitoring(participantId: string, peerConnection: RTCPeerConnection) {
+    console.log(`📱 MOBILE-MONITORING: Starting enhanced monitoring for ${participantId}`);
+    
+    // Monitor connection state changes more aggressively
+    const connectionMonitor = setInterval(() => {
+      console.log(`📱 MOBILE-MONITOR: ${participantId} - Connection: ${peerConnection.connectionState}, ICE: ${peerConnection.iceConnectionState}`);
+      
+      if (peerConnection.connectionState === 'connected') {
+        console.log(`✅ MOBILE-MONITOR: ${participantId} is connected, clearing monitor`);
+        clearInterval(connectionMonitor);
+      } else if (peerConnection.connectionState === 'failed') {
+        console.log(`❌ MOBILE-MONITOR: ${participantId} failed, triggering recovery`);
+        clearInterval(connectionMonitor);
+        this.handleConnectionFailure(participantId);
+      }
+    }, 1000);
+    
+    // Clear monitor after 30 seconds to prevent memory leaks
+    setTimeout(() => {
+      clearInterval(connectionMonitor);
+    }, 30000);
   }
 
   private handleConnectionFailure(participantId: string): void {
