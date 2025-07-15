@@ -19,7 +19,23 @@ const ParticipantPage = () => {
   
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
   
-  const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+  // FASE 2: FORÇAR MOBILE ID
+  const [participantId] = useState(() => {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                     'ontouchstart' in window ||
+                     sessionStorage.getItem('accessedViaQR') === 'true';
+    
+    const baseId = `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const finalId = isMobile ? `mobile-${baseId}` : baseId;
+    
+    // Store mobile status
+    if (isMobile) {
+      sessionStorage.setItem('isMobile', 'true');
+    }
+    
+    console.log(`📱 PARTICIPANT-MOBILE: Generated ID: ${finalId} (mobile: ${isMobile})`);
+    return finalId;
+  });
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
 
   const connection = useParticipantConnection(sessionId, participantId);

@@ -6,6 +6,7 @@ import { useStreamValidation } from './useStreamValidation';
 import { useStreamTransmission } from './useStreamTransmission';
 import { useStreamStateManagement } from './useStreamStateManagement';
 import { useStreamBuffer } from './useStreamBuffer';
+import { useMobileDebugger } from './useMobileDebugger';
 
 interface UseParticipantStreamsProps {
   setParticipantStreams: React.Dispatch<React.SetStateAction<{[id: string]: MediaStream}>>;
@@ -28,6 +29,7 @@ export const useParticipantStreams = ({
     setParticipantList
   });
   const { addToBuffer, processBuffer, removeFromBuffer, cleanup } = useStreamBuffer();
+  const { debugInfo, updateDebugInfo } = useMobileDebugger();
 
   // Process function for buffered streams
   const processStreamSafely = useCallback(async (participantId: string, stream: MediaStream): Promise<boolean> => {
@@ -101,10 +103,19 @@ export const useParticipantStreams = ({
       return;
     }
       
-    // MOBILE-CRITICAL: Force mobile detection and priority
-    const isMobileParticipant = participantId.includes('mobile') || 
+    // FASE 3: ENHANCED MOBILE DETECTION WITH MULTIPLE SOURCES
+    const isMobileParticipant = participantId.includes('mobile-') || 
                                 participantId.includes('Mobile') ||
-                                sessionStorage.getItem('isMobile') === 'true';
+                                sessionStorage.getItem('isMobile') === 'true' ||
+                                sessionStorage.getItem('accessedViaQR') === 'true';
+    
+    console.log(`📱 MOBILE-DETECTION: Participant ${participantId} mobile status:`, {
+      includesMobile: participantId.includes('mobile-'),
+      includesCapitalMobile: participantId.includes('Mobile'),
+      sessionMobile: sessionStorage.getItem('isMobile') === 'true',
+      accessedViaQR: sessionStorage.getItem('accessedViaQR') === 'true',
+      finalResult: isMobileParticipant
+    });
     
     console.log(`📱 MOBILE-CRITICAL: Updating participant state for ${participantId} (mobile: ${isMobileParticipant})`);
     setParticipantList(prev => {
@@ -148,6 +159,15 @@ export const useParticipantStreams = ({
         return (b.connectedAt || b.joinedAt || 0) - (a.connectedAt || a.joinedAt || 0);
       });
       
+      // FASE 4: Update debug info
+      const mobileParticipants = updated.filter(p => p.isMobile).map(p => p.id);
+      updateDebugInfo({
+        participantCount: updated.length,
+        mobileCount: mobileParticipants.length,
+        mobileParticipants: mobileParticipants,
+        connectionState: 'connected'
+      });
+      
       return updated;
     });
 
@@ -157,8 +177,15 @@ export const useParticipantStreams = ({
       const updated = { ...prev, [participantId]: stream };
       console.log(`✅ MOBILE-CRITICAL: Stream state updated for ${participantId}`, {
         streamId: stream.id,
-        totalStreams: Object.keys(updated).length
+        totalStreams: Object.keys(updated).length,
+        isMobile: isMobileParticipant
       });
+      
+      // FASE 4: Update debug info with stream count
+      updateDebugInfo({
+        streamsCount: Object.keys(updated).length
+      });
+      
       return updated;
     });
 

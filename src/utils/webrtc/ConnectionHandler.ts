@@ -94,41 +94,63 @@ export class ConnectionHandler {
           streamActive: stream.active
         });
 
-        // Enhanced callback trigger with multiple fallbacks for mobile
-        const triggerCallback = () => {
+        // FASE 2: ENHANCED CALLBACK CHAIN FOR MOBILE
+        const isMobileParticipant = participantId.includes('mobile-') || 
+                                   participantId.includes('Mobile') ||
+                                   sessionStorage.getItem('isMobile') === 'true';
+        
+        console.log(`📱 MOBILE-CALLBACK: Processing ${isMobileParticipant ? 'MOBILE' : 'DESKTOP'} participant: ${participantId}`);
+        
+        const triggerCallback = (attempt: number = 1) => {
           if (this.streamCallback) {
-            console.log(`🚀 MOBILE-IMMEDIATE: Triggering stream callback for ${participantId}`);
-            console.log(`[HOST] Receiving stream from ${participantId}`);
+            console.log(`🚀 MOBILE-CALLBACK-${attempt}: Triggering stream callback for ${participantId}`);
+            console.log(`[HOST-MOBILE] Receiving stream from ${participantId}:`, {
+              streamId: stream.id,
+              trackCount: stream.getTracks().length,
+              videoTracks: stream.getVideoTracks().length,
+              audioTracks: stream.getAudioTracks().length,
+              isMobile: isMobileParticipant,
+              attempt: attempt
+            });
+            
             try {
               this.streamCallback(participantId, stream);
+              console.log(`✅ MOBILE-CALLBACK-${attempt}: Successfully triggered callback for ${participantId}`);
             } catch (error) {
-              console.error(`❌ Stream callback error for ${participantId}:`, error);
-              // Retry once more if callback fails
-              setTimeout(() => {
-                if (this.streamCallback) {
-                  this.streamCallback(participantId, stream);
-                }
-              }, 50);
+              console.error(`❌ MOBILE-CALLBACK-${attempt}: Callback error for ${participantId}:`, error);
+              // Enhanced retry for mobile
+              if (attempt < 3) {
+                setTimeout(() => {
+                  triggerCallback(attempt + 1);
+                }, 100 * attempt);
+              }
             }
           } else {
-            console.error(`❌ MOBILE-CRITICAL: No stream callback set for ${participantId}`);
+            console.error(`❌ MOBILE-CRITICAL: No stream callback set for ${participantId} (attempt ${attempt})`);
           }
         };
 
-        // Immediate trigger
-        triggerCallback();
+        // IMMEDIATE trigger - critical for mobile
+        triggerCallback(1);
         
-        // Backup trigger after minimal delay to ensure mobile streams are captured
+        // ENHANCED backup triggers with exponential delays
         setTimeout(() => {
-          console.log(`🔄 MOBILE-BACKUP: Backup trigger for ${participantId}`);
-          triggerCallback();
-        }, 100);
+          console.log(`🔄 MOBILE-BACKUP-1: Backup trigger for ${participantId}`);
+          triggerCallback(2);
+        }, isMobileParticipant ? 50 : 100);
 
-        // Additional backup for problematic mobile connections
         setTimeout(() => {
-          console.log(`🔄 MOBILE-FINAL: Final backup trigger for ${participantId}`);
-          triggerCallback();
-        }, 500);
+          console.log(`🔄 MOBILE-BACKUP-2: Final backup trigger for ${participantId}`);
+          triggerCallback(3);
+        }, isMobileParticipant ? 200 : 500);
+        
+        // CRITICAL: Additional mobile-specific backup
+        if (isMobileParticipant) {
+          setTimeout(() => {
+            console.log(`🔄 MOBILE-EMERGENCY: Emergency backup for ${participantId}`);
+            triggerCallback(4);
+          }, 1000);
+        }
         
       } else {
         console.warn(`⚠️ MOBILE: Track received from ${participantId} but no streams attached`);

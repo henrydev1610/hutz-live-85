@@ -154,6 +154,16 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
           });
         }}
       />
+      
+      {/* FASE 4: Mobile Debug Component */}
+      <MobileConnectionDebugger
+        participantCount={realParticipants.length}
+        mobileCount={realParticipants.filter(p => p.isMobile).length}
+        streamsCount={activeStreams}
+        connectionState="connected"
+        lastUpdate={Date.now()}
+        mobileParticipants={realParticipants.filter(p => p.isMobile).map(p => p.id)}
+      />
     </div>
   );
 };

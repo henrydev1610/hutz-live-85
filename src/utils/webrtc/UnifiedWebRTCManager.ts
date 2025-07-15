@@ -63,8 +63,34 @@ export class UnifiedWebRTCManager {
   }
 
   private detectMobile() {
-    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    console.log(`📱 Device type: ${this.isMobile ? 'Mobile' : 'Desktop'}`);
+    // FASE 1: FORÇAR DETECÇÃO MOBILE CORRETA
+    const urlParams = new URLSearchParams(window.location.search);
+    const hasQRParam = urlParams.has('qr') || urlParams.get('qr') === 'true';
+    const hasMobileParam = urlParams.has('mobile') || urlParams.get('mobile') === 'true';
+    const accessedViaQR = hasQRParam || hasMobileParam || 
+                         document.referrer.includes('qr') || 
+                         sessionStorage.getItem('accessedViaQR') === 'true';
+    
+    const userAgentMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const hasTouchScreen = 'ontouchstart' in window && navigator.maxTouchPoints > 0;
+    
+    // CRITICAL: QR access always indicates mobile
+    this.isMobile = accessedViaQR || (userAgentMobile && hasTouchScreen);
+    
+    // Store mobile status for consistent detection
+    if (this.isMobile) {
+      sessionStorage.setItem('isMobile', 'true');
+      sessionStorage.setItem('accessedViaQR', 'true');
+    }
+    
+    console.log(`📱 MOBILE-DETECTION: Device type: ${this.isMobile ? 'MOBILE' : 'DESKTOP'}`, {
+      accessedViaQR,
+      userAgentMobile,
+      hasTouchScreen,
+      hasQRParam,
+      hasMobileParam,
+      finalResult: this.isMobile
+    });
   }
 
   private initializeComponents() {
@@ -427,7 +453,14 @@ export class UnifiedWebRTCManager {
       connectionType: 'unified',
       deviceType: this.isMobile ? 'mobile' : 'desktop',
       timestamp: Date.now(),
-      // Additional mobile metadata
+      // FASE 3: CRITICAL - Enhanced mobile metadata
+      participantType: this.isMobile ? 'mobile-participant' : 'desktop-participant',
+      mobileFlags: {
+        detectedMobile: this.isMobile,
+        accessedViaQR: sessionStorage.getItem('accessedViaQR') === 'true',
+        userAgent: navigator.userAgent,
+        touchScreen: 'ontouchstart' in window && navigator.maxTouchPoints > 0
+      },
       videoConstraints: this.isMobile && this.localStream.getVideoTracks()[0] ? 
         this.localStream.getVideoTracks()[0].getSettings() : null
     };
