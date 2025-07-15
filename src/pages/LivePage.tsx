@@ -11,6 +11,7 @@ import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useWebRTCStabilityIntegration } from '@/hooks/live/useWebRTCStabilityIntegration';
+import { useHostRemoteStreamManager } from '@/hooks/live/useHostRemoteStreamManager';
 import { ConnectionStabilityIndicator } from '@/components/live/ConnectionStabilityIndicator';
 
 const LivePage: React.FC = () => {
@@ -20,6 +21,13 @@ const LivePage: React.FC = () => {
   const stability = useWebRTCStabilityIntegration();
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
+  
+  // HOST: Manage remote streams display (no local camera)
+  useHostRemoteStreamManager({
+    participantStreams: state.participantStreams,
+    participantList: state.participantList,
+    transmissionWindowRef
+  });
   
   const { closeFinalAction } = useFinalAction({
     finalActionOpen: state.finalActionOpen,
@@ -73,7 +81,6 @@ const LivePage: React.FC = () => {
   // Use the effects hook
   useLivePageEffects({
     sessionId: state.sessionId,
-    localStream: state.localStream,
     participantStreams: state.participantStreams,
     participantList: state.participantList,
     transmissionOpen: state.transmissionOpen,

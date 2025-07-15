@@ -222,16 +222,18 @@ export const useTransmissionWindow = () => {
               videoElement.style.willChange = 'transform';
               videoElement.style.transition = 'none';
               
-              // CRITICAL: Try to get real stream from host via getUserMedia clone
+              // HOST: Only display remote streams - no local camera
               try {
-                console.log("🎯 TRANSMISSION: Attempting to get user media for display");
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                  video: true, 
-                  audio: false 
-                });
+                console.log("🎯 TRANSMISSION: Waiting for remote stream from participants");
                 
-                videoElement.srcObject = stream;
-                console.log("✅ TRANSMISSION: Video stream assigned successfully");
+                // Wait for remote stream to be available
+                const remoteStream = participantStreams[participantId];
+                if (remoteStream) {
+                  videoElement.srcObject = remoteStream;
+                  console.log("✅ TRANSMISSION: Remote stream assigned successfully");
+                } else {
+                  console.log("⚠️ TRANSMISSION: No remote stream available for", participantId);
+                }
                 
                 videoElement.onloadedmetadata = () => {
                   console.log("📊 TRANSMISSION: Video metadata loaded for", participantId);

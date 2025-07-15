@@ -105,25 +105,21 @@ export const useParticipantManagement = ({
       return [...filtered, testParticipant];
     });
     
-    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-      .then(stream => {
-        console.log('✅ Test stream obtained:', stream.getTracks().length, 'tracks');
+    // HOST: Test connection without using local camera
+    const testStream = new MediaStream();
+    console.log('✅ Test connection initiated for:', testParticipant.id);
+    
+    handleParticipantStream(testParticipant.id, testStream);
         
-        handleParticipantStream(testParticipant.id, stream);
-        
-        setTimeout(() => {
-          stream.getTracks().forEach(track => track.stop());
-          setParticipantList(prev => prev.filter(p => p.id !== testParticipant.id));
-          setParticipantStreams(prev => {
-            const updated = { ...prev };
-            delete updated[testParticipant.id];
-            return updated;
-          });
-        }, 10000);
-      })
-      .catch(err => {
-        console.error('❌ Test connection failed:', err);
+    setTimeout(() => {
+      testStream.getTracks().forEach(track => track.stop());
+      setParticipantList(prev => prev.filter(p => p.id !== testParticipant.id));
+      setParticipantStreams(prev => {
+        const updated = { ...prev };
+        delete updated[testParticipant.id];
+        return updated;
       });
+    }, 10000);
   };
 
   return {

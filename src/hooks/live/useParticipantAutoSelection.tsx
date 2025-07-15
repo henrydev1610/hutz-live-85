@@ -50,15 +50,27 @@ export const useParticipantAutoSelection = ({
     }
   }, [participantList.length, setParticipantList]);
 
-  // CRITICAL: Auto-select participants with streams for transmission
+  // CRITICAL: Auto-select participants with streams for transmission - prioritize mobile
   useEffect(() => {
     console.log('🎯 CRITICAL: Auto-selecting participants with streams');
     
-    Object.entries(participantStreams).forEach(([participantId, stream]) => {
+    // Sort participants by mobile priority
+    const sortedStreams = Object.entries(participantStreams).sort(([idA], [idB]) => {
+      const participantA = participantList.find(p => p.id === idA);
+      const participantB = participantList.find(p => p.id === idB);
+      
+      // Mobile participants get priority
+      if (participantA?.isMobile && !participantB?.isMobile) return -1;
+      if (!participantA?.isMobile && participantB?.isMobile) return 1;
+      
+      return 0;
+    });
+    
+    sortedStreams.forEach(([participantId, stream]) => {
       const participant = participantList.find(p => p.id === participantId);
       
       if (participant && !participant.selected && stream.active) {
-        console.log(`✅ AUTO-SELECTING participant ${participantId} for transmission`);
+        console.log(`✅ AUTO-SELECTING participant ${participantId} for transmission ${participant.isMobile ? '(MOBILE PRIORITY)' : '(DESKTOP)'}`);
         
         setParticipantList(prev => prev.map(p => 
           p.id === participantId 

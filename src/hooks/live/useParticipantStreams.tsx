@@ -84,12 +84,21 @@ export const useParticipantStreams = ({
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
     console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
+    
+    // ENHANCED mobile detection
+    const isMobileStream = participantId.includes('mobile') || participantId.includes('qr') || 
+                          stream.getVideoTracks().some(track => {
+                            const settings = track.getSettings();
+                            return settings.facingMode === 'environment' || settings.facingMode === 'user';
+                          });
+    
     console.log('🎬 STREAM-INFO:', {
       id: participantId,
       hasVideoTracks: stream.getVideoTracks().length,
       hasAudioTracks: stream.getAudioTracks().length,
       videoTrackEnabled: stream.getVideoTracks()[0]?.enabled,
-      streamActive: stream.active
+      streamActive: stream.active,
+      isMobile: isMobileStream
     });
     
     // FORCE immediate stream state update FIRST
@@ -99,7 +108,7 @@ export const useParticipantStreams = ({
       return updated;
     });
     
-    // FORCE immediate participant state update
+    // FORCE immediate participant state update - with mobile detection
     setParticipantList(prev => {
       const updated = prev.map(p => 
         p.id === participantId 
@@ -109,7 +118,7 @@ export const useParticipantStreams = ({
               active: true, 
               selected: true,
               connectedAt: Date.now(),
-              isMobile: true
+              isMobile: isMobileStream
             }
           : p
       );
@@ -118,16 +127,16 @@ export const useParticipantStreams = ({
       if (!updated.find(p => p.id === participantId)) {
         updated.push({
           id: participantId,
-          name: `Mobile-${participantId.substring(0, 8)}`,
+          name: `${isMobileStream ? 'Mobile' : 'Desktop'}-${participantId.substring(0, 8)}`,
           hasVideo: true,
           active: true,
           selected: true,
           joinedAt: Date.now(),
           lastActive: Date.now(),
           connectedAt: Date.now(),
-          isMobile: true
+          isMobile: isMobileStream
         });
-        console.log('✅ MOBILE-NEW: Added new mobile participant:', participantId);
+        console.log('✅ MOBILE-NEW: Added new participant:', participantId, `(${isMobileStream ? 'MOBILE' : 'DESKTOP'})`);
       }
       
       console.log('🔄 MOBILE-STATE: Updated participant list for:', participantId);

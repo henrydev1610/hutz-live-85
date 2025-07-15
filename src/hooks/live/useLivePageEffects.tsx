@@ -7,7 +7,6 @@ import { initHostWebRTC } from '@/utils/webrtc';
 
 interface UseLivePageEffectsProps {
   sessionId: string | null;
-  localStream: MediaStream | null;
   participantStreams: {[id: string]: MediaStream};
   participantList: Participant[];
   transmissionOpen: boolean;
@@ -23,7 +22,6 @@ interface UseLivePageEffectsProps {
 
 export const useLivePageEffects = ({
   sessionId,
-  localStream,
   participantStreams,
   participantList,
   transmissionOpen,
@@ -54,11 +52,9 @@ export const useLivePageEffects = ({
       if (sessionId) {
         cleanupSession(sessionId);
       }
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-      }
+      // HOST: No local stream to cleanup - only manages remote streams
     };
-  }, [sessionId, localStream]);
+  }, [sessionId]);
 
   // Enhanced session initialization effect
   useEffect(() => {
@@ -133,9 +129,7 @@ export const useLivePageEffects = ({
       return () => {
         console.log('🧹 HOST: Cleaning up session');
         cleanup();
-        if (localStream) {
-          localStream.getTracks().forEach(track => track.stop());
-        }
+        // HOST: No local stream to cleanup
       };
     }
   }, [sessionId]);

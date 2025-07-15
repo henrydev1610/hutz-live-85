@@ -41,7 +41,7 @@ export const useLivePageState = () => {
   });
   
   const [participantStreams, setParticipantStreams] = useState<{[id: string]: MediaStream}>({});
-  const [localStream, setLocalMediaStream] = useState<MediaStream | null>(null);
+  // HOST: No local stream needed - only receives remote streams from participants
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -69,7 +69,6 @@ export const useLivePageState = () => {
     qrCodePosition, setQrCodePosition,
     qrDescriptionPosition, setQrDescriptionPosition,
     participantStreams, setParticipantStreams,
-    localStream, setLocalMediaStream,
     fileInputRef
   };
 };
