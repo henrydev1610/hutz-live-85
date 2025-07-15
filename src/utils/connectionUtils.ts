@@ -8,39 +8,31 @@ export const getWebSocketURL = (): string => {
   
   console.log(`🔍 CONNECTION: Mobile detection: ${isMobile}, protocol: ${protocol}, host: ${host}`);
   
-  // PRIORIDADE 1: Server dedicado (SEMPRE para mobile)
-  if (isMobile || host.includes('lovableproject.com')) {
-    const serverUrl = 'https://server-hutz-live.onrender.com';
-    console.log(`📱 CONNECTION: Using dedicated server for mobile: ${serverUrl}`);
-    return serverUrl;
-  }
-  
-  // PRIORIDADE 2: Environment variable override
+  // PRIORIDADE 1: Environment variable override (sempre primeiro)
   const envApiUrl = import.meta.env.VITE_API_URL;
   if (envApiUrl) {
     console.log(`🔧 CONNECTION: Using environment API URL: ${envApiUrl}`);
     return envApiUrl;
   }
   
-  // PRIORIDADE 3: Development environment (localhost)
+  // PRIORIDADE 2: Development environment (localhost)
   if (host.includes('localhost') || host.includes('192.168.') || host.includes('172.26.') || host.includes('10.255.') || host.includes('127.0.0.1')) {
     const localIP = '172.26.204.230';
     console.log(`🏠 CONNECTION: Using local network IP: ${localIP}`);
     return `http://${localIP}:3001`;
   }
   
-  // PRIORIDADE 4: Production fallback
-  const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
-  let wsUrl = `${wsProtocol}//${host}`;
-  
-  if (protocol === 'https:' && !host.includes(':')) {
-    wsUrl = `${wsProtocol}//${host}:443`;
-  } else if (protocol === 'http:' && !host.includes(':')) {
-    wsUrl = `${wsProtocol}//${host}:3001`;
+  // PRIORIDADE 3: Production - tentar servidor dedicado apenas se não for desenvolvimento
+  if (host.includes('lovableproject.com') || host.includes('onrender.com')) {
+    const serverUrl = 'https://server-hutz-live.onrender.com';
+    console.log(`🌐 CONNECTION: Using production server: ${serverUrl}`);
+    return serverUrl;
   }
   
-  console.log(`🔗 CONNECTION: Using fallback URL: ${wsUrl}`);
-  return wsUrl;
+  // PRIORIDADE 4: Same origin fallback (mais confiável)
+  const baseUrl = `${protocol}//${host}`;
+  console.log(`🔗 CONNECTION: Using same origin fallback: ${baseUrl}`);
+  return baseUrl;
 };
 
 export const getApiBaseURL = (): string => {
@@ -49,30 +41,30 @@ export const getApiBaseURL = (): string => {
   
   console.log(`📡 API: Mobile detection: ${isMobile}, protocol: ${protocol}, host: ${host}`);
   
-  // PRIORIDADE 1: Server dedicado (SEMPRE para mobile)
-  if (isMobile || host.includes('lovableproject.com')) {
-    const serverUrl = 'https://server-hutz-live.onrender.com';
-    console.log(`📱 API: Using dedicated server for mobile: ${serverUrl}`);
-    return serverUrl;
-  }
-  
-  // PRIORIDADE 2: Environment variable override
+  // PRIORIDADE 1: Environment variable override (sempre primeiro)
   const envApiUrl = import.meta.env.VITE_API_URL;
   if (envApiUrl) {
     console.log(`🔧 API: Using environment API URL: ${envApiUrl}`);
     return envApiUrl;
   }
   
-  // PRIORIDADE 3: Development environment (localhost)
+  // PRIORIDADE 2: Development environment (localhost)
   if (host.includes('localhost') || host.includes('192.168.') || host.includes('172.26.') || host.includes('10.255.') || host.includes('127.0.0.1')) {
     const localIP = '172.26.204.230';
     console.log(`🏠 API: Using local network IP: ${localIP}`);
     return `http://${localIP}:3001`;
   }
   
-  // PRIORIDADE 4: Production fallback
+  // PRIORIDADE 3: Production - tentar servidor dedicado apenas para Lovable/Render
+  if (host.includes('lovableproject.com') || host.includes('onrender.com')) {
+    const serverUrl = 'https://server-hutz-live.onrender.com';
+    console.log(`🌐 API: Using production server: ${serverUrl}`);
+    return serverUrl;
+  }
+  
+  // PRIORIDADE 4: Same origin fallback
   const apiUrl = `${protocol}//${host}`;
-  console.log(`🌐 API: Using production API URL: ${apiUrl}`);
+  console.log(`🔗 API: Using same origin fallback: ${apiUrl}`);
   return apiUrl;
 };
 

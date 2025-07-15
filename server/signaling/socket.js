@@ -42,8 +42,8 @@ const initializeSocketHandlers = (io) => {
   io.on('connection', (socket) => {
     console.log(`🔌 Client connected: ${socket.id}`);
     
-    // Evento: Entrar na sala
-    socket.on('join-room', (data) => {
+    // Evento: Entrar na sala (suporte a ambos os formatos)
+    const handleJoinRoom = (data) => {
       try {
         const { roomId, userId } = data;
         
@@ -92,6 +92,21 @@ const initializeSocketHandlers = (io) => {
           });
         }
         
+        // Enviar confirmação de entrada na sala em múltiplos formatos
+        socket.emit('room_joined', { 
+          success: true, 
+          roomId, 
+          userId, 
+          participants: participantsInRoom 
+        });
+        
+        socket.emit('room-joined', { 
+          success: true, 
+          roomId, 
+          userId, 
+          participants: participantsInRoom 
+        });
+        
         socket.emit('room-participants', { participants: participantsInRoom });
         socket.emit('participants-update', { participants: participantsInRoom });
         
@@ -101,7 +116,11 @@ const initializeSocketHandlers = (io) => {
         console.error('Error in join-room:', error);
         socket.emit('error', { message: 'Failed to join room' });
       }
-    });
+    };
+    
+    // Suporte a ambos os formatos de evento
+    socket.on('join-room', handleJoinRoom);
+    socket.on('join_room', handleJoinRoom);
     
     // Evento: Oferta WebRTC
     socket.on('offer', (data) => {
@@ -308,7 +327,7 @@ const initializeSocketHandlers = (io) => {
       }
     });
     
-    // Evento: Heartbeat/Keep-alive
+    // Evento: Heartbeat/Keep-alive (suporte a múltiplos formatos)
     socket.on('heartbeat', (data) => {
       const connection = connections.get(socket.id);
       if (connection) {
@@ -317,6 +336,15 @@ const initializeSocketHandlers = (io) => {
           socketId: socket.id,
           timestamp: Date.now()
         });
+      }
+    });
+    
+    // Evento: Ping/Pong para manter conexão
+    socket.on('ping', (callback) => {
+      if (typeof callback === 'function') {
+        callback('pong');
+      } else {
+        socket.emit('pong');
       }
     });
     
