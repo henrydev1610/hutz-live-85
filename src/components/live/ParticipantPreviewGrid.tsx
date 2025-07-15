@@ -21,7 +21,7 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   const { gridCols, selectedParticipants, emptySlots } = useMemo(() => {
     const cols = Math.ceil(Math.sqrt(Math.max(participantCount, 1)));
     
-    // CRITICAL: Filter for ONLY mobile participants with streams first
+    // CRITICAL: Filter for mobile participants with streams first
     const mobileParticipantsWithStreams = participantList.filter(p => {
       const hasStream = participantStreams[p.id];
       const isNonPlaceholder = !p.id.includes('placeholder');
@@ -36,17 +36,18 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
         shouldShow: hasStream && isNonPlaceholder && isMobile
       });
       
-      // FORCE: Only show mobile participants with streams
-      return isNonPlaceholder && hasStream && isMobile && isActive;
+      // PRIORITY: Mobile participants with streams
+      return isNonPlaceholder && hasStream && isMobile;
     });
     
-    // FALLBACK: If no mobile streams, show other participants
+    // FALLBACK: Show other participants with streams
     const otherParticipants = participantList.filter(p => {
       const hasStream = participantStreams[p.id];
       const isNonPlaceholder = !p.id.includes('placeholder');
       const isNotMobile = !p.isMobile;
       const isActive = p.active || p.selected;
       
+      // Show active participants with streams (non-mobile)
       return isNonPlaceholder && hasStream && isNotMobile && isActive;
     });
     
