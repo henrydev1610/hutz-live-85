@@ -6,6 +6,7 @@ import TransmissionControls from '@/components/live/TransmissionControls';
 import LiveControlTabs from '@/components/live/LiveControlTabs';
 import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
 import StreamDebugPanel from '@/components/live/StreamDebugPanel';
+import { MobileConnectionDebugger } from '@/components/live/MobileConnectionDebugger';
 import { Participant } from '@/components/live/ParticipantGrid';
 
 interface LivePageContentProps {
