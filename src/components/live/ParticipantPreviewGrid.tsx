@@ -17,64 +17,46 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
 }) => {
   const { generateUniqueKey } = useUniqueKeyGenerator();
   
-  // MOBILE-CRITICAL: Force mobile stream prioritization
+  // Simplified calculation prioritizing streams and mobile participants
   const { gridCols, selectedParticipants, emptySlots } = useMemo(() => {
     const cols = Math.ceil(Math.sqrt(Math.max(participantCount, 1)));
     
-    // CRITICAL: Filter for mobile participants with streams first
-    const mobileParticipantsWithStreams = participantList.filter(p => {
+    // CRITICAL: Prioritize participants with streams (especially mobile)
+    const participantsWithStreams = participantList.filter(p => {
       const hasStream = participantStreams[p.id];
       const isNonPlaceholder = !p.id.includes('placeholder');
-      const isMobile = p.isMobile;
-      const isActive = p.active || p.selected;
+      const hasVideoOrActive = p.hasVideo || p.active || p.selected;
       
-      console.log(`📱 MOBILE-CRITICAL-FILTER: ${p.id}:`, {
+      console.log(`🔍 MOBILE-FILTER: ${p.id}:`, {
         hasStream: !!hasStream,
         isNonPlaceholder,
-        isMobile,
-        isActive,
-        shouldShow: hasStream && isNonPlaceholder && isMobile
+        hasVideoOrActive,
+        isMobile: p.isMobile,
+        shouldShow: hasStream && isNonPlaceholder
       });
       
-      // PRIORITY: Mobile participants with streams
-      return isNonPlaceholder && hasStream && isMobile;
+      // Show if has stream OR is marked as having video/active
+      return isNonPlaceholder && (hasStream || hasVideoOrActive);
     });
     
-    // FALLBACK: Show other participants with streams
-    const otherParticipants = participantList.filter(p => {
-      const hasStream = participantStreams[p.id];
-      const isNonPlaceholder = !p.id.includes('placeholder');
-      const isNotMobile = !p.isMobile;
-      const isActive = p.active || p.selected;
-      
-      // Show active participants with streams (non-mobile)
-      return isNonPlaceholder && hasStream && isNotMobile && isActive;
-    });
-    
-    // MOBILE-FIRST: Always prioritize mobile streams
-    const allEligibleParticipants = [...mobileParticipantsWithStreams, ...otherParticipants];
-    
-    console.log(`🎯 MOBILE-CRITICAL-PRIORITY:`, {
-      mobileCount: mobileParticipantsWithStreams.length,
-      otherCount: otherParticipants.length,
-      totalEligible: allEligibleParticipants.length,
-      participantCount
-    });
-    
-    const selected = allEligibleParticipants
+    const selected = participantsWithStreams
       .sort((a, b) => {
-        // ABSOLUTE PRIORITY: Mobile participants ALWAYS first
-        if (a.isMobile && !b.isMobile) return -1;
-        if (!a.isMobile && b.isMobile) return 1;
-        
-        // SECOND: Participants with actual streams
+        // PRIORITY 1: Participants with actual streams
         const aHasStream = !!participantStreams[a.id];
         const bHasStream = !!participantStreams[b.id];
         if (aHasStream && !bHasStream) return -1;
         if (!aHasStream && bHasStream) return 1;
         
-        // THIRD: Connection time (most recent first)
-        return (b.connectedAt || b.joinedAt || 0) - (a.connectedAt || a.joinedAt || 0);
+        // PRIORITY 2: Mobile participants
+        if (a.isMobile && !b.isMobile) return -1;
+        if (!a.isMobile && b.isMobile) return 1;
+        
+        // PRIORITY 3: Active participants
+        if (a.active && !b.active) return -1;
+        if (!a.active && b.active) return 1;
+        
+        // PRIORITY 4: Connection time
+        return (a.connectedAt || a.joinedAt || 0) - (b.connectedAt || b.joinedAt || 0);
       })
       .slice(0, participantCount);
       
@@ -87,14 +69,12 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
     };
   }, [participantList, participantCount, participantStreams]);
 
-  console.log('📱 MOBILE-CRITICAL-RENDER: ParticipantPreviewGrid:', {
+  console.log('🎭 FIXED: ParticipantPreviewGrid render:', {
     totalParticipants: participantList.length,
     selectedParticipants: selectedParticipants.length,
-    mobileSelected: selectedParticipants.filter(p => p.isMobile).length,
     participantCount,
     gridCols,
-    emptySlots,
-    streamIds: selectedParticipants.map(p => ({ id: p.id, mobile: p.isMobile, stream: !!participantStreams[p.id] }))
+    emptySlots
   });
 
   return (

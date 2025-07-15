@@ -39,16 +39,7 @@ export const requestMediaPermissions = async (isMobile: boolean): Promise<boolea
   console.log(`🔐 PERMISSIONS: Requesting explicit permissions (Mobile: ${isMobile})`);
   
   try {
-    // VERIFICAÇÃO PRÉVIA: Checar se permissões já estão concedidas
-    const currentPermissions = await checkMediaPermissions();
-    if (currentPermissions.camera === 'granted') {
-      console.log('✅ PERMISSIONS: Camera already granted, no need to request again.');
-      return true;
-    }
-    
-    console.log('🔐 PERMISSIONS: Camera not granted yet, proceeding with request...');
-    
-    // Lógica original continua apenas se necessário
+    // Primeira tentativa: solicitar permissões básicas
     const permissionStream = await navigator.mediaDevices.getUserMedia({ 
       video: true, 
       audio: true 

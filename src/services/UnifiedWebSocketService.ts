@@ -37,47 +37,17 @@ class UnifiedWebSocketService {
     status: 'disconnected'
   };
   
-  // Mobile-optimized reconnection settings
-  private maxReconnectAttempts = 10; // Menos tentativas
-  private reconnectDelay = 1000; // Delay menor inicial
-  private maxReconnectDelay = 15000; // Máximo menor
-  private backoffMultiplier = 1.2; // Backoff mais suave
+  // Reconnection settings
+  private maxReconnectAttempts = 10;
+  private reconnectDelay = 1000;
+  private maxReconnectDelay = 30000;
+  private backoffMultiplier = 1.5;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
-  
-  // URLs de fallback para robustez
-  private fallbackUrls: string[] = [];
 
   constructor() {
     console.log('🔧 UNIFIED WebSocket Service initialized');
-    this.setupFallbackUrls();
-  }
-  
-  private setupFallbackUrls() {
-    const { protocol, host } = window.location;
-    
-    // Lista de URLs de fallback baseada no ambiente
-    this.fallbackUrls = [];
-    
-    // Adicionar URL principal primeiro
-    this.fallbackUrls.push(getWebSocketURL());
-    
-    // URLs de fallback específicas por ambiente
-    if (host.includes('lovableproject.com')) {
-      this.fallbackUrls.push('https://server-hutz-live.onrender.com');
-      this.fallbackUrls.push(`${protocol}//${host}`);
-    } else if (host.includes('onrender.com')) {
-      this.fallbackUrls.push('https://server-hutz-live.onrender.com');
-    } else if (host.includes('localhost') || host.includes('192.168.') || host.includes('172.26.')) {
-      this.fallbackUrls.push('http://172.26.204.230:3001');
-      this.fallbackUrls.push('http://localhost:3001');
-    }
-    
-    // Remover duplicatas
-    this.fallbackUrls = [...new Set(this.fallbackUrls)];
-    
-    console.log('🔗 FALLBACK URLs configured:', this.fallbackUrls);
   }
 
   setCallbacks(callbacks: UnifiedSignalingCallbacks): void {
@@ -95,125 +65,77 @@ class UnifiedWebSocketService {
     this.metrics.attemptCount++;
     this.metrics.lastAttempt = Date.now();
 
-    // URLs para tentar em ordem
-    const urlsToTry = serverUrl ? [serverUrl] : [...this.fallbackUrls];
-    
-    console.log(`🔗 CONNECTION: Will try ${urlsToTry.length} URLs:`, urlsToTry);
-
-    let lastError: Error | null = null;
-
-    for (let i = 0; i < urlsToTry.length; i++) {
-      const url = urlsToTry[i];
-      console.log(`🔗 CONNECTION: Attempting URL ${i + 1}/${urlsToTry.length}: ${url}`);
+    try {
+      await this._doConnect(serverUrl);
+      this.metrics.lastSuccess = Date.now();
+      this.metrics.status = 'connected';
+      this.metrics.errorCount = 0;
+      this.resetReconnectDelay();
+      this.startHeartbeat();
+      this.callbacks.onConnected?.();
+    } catch (error) {
+      console.error('❌ CONNECTION: Failed to connect:', error);
+      this.metrics.status = 'failed';
+      this.metrics.errorCount++;
+      this.callbacks.onConnectionFailed?.(error);
       
-      try {
-        await this._doConnect(url);
-        this.metrics.lastSuccess = Date.now();
-        this.metrics.status = 'connected';
-        this.metrics.errorCount = 0;
-        this.resetReconnectDelay();
-        this.startHeartbeat();
-        this.callbacks.onConnected?.();
-        console.log(`✅ CONNECTION: Successfully connected to: ${url}`);
-        return;
-      } catch (error) {
-        console.warn(`❌ CONNECTION: Failed to connect to ${url}:`, error);
-        lastError = error as Error;
-        
-        // Pequeno delay entre tentativas
-        if (i < urlsToTry.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
+      if (this.shouldReconnect && this.metrics.attemptCount < this.maxReconnectAttempts) {
+        this.scheduleReconnect();
       }
+    } finally {
+      this.isConnecting = false;
     }
-
-    // Se chegou aqui, todas as URLs falharam
-    console.error('❌ CONNECTION: All URLs failed, last error:', lastError);
-    this.metrics.status = 'failed';
-    this.metrics.errorCount++;
-    this.callbacks.onConnectionFailed?.(lastError);
-    
-    if (this.shouldReconnect && this.metrics.attemptCount < this.maxReconnectAttempts) {
-      this.scheduleReconnect();
-    }
-    
-    this.isConnecting = false;
   }
 
-  private async _doConnect(url: string): Promise<void> {
+  private async _doConnect(serverUrl?: string): Promise<void> {
+    const url = serverUrl || getWebSocketURL();
     console.log(`🔗 CONNECTION: Attempting to connect to ${url}`);
 
     return new Promise((resolve, reject) => {
-      const isMobile = this.isMobileDevice();
-      const timeout = isMobile ? 20000 : 15000; // Timeout mais curto
-      
       const connectionTimeout = setTimeout(() => {
-        console.error(`❌ CONNECTION: Timeout after ${timeout}ms (${isMobile ? 'MOBILE' : 'DESKTOP'})`);
-        if (this.socket) {
-          this.socket.disconnect();
-          this.socket = null;
-        }
-        reject(new Error(`Connection timeout after ${timeout}ms`));
-      }, timeout);
+        this.disconnect(); // Use disconnect instead of cleanup
+        reject(new Error('Connection timeout'));
+      }, 20000); // Aumentado para 20s
 
-      try {
-        this.socket = io(url, {
-          transports: ['websocket', 'polling'], // WebSocket primeiro para todos
-          timeout: isMobile ? 15000 : 10000, // Timeout menor
-          reconnection: false, // Gerenciamos nossa própria reconexão
-          forceNew: true,
-          upgrade: true,
-          rememberUpgrade: true, // Lembrar do upgrade
-          autoConnect: true, // Conectar automaticamente
-          withCredentials: true, // Credenciais para CORS
-          extraHeaders: isMobile ? {
-            'User-Agent': 'MobileWebRTCClient/1.0',
-            'X-Mobile-Device': 'true'
-          } : {},
-          query: {
-            'timestamp': Date.now(), // Evitar cache
-            'client': isMobile ? 'mobile' : 'desktop'
-          }
-        });
+      this.socket = io(url, {
+        transports: ['websocket', 'polling'],
+        timeout: 10000,
+        reconnection: false, // We handle reconnection ourselves
+        forceNew: true,
+        extraHeaders: this.isMobileDevice() ? {
+          'User-Agent': 'MobileWebRTCClient/1.0'
+        } : {}
+      });
 
-        this.socket.on('connect', () => {
-          clearTimeout(connectionTimeout);
-          console.log(`✅ CONNECTION: WebSocket connected successfully to ${url}`);
-          this.setupEventListeners();
-          resolve();
-        });
-
-        this.socket.on('connect_error', (error) => {
-          clearTimeout(connectionTimeout);
-          console.error(`❌ CONNECTION: Connection error to ${url}:`, error);
-          if (this.socket) {
-            this.socket.disconnect();
-            this.socket = null;
-          }
-          reject(error);
-        });
-
-        this.socket.on('disconnect', (reason) => {
-          console.log(`🔄 CONNECTION: Disconnected from ${url}:`, reason);
-          this.metrics.status = 'disconnected';
-          this.stopHeartbeat();
-          this.callbacks.onDisconnected?.();
-
-          if (this.shouldReconnect && reason !== 'io client disconnect') {
-            this.scheduleReconnect();
-          }
-        });
-
-        this.socket.on('error', (error) => {
-          console.error(`❌ CONNECTION: Socket error from ${url}:`, error);
-          this.metrics.errorCount++;
-          this.callbacks.onError?.(error);
-        });
-      } catch (error) {
+      this.socket.on('connect', () => {
         clearTimeout(connectionTimeout);
-        console.error(`❌ CONNECTION: Failed to create socket for ${url}:`, error);
+        console.log('✅ CONNECTION: WebSocket connected successfully');
+        this.setupEventListeners();
+        resolve();
+      });
+
+      this.socket.on('connect_error', (error) => {
+        clearTimeout(connectionTimeout);
+        console.error('❌ CONNECTION: Connection error:', error);
         reject(error);
-      }
+      });
+
+      this.socket.on('disconnect', (reason) => {
+        console.log('🔄 CONNECTION: Disconnected:', reason);
+        this.metrics.status = 'disconnected';
+        this.stopHeartbeat();
+        this.callbacks.onDisconnected?.();
+
+        if (this.shouldReconnect && reason !== 'io client disconnect') {
+          this.scheduleReconnect();
+        }
+      });
+
+      this.socket.on('error', (error) => {
+        console.error('❌ CONNECTION: Socket error:', error);
+        this.metrics.errorCount++;
+        this.callbacks.onError?.(error);
+      });
     });
   }
 
@@ -263,20 +185,11 @@ class UnifiedWebSocketService {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
-    const isMobile = this.isMobileDevice();
-    const heartbeatInterval = isMobile ? 10000 : 30000; // 10s para mobile, 30s para desktop
-    
-    console.log(`💓 HEARTBEAT: Starting ${isMobile ? 'MOBILE' : 'DESKTOP'} heartbeat every ${heartbeatInterval}ms`);
-    
     this.heartbeatInterval = setInterval(() => {
       if (this.socket?.connected) {
-        console.log(`💓 HEARTBEAT: Sending ping (${isMobile ? 'MOBILE' : 'DESKTOP'})`);
         this.socket.emit('ping');
-      } else {
-        console.warn('💓 HEARTBEAT: Socket not connected, stopping heartbeat');
-        this.stopHeartbeat();
       }
-    }, heartbeatInterval);
+    }, 30000); // Send heartbeat every 30 seconds
   }
 
   private stopHeartbeat(): void {
@@ -324,20 +237,16 @@ class UnifiedWebSocketService {
     this.currentUserId = userId;
 
     return new Promise((resolve, reject) => {
-      const isMobile = this.isMobileDevice();
-      const joinTimeout = isMobile ? 30000 : 20000; // Timeout menor
-      
-      const timeoutHandle = setTimeout(() => {
-        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId} after ${joinTimeout}ms (${isMobile ? 'MOBILE' : 'DESKTOP'})`);
-        reject(new Error(`Join room timeout after ${joinTimeout}ms`));
-      }, joinTimeout);
+      const joinTimeout = setTimeout(() => {
+        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
+        reject(new Error('Join room timeout'));
+      }, 30000); // Aumentado para 30s
 
       // Success handler
       const handleJoinSuccess = (data: any) => {
         console.log(`✅ WEBSOCKET: Successfully joined room ${roomId}:`, data);
-        clearTimeout(timeoutHandle);
+        clearTimeout(joinTimeout);
         this.socket?.off('room_joined', handleJoinSuccess);
-        this.socket?.off('room-joined', handleJoinSuccess);
         this.socket?.off('join-room-response', handleJoinResponse);
         this.socket?.off('error', handleJoinError);
         resolve();
@@ -347,9 +256,8 @@ class UnifiedWebSocketService {
       const handleJoinResponse = (response: any) => {
         console.log(`📡 WEBSOCKET: Join room response:`, response);
         if (response?.success) {
-          clearTimeout(timeoutHandle);
+          clearTimeout(joinTimeout);
           this.socket?.off('room_joined', handleJoinSuccess);
-          this.socket?.off('room-joined', handleJoinSuccess);
           this.socket?.off('join-room-response', handleJoinResponse);
           this.socket?.off('error', handleJoinError);
           resolve();
@@ -361,33 +269,24 @@ class UnifiedWebSocketService {
       // Error handler
       const handleJoinError = (error: any) => {
         console.error(`❌ WEBSOCKET: Failed to join room ${roomId}:`, error);
-        clearTimeout(timeoutHandle);
+        clearTimeout(joinTimeout);
         this.socket?.off('room_joined', handleJoinSuccess);
-        this.socket?.off('room-joined', handleJoinSuccess);
         this.socket?.off('join-room-response', handleJoinResponse);
         this.socket?.off('error', handleJoinError);
         reject(new Error(`Failed to join room: ${error.message || error}`));
       };
 
-      // Setup listeners for both event formats
+      // Setup listeners for different possible event names
       this.socket?.once('room_joined', handleJoinSuccess);
-      this.socket?.once('room-joined', handleJoinSuccess); // Hífen também
       this.socket?.once('join-room-response', handleJoinResponse);
       this.socket?.once('error', handleJoinError);
 
-      // Send join request with both formats for compatibility
+      // Send join request with multiple formats for compatibility
       const sendJoinRequest = (attempt = 1) => {
         console.log(`📡 WEBSOCKET: Sending join request (attempt ${attempt})`);
         
         try {
-          // Enviar ambos os formatos para compatibilidade
-          this.socket?.emit('join-room', { 
-            roomId, 
-            userId,
-            timestamp: Date.now(),
-            attempt
-          });
-          
+          // Try multiple event formats for compatibility
           this.socket?.emit('join_room', { 
             roomId, 
             userId,
@@ -395,13 +294,20 @@ class UnifiedWebSocketService {
             attempt
           });
           
-          // Auto-retry após delay se não houver resposta
-          if (attempt < 2) { // Menos tentativas
+          this.socket?.emit('join-room', { 
+            roomId, 
+            userId,
+            timestamp: Date.now(),
+            attempt
+          });
+          
+          // Auto-retry after delay if no response
+          if (attempt < 3) {
             setTimeout(() => {
-              if (this.currentRoomId === roomId) {
+              if (this.currentRoomId === roomId) { // Still trying to join same room
                 sendJoinRequest(attempt + 1);
               }
-            }, 3000 * attempt); // Delay menor
+            }, 5000 * attempt);
           }
         } catch (error) {
           console.error(`❌ WEBSOCKET: Error sending join request:`, error);

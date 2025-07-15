@@ -6,8 +6,6 @@ import TransmissionControls from '@/components/live/TransmissionControls';
 import LiveControlTabs from '@/components/live/LiveControlTabs';
 import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
 import StreamDebugPanel from '@/components/live/StreamDebugPanel';
-import { MobileConnectionDebugger } from '@/components/live/MobileConnectionDebugger';
-import WebRTCEmergencyDebugger from '@/components/live/WebRTCEmergencyDebugger';
 import { Participant } from '@/components/live/ParticipantGrid';
 
 interface LivePageContentProps {
@@ -155,16 +153,6 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
             }
           });
         }}
-      />
-      
-      {/* FASE 4: Mobile Debug Component */}
-      <MobileConnectionDebugger
-        participantCount={realParticipants.length}
-        mobileCount={realParticipants.filter(p => p.isMobile).length}
-        streamsCount={activeStreams}
-        connectionState="connected"
-        lastUpdate={Date.now()}
-        mobileParticipants={realParticipants.filter(p => p.isMobile).map(p => p.id)}
       />
     </div>
   );

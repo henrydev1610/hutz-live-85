@@ -63,40 +63,8 @@ export class UnifiedWebRTCManager {
   }
 
   private detectMobile() {
-    // FASE 1: FORÇAR DETECÇÃO MOBILE CORRETA COM FALLBACK
-    const urlParams = new URLSearchParams(window.location.search);
-    const hasQRParam = urlParams.has('qr') || urlParams.get('qr') === 'true';
-    const hasMobileParam = urlParams.has('mobile') || urlParams.get('mobile') === 'true';
-    const accessedViaQR = hasQRParam || hasMobileParam || 
-                         document.referrer.includes('qr') || 
-                         sessionStorage.getItem('accessedViaQR') === 'true';
-    
-    const userAgentMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    const hasTouchScreen = 'ontouchstart' in window && navigator.maxTouchPoints > 0;
-    
-    // CRITICAL: Check for forced mobile detection from ParticipantPage
-    const forceMobileDetection = window.localStorage.getItem('forceMobileDetection') === 'true';
-    const storedMobileStatus = sessionStorage.getItem('isMobile') === 'true';
-    
-    // CRITICAL: QR access OR forced detection always indicates mobile
-    this.isMobile = accessedViaQR || forceMobileDetection || storedMobileStatus || (userAgentMobile && hasTouchScreen);
-    
-    // Store mobile status for consistent detection
-    if (this.isMobile) {
-      sessionStorage.setItem('isMobile', 'true');
-      sessionStorage.setItem('accessedViaQR', 'true');
-    }
-    
-    console.log(`📱 MOBILE-DETECTION: Device type: ${this.isMobile ? 'MOBILE' : 'DESKTOP'}`, {
-      accessedViaQR,
-      userAgentMobile,
-      hasTouchScreen,
-      hasQRParam,
-      hasMobileParam,
-      forceMobileDetection,
-      storedMobileStatus,
-      finalResult: this.isMobile
-    });
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    console.log(`📱 Device type: ${this.isMobile ? 'Mobile' : 'Desktop'}`);
   }
 
   private initializeComponents() {
@@ -354,64 +322,17 @@ export class UnifiedWebRTCManager {
     this.isHost = false;
 
     try {
-      // FASE 1: CRITICAL - Only use VALIDATED stream from useParticipantMedia
+      // IMPORTANT: Only use stream provided by useParticipantMedia - no local media creation
       if (stream) {
-        console.log(`📹 UNIFIED-MOBILE: Processing VALIDATED stream:`, {
-          streamId: stream.id,
-          active: stream.active,
+        this.localStream = stream;
+        console.log(`📹 UNIFIED: Using provided stream from useParticipantMedia:`, {
           tracks: stream.getTracks().length,
           videoTracks: stream.getVideoTracks().length,
           audioTracks: stream.getAudioTracks().length,
-          isMobile: this.isMobile,
-          tracksReady: stream.getTracks().every(t => t.readyState === 'live'),
           videoSettings: stream.getVideoTracks()[0]?.getSettings()
         });
-        
-        // CRITICAL: Additional mobile stream validation before proceeding
-        if (this.isMobile) {
-          const isValidMobileStream = stream.active && 
-                                    stream.getTracks().length > 0 && 
-                                    stream.getTracks().every(t => t.readyState === 'live');
-          
-          if (!isValidMobileStream) {
-            throw new Error('MOBILE: Stream validation failed - stream not ready for WebRTC');
-          }
-          
-          console.log('✅ MOBILE-STREAM: Validation passed, proceeding with WebRTC setup');
-        }
-        
-        this.localStream = stream;
-        
-        // FASE 1: CRITICAL - Ensure tracks are added to ALL peer connections IMMEDIATELY
-        if (this.localStream) {
-          console.log(`📤 MOBILE-CRITICAL: Adding stream tracks to ALL peer connections:`, {
-            streamId: this.localStream.id,
-            trackCount: this.localStream.getTracks().length,
-            videoTracks: this.localStream.getVideoTracks().length,
-            audioTracks: this.localStream.getAudioTracks().length
-          });
-          
-          // Add tracks to any existing peer connections
-          this.peerConnections.forEach((peerConnection, participantId) => {
-            this.localStream!.getTracks().forEach((track, index) => {
-              try {
-                console.log(`➕ MOBILE-CRITICAL: Adding track ${index + 1} to ${participantId}:`, {
-                  kind: track.kind,
-                  id: track.id,
-                  enabled: track.enabled,
-                  readyState: track.readyState
-                });
-                
-                peerConnection.addTrack(track, this.localStream!);
-                console.log(`✅ MOBILE-CRITICAL: Successfully added ${track.kind} track to ${participantId}`);
-              } catch (trackError) {
-                console.error(`❌ MOBILE-CRITICAL: Failed to add track to ${participantId}:`, trackError);
-              }
-            });
-          });
-        }
       } else {
-        console.warn(`⚠️ UNIFIED: No stream provided - participant in degraded mode`);
+        console.warn(`⚠️ UNIFIED: No stream provided - participant must initialize media first`);
       }
 
       this.updateConnectionState('websocket', 'connecting');
@@ -422,10 +343,9 @@ export class UnifiedWebRTCManager {
       this.updateConnectionState('websocket', 'connected');
       console.log(`✅ UNIFIED PARTICIPANT: Connected to signaling server`);
       
-      // FASE 1: Ensure stream is ready for transmission BEFORE notifying
+      // Notify stream if available
       if (this.localStream) {
-        console.log('📡 UNIFIED-MOBILE: Preparing to notify stream...');
-        await this.notifyLocalStreamWithValidation();
+        await this.notifyLocalStream();
       }
       
     } catch (error) {
@@ -435,40 +355,12 @@ export class UnifiedWebRTCManager {
     }
   }
 
-  private async notifyLocalStreamWithValidation() {
+  private async notifyLocalStream() {
     if (!this.localStream || !this.participantId) return;
 
-    // FASE 2: CRITICAL MOBILE STABILIZATION AND FORCE CONNECTION
+    // Wait for mobile devices to stabilize
     if (this.isMobile) {
-      console.log('⏳ MOBILE-CRITICAL: Extended stabilization for mobile devices...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Increased from 2500
-      
-      // Additional validation after wait
-      if (!this.localStream.active || this.localStream.getTracks().some(t => t.readyState !== 'live')) {
-        console.error('❌ MOBILE: Stream became invalid during stabilization');
-        return;
-      }
-      
-      // FORCE WEBRTC CONNECTION STATE UPDATE
-      console.log('📱 MOBILE-CRITICAL: Forcing WebRTC connection state update...');
-      this.updateConnectionState('webrtc', 'connecting');
-      
-      // Wait for peer connections to be established
-      let connectionAttempts = 0;
-      const maxAttempts = 10;
-      
-      while (this.peerConnections.size === 0 && connectionAttempts < maxAttempts) {
-        console.log(`📱 MOBILE-WAIT: Waiting for peer connections... (${connectionAttempts + 1}/${maxAttempts})`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        connectionAttempts++;
-      }
-      
-      if (this.peerConnections.size > 0) {
-        console.log('✅ MOBILE-CRITICAL: Peer connections established, forcing WebRTC connected state');
-        this.updateConnectionState('webrtc', 'connected');
-      } else {
-        console.warn('⚠️ MOBILE-CRITICAL: No peer connections found, but proceeding...');
-      }
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
     const streamInfo = {
@@ -477,35 +369,11 @@ export class UnifiedWebRTCManager {
       hasVideo: this.localStream.getVideoTracks().length > 0,
       hasAudio: this.localStream.getAudioTracks().length > 0,
       isMobile: this.isMobile,
-      connectionType: 'unified',
-      deviceType: this.isMobile ? 'mobile' : 'desktop',
-      timestamp: Date.now(),
-      // FASE 3: CRITICAL - Enhanced mobile metadata
-      participantType: this.isMobile ? 'mobile-participant' : 'desktop-participant',
-      mobileFlags: {
-        detectedMobile: this.isMobile,
-        accessedViaQR: sessionStorage.getItem('accessedViaQR') === 'true',
-        userAgent: navigator.userAgent,
-        touchScreen: 'ontouchstart' in window && navigator.maxTouchPoints > 0
-      },
-      videoConstraints: this.isMobile && this.localStream.getVideoTracks()[0] ? 
-        this.localStream.getVideoTracks()[0].getSettings() : null
+      connectionType: 'unified'
     };
     
-    console.log(`📡 UNIFIED-MOBILE: Sending enhanced stream notification:`, streamInfo);
     unifiedWebSocketService.notifyStreamStarted(this.participantId, streamInfo);
-    
-    // FASE 2: Additional verification for mobile
-    if (this.isMobile) {
-      setTimeout(() => {
-        console.log('🔄 MOBILE-BACKUP: Sending backup stream notification...');
-        unifiedWebSocketService.notifyStreamStarted(this.participantId, {
-          ...streamInfo,
-          isBackup: true,
-          backupTimestamp: Date.now()
-        });
-      }, 1500);
-    }
+    console.log(`📡 UNIFIED: Stream notification sent`);
   }
 
   private removeParticipantConnection(participantId: string) {
@@ -558,56 +426,6 @@ export class UnifiedWebRTCManager {
 
   getPeerConnections(): Map<string, RTCPeerConnection> {
     return new Map(this.peerConnections);
-  }
-
-  // CRITICAL: Force WebRTC connection for mobile - emergency fix
-  forceWebRTCConnection() {
-    console.log('🚨 MOBILE-EMERGENCY: Force WebRTC connection triggered');
-    
-    // Force WebRTC to connected state if we have peer connections
-    if (this.peerConnections.size > 0) {
-      console.log('🚨 MOBILE-EMERGENCY: Forcing WebRTC state to connected (peer connections exist)');
-      this.updateConnectionState('webrtc', 'connected');
-    } else {
-      console.log('🚨 MOBILE-EMERGENCY: No peer connections, forcing connection state to connecting');
-      this.updateConnectionState('webrtc', 'connecting');
-    }
-    
-    // Force overall connection state update
-    this.updateConnectionState('websocket', 'connected');
-    
-    // If we have a stream, force re-notification
-    if (this.localStream && this.participantId) {
-      console.log('🚨 MOBILE-EMERGENCY: Re-notifying stream...');
-      this.notifyLocalStreamWithValidation();
-    }
-    
-    return this.getConnectionState();
-  }
-
-  // CRITICAL: Force mobile participant to be visible in host
-  forceMobileParticipantVisible() {
-    console.log('🚨 MOBILE-EMERGENCY: Force mobile participant visible');
-    
-    if (this.participantId && this.localStream) {
-      // Force callback trigger
-      this.callbacksManager.triggerParticipantJoinCallback(this.participantId);
-      
-      // Force stream callback if we have stream
-      this.callbacksManager.triggerStreamCallback(this.participantId, this.localStream);
-      
-      // Force WebSocket notification
-      unifiedWebSocketService.notifyStreamStarted(this.participantId, {
-        streamId: this.localStream.id,
-        trackCount: this.localStream.getTracks().length,
-        hasVideo: this.localStream.getVideoTracks().length > 0,
-        hasAudio: this.localStream.getAudioTracks().length > 0,
-        isMobile: true,
-        forcedVisible: true,
-        emergencyTrigger: true,
-        timestamp: Date.now()
-      });
-    }
   }
 
   cleanup() {

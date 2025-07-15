@@ -46,7 +46,7 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     onVideoRestored: handleVideoRestored
   });
 
-  // Manual video creation as fallback with mobile optimizations
+  // Manual video creation as fallback
   const createVideoManually = () => {
     if (!stream) {
       console.log(`🚫 MANUAL: No stream to create video for ${participant.id}`);
@@ -67,22 +67,13 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
       existingVideo.remove();
     }
 
-    // Create video element with mobile optimizations
+    // Create video element
     const video = document.createElement('video');
     video.autoplay = true;
     video.playsInline = true;
     video.muted = true;
     video.controls = false;
     video.className = 'w-full h-full object-cover absolute inset-0 z-10';
-    
-    // MOBILE-CRITICAL: Additional mobile attributes
-    const isMobileParticipant = participant.isMobile || participant.id.includes('mobile-');
-    if (isMobileParticipant) {
-      video.setAttribute('playsinline', 'true');
-      video.setAttribute('webkit-playsinline', 'true');
-      video.preload = 'auto';
-    }
-    
     video.style.cssText = `
       display: block !important;
       width: 100% !important;
@@ -97,43 +88,12 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     video.srcObject = stream;
     container.appendChild(video);
 
-    // Enhanced event listeners with mobile-specific handling
-    video.addEventListener('loadedmetadata', () => {
-      console.log(`📹 MANUAL: Video metadata loaded for ${participant.id} (mobile: ${isMobileParticipant})`);
-      if (isMobileParticipant) {
-        // Force play immediately for mobile
-        video.play().catch(error => {
-          console.warn(`⚠️ MANUAL: Initial play failed for mobile ${participant.id}, retrying muted:`, error);
-          video.muted = true;
-          video.play();
-        });
-      }
-    });
-
-    video.addEventListener('playing', () => {
-      console.log(`✅ MANUAL: Video is now playing for ${participant.id} (mobile: ${isMobileParticipant})`);
-    });
-
-    // Force play with mobile fallback
+    // Force play
     video.play().then(() => {
-      console.log(`✅ MANUAL: Video playing for ${participant.id} (mobile: ${isMobileParticipant})`);
+      console.log(`✅ MANUAL: Video playing for ${participant.id}`);
     }).catch(err => {
       console.log(`⚠️ MANUAL: Play failed for ${participant.id}:`, err);
-      // Mobile fallback: ensure muted playback
-      if (isMobileParticipant) {
-        video.muted = true;
-        video.play();
-      }
     });
-    
-    // MOBILE-CRITICAL: Force play after DOM insertion
-    if (isMobileParticipant) {
-      setTimeout(() => {
-        video.play().catch(error => {
-          console.warn(`⚠️ MANUAL: Delayed play failed for mobile ${participant.id}:`, error);
-        });
-      }, 100);
-    }
   };
 
   // Check if video is playing
@@ -145,74 +105,6 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     return video && video.srcObject === stream && !video.paused;
   };
 
-  // MOBILE-CRITICAL: Aggressive video creation for mobile streams
-  React.useEffect(() => {
-    const isMobileParticipant = participant.isMobile || 
-                               participant.id.includes('mobile-') ||
-                               participant.id.includes('Mobile');
-    
-    if (stream && participant.active && !hasPlayingVideo()) {
-      console.log(`🎥 CONTAINER: Forcing video creation for ${participant.id} (mobile: ${isMobileParticipant}) with aggressive retry`);
-      
-      let attempts = 0;
-      const maxAttempts = isMobileParticipant ? 10 : 5; // More attempts for mobile
-      
-      const forceVideoCreation = () => {
-        attempts++;
-        console.log(`🔄 Attempt ${attempts}/${maxAttempts} to create video for ${participant.id} (mobile: ${isMobileParticipant})`);
-        
-        try {
-          // MOBILE-CRITICAL: Multiple creation strategies
-          if (isMobileParticipant) {
-            // Strategy 1: Direct creation
-            tryCreateVideo();
-            
-            // Strategy 2: Manual creation as backup
-            setTimeout(() => {
-              if (!hasPlayingVideo()) {
-                console.log(`📱 MOBILE: Trying manual video creation for ${participant.id}`);
-                createVideoManually();
-              }
-            }, 500);
-            
-            // Strategy 3: Force direct video creation with stream
-            setTimeout(() => {
-              if (!hasPlayingVideo()) {
-                console.log(`📱 MOBILE: Triggering direct video creation for ${participant.id}`);
-                tryCreateVideo();
-              }
-            }, 1000);
-          } else {
-            tryCreateVideo();
-          }
-          
-          // Check and retry
-          const retryDelay = isMobileParticipant ? 800 : 1000;
-          setTimeout(() => {
-            if (!hasPlayingVideo() && attempts < maxAttempts) {
-              console.log(`🔄 Video still not playing for ${participant.id} (mobile: ${isMobileParticipant}), retrying...`);
-              forceVideoCreation();
-            } else if (hasPlayingVideo()) {
-              console.log(`✅ Video successfully created for ${participant.id} after ${attempts} attempts`);
-            }
-          }, retryDelay);
-          
-        } catch (error) {
-          console.error(`❌ Force video creation failed for ${participant.id}:`, error);
-          
-          if (attempts < maxAttempts) {
-            const backoffDelay = isMobileParticipant ? 1500 : 2000;
-            setTimeout(forceVideoCreation, backoffDelay);
-          }
-        }
-      };
-      
-      // Start immediately for mobile, small delay for others
-      const initialDelay = isMobileParticipant ? 0 : 100;
-      setTimeout(forceVideoCreation, initialDelay);
-    }
-  }, [stream, participant.active, participant.id, participant.isMobile]);
-
   // Debug info
   console.log(`🎭 RENDER: ParticipantVideoContainer for ${participant.id}`, {
     containerId,
@@ -222,8 +114,6 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
     name: participant.name,
     hasStream: !!stream,
     streamId: stream?.id,
-    streamTracks: stream?.getTracks()?.length || 0,
-    streamVideoTracks: stream?.getVideoTracks()?.length || 0,
     hasPlayingVideo: hasPlayingVideo()
   });
 
@@ -239,16 +129,13 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
         backgroundColor: participant.hasVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
       }}
     >
-      {/* MOBILE-CRITICAL: Force mobile processing for all mobile participants */}
+      {/* Mobile Camera Stream Processor for mobile participants */}
       {participant.isMobile && stream && (
         <MobileCameraStreamProcessor
           participantId={participant.id}
           stream={stream}
           onStreamReady={(participantId, videoElement) => {
-            console.log(`📱 MOBILE-CRITICAL: Mobile video ready for ${participantId}`);
-            // Force video to be visible immediately
-            videoElement.style.display = 'block';
-            videoElement.style.visibility = 'visible';
+            console.log(`📱 Mobile video ready for ${participantId}`);
           }}
         />
       )}

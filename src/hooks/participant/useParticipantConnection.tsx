@@ -18,48 +18,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       return;
     }
 
-    console.log(`🔗 PARTICIPANT CONNECTION: Starting ENHANCED connection process for ${participantId}`);
+    console.log(`🔗 PARTICIPANT CONNECTION: Starting connection process for ${participantId}`);
     console.log(`📱 PARTICIPANT CONNECTION: Mobile device: ${isMobile}`);
-    console.log(`🎥 PARTICIPANT CONNECTION: Stream details:`, stream ? {
-      id: stream.id,
-      active: stream.active,
-      tracks: stream.getTracks().length,
-      videoTracks: stream.getVideoTracks().length,
-      audioTracks: stream.getAudioTracks().length,
-      tracksReady: stream.getTracks().every(t => t.readyState === 'live')
-    } : 'No stream provided');
-    
-    // FASE 2: MOBILE VALIDATION - Only proceed if stream is validated or null (degraded mode)
-    if (stream && isMobile) {
-      console.log('🔍 MOBILE-VALIDATION: Performing additional stream checks...');
-      
-      if (!stream.active) {
-        toast.error('❌ Stream inativo - tente novamente');
-        return;
-      }
-      
-      const tracks = stream.getTracks();
-      if (tracks.length === 0) {
-        toast.error('❌ Stream sem tracks - tente novamente');
-        return;
-      }
-      
-      // Ensure all tracks are ready
-      const allTracksReady = tracks.every(track => track.readyState === 'live');
-      if (!allTracksReady) {
-        console.warn('⚠️ MOBILE: Not all tracks ready, waiting...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Check again
-        const stillNotReady = tracks.some(track => track.readyState !== 'live');
-        if (stillNotReady) {
-          toast.error('❌ Tracks não prontos - reconectando...');
-          return;
-        }
-      }
-      
-      console.log('✅ MOBILE-VALIDATION: Stream passed all validation checks');
-    }
+    console.log(`🎥 PARTICIPANT CONNECTION: Has stream: ${!!stream}`);
     
     setIsConnecting(true);
     setConnectionStatus('connecting');
@@ -106,8 +67,8 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         }
         console.log(`✅ PARTICIPANT CONNECTION: WebSocket connected`);
 
-        // Aguardar estabilização da conexão WebSocket (longer for mobile)
-        await new Promise(resolve => setTimeout(resolve, isMobile ? 2000 : 500));
+        // Aguardar estabilização da conexão WebSocket
+        await new Promise(resolve => setTimeout(resolve, isMobile ? 1000 : 500));
 
         // Etapa 2: Join room com timeout e retry
         console.log(`🔗 PARTICIPANT CONNECTION: Joining room (attempt ${retryCount + 1})`);
@@ -121,18 +82,13 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         ]);
         console.log(`✅ PARTICIPANT CONNECTION: Joined room successfully`);
 
-        // FASE 2: Mobile needs extra stabilization time before WebRTC
-        if (isMobile) {
-          console.log('⏳ MOBILE: Additional stabilization before WebRTC...');
-          await new Promise(resolve => setTimeout(resolve, 2500));
-        } else {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
+        // Aguardar mais tempo para estabilização no mobile
+        await new Promise(resolve => setTimeout(resolve, isMobile ? 2000 : 1000));
 
-        // Etapa 3: Conectar WebRTC com stream JÁ VALIDADO (CRITICAL)
-        console.log(`🔗 PARTICIPANT CONNECTION: Initializing WebRTC with VALIDATED stream (attempt ${retryCount + 1})`);
+        // Etapa 3: Conectar WebRTC com configurações específicas para mobile
+        console.log(`🔗 PARTICIPANT CONNECTION: Initializing WebRTC (attempt ${retryCount + 1})`);
         
-        const webrtcTimeout = isMobile ? 35000 : 20000;
+        const webrtcTimeout = isMobile ? 30000 : 20000;
         const { webrtc } = await Promise.race([
           initParticipantWebRTC(sessionId, participantId, stream || undefined),
           new Promise<never>((_, reject) => 
@@ -159,30 +115,20 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         
         console.log(`✅ PARTICIPANT CONNECTION: WebRTC initialized successfully`);
         
-        // CRITICAL: Verify stream was properly sent
+        // Verificar se o stream local foi enviado corretamente
         if (stream) {
-          console.log(`🎥 PARTICIPANT CONNECTION: Final stream verification:`, {
+          console.log(`🎥 PARTICIPANT CONNECTION: Local stream details:`, {
             streamId: stream.id,
             active: stream.active,
             videoTracks: stream.getVideoTracks().length,
             audioTracks: stream.getAudioTracks().length,
-            tracksDetails: stream.getTracks().map(t => ({
+            tracks: stream.getTracks().map(t => ({
               kind: t.kind,
               enabled: t.enabled,
               readyState: t.readyState,
-              muted: t.muted,
-              label: t.label
+              muted: t.muted
             }))
           });
-          
-          // Additional mobile verification
-          if (isMobile) {
-            const videoTrack = stream.getVideoTracks()[0];
-            if (videoTrack) {
-              console.log('📱 MOBILE-FINAL: Video track settings:', videoTrack.getSettings());
-              console.log('📱 MOBILE-FINAL: Video track constraints:', videoTrack.getConstraints());
-            }
-          }
         }
         
         setIsConnected(true);
