@@ -228,12 +228,8 @@ export class UnifiedWebRTCManager {
   private async initiateConnectionRecovery(participantId: string) {
     const currentAttempts = this.retryAttempts.get(participantId) || 0;
     
-    // Increased max retries from 5 to 10
-    if (currentAttempts >= 10) {
+    if (currentAttempts >= this.retryConfig.maxRetries) {
       console.error(`❌ Max retry attempts reached for ${participantId}`);
-      // Don't give up completely - try full reconnection
-      console.log(`🔄 Attempting full reconnection for ${participantId}`);
-      await this.forceParticipantConnection(participantId);
       return;
     }
 
@@ -242,21 +238,18 @@ export class UnifiedWebRTCManager {
       this.retryConfig.maxDelay
     );
     
-    console.log(`🔄 Scheduling recovery for ${participantId} (attempt ${currentAttempts + 1}/10) in ${delay}ms`);
+    console.log(`🔄 Scheduling recovery for ${participantId} (attempt ${currentAttempts + 1}/${this.retryConfig.maxRetries}) in ${delay}ms`);
     
     const timeout = setTimeout(async () => {
       this.retryAttempts.set(participantId, currentAttempts + 1);
       
       try {
-        await this.connectionHandler.initiateCallWithRetry(participantId, 3);
+        await this.connectionHandler.initiateCallWithRetry(participantId, 1);
         this.retryAttempts.delete(participantId); // Success - reset counter
         console.log(`✅ Recovery successful for ${participantId}`);
       } catch (error) {
         console.error(`❌ Recovery failed for ${participantId}:`, error);
-        // Wait before trying again
-        setTimeout(() => {
-          this.initiateConnectionRecovery(participantId);
-        }, 2000);
+        this.initiateConnectionRecovery(participantId); // Try again
       }
     }, delay);
     
@@ -654,6 +647,74 @@ export class UnifiedWebRTCManager {
     
     // If no connections, that's okay for host
     return true;
+  }
+
+  // CRITICAL: Start connection initiation timer for participants
+  private startConnectionInitiationTimer() {
+    if (this.isHost) return; // Only for participants
+    
+    console.log('🕐 INITIATION TIMER: Starting connection initiation monitoring...');
+    
+    // Progressive connection attempts with exponential backoff
+    const attemptConnection = (attempt: number = 1) => {
+      const maxAttempts = 5;
+      const baseDelay = 3000; // Start checking after 3 seconds
+      
+      if (attempt > maxAttempts) {
+        console.error('❌ INITIATION TIMER: Max connection attempts reached');
+        return;
+      }
+      
+      const delay = baseDelay * Math.pow(1.5, attempt - 1);
+      
+      setTimeout(() => {
+        console.log(`🔍 INITIATION TIMER: Connection check attempt ${attempt}/${maxAttempts}`);
+        
+        // Check if we have any active WebRTC connections
+        let hasActiveConnections = false;
+        this.peerConnections.forEach((pc, participantId) => {
+          if (pc.connectionState === 'connected' || pc.connectionState === 'connecting') {
+            hasActiveConnections = true;
+          }
+        });
+        
+        if (!hasActiveConnections && unifiedWebSocketService.isConnected()) {
+          console.log(`🚀 INITIATION TIMER: No active connections detected, triggering auto-connect...`);
+          this.initiateAutoConnection();
+        }
+        
+        // Schedule next attempt
+        if (attempt < maxAttempts) {
+          attemptConnection(attempt + 1);
+        }
+      }, delay);
+    };
+    
+    attemptConnection();
+  }
+  
+  // CRITICAL: Auto-connection initiation for participants
+  private async initiateAutoConnection() {
+    try {
+      console.log('🔄 AUTO-CONNECT: Attempting to establish WebRTC connections...');
+      
+      // Try to connect to host first
+      const hostId = `host-${this.roomId}`;
+      console.log(`📞 AUTO-CONNECT: Attempting connection to potential host: ${hostId}`);
+      
+      try {
+        await this.connectionHandler.initiateCallWithRetry(hostId, 2);
+      } catch (error) {
+        console.log(`⚠️ AUTO-CONNECT: Failed to connect to ${hostId}, trying generic host connection`);
+        
+        // Fallback: try to connect using a generic host identifier
+        const genericHostId = 'host';
+        await this.connectionHandler.initiateCallWithRetry(genericHostId, 2);
+      }
+      
+    } catch (error) {
+      console.error('❌ AUTO-CONNECT: Failed to establish connection:', error);
+    }
   }
 
   // CRITICAL: Enhanced connection timeout monitoring

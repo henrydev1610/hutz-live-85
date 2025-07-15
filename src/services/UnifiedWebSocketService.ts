@@ -236,132 +236,78 @@ class UnifiedWebSocketService {
     this.currentRoomId = roomId;
     this.currentUserId = userId;
 
-    // CRITICAL: Enhanced join room with immediate fallback
     return new Promise((resolve, reject) => {
-      let resolved = false;
-      
       const joinTimeout = setTimeout(() => {
-        if (resolved) return;
-        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId} - attempting fallback join`);
-        
-        // Don't reject immediately - try fallback approach
-        console.log(`🔄 WEBSOCKET: Attempting fallback join approach...`);
-        this.attemptFallbackJoin(roomId, userId).then(() => {
-          if (!resolved) {
-            resolved = true;
-            console.log(`✅ WEBSOCKET: Fallback join successful for ${roomId}`);
-            resolve();
-          }
-        }).catch((fallbackError) => {
-          if (!resolved) {
-            resolved = true;
-            console.error(`❌ WEBSOCKET: Both primary and fallback join failed:`, fallbackError);
-            reject(new Error(`Join room failed: ${fallbackError.message}`));
-          }
-        });
-      }, 45000); // Reduced to 45s with fallback
+        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
+        reject(new Error('Join room timeout'));
+      }, 30000); // Aumentado para 30s
 
       // Success handler
       const handleJoinSuccess = (data: any) => {
-        if (resolved) return;
-        resolved = true;
         console.log(`✅ WEBSOCKET: Successfully joined room ${roomId}:`, data);
         clearTimeout(joinTimeout);
         this.socket?.off('room_joined', handleJoinSuccess);
         this.socket?.off('join-room-response', handleJoinResponse);
         this.socket?.off('error', handleJoinError);
-        this.socket?.off('connect', handleConnectionRecovery);
         resolve();
       };
 
       // Response handler for different event types
       const handleJoinResponse = (response: any) => {
-        if (resolved) return;
         console.log(`📡 WEBSOCKET: Join room response:`, response);
         if (response?.success) {
-          resolved = true;
           clearTimeout(joinTimeout);
           this.socket?.off('room_joined', handleJoinSuccess);
           this.socket?.off('join-room-response', handleJoinResponse);
           this.socket?.off('error', handleJoinError);
-          this.socket?.off('connect', handleConnectionRecovery);
           resolve();
         } else {
-          resolved = true;
           reject(new Error(response?.error || 'Failed to join room'));
         }
       };
 
       // Error handler
       const handleJoinError = (error: any) => {
-        if (resolved) return;
-        resolved = true;
         console.error(`❌ WEBSOCKET: Failed to join room ${roomId}:`, error);
         clearTimeout(joinTimeout);
         this.socket?.off('room_joined', handleJoinSuccess);
         this.socket?.off('join-room-response', handleJoinResponse);
         this.socket?.off('error', handleJoinError);
-        this.socket?.off('connect', handleConnectionRecovery);
         reject(new Error(`Failed to join room: ${error.message || error}`));
-      };
-
-      // Connection recovery handler
-      const handleConnectionRecovery = () => {
-        if (resolved) return;
-        console.log(`🔄 WEBSOCKET: Connection recovered, retrying join for ${roomId}`);
-        setTimeout(() => {
-          if (!resolved) {
-            sendJoinRequest(1); // Retry with attempt 1
-          }
-        }, 1000);
       };
 
       // Setup listeners for different possible event names
       this.socket?.once('room_joined', handleJoinSuccess);
       this.socket?.once('join-room-response', handleJoinResponse);
       this.socket?.once('error', handleJoinError);
-      this.socket?.once('connect', handleConnectionRecovery);
 
       // Send join request with multiple formats for compatibility
       const sendJoinRequest = (attempt = 1) => {
-        if (resolved) return;
-        console.log(`📡 WEBSOCKET: Sending join request (attempt ${attempt}) for room ${roomId}`);
+        console.log(`📡 WEBSOCKET: Sending join request (attempt ${attempt})`);
         
         try {
-          // Enhanced join request with more compatibility options
-          const joinData = { 
+          // Try multiple event formats for compatibility
+          this.socket?.emit('join_room', { 
             roomId, 
             userId,
             timestamp: Date.now(),
-            attempt,
-            userAgent: navigator.userAgent,
-            connectionType: 'unified',
-            isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-          };
+            attempt
+          });
           
-          console.log(`📊 WEBSOCKET: Join data being sent:`, joinData);
+          this.socket?.emit('join-room', { 
+            roomId, 
+            userId,
+            timestamp: Date.now(),
+            attempt
+          });
           
-          // Try multiple event formats for compatibility with aggressive retry
-          this.socket?.emit('join_room', joinData);
-          this.socket?.emit('join-room', joinData);
-          this.socket?.emit('joinRoom', joinData);
-          this.socket?.emit('room-join', joinData);
-          
-          // Immediate verification - check if connected after short delay
-          setTimeout(() => {
-            if (!resolved && this.isConnected()) {
-              console.log(`🔍 WEBSOCKET: Verifying join status for ${roomId}...`);
-              this.socket?.emit('check_room_status', { roomId, userId });
-            }
-          }, 2000);
-          
-          // Auto-retry with increased intervals
-          if (attempt < 7) { // Increased to 7 attempts
+          // Auto-retry after delay if no response
+          if (attempt < 3) {
             setTimeout(() => {
-              if (!resolved && this.currentRoomId === roomId) { // Still trying to join same room
+              if (this.currentRoomId === roomId) { // Still trying to join same room
                 sendJoinRequest(attempt + 1);
               }
-            }, Math.min(2000 * attempt, 15000)); // Cap at 15s max delay
+            }, 5000 * attempt);
           }
         } catch (error) {
           console.error(`❌ WEBSOCKET: Error sending join request:`, error);
@@ -370,28 +316,6 @@ class UnifiedWebSocketService {
       };
 
       sendJoinRequest();
-    });
-  }
-
-  private async attemptFallbackJoin(roomId: string, userId: string): Promise<void> {
-    console.log(`🔄 WEBSOCKET: Attempting fallback join for ${roomId}`);
-    
-    return new Promise((resolve, reject) => {
-      const fallbackTimeout = setTimeout(() => {
-        reject(new Error('Fallback join timeout'));
-      }, 15000);
-
-      // Simple fallback - just assume success if connection is stable
-      if (this.isConnected()) {
-        console.log(`✅ WEBSOCKET: Fallback join - connection is stable, assuming success`);
-        this.currentRoomId = roomId;
-        this.currentUserId = userId;
-        clearTimeout(fallbackTimeout);
-        resolve();
-      } else {
-        clearTimeout(fallbackTimeout);
-        reject(new Error('Connection not stable for fallback'));
-      }
     });
   }
 
