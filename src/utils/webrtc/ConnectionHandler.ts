@@ -184,7 +184,7 @@ export class ConnectionHandler {
     
     if (currentRetries >= maxRetries) {
       console.error(`❌ Max retry attempts reached for: ${participantId}`);
-      return;
+      throw new Error(`Max retry attempts (${maxRetries}) reached for ${participantId}`);
     }
 
     this.retryAttempts.set(participantId, currentRetries + 1);
@@ -192,14 +192,20 @@ export class ConnectionHandler {
     try {
       await this.initiateCall(participantId);
       this.retryAttempts.delete(participantId); // Reset on success
+      console.log(`✅ RETRY SUCCESS: Call initiated successfully for ${participantId} on attempt ${currentRetries + 1}`);
     } catch (error) {
       console.error(`❌ Call initiation failed for ${participantId} (attempt ${currentRetries + 1}):`, error);
       
       if (currentRetries + 1 < maxRetries) {
-        console.log(`🔄 Retrying call to ${participantId} in 2 seconds...`);
-        setTimeout(() => {
-          this.initiateCallWithRetry(participantId, maxRetries);
-        }, 2000);
+        // Exponential backoff: 2s, 4s, 8s...
+        const delay = 2000 * Math.pow(2, currentRetries);
+        console.log(`🔄 RETRY SCHEDULE: Retrying call to ${participantId} in ${delay}ms (attempt ${currentRetries + 2}/${maxRetries})`);
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.initiateCallWithRetry(participantId, maxRetries);
+      } else {
+        console.error(`❌ RETRY EXHAUSTED: All retry attempts failed for ${participantId}`);
+        throw error;
       }
     }
   }

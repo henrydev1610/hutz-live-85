@@ -325,8 +325,16 @@ class UnifiedWebSocketService {
       return;
     }
 
-    console.log('📞 SIGNALING: Sending offer to:', targetUserId);
-    this.socket!.emit('offer', { targetUserId, offer });
+    const payload = { 
+      targetUserId, 
+      offer,
+      roomId: this.currentRoomId,
+      fromUserId: this.currentUserId,
+      timestamp: Date.now()
+    };
+
+    console.log('📞 SIGNALING: Sending offer to:', targetUserId, 'in room:', this.currentRoomId);
+    this.socket!.emit('offer', payload);
   }
 
   sendAnswer(targetUserId: string, answer: RTCSessionDescriptionInit): void {
@@ -335,8 +343,16 @@ class UnifiedWebSocketService {
       return;
     }
 
-    console.log('✅ SIGNALING: Sending answer to:', targetUserId);
-    this.socket!.emit('answer', { targetUserId, answer });
+    const payload = {
+      targetUserId, 
+      answer,
+      roomId: this.currentRoomId,
+      fromUserId: this.currentUserId,
+      timestamp: Date.now()
+    };
+
+    console.log('✅ SIGNALING: Sending answer to:', targetUserId, 'in room:', this.currentRoomId);
+    this.socket!.emit('answer', payload);
   }
 
   sendIceCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
@@ -345,8 +361,16 @@ class UnifiedWebSocketService {
       return;
     }
 
-    console.log('🧊 SIGNALING: Sending ICE candidate to:', targetUserId);
-    this.socket!.emit('ice-candidate', { targetUserId, candidate });
+    const payload = {
+      targetUserId, 
+      candidate,
+      roomId: this.currentRoomId,
+      fromUserId: this.currentUserId,
+      timestamp: Date.now()
+    };
+
+    console.log('🧊 SIGNALING: Sending ICE candidate to:', targetUserId, 'in room:', this.currentRoomId);
+    this.socket!.emit('ice-candidate', payload);
   }
 
   notifyStreamStarted(participantId: string, streamInfo: any): void {

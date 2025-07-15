@@ -92,6 +92,7 @@ export const useLivePageEffects = ({
               streamId: stream.id,
               trackCount: stream.getTracks().length,
               videoTracks: stream.getVideoTracks().length,
+              audioTracks: stream.getAudioTracks().length,
               active: stream.active,
               timestamp: Date.now()
             });
@@ -104,6 +105,12 @@ export const useLivePageEffects = ({
               console.log('🔄 HOST: UNIFIED Updating transmission after stream received');
               updateTransmissionParticipants();
             }, 100);
+            
+            // Success feedback
+            toast({
+              title: "Câmera Conectada",
+              description: `Recebendo vídeo de ${participantId}`,
+            });
           });
           
           result.webrtc.setOnParticipantJoinCallback((participantId) => {
@@ -112,6 +119,13 @@ export const useLivePageEffects = ({
           });
 
           console.log('🔗 HOST: UNIFIED WebRTC callbacks configured successfully');
+          
+          // Success notification
+          toast({
+            title: "WebRTC Ativo",
+            description: "Sistema pronto para receber conexões",
+          });
+          
         } else {
           console.error('❌ HOST: Failed to initialize UNIFIED WebRTC');
           
