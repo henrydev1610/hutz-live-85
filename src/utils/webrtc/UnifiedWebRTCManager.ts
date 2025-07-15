@@ -322,17 +322,35 @@ export class UnifiedWebRTCManager {
     this.isHost = false;
 
     try {
-      // IMPORTANT: Only use stream provided by useParticipantMedia - no local media creation
+      // FASE 1: CRITICAL - Only use VALIDATED stream from useParticipantMedia
       if (stream) {
-        this.localStream = stream;
-        console.log(`📹 UNIFIED: Using provided stream from useParticipantMedia:`, {
+        console.log(`📹 UNIFIED-MOBILE: Processing VALIDATED stream:`, {
+          streamId: stream.id,
+          active: stream.active,
           tracks: stream.getTracks().length,
           videoTracks: stream.getVideoTracks().length,
           audioTracks: stream.getAudioTracks().length,
+          isMobile: this.isMobile,
+          tracksReady: stream.getTracks().every(t => t.readyState === 'live'),
           videoSettings: stream.getVideoTracks()[0]?.getSettings()
         });
+        
+        // CRITICAL: Additional mobile stream validation before proceeding
+        if (this.isMobile) {
+          const isValidMobileStream = stream.active && 
+                                    stream.getTracks().length > 0 && 
+                                    stream.getTracks().every(t => t.readyState === 'live');
+          
+          if (!isValidMobileStream) {
+            throw new Error('MOBILE: Stream validation failed - stream not ready for WebRTC');
+          }
+          
+          console.log('✅ MOBILE-STREAM: Validation passed, proceeding with WebRTC setup');
+        }
+        
+        this.localStream = stream;
       } else {
-        console.warn(`⚠️ UNIFIED: No stream provided - participant must initialize media first`);
+        console.warn(`⚠️ UNIFIED: No stream provided - participant in degraded mode`);
       }
 
       this.updateConnectionState('websocket', 'connecting');
@@ -343,9 +361,10 @@ export class UnifiedWebRTCManager {
       this.updateConnectionState('websocket', 'connected');
       console.log(`✅ UNIFIED PARTICIPANT: Connected to signaling server`);
       
-      // Notify stream if available
+      // FASE 1: Ensure stream is ready for transmission BEFORE notifying
       if (this.localStream) {
-        await this.notifyLocalStream();
+        console.log('📡 UNIFIED-MOBILE: Preparing to notify stream...');
+        await this.notifyLocalStreamWithValidation();
       }
       
     } catch (error) {
@@ -355,12 +374,19 @@ export class UnifiedWebRTCManager {
     }
   }
 
-  private async notifyLocalStream() {
+  private async notifyLocalStreamWithValidation() {
     if (!this.localStream || !this.participantId) return;
 
-    // Wait for mobile devices to stabilize
+    // FASE 2: Enhanced mobile stabilization
     if (this.isMobile) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      console.log('⏳ MOBILE-STABILIZATION: Extended wait for mobile devices...');
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased from 1500
+      
+      // Additional validation after wait
+      if (!this.localStream.active || this.localStream.getTracks().some(t => t.readyState !== 'live')) {
+        console.error('❌ MOBILE: Stream became invalid during stabilization');
+        return;
+      }
     }
 
     const streamInfo = {
@@ -369,11 +395,28 @@ export class UnifiedWebRTCManager {
       hasVideo: this.localStream.getVideoTracks().length > 0,
       hasAudio: this.localStream.getAudioTracks().length > 0,
       isMobile: this.isMobile,
-      connectionType: 'unified'
+      connectionType: 'unified',
+      deviceType: this.isMobile ? 'mobile' : 'desktop',
+      timestamp: Date.now(),
+      // Additional mobile metadata
+      videoConstraints: this.isMobile && this.localStream.getVideoTracks()[0] ? 
+        this.localStream.getVideoTracks()[0].getSettings() : null
     };
     
+    console.log(`📡 UNIFIED-MOBILE: Sending enhanced stream notification:`, streamInfo);
     unifiedWebSocketService.notifyStreamStarted(this.participantId, streamInfo);
-    console.log(`📡 UNIFIED: Stream notification sent`);
+    
+    // FASE 2: Additional verification for mobile
+    if (this.isMobile) {
+      setTimeout(() => {
+        console.log('🔄 MOBILE-BACKUP: Sending backup stream notification...');
+        unifiedWebSocketService.notifyStreamStarted(this.participantId, {
+          ...streamInfo,
+          isBackup: true,
+          backupTimestamp: Date.now()
+        });
+      }, 1500);
+    }
   }
 
   private removeParticipantConnection(participantId: string) {

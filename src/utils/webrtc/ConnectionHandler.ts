@@ -133,14 +133,63 @@ export class ConnectionHandler {
       }
     };
 
-    // Add local stream if available (for participants)
+    // FASE 1: CRITICAL - Add local stream IMMEDIATELY after peer connection creation (mobile fix)
     const localStream = this.getLocalStream();
     if (localStream) {
-      console.log(`📤 Adding local stream to peer connection for: ${participantId}`);
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-        console.log(`➕ Added ${track.kind} track to peer connection`);
+      console.log(`📤 MOBILE-CRITICAL: Adding local stream to peer connection for: ${participantId}`);
+      console.log(`📤 Stream details:`, {
+        streamId: localStream.id,
+        active: localStream.active,
+        trackCount: localStream.getTracks().length,
+        videoTracks: localStream.getVideoTracks().length,
+        audioTracks: localStream.getAudioTracks().length
       });
+      
+      // Enhanced mobile track addition with verification
+      localStream.getTracks().forEach((track, index) => {
+        try {
+          console.log(`➕ MOBILE-CRITICAL: Adding track ${index + 1}/${localStream.getTracks().length}:`, {
+            kind: track.kind,
+            id: track.id,
+            enabled: track.enabled,
+            readyState: track.readyState,
+            label: track.label
+          });
+          
+          peerConnection.addTrack(track, localStream);
+          console.log(`✅ MOBILE-CRITICAL: Successfully added ${track.kind} track`);
+        } catch (trackError) {
+          console.error(`❌ MOBILE-CRITICAL: Failed to add track:`, trackError);
+        }
+      });
+      
+      // Verify tracks were added successfully
+      const senders = peerConnection.getSenders();
+      console.log(`🔍 MOBILE-VERIFICATION: Peer connection has ${senders.length} senders after adding tracks`);
+      
+      // Additional mobile verification
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (isMobile) {
+        setTimeout(() => {
+          const currentSenders = peerConnection.getSenders();
+          console.log(`🔄 MOBILE-RECHECK: Senders after delay: ${currentSenders.length}`);
+          
+          // If senders are missing, try to re-add tracks
+          if (currentSenders.length === 0 && localStream.getTracks().length > 0) {
+            console.warn('⚠️ MOBILE-RECOVERY: No senders found, attempting track re-addition...');
+            localStream.getTracks().forEach(track => {
+              try {
+                peerConnection.addTrack(track, localStream);
+                console.log(`🔄 MOBILE-RECOVERY: Re-added ${track.kind} track`);
+              } catch (error) {
+                console.error(`❌ MOBILE-RECOVERY: Failed to re-add track:`, error);
+              }
+            });
+          }
+        }, 500);
+      }
+    } else {
+      console.warn(`⚠️ MOBILE: No local stream available for peer connection: ${participantId}`);
     }
 
     return peerConnection;
