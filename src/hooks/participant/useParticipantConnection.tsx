@@ -132,19 +132,24 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
           
           // Verify that tracks were added to WebRTC
           setTimeout(() => {
-            const manager = require('@/utils/webrtc').getWebRTCManager();
-            if (manager) {
-              const connections = manager.getPeerConnections();
-              console.log(`🔍 PARTICIPANT CONNECTION: WebRTC peer connections:`, connections.size);
-              connections.forEach((pc, peerId) => {
-                const senders = pc.getSenders();
-                console.log(`📡 PARTICIPANT CONNECTION: Peer ${peerId} has ${senders.length} senders`);
-                senders.forEach((sender, index) => {
-                  if (sender.track) {
-                    console.log(`  Sender ${index}: ${sender.track.kind} track (${sender.track.readyState})`);
-                  }
+            try {
+              const webrtcManager = require('@/utils/webrtc').getWebRTCManager;
+              const manager = webrtcManager ? webrtcManager() : null;
+              if (manager) {
+                const connections = manager.getPeerConnections();
+                console.log(`🔍 PARTICIPANT CONNECTION: WebRTC peer connections:`, connections.size);
+                connections.forEach((pc, peerId) => {
+                  const senders = pc.getSenders();
+                  console.log(`📡 PARTICIPANT CONNECTION: Peer ${peerId} has ${senders.length} senders`);
+                  senders.forEach((sender, index) => {
+                    if (sender.track) {
+                      console.log(`  Sender ${index}: ${sender.track.kind} track (${sender.track.readyState})`);
+                    }
+                  });
                 });
-              });
+              }
+            } catch (error) {
+              console.warn('⚠️ PARTICIPANT CONNECTION: Error verifying WebRTC connections:', error);
             }
           }, 2000);
         }

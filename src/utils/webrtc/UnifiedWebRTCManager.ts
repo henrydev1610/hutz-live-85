@@ -455,6 +455,7 @@ export class UnifiedWebRTCManager {
     // CRITICAL FIX: Use fixed host ID for mobile discovery
     this.participantId = 'host';
     this.isHost = true;
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
     try {
       this.updateConnectionState('websocket', 'connecting');
@@ -477,6 +478,7 @@ export class UnifiedWebRTCManager {
     this.roomId = sessionId;
     this.participantId = participantId;
     this.isHost = false;
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
     try {
       // IMPORTANT: Only use stream provided by useParticipantMedia - no local media creation
