@@ -32,76 +32,90 @@ export const useQRCodeGeneration = () => {
   };
 
   const handleGenerateQRCode = async (state: any) => {
+    console.log("🎯 ROOM CREATION: Starting room creation process...");
+    console.log("🎯 ROOM CREATION: API Base URL:", apiBaseUrl);
+    
+    // Primeiro tentar fallback local SEMPRE (mais confiável)
     try {
-      console.log("Generating QR Code via backend API...");
-      console.log("API Base URL:", apiBaseUrl);
+      console.log("🎯 ROOM CREATION: Generating QR Code locally (primary method)...");
+      const newSessionId = generateSessionId();
+      const frontendUrl = window.location.origin;
+      const participantUrl = `${frontendUrl}/participant/${newSessionId}?mobile=true&qr=true`;
       
-      const response = await fetch(`${apiBaseUrl}/api/rooms`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      console.log(`🎯 ROOM CREATION: Generated URL: ${participantUrl}`);
+      console.log(`🎯 ROOM CREATION: Session ID: ${newSessionId}`);
+      
+      const qrDataUrl = await QRCode.toDataURL(participantUrl, {
+        width: 320,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#ffffff'
         },
-        mode: 'cors',
-        credentials: 'omit'
+        errorCorrectionLevel: 'M'
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("API Response Error:", response.status, response.statusText, errorText);
-        throw new Error(`API Error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log("QR Code data received:", data);
       
-      state.setSessionId(data.roomId);
-      state.setQrCodeURL(data.joinURL);
-      state.setQrCodeSvg(data.qrDataUrl);
+      console.log("🎯 ROOM CREATION: QR Code generated successfully");
+      
+      // Atualizar estado imediatamente
+      state.setSessionId(newSessionId);
+      state.setQrCodeURL(participantUrl);
+      state.setQrCodeSvg(qrDataUrl);
       state.setParticipantList([]);
       
+      console.log("🎯 ROOM CREATION: State updated successfully");
+      
       toast({
-        title: "QR Code gerado",
-        description: "QR Code gerado com sucesso via backend. Compartilhe com os participantes.",
+        title: "✅ Nova Sala Criada",
+        description: `Sala ${newSessionId.substring(0, 8)} criada com sucesso! Compartilhe o QR Code com os participantes.`,
       });
       
-    } catch (error) {
-      console.error('Error generating QR code:', error);
-      
+      // Tentar registrar no backend (opcional, não bloqueia)
       try {
-        console.log("Backend failed, generating QR Code locally as fallback...");
-        const fallbackSessionId = generateSessionId();
-        const frontendUrl = window.location.origin;
-        const fallbackUrl = `${frontendUrl}/participant/${fallbackSessionId}?mobile=true&qr=true`;
-        console.log(`🔗 QR FALLBACK: Generated URL: ${fallbackUrl}`);
+        console.log("🎯 ROOM CREATION: Attempting backend registration...");
         
-        const qrDataUrl = await QRCode.toDataURL(fallbackUrl, {
-          width: 256,
-          margin: 1,
-          color: {
-            dark: '#000000',
-            light: '#ffffff'
-          }
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+        
+        const response = await fetch(`${apiBaseUrl}/api/rooms`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            roomId: newSessionId,
+            joinURL: participantUrl 
+          }),
+          mode: 'cors',
+          credentials: 'omit',
+          signal: controller.signal
         });
         
-        state.setSessionId(fallbackSessionId);
-        state.setQrCodeURL(fallbackUrl);
-        state.setQrCodeSvg(qrDataUrl);
-        state.setParticipantList([]);
+        clearTimeout(timeoutId);
         
-        toast({
-          title: "QR Code gerado localmente",
-          description: "Gerado localmente devido a problema de conectividade com o servidor.",
-          variant: "default"
-        });
+        if (response.ok) {
+          const data = await response.json();
+          console.log("🎯 ROOM CREATION: Backend registration successful:", data);
+        } else {
+          console.warn("🎯 ROOM CREATION: Backend registration failed but continuing with local room");
+        }
         
-      } catch (fallbackError) {
-        console.error('Fallback QR generation also failed:', fallbackError);
-        toast({
-          title: "Erro ao gerar QR Code",
-          description: `Não foi possível gerar o QR Code: ${error.message}`,
-          variant: "destructive"
-        });
+      } catch (backendError) {
+        console.warn("🎯 ROOM CREATION: Backend registration failed but continuing with local room:", backendError);
       }
+      
+      return true;
+      
+    } catch (error) {
+      console.error('🎯 ROOM CREATION: Critical error in room creation:', error);
+      
+      toast({
+        title: "❌ Erro na Criação",
+        description: `Não foi possível criar a sala: ${error.message}. Tente novamente.`,
+        variant: "destructive"
+      });
+      
+      return false;
     }
   };
 
