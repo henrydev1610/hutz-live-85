@@ -349,6 +349,35 @@ export class UnifiedWebRTCManager {
         }
         
         this.localStream = stream;
+        
+        // FASE 1: CRITICAL - Ensure tracks are added to ALL peer connections IMMEDIATELY
+        if (this.localStream) {
+          console.log(`📤 MOBILE-CRITICAL: Adding stream tracks to ALL peer connections:`, {
+            streamId: this.localStream.id,
+            trackCount: this.localStream.getTracks().length,
+            videoTracks: this.localStream.getVideoTracks().length,
+            audioTracks: this.localStream.getAudioTracks().length
+          });
+          
+          // Add tracks to any existing peer connections
+          this.peerConnections.forEach((peerConnection, participantId) => {
+            this.localStream!.getTracks().forEach((track, index) => {
+              try {
+                console.log(`➕ MOBILE-CRITICAL: Adding track ${index + 1} to ${participantId}:`, {
+                  kind: track.kind,
+                  id: track.id,
+                  enabled: track.enabled,
+                  readyState: track.readyState
+                });
+                
+                peerConnection.addTrack(track, this.localStream!);
+                console.log(`✅ MOBILE-CRITICAL: Successfully added ${track.kind} track to ${participantId}`);
+              } catch (trackError) {
+                console.error(`❌ MOBILE-CRITICAL: Failed to add track to ${participantId}:`, trackError);
+              }
+            });
+          });
+        }
       } else {
         console.warn(`⚠️ UNIFIED: No stream provided - participant in degraded mode`);
       }
@@ -380,7 +409,7 @@ export class UnifiedWebRTCManager {
     // FASE 2: Enhanced mobile stabilization
     if (this.isMobile) {
       console.log('⏳ MOBILE-STABILIZATION: Extended wait for mobile devices...');
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased from 1500
+      await new Promise(resolve => setTimeout(resolve, 2500)); // Increased from 2000
       
       // Additional validation after wait
       if (!this.localStream.active || this.localStream.getTracks().some(t => t.readyState !== 'live')) {

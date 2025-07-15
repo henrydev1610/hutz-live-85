@@ -85,6 +85,15 @@ export const useParticipantStreams = ({
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
     console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
     
+    // FASE 3: Additional verification for mobile stream display
+    console.log(`[HOST] MOBILE-CRITICAL: Stream received from ${participantId}:`, {
+      streamId: stream.id,
+      trackCount: stream.getTracks().length,
+      videoTracks: stream.getVideoTracks().length,
+      audioTracks: stream.getAudioTracks().length,
+      streamActive: stream.active
+    });
+    
     // Force immediate participant state update for mobile streams
     setParticipantList(prev => {
       const updated = prev.map(p => 

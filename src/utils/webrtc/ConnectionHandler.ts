@@ -85,10 +85,20 @@ export class ConnectionHandler {
           streamActive: stream.active
         });
 
+        // FASE 4: Enhanced logging and verification
+        console.log(`[MOBILE] Stream received from ${participantId}:`, {
+          streamId: stream.id,
+          trackCount: stream.getTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length,
+          streamActive: stream.active
+        });
+
         // Enhanced callback trigger with multiple fallbacks for mobile
         const triggerCallback = () => {
           if (this.streamCallback) {
             console.log(`🚀 MOBILE-IMMEDIATE: Triggering stream callback for ${participantId}`);
+            console.log(`[HOST] Receiving stream from ${participantId}`);
             try {
               this.streamCallback(participantId, stream);
             } catch (error) {
@@ -158,6 +168,14 @@ export class ConnectionHandler {
           
           peerConnection.addTrack(track, localStream);
           console.log(`✅ MOBILE-CRITICAL: Successfully added ${track.kind} track`);
+          
+          // FASE 3: Additional verification for mobile tracks
+          console.log(`[MOBILE] Stream track added to peer connection:`, {
+            trackCount: localStream.getTracks().length,
+            videoTracks: localStream.getVideoTracks().length,
+            audioTracks: localStream.getAudioTracks().length,
+            participantId: participantId
+          });
         } catch (trackError) {
           console.error(`❌ MOBILE-CRITICAL: Failed to add track:`, trackError);
         }
