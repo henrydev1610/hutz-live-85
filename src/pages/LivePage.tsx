@@ -170,10 +170,17 @@ const LivePage: React.FC = () => {
       {/* Mobile Connection Status */}
       <ConnectionStabilityIndicator 
         connectionStatus={stability.connectionStatus}
-        isStable={stability.stabilityMetrics.isStable}
         participantCount={state.participantList.length}
-        mobileStability={mobileDiagnostics.mobileStability}
-        onReconnect={mobileDiagnostics.actions.forceReconnect}
+        mobileStability={{
+          isConnected: stability.connectionStatus.overall === 'connected',
+          isStable: stability.stabilityMetrics.isStable,
+          connectionAttempts: mobileDiagnostics.metrics.attemptCount,
+          lastSuccessTime: mobileDiagnostics.metrics.lastSuccessTime,
+          error: stability.connectionStatus.overall === 'failed' ? 'Connection failed' : null,
+          isMobile: mobileDiagnostics.isMobile
+        }}
+        onForceReconnect={mobileDiagnostics.actions.forceReconnect}
+        onDiagnostics={mobileDiagnostics.actions.runDiagnostics}
       />
       
       {/* Debug Button */}
