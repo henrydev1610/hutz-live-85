@@ -75,17 +75,18 @@ export const useParticipantManagement = ({
     participantStreams
   });
 
-  // Set up WebRTC callbacks immediately
+  // REMOVED: Legacy WebRTC callbacks - now handled by UnifiedWebRTCManager
+  // The callbacks are now set up in useLivePageEffects through UnifiedWebRTCManager
   useEffect(() => {
-    console.log('🔧 Setting up IMMEDIATE WebRTC callbacks');
+    console.log('🔧 UNIFIED: WebRTC callbacks handled by UnifiedWebRTCManager');
     
-    setStreamCallback(handleParticipantStream);
-    setParticipantJoinCallback(handleParticipantJoin);
+    // No longer setting callbacks here - they're handled by UnifiedWebRTCManager
+    // in useLivePageEffects for consistency and to avoid conflicts
     
     return () => {
-      console.log('🧹 Cleaning up WebRTC callbacks');
+      console.log('🧹 UNIFIED: Cleanup handled by UnifiedWebRTCManager');
     };
-  }, [sessionId, handleParticipantStream, handleParticipantJoin]);
+  }, [sessionId]);
 
   const testConnection = () => {
     console.log('🧪 Testing WebRTC connection...');

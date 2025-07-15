@@ -66,36 +66,39 @@ export class ConnectionHandler {
 
     // CRITICAL: Enhanced stream handling for incoming tracks with mobile optimization
     peerConnection.ontrack = (event) => {
-      console.log(`🎥 MOBILE-CRITICAL: Track received from ${participantId}:`, {
+      console.log(`🎥 UNIFIED-CRITICAL: Track received from ${participantId}:`, {
         kind: event.track.kind,
         trackId: event.track.id,
         streamCount: event.streams.length,
         streamIds: event.streams.map(s => s.id),
         readyState: event.track.readyState,
-        enabled: event.track.enabled
+        enabled: event.track.enabled,
+        timestamp: Date.now()
       });
 
       if (event.streams && event.streams.length > 0) {
         const stream = event.streams[0];
-        console.log(`📹 MOBILE-CRITICAL: Processing stream from ${participantId}:`, {
+        console.log(`📹 UNIFIED-CRITICAL: Processing stream from ${participantId}:`, {
           streamId: stream.id,
           trackCount: stream.getTracks().length,
           videoTracks: stream.getVideoTracks().length,
           audioTracks: stream.getAudioTracks().length,
-          streamActive: stream.active
+          streamActive: stream.active,
+          timestamp: Date.now()
         });
 
         // Enhanced callback trigger with mobile-first approach
         const triggerCallback = () => {
           if (this.streamCallback) {
-            console.log(`🚀 MOBILE-CRITICAL: Triggering stream callback for ${participantId}`);
+            console.log(`🚀 UNIFIED-CRITICAL: Triggering stream callback for ${participantId}`);
             try {
               this.streamCallback(participantId, stream);
+              console.log(`✅ UNIFIED-CRITICAL: Stream callback executed successfully for ${participantId}`);
             } catch (error) {
-              console.error(`❌ Stream callback error for ${participantId}:`, error);
+              console.error(`❌ UNIFIED-CRITICAL: Stream callback error for ${participantId}:`, error);
             }
           } else {
-            console.error(`❌ MOBILE-CRITICAL: No stream callback set for ${participantId}`);
+            console.error(`❌ UNIFIED-CRITICAL: No stream callback set for ${participantId}`);
           }
         };
 
@@ -104,16 +107,16 @@ export class ConnectionHandler {
         
         // Backup trigger for mobile stability
         setTimeout(() => {
-          console.log(`🔄 MOBILE-BACKUP: Backup trigger for ${participantId}`);
+          console.log(`🔄 UNIFIED-BACKUP: Backup trigger for ${participantId}`);
           triggerCallback();
         }, 50);
         
       } else {
-        console.warn(`⚠️ MOBILE: Track received from ${participantId} but no streams attached`);
+        console.warn(`⚠️ UNIFIED: Track received from ${participantId} but no streams attached`);
         // Try to create stream from track for mobile compatibility
         if (event.track) {
           const syntheticStream = new MediaStream([event.track]);
-          console.log(`🔧 MOBILE-FIX: Created synthetic stream for ${participantId}`);
+          console.log(`🔧 UNIFIED-FIX: Created synthetic stream for ${participantId}`);
           if (this.streamCallback) {
             this.streamCallback(participantId, syntheticStream);
           }

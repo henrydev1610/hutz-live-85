@@ -81,34 +81,39 @@ export const useLivePageEffects = ({
         }
       });
 
-      // Initialize WebRTC with enhanced logging
+      // Initialize WebRTC with enhanced logging - UNIFIED SYSTEM
       initHostWebRTC(sessionId).then(result => {
         if (result && result.webrtc) {
-          console.log('✅ HOST: WebRTC initialized successfully');
+          console.log('✅ HOST: UNIFIED WebRTC initialized successfully');
           
+          // CRITICAL: Set up callbacks for stream and participant management
           result.webrtc.setOnStreamCallback((participantId, stream) => {
-            console.log('🎥 HOST: RECEIVED STREAM from:', participantId, {
+            console.log('🎥 HOST: UNIFIED STREAM RECEIVED from:', participantId, {
               streamId: stream.id,
               trackCount: stream.getTracks().length,
               videoTracks: stream.getVideoTracks().length,
-              active: stream.active
+              active: stream.active,
+              timestamp: Date.now()
             });
             
+            // Direct stream processing with immediate effect
             handleParticipantStream(participantId, stream);
             
-            // Update transmission immediately
+            // Force immediate update to transmission participants
             setTimeout(() => {
-              console.log('🔄 HOST: Updating transmission after stream received');
+              console.log('🔄 HOST: UNIFIED Updating transmission after stream received');
               updateTransmissionParticipants();
-            }, 200);
+            }, 100);
           });
           
           result.webrtc.setOnParticipantJoinCallback((participantId) => {
-            console.log('👤 HOST: PARTICIPANT JOIN via WebRTC:', participantId);
+            console.log('👤 HOST: UNIFIED Participant join callback from WebRTC:', participantId);
             handleParticipantJoin(participantId);
           });
+
+          console.log('🔗 HOST: UNIFIED WebRTC callbacks configured successfully');
         } else {
-          console.error('❌ HOST: Failed to initialize WebRTC');
+          console.error('❌ HOST: Failed to initialize UNIFIED WebRTC');
           
           toast({
             title: "Erro de inicialização",
@@ -117,7 +122,7 @@ export const useLivePageEffects = ({
           });
         }
       }).catch(error => {
-        console.error('❌ HOST: WebRTC initialization error:', error);
+        console.error('❌ HOST: UNIFIED WebRTC initialization error:', error);
         
         toast({
           title: "Erro WebRTC",

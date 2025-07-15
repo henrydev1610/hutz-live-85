@@ -15,12 +15,18 @@ export const useDirectVideoCreation = ({
   const maxRetries = 5;
 
   const createVideoElementDirect = useCallback((container: HTMLElement, mediaStream: MediaStream) => {
-    console.log(`🎬 DIRECT: Creating video for ${participantId} in ${containerId}`);
+    console.log(`🎬 UNIFIED-DIRECT: Creating video for ${participantId} in ${containerId}`, {
+      streamId: mediaStream.id,
+      active: mediaStream.active,
+      videoTracks: mediaStream.getVideoTracks().length,
+      containerId,
+      timestamp: Date.now()
+    });
     
     // Remove any existing video first
     const existingVideo = container.querySelector('video');
     if (existingVideo) {
-      console.log(`🧹 DIRECT: Removing existing video for ${participantId}`);
+      console.log(`🧹 UNIFIED-DIRECT: Removing existing video for ${participantId}`);
       existingVideo.remove();
     }
 
@@ -49,16 +55,23 @@ export const useDirectVideoCreation = ({
     video.srcObject = mediaStream;
     container.appendChild(video);
 
+    console.log(`📺 UNIFIED-DIRECT: Video element created and appended for ${participantId}`);
+
     // Force play
     const playVideo = async () => {
       try {
         await video.play();
-        console.log(`✅ DIRECT: Video playing for ${participantId}`);
+        console.log(`✅ UNIFIED-DIRECT: Video playing for ${participantId}`, {
+          videoWidth: video.videoWidth,
+          videoHeight: video.videoHeight,
+          currentTime: video.currentTime,
+          duration: video.duration
+        });
       } catch (error) {
-        console.log(`⚠️ DIRECT: Play failed for ${participantId}:`, error);
+        console.log(`⚠️ UNIFIED-DIRECT: Play failed for ${participantId}:`, error);
         // Retry after short delay
         setTimeout(() => {
-          video.play().catch(e => console.log(`⚠️ DIRECT: Retry failed:`, e));
+          video.play().catch(e => console.log(`⚠️ UNIFIED-DIRECT: Retry failed:`, e));
         }, 100);
       }
     };
@@ -66,8 +79,15 @@ export const useDirectVideoCreation = ({
     // Try to play immediately and on events
     playVideo();
     
-    video.addEventListener('loadedmetadata', playVideo);
-    video.addEventListener('canplay', playVideo);
+    video.addEventListener('loadedmetadata', () => {
+      console.log(`📋 UNIFIED-DIRECT: Metadata loaded for ${participantId}`);
+      playVideo();
+    });
+    
+    video.addEventListener('canplay', () => {
+      console.log(`🎬 UNIFIED-DIRECT: Can play for ${participantId}`);
+      playVideo();
+    });
 
     return video;
   }, [participantId, containerId]);

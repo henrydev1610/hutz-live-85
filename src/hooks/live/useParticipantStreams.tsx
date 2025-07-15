@@ -83,32 +83,39 @@ export const useParticipantStreams = ({
   }, [updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast]);
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
-    console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
+    console.log('🎬 UNIFIED-CRITICAL: Handling participant stream for:', participantId);
     
-    // ENHANCED mobile detection
+    // ENHANCED mobile detection with settings fallback
     const isMobileStream = participantId.includes('mobile') || participantId.includes('qr') || 
                           stream.getVideoTracks().some(track => {
-                            const settings = track.getSettings();
-                            return settings.facingMode === 'environment' || settings.facingMode === 'user';
+                            try {
+                              const settings = track.getSettings();
+                              return settings.facingMode === 'environment' || settings.facingMode === 'user';
+                            } catch (error) {
+                              // Fallback for browsers that don't support getSettings()
+                              return participantId.includes('mobile') || participantId.includes('qr');
+                            }
                           });
     
-    console.log('🎬 STREAM-INFO:', {
+    console.log('🎬 UNIFIED-STREAM-INFO:', {
       id: participantId,
       hasVideoTracks: stream.getVideoTracks().length,
       hasAudioTracks: stream.getAudioTracks().length,
       videoTrackEnabled: stream.getVideoTracks()[0]?.enabled,
       streamActive: stream.active,
-      isMobile: isMobileStream
+      isMobile: isMobileStream,
+      streamId: stream.id,
+      timestamp: Date.now()
     });
     
-    // FORCE immediate stream state update FIRST
+    // UNIFIED: FORCE immediate stream state update FIRST
     setParticipantStreams(prev => {
       const updated = { ...prev, [participantId]: stream };
-      console.log('🔄 MOBILE-STREAM: Updated streams for:', participantId);
+      console.log('🔄 UNIFIED-STREAM: Updated streams for:', participantId);
       return updated;
     });
     
-    // FORCE immediate participant state update - with mobile detection
+    // UNIFIED: FORCE immediate participant state update - with mobile detection
     setParticipantList(prev => {
       const updated = prev.map(p => 
         p.id === participantId 
@@ -136,42 +143,42 @@ export const useParticipantStreams = ({
           connectedAt: Date.now(),
           isMobile: isMobileStream
         });
-        console.log('✅ MOBILE-NEW: Added new participant:', participantId, `(${isMobileStream ? 'MOBILE' : 'DESKTOP'})`);
+        console.log('✅ UNIFIED-NEW: Added new participant:', participantId, `(${isMobileStream ? 'MOBILE' : 'DESKTOP'})`);
       }
       
-      console.log('🔄 MOBILE-STATE: Updated participant list for:', participantId);
+      console.log('🔄 UNIFIED-STATE: Updated participant list for:', participantId);
       return updated;
     });
     
-    // SIMPLIFIED validation - accept any stream with video tracks
+    // UNIFIED: SIMPLIFIED validation - accept any stream with video tracks
     const hasVideoTracks = stream.getVideoTracks().length > 0;
     if (!hasVideoTracks) {
-      console.warn('❌ No video tracks in stream for:', participantId);
+      console.warn('❌ UNIFIED: No video tracks in stream for:', participantId);
       return;
     }
     
-    console.log('✅ MOBILE-VALIDATION: Stream is valid for:', participantId);
+    console.log('✅ UNIFIED-VALIDATION: Stream is valid for:', participantId);
 
-    // Try immediate processing with retry
+    // UNIFIED: Try immediate processing with retry system
     let success = false;
     for (let i = 0; i < 3; i++) {
       try {
-        console.log(`🔄 MOBILE-ATTEMPT ${i + 1}: Processing stream for:`, participantId);
+        console.log(`🔄 UNIFIED-ATTEMPT ${i + 1}: Processing stream for:`, participantId);
         success = await processStreamSafely(participantId, stream);
         if (success) break;
         
         // Wait before retry
         await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error) {
-        console.warn(`❌ MOBILE-ATTEMPT ${i + 1} failed:`, error);
+        console.warn(`❌ UNIFIED-ATTEMPT ${i + 1} failed:`, error);
       }
     }
     
     if (!success) {
-      console.log('📦 MOBILE-BUFFER: Adding to buffer for background retry:', participantId);
+      console.log('📦 UNIFIED-BUFFER: Adding to buffer for background retry:', participantId);
       addToBuffer(participantId, stream);
     } else {
-      console.log('✅ MOBILE-SUCCESS: Stream processed successfully for:', participantId);
+      console.log('✅ UNIFIED-SUCCESS: Stream processed successfully for:', participantId);
     }
   }, [processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams]);
 
