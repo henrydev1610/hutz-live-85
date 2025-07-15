@@ -239,8 +239,11 @@ class UnifiedWebSocketService {
     return new Promise((resolve, reject) => {
       const joinTimeout = setTimeout(() => {
         console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
-        reject(new Error('Join room timeout'));
-      }, 30000); // Aumentado para 30s
+        this.socket?.off('room_joined', handleJoinSuccess);
+        this.socket?.off('join-room-response', handleJoinResponse);
+        this.socket?.off('error', handleJoinError);
+        reject(new Error('Join room timeout - extending timeout to 60 seconds'));
+      }, 60000); // Increased to 60 seconds
 
       // Success handler
       const handleJoinSuccess = (data: any) => {
@@ -286,28 +289,28 @@ class UnifiedWebSocketService {
         console.log(`📡 WEBSOCKET: Sending join request (attempt ${attempt})`);
         
         try {
+          // Enhanced join request with more compatibility options
+          const joinData = { 
+            roomId, 
+            userId,
+            timestamp: Date.now(),
+            attempt,
+            userAgent: navigator.userAgent,
+            connectionType: 'unified'
+          };
+          
           // Try multiple event formats for compatibility
-          this.socket?.emit('join_room', { 
-            roomId, 
-            userId,
-            timestamp: Date.now(),
-            attempt
-          });
+          this.socket?.emit('join_room', joinData);
+          this.socket?.emit('join-room', joinData);
+          this.socket?.emit('joinRoom', joinData);
           
-          this.socket?.emit('join-room', { 
-            roomId, 
-            userId,
-            timestamp: Date.now(),
-            attempt
-          });
-          
-          // Auto-retry after delay if no response
-          if (attempt < 3) {
+          // Auto-retry with increased intervals
+          if (attempt < 5) { // Increased from 3 to 5 attempts
             setTimeout(() => {
               if (this.currentRoomId === roomId) { // Still trying to join same room
                 sendJoinRequest(attempt + 1);
               }
-            }, 5000 * attempt);
+            }, 3000 * attempt); // Increased delay: 3s, 6s, 9s, 12s, 15s
           }
         } catch (error) {
           console.error(`❌ WEBSOCKET: Error sending join request:`, error);

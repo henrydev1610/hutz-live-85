@@ -228,8 +228,12 @@ export class UnifiedWebRTCManager {
   private async initiateConnectionRecovery(participantId: string) {
     const currentAttempts = this.retryAttempts.get(participantId) || 0;
     
-    if (currentAttempts >= this.retryConfig.maxRetries) {
+    // Increased max retries from 5 to 10
+    if (currentAttempts >= 10) {
       console.error(`❌ Max retry attempts reached for ${participantId}`);
+      // Don't give up completely - try full reconnection
+      console.log(`🔄 Attempting full reconnection for ${participantId}`);
+      await this.forceParticipantConnection(participantId);
       return;
     }
 
@@ -238,18 +242,21 @@ export class UnifiedWebRTCManager {
       this.retryConfig.maxDelay
     );
     
-    console.log(`🔄 Scheduling recovery for ${participantId} (attempt ${currentAttempts + 1}/${this.retryConfig.maxRetries}) in ${delay}ms`);
+    console.log(`🔄 Scheduling recovery for ${participantId} (attempt ${currentAttempts + 1}/10) in ${delay}ms`);
     
     const timeout = setTimeout(async () => {
       this.retryAttempts.set(participantId, currentAttempts + 1);
       
       try {
-        await this.connectionHandler.initiateCallWithRetry(participantId, 1);
+        await this.connectionHandler.initiateCallWithRetry(participantId, 3);
         this.retryAttempts.delete(participantId); // Success - reset counter
         console.log(`✅ Recovery successful for ${participantId}`);
       } catch (error) {
         console.error(`❌ Recovery failed for ${participantId}:`, error);
-        this.initiateConnectionRecovery(participantId); // Try again
+        // Wait before trying again
+        setTimeout(() => {
+          this.initiateConnectionRecovery(participantId);
+        }, 2000);
       }
     }, delay);
     
