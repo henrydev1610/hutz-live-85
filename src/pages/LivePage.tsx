@@ -172,13 +172,20 @@ const LivePage: React.FC = () => {
         onClose={() => setShowHealthMonitor(false)}
       />
       
-      {/* Debug Button */}
-      <button
-        onClick={() => setShowHealthMonitor(!showHealthMonitor)}
-        className="fixed bottom-4 left-4 bg-blue-500 text-white p-2 rounded-full text-xs z-50"
-      >
-        Debug
-      </button>
+      {/* Enhanced Debug Button */}
+      <div className="fixed bottom-4 left-4 space-y-2">
+        <button
+          onClick={() => setShowHealthMonitor(!showHealthMonitor)}
+          className="bg-blue-500 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
+        >
+          {showHealthMonitor ? 'Ocultar' : 'Mostrar'} Diagnósticos
+        </button>
+        
+        {/* Quick Status Indicator */}
+        <div className="bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
+          WebRTC: {stability.connectionStatus.webrtc === 'connected' ? '✅ Conectado' : '❌ Desconectado'}
+        </div>
+      </div>
     </div>
   );
 };

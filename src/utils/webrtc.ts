@@ -83,3 +83,25 @@ export const getWebRTCConnectionState = () => {
     overall: 'disconnected' as const
   };
 };
+
+// CRITICAL: Test WebRTC connection
+export const testWebRTCConnection = async (): Promise<boolean> => {
+  if (webrtcManager) {
+    return await webrtcManager.testConnection();
+  }
+  return false;
+};
+
+// CRITICAL: Force participant reconnection
+export const forceParticipantReconnection = async (participantId: string): Promise<void> => {
+  if (webrtcManager) {
+    await webrtcManager.forceParticipantConnection(participantId);
+  }
+};
+
+// CRITICAL: Force reconnection for all participants
+export const forceReconnectAll = async (): Promise<void> => {
+  if (webrtcManager) {
+    await webrtcManager.forceReconnectAll();
+  }
+};

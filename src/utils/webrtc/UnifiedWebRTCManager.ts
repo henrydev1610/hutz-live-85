@@ -428,6 +428,126 @@ export class UnifiedWebRTCManager {
     return new Map(this.peerConnections);
   }
 
+  // CRITICAL: Force connection attempt for specific participant
+  async forceParticipantConnection(participantId: string): Promise<void> {
+    console.log(`🔧 FORCE CONNECTION: Attempting connection for ${participantId}`);
+    
+    // Clean up existing connection if any
+    const existingConnection = this.peerConnections.get(participantId);
+    if (existingConnection) {
+      console.log(`🧹 FORCE CONNECTION: Cleaning up existing connection for ${participantId}`);
+      existingConnection.close();
+      this.peerConnections.delete(participantId);
+    }
+    
+    // Force new connection attempt
+    try {
+      await this.connectionHandler.initiateCallWithRetry(participantId, 3);
+      console.log(`✅ FORCE CONNECTION: Successfully initiated for ${participantId}`);
+    } catch (error) {
+      console.error(`❌ FORCE CONNECTION: Failed for ${participantId}:`, error);
+      throw error;
+    }
+  }
+
+  // CRITICAL: Force reconnection for all participants
+  async forceReconnectAll(): Promise<void> {
+    console.log('🔧 FORCE RECONNECT: Attempting reconnection for all participants');
+    
+    const participantIds = Array.from(this.peerConnections.keys());
+    
+    for (const participantId of participantIds) {
+      try {
+        await this.forceParticipantConnection(participantId);
+        // Wait a bit between connections to avoid overwhelming
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.error(`❌ FORCE RECONNECT: Failed for ${participantId}:`, error);
+      }
+    }
+  }
+
+  // CRITICAL: Test connection functionality
+  async testConnection(): Promise<boolean> {
+    console.log('🧪 TEST CONNECTION: Starting connection test');
+    
+    try {
+      // Test WebSocket connection
+      if (!this.roomId || !this.participantId) {
+        console.error('❌ TEST CONNECTION: Missing room or participant ID');
+        return false;
+      }
+      
+      // Test signaling server connection
+      const isWebSocketHealthy = await this.testWebSocketConnection();
+      if (!isWebSocketHealthy) {
+        console.error('❌ TEST CONNECTION: WebSocket test failed');
+        return false;
+      }
+      
+      // Test peer connections
+      const arePeerConnectionsHealthy = this.testPeerConnections();
+      if (!arePeerConnectionsHealthy) {
+        console.error('❌ TEST CONNECTION: Peer connections test failed');
+        return false;
+      }
+      
+      console.log('✅ TEST CONNECTION: All tests passed');
+      return true;
+      
+    } catch (error) {
+      console.error('❌ TEST CONNECTION: Test failed:', error);
+      return false;
+    }
+  }
+
+  private async testWebSocketConnection(): Promise<boolean> {
+    try {
+      if (!unifiedWebSocketService.isConnected()) {
+        console.log('🔄 TEST CONNECTION: WebSocket not connected, attempting reconnection');
+        await unifiedWebSocketService.connect();
+      }
+      
+      const healthCheck = await unifiedWebSocketService.healthCheck();
+      console.log('🧪 TEST CONNECTION: WebSocket health check result:', healthCheck);
+      
+      return healthCheck;
+    } catch (error) {
+      console.error('❌ TEST CONNECTION: WebSocket test failed:', error);
+      return false;
+    }
+  }
+
+  private testPeerConnections(): boolean {
+    let healthyConnections = 0;
+    let totalConnections = this.peerConnections.size;
+    
+    this.peerConnections.forEach((pc, participantId) => {
+      const isHealthy = pc.connectionState === 'connected' && 
+                       pc.iceConnectionState === 'connected';
+      
+      console.log(`🧪 TEST CONNECTION: ${participantId} - ${isHealthy ? 'healthy' : 'unhealthy'}`, {
+        connectionState: pc.connectionState,
+        iceConnectionState: pc.iceConnectionState,
+        signalingState: pc.signalingState
+      });
+      
+      if (isHealthy) {
+        healthyConnections++;
+      }
+    });
+    
+    // If we have connections, at least 50% should be healthy
+    if (totalConnections > 0) {
+      const healthRatio = healthyConnections / totalConnections;
+      console.log(`🧪 TEST CONNECTION: Health ratio: ${healthRatio} (${healthyConnections}/${totalConnections})`);
+      return healthRatio >= 0.5;
+    }
+    
+    // If no connections, that's okay for host
+    return true;
+  }
+
   cleanup() {
     console.log(`🧹 UNIFIED: Cleaning up WebRTC manager`);
     

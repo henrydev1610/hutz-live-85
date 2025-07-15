@@ -28,38 +28,65 @@ export class ConnectionHandler {
   }
 
   createPeerConnection(participantId: string): RTCPeerConnection {
-    console.log(`🔗 Creating peer connection for: ${participantId}`);
+    console.log(`🔗 CRITICAL: Creating peer connection for: ${participantId}`);
 
     const config = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
       ]
     };
 
     const peerConnection = new RTCPeerConnection(config);
     this.peerConnections.set(participantId, peerConnection);
 
-    // ICE candidate handling
+    console.log(`✅ CRITICAL: Peer connection created for ${participantId}`, {
+      iceGatheringState: peerConnection.iceGatheringState,
+      connectionState: peerConnection.connectionState,
+      signalingState: peerConnection.signalingState
+    });
+
+    // ICE candidate handling with detailed logging
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log(`🧊 Sending ICE candidate to: ${participantId}`);
+        console.log(`🧊 CRITICAL: ICE candidate generated for ${participantId}:`, {
+          type: event.candidate.type,
+          protocol: event.candidate.protocol,
+          address: event.candidate.address,
+          port: event.candidate.port
+        });
         unifiedWebSocketService.sendIceCandidate(participantId, event.candidate);
+      } else {
+        console.log(`🧊 CRITICAL: ICE gathering completed for ${participantId}`);
+      }
+    };
+
+    // ICE connection state monitoring
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log(`🧊 CRITICAL: ICE connection state changed for ${participantId}:`, peerConnection.iceConnectionState);
+      
+      if (peerConnection.iceConnectionState === 'connected' || peerConnection.iceConnectionState === 'completed') {
+        console.log(`✅ CRITICAL: ICE connection established for ${participantId}`);
+      } else if (peerConnection.iceConnectionState === 'failed') {
+        console.error(`❌ CRITICAL: ICE connection failed for ${participantId}`);
+        this.handleConnectionFailure(participantId);
       }
     };
 
     // Connection state monitoring
     peerConnection.onconnectionstatechange = () => {
-      console.log(`🔗 Connection state for ${participantId}:`, peerConnection.connectionState);
+      console.log(`🔗 CRITICAL: Connection state for ${participantId}:`, peerConnection.connectionState);
       
       if (peerConnection.connectionState === 'connected') {
-        console.log(`✅ Peer connection established with: ${participantId}`);
+        console.log(`✅ CRITICAL: Peer connection established with: ${participantId}`);
         if (this.participantJoinCallback) {
           this.participantJoinCallback(participantId);
         }
       } else if (peerConnection.connectionState === 'failed') {
-        console.log(`❌ Peer connection failed with: ${participantId}`);
+        console.log(`❌ CRITICAL: Peer connection failed with: ${participantId}`);
         this.handleConnectionFailure(participantId);
       }
     };
@@ -124,14 +151,29 @@ export class ConnectionHandler {
       }
     };
 
-    // Add local stream if available (for participants)
+    // CRITICAL: Add local stream if available (for participants)
     const localStream = this.getLocalStream();
     if (localStream) {
-      console.log(`📤 Adding local stream to peer connection for: ${participantId}`);
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-        console.log(`➕ Added ${track.kind} track to peer connection`);
+      console.log(`📤 CRITICAL: Adding local stream to peer connection for: ${participantId}`, {
+        streamId: localStream.id,
+        videoTracks: localStream.getVideoTracks().length,
+        audioTracks: localStream.getAudioTracks().length
       });
+      
+      localStream.getTracks().forEach(track => {
+        try {
+          peerConnection.addTrack(track, localStream);
+          console.log(`➕ CRITICAL: Added ${track.kind} track to peer connection for ${participantId}`, {
+            trackId: track.id,
+            enabled: track.enabled,
+            readyState: track.readyState
+          });
+        } catch (error) {
+          console.error(`❌ CRITICAL: Failed to add track for ${participantId}:`, error);
+        }
+      });
+    } else {
+      console.log(`⚠️ CRITICAL: No local stream available for ${participantId}`);
     }
 
     return peerConnection;
@@ -163,22 +205,36 @@ export class ConnectionHandler {
   }
 
   private async initiateCall(participantId: string): Promise<void> {
-    console.log(`📞 Initiating call to: ${participantId}`);
+    console.log(`📞 CRITICAL: Initiating call to: ${participantId}`);
 
     const peerConnection = this.createPeerConnection(participantId);
     
     try {
+      // Create offer with detailed options
       const offer = await peerConnection.createOffer({
         offerToReceiveVideo: true,
-        offerToReceiveAudio: true
+        offerToReceiveAudio: true,
+        iceRestart: false
+      });
+      
+      console.log(`📋 CRITICAL: Offer created for ${participantId}:`, {
+        type: offer.type,
+        sdpLines: offer.sdp?.split('\n').length || 0,
+        hasVideo: offer.sdp?.includes('video') || false,
+        hasAudio: offer.sdp?.includes('audio') || false
       });
       
       await peerConnection.setLocalDescription(offer);
-      console.log(`📤 Sending offer to: ${participantId}`);
+      console.log(`📤 CRITICAL: Local description set for ${participantId}`, {
+        signalingState: peerConnection.signalingState,
+        iceGatheringState: peerConnection.iceGatheringState
+      });
       
+      console.log(`📤 CRITICAL: Sending offer to: ${participantId}`);
       unifiedWebSocketService.sendOffer(participantId, offer);
+      
     } catch (error) {
-      console.error(`❌ Failed to create/send offer to ${participantId}:`, error);
+      console.error(`❌ CRITICAL: Failed to create/send offer to ${participantId}:`, error);
       throw error;
     }
   }
