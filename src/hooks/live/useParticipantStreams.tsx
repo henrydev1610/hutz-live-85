@@ -84,8 +84,22 @@ export const useParticipantStreams = ({
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
     console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
+    console.log('🎬 STREAM-INFO:', {
+      id: participantId,
+      hasVideoTracks: stream.getVideoTracks().length,
+      hasAudioTracks: stream.getAudioTracks().length,
+      videoTrackEnabled: stream.getVideoTracks()[0]?.enabled,
+      streamActive: stream.active
+    });
     
-    // Force immediate participant state update for mobile streams
+    // FORCE immediate stream state update FIRST
+    setParticipantStreams(prev => {
+      const updated = { ...prev, [participantId]: stream };
+      console.log('🔄 MOBILE-STREAM: Updated streams for:', participantId);
+      return updated;
+    });
+    
+    // FORCE immediate participant state update
     setParticipantList(prev => {
       const updated = prev.map(p => 
         p.id === participantId 
@@ -113,33 +127,44 @@ export const useParticipantStreams = ({
           connectedAt: Date.now(),
           isMobile: true
         });
+        console.log('✅ MOBILE-NEW: Added new mobile participant:', participantId);
       }
       
       console.log('🔄 MOBILE-STATE: Updated participant list for:', participantId);
       return updated;
     });
     
-    if (!validateStream(stream, participantId)) {
-      console.warn('❌ Stream validation failed for:', participantId);
+    // SIMPLIFIED validation - accept any stream with video tracks
+    const hasVideoTracks = stream.getVideoTracks().length > 0;
+    if (!hasVideoTracks) {
+      console.warn('❌ No video tracks in stream for:', participantId);
       return;
     }
+    
+    console.log('✅ MOBILE-VALIDATION: Stream is valid for:', participantId);
 
-    // Force immediate stream state update
-    setParticipantStreams(prev => {
-      const updated = { ...prev, [participantId]: stream };
-      console.log('🔄 MOBILE-STREAM: Updated streams for:', participantId);
-      return updated;
-    });
-
-    // Try immediate processing first
-    const success = await processStreamSafely(participantId, stream);
+    // Try immediate processing with retry
+    let success = false;
+    for (let i = 0; i < 3; i++) {
+      try {
+        console.log(`🔄 MOBILE-ATTEMPT ${i + 1}: Processing stream for:`, participantId);
+        success = await processStreamSafely(participantId, stream);
+        if (success) break;
+        
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.warn(`❌ MOBILE-ATTEMPT ${i + 1} failed:`, error);
+      }
+    }
     
     if (!success) {
-      // Add to buffer for retry
-      console.log('📦 Adding to buffer for retry:', participantId);
+      console.log('📦 MOBILE-BUFFER: Adding to buffer for background retry:', participantId);
       addToBuffer(participantId, stream);
+    } else {
+      console.log('✅ MOBILE-SUCCESS: Stream processed successfully for:', participantId);
     }
-  }, [validateStream, processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams]);
+  }, [processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams]);
 
   // Process buffer periodically
   useEffect(() => {

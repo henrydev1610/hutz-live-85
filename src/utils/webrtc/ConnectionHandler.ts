@@ -85,40 +85,28 @@ export class ConnectionHandler {
           streamActive: stream.active
         });
 
-        // Enhanced callback trigger with multiple fallbacks for mobile
+        // Enhanced callback trigger with mobile-first approach
         const triggerCallback = () => {
           if (this.streamCallback) {
-            console.log(`🚀 MOBILE-IMMEDIATE: Triggering stream callback for ${participantId}`);
+            console.log(`🚀 MOBILE-CRITICAL: Triggering stream callback for ${participantId}`);
             try {
               this.streamCallback(participantId, stream);
             } catch (error) {
               console.error(`❌ Stream callback error for ${participantId}:`, error);
-              // Retry once more if callback fails
-              setTimeout(() => {
-                if (this.streamCallback) {
-                  this.streamCallback(participantId, stream);
-                }
-              }, 50);
             }
           } else {
             console.error(`❌ MOBILE-CRITICAL: No stream callback set for ${participantId}`);
           }
         };
 
-        // Immediate trigger
+        // IMMEDIATE trigger - highest priority
         triggerCallback();
         
-        // Backup trigger after minimal delay to ensure mobile streams are captured
+        // Backup trigger for mobile stability
         setTimeout(() => {
           console.log(`🔄 MOBILE-BACKUP: Backup trigger for ${participantId}`);
           triggerCallback();
-        }, 100);
-
-        // Additional backup for problematic mobile connections
-        setTimeout(() => {
-          console.log(`🔄 MOBILE-FINAL: Final backup trigger for ${participantId}`);
-          triggerCallback();
-        }, 500);
+        }, 50);
         
       } else {
         console.warn(`⚠️ MOBILE: Track received from ${participantId} but no streams attached`);

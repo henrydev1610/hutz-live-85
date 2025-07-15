@@ -142,8 +142,15 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
 
       {/* DEBUG: Informações de debug SEMPRE visíveis */}
       <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-1 rounded z-30">
-        {participant.hasVideo ? 'HAS_VIDEO' : 'NO_VIDEO'} | {participant.active ? 'ACTIVE' : 'INACTIVE'} | {participant.isMobile ? '📱' : '💻'} | {isHealthy ? '💚' : '💔'}
+        ID:{participant.id.substring(0, 6)} | {participant.hasVideo ? '📹' : '❌'} | {participant.active ? '✅' : '⏸️'} | {participant.isMobile ? '📱' : '💻'} | Stream:{stream ? '✅' : '❌'} | Health:{isHealthy ? '💚' : '💔'}
       </div>
+      
+      {/* DEBUG: Stream details */}
+      {stream && (
+        <div className="absolute top-6 right-1 bg-green-600 text-white text-xs px-1 rounded z-30">
+          V:{stream.getVideoTracks().length} A:{stream.getAudioTracks().length} Active:{stream.active ? '✅' : '❌'}
+        </div>
+      )}
       
       {/* Show placeholder when participant is active but no video is playing or unhealthy */}
       {participant.active && stream && (!hasPlayingVideo() || !isHealthy) && (
