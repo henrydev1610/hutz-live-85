@@ -7,7 +7,7 @@ export const useMobileStreamProcessor = () => {
   const processMobileStream = useCallback(async (
     participantId: string, 
     stream: MediaStream, 
-    updateVideoElementsImmediately: (participantId: string, stream: MediaStream) => void
+    updateVideoElementsImmediately: (participantId: string, stream: MediaStream, transmissionWindowRef?: React.MutableRefObject<Window | null>) => void
   ): Promise<boolean> => {
     console.log('📱 MOBILE-PROCESSOR: Processing mobile stream for:', participantId);
     

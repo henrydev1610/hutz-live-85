@@ -75,51 +75,44 @@ export class ConnectionHandler {
       if (event.streams && event.streams.length > 0) {
         const stream = event.streams[0];
         
-        // CRITICAL: RELAXED stream validation for mobile compatibility
-        const hasStream = !!stream;
-        const hasActiveTracks = stream?.getTracks().length > 0;
-        const isMobileParticipant = participantId.includes('mobile-') || 
-                                  participantId.includes('Mobile') ||
-                                  sessionStorage.getItem('isMobile') === 'true';
-        
-        console.log(`📱 MOBILE-CONNECTION: Stream validation for ${participantId}:`, {
-          hasStream,
-          hasActiveTracks,
-          streamActive: stream?.active,
-          isMobile: isMobileParticipant,
-          trackDetails: stream?.getTracks().map(t => ({ kind: t.kind, readyState: t.readyState, enabled: t.enabled }))
-        });
-        
-        // CRITICAL: Accept any stream with tracks for mobile, regardless of active state
-        const shouldProcessStream = hasStream && hasActiveTracks;
+    // SIMPLIFIED: Basic stream validation for mobile compatibility
+    const hasStream = !!stream;
+    const hasActiveTracks = stream?.getTracks().length > 0;
+    const isMobileParticipant = participantId.includes('mobile-') || 
+                              participantId.includes('Mobile') ||
+                              sessionStorage.getItem('isMobile') === 'true';
+    
+    console.log(`📱 MOBILE-CONNECTION: Stream validation for ${participantId}:`, {
+      hasStream,
+      hasActiveTracks,
+      streamActive: stream?.active,
+      isMobile: isMobileParticipant,
+      trackDetails: stream?.getTracks().map(t => ({ kind: t.kind, readyState: t.readyState, enabled: t.enabled }))
+    });
+    
+    // SIMPLIFIED: Accept any stream with tracks
+    const shouldProcessStream = hasStream && hasActiveTracks;
         
         if (shouldProcessStream) {
           console.log(`🎥 CONNECTION: Processing stream from ${participantId} (mobile: ${isMobileParticipant})`);
           
-          // MOBILE-CRITICAL: Immediate callback for mobile streams with retry
+          // MOBILE-CRITICAL: Immediate callback for mobile streams
           const processStream = () => {
             if (this.streamCallback) {
               console.log(`📤 CONNECTION: Triggering stream callback for ${participantId}`);
               this.streamCallback(participantId, stream);
-              
-              // MOBILE-CRITICAL: Additional retry for mobile to ensure stream is processed
-              if (isMobileParticipant) {
-                setTimeout(() => {
-                  console.log(`🔄 MOBILE-RETRY: Secondary callback for ${participantId}`);
-                  this.streamCallback!(participantId, stream);
-                }, 1500);
-              }
+              console.log(`✅ MOBILE-CRITICAL: Stream callback completed for ${participantId}`);
             } else {
-              console.warn(`⚠️ CONNECTION: No stream callback set for ${participantId}`);
+              console.error(`❌ CONNECTION: No stream callback set for ${participantId} - THIS IS A CRITICAL ERROR`);
             }
           };
           
           // MOBILE: Immediate processing for mobile, minimal delay for others
-          const processingDelay = isMobileParticipant ? 100 : 500;
+          const processingDelay = isMobileParticipant ? 0 : 300;
           setTimeout(processStream, processingDelay);
           
         } else {
-          console.warn(`⚠️ CONNECTION: Invalid stream from ${participantId}:`, {
+          console.error(`❌ CONNECTION: Invalid stream from ${participantId}:`, {
             stream: !!stream,
             active: stream?.active,
             tracks: stream?.getTracks().length

@@ -2,7 +2,6 @@
 import { useCallback, useEffect } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
-import { useStreamValidation } from './useStreamValidation';
 import { useStreamTransmission } from './useStreamTransmission';
 import { useStreamStateManagement } from './useStreamStateManagement';
 import { useStreamBuffer } from './useStreamBuffer';
@@ -23,7 +22,6 @@ export const useParticipantStreams = ({
   transmissionWindowRef
 }: UseParticipantStreamsProps) => {
   const { toast } = useToast();
-  const { validateStream } = useStreamValidation();
   const { sendStreamToTransmission } = useStreamTransmission();
   const { updateStreamState, updateTrackState } = useStreamStateManagement({
     setParticipantStreams,
@@ -89,7 +87,7 @@ export const useParticipantStreams = ({
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
     console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
     
-    // CRITICAL FIX: RELAXED stream validation for mobile compatibility
+    // SIMPLIFIED: Basic stream validation for mobile compatibility
     console.log(`[HOST] MOBILE-CRITICAL: Stream received from ${participantId}:`, {
       streamId: stream.id,
       trackCount: stream.getTracks().length,
@@ -99,22 +97,17 @@ export const useParticipantStreams = ({
       tracks: stream.getTracks().map(t => ({ kind: t.kind, id: t.id, readyState: t.readyState }))
     });
 
-    // CRITICAL: RELAXED validation - accept any stream with tracks
+    // SIMPLIFIED: Accept any stream with tracks
     if (!stream || stream.getTracks().length === 0) {
       console.error(`❌ MOBILE-CRITICAL: Invalid stream received from ${participantId} (no tracks)`);
       return;
     }
     
-    // MOBILE-CRITICAL: Accept streams even if not "active" for mobile compatibility
+    // MOBILE-CRITICAL: Accept ALL streams regardless of active state for mobile compatibility
     const isMobileParticipant = participantId.includes('mobile-') || 
                                participantId.includes('Mobile') ||
                                sessionStorage.getItem('isMobile') === 'true' ||
                                sessionStorage.getItem('accessedViaQR') === 'true';
-    
-    if (!stream.active && !isMobileParticipant) {
-      console.warn(`⚠️ Stream not active from ${participantId} (non-mobile), skipping`);
-      return;
-    }
     
     console.log(`✅ MOBILE-CRITICAL: Stream validation passed for ${participantId} (mobile: ${isMobileParticipant})`);
     
@@ -222,7 +215,7 @@ export const useParticipantStreams = ({
     } else {
       console.log(`✅ MOBILE-SUCCESS: Stream processing completed for ${participantId} (mobile: ${isMobileParticipant})`);
     }
-  }, [validateStream, processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams]);
+  }, [processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams]);
 
   // Process buffer periodically
   useEffect(() => {
