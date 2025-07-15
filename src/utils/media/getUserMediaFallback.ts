@@ -84,31 +84,55 @@ const getMobileStreamWithBackCamera = async (): Promise<MediaStream | null> => {
   if (backCamera && backCamera.deviceId) {
     constraints.push({
       video: { deviceId: { exact: backCamera.deviceId } },
-      audio: false // Start without audio for higher success rate
+      audio: true // Sempre solicitar áudio para melhor compatibilidade
     });
   }
   
-  // 🥈 PRIORITY 2: EXACT environment facingMode
+  // 🥈 PRIORITY 2: EXACT environment facingMode com áudio
+  constraints.push({
+    video: { facingMode: { exact: 'environment' } },
+    audio: true
+  });
+  
+  // 🥉 PRIORITY 3: EXACT environment facingMode sem áudio (fallback)
   constraints.push({
     video: { facingMode: { exact: 'environment' } },
     audio: false
   });
   
-  // 🥉 PRIORITY 3: IDEAL environment facingMode  
+  // 🏅 PRIORITY 4: IDEAL environment facingMode com áudio
+  constraints.push({
+    video: { facingMode: { ideal: 'environment' } },
+    audio: true
+  });
+  
+  // 🎯 PRIORITY 5: IDEAL environment facingMode sem áudio
   constraints.push({
     video: { facingMode: { ideal: 'environment' } },
     audio: false
   });
   
-  // 🏅 PRIORITY 4: Basic video (any camera)
+  // 📱 PRIORITY 6: EXACT front camera (user) com áudio
   constraints.push({
-    video: true,
-    audio: false
+    video: { facingMode: { exact: 'user' } },
+    audio: true
   });
   
-  // 💔 PRIORITY 5: Front camera fallback (ideal user)
+  // 📱 PRIORITY 7: IDEAL front camera (user) com áudio
   constraints.push({
     video: { facingMode: { ideal: 'user' } },
+    audio: true
+  });
+  
+  // 💔 PRIORITY 8: Generic video com áudio (última opção)
+  constraints.push({
+    video: true,
+    audio: true
+  });
+  
+  // 🚨 PRIORITY 9: Generic video sem áudio (emergência)
+  constraints.push({
+    video: true,
     audio: false
   });
 

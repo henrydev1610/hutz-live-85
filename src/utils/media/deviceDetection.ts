@@ -47,7 +47,14 @@ export const checkMediaDevicesSupport = (): boolean => {
 
 export const getCameraPreference = (): 'user' | 'environment' => {
   const saved = localStorage.getItem('cameraPreference');
-  return (saved as 'user' | 'environment') || 'user';
+  
+  // Se não há preferência salva, usar 'environment' (traseira) como padrão em mobile
+  if (!saved) {
+    const isMobile = detectMobileAggressively();
+    return isMobile ? 'environment' : 'user';
+  }
+  
+  return (saved as 'user' | 'environment');
 };
 
 export const setCameraPreference = (preference: 'user' | 'environment'): void => {
