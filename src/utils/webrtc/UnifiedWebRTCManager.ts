@@ -835,6 +835,57 @@ export class UnifiedWebRTCManager {
     return true;
   }
 
+  // Update local stream for all peer connections
+  async updateLocalStream(newStream: MediaStream): Promise<void> {
+    console.log('🔄 UNIFIED: Updating local stream for all connections');
+    
+    if (!newStream) {
+      console.warn('⚠️ UNIFIED: Cannot update with null stream');
+      return;
+    }
+
+    // Update the local stream reference
+    this.localStream = newStream;
+    
+    // Update all peer connections with new stream
+    for (const [participantId, peerConnection] of this.peerConnections) {
+      try {
+        console.log(`🔄 UNIFIED: Updating stream for participant ${participantId}`);
+        
+        // Get current senders
+        const senders = peerConnection.getSenders();
+        
+        // Replace tracks for existing senders
+        const newTracks = newStream.getTracks();
+        for (const sender of senders) {
+          if (sender.track) {
+            const newTrack = newTracks.find(track => track.kind === sender.track!.kind);
+            if (newTrack) {
+              await sender.replaceTrack(newTrack);
+              console.log(`✅ UNIFIED: Replaced ${newTrack.kind} track for ${participantId}`);
+            }
+          }
+        }
+        
+        // Add any new tracks that don't have senders
+        for (const track of newTracks) {
+          const existingSender = senders.find(sender => 
+            sender.track && sender.track.kind === track.kind
+          );
+          
+          if (!existingSender) {
+            peerConnection.addTrack(track, newStream);
+            console.log(`✅ UNIFIED: Added new ${track.kind} track for ${participantId}`);
+          }
+        }
+        
+      } catch (error) {
+        console.error(`❌ UNIFIED: Failed to update stream for ${participantId}:`, error);
+      }
+    }
+    
+    console.log('✅ UNIFIED: Stream update completed for all connections');
+  }
 
   cleanup() {
     console.log(`🧹 UNIFIED: Cleaning up WebRTC manager`);

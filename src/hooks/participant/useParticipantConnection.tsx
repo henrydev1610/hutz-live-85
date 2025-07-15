@@ -27,7 +27,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     setError(null);
 
     let retryCount = 0;
-    const maxRetries = isMobile ? 7 : 5; // Mais tentativas no mobile
+    const maxRetries = isMobile ? 4 : 3; // Reduced retries to avoid conflicts
     
     const attemptConnection = async (): Promise<void> => {
       try {
@@ -115,9 +115,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         
         console.log(`✅ PARTICIPANT CONNECTION: WebRTC initialized successfully`);
         
-        // Verificar se o stream local foi enviado corretamente
+        // Verify local stream transmission
         if (stream) {
-          console.log(`🎥 PARTICIPANT CONNECTION: Local stream details:`, {
+          console.log(`🎥 PARTICIPANT CONNECTION: Local stream sent to WebRTC:`, {
             streamId: stream.id,
             active: stream.active,
             videoTracks: stream.getVideoTracks().length,
@@ -129,6 +129,24 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
               muted: t.muted
             }))
           });
+          
+          // Verify that tracks were added to WebRTC
+          setTimeout(() => {
+            const manager = require('@/utils/webrtc').getWebRTCManager();
+            if (manager) {
+              const connections = manager.getPeerConnections();
+              console.log(`🔍 PARTICIPANT CONNECTION: WebRTC peer connections:`, connections.size);
+              connections.forEach((pc, peerId) => {
+                const senders = pc.getSenders();
+                console.log(`📡 PARTICIPANT CONNECTION: Peer ${peerId} has ${senders.length} senders`);
+                senders.forEach((sender, index) => {
+                  if (sender.track) {
+                    console.log(`  Sender ${index}: ${sender.track.kind} track (${sender.track.readyState})`);
+                  }
+                });
+              });
+            }
+          }, 2000);
         }
         
         setIsConnected(true);
