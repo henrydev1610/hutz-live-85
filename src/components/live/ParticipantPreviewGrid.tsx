@@ -3,7 +3,6 @@ import React, { useMemo } from 'react';
 import { Participant } from './ParticipantGrid';
 import ParticipantVideoContainer from './ParticipantVideoContainer';
 import { useUniqueKeyGenerator } from '@/hooks/live/useUniqueKeyGenerator';
-import { useStreamDebugger } from '@/hooks/live/useStreamDebugger';
 
 interface ParticipantPreviewGridProps {
   participantList: Participant[];
@@ -17,7 +16,6 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   participantStreams
 }) => {
   const { generateUniqueKey } = useUniqueKeyGenerator();
-  const debugInfo = useStreamDebugger(participantList, participantStreams);
   
   // Simplified calculation prioritizing streams and mobile participants
   const { gridCols, selectedParticipants, emptySlots } = useMemo(() => {
@@ -80,24 +78,14 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   });
 
   return (
-    <div className="relative w-full h-full">
-      {/* DEBUG PANEL - Always visible for troubleshooting */}
-      <div className="absolute top-2 left-2 bg-black/80 text-white text-xs p-2 rounded z-50 max-w-xs">
-        <div className="font-bold text-green-400 mb-1">🔍 LIVE DEBUG</div>
-        <div>Total: {debugInfo.totalParticipants} | Active: {debugInfo.activeParticipants}</div>
-        <div>Streams: {debugInfo.streamsCount} | Mobile: {debugInfo.mobileParticipants}</div>
-        <div>With Video: {debugInfo.participantsWithStreams}</div>
-        <div className="text-gray-400 text-xs mt-1">{debugInfo.timestamp}</div>
-      </div>
-      
-      <div 
-        className="participant-grid absolute right-[5%] top-[5%] bottom-[5%] left-[30%]"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
-          gap: '8px'
-        }}
-      >
+    <div 
+      className="participant-grid absolute right-[5%] top-[5%] bottom-[5%] left-[30%]"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
+        gap: '8px'
+      }}
+    >
       {/* Participantes reais com chaves únicas */}
       {selectedParticipants.map((participant, index) => (
         <ParticipantVideoContainer
@@ -128,7 +116,6 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
           </div>
         );
       })}
-    </div>
     </div>
   );
 };
