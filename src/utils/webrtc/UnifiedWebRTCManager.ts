@@ -272,6 +272,131 @@ export class UnifiedWebRTCManager {
     });
   }
 
+  // CRITICAL: Enhanced join room with retry logic
+  private async joinRoomWithRetry(sessionId: string, participantId: string, timeout: number): Promise<void> {
+    console.log(`🚪 ENHANCED JOIN: Attempting to join room ${sessionId} with ${timeout}ms timeout`);
+    
+    const maxRetries = 3;
+    let currentRetry = 0;
+    
+    while (currentRetry < maxRetries) {
+      try {
+        console.log(`🔄 ENHANCED JOIN: Attempt ${currentRetry + 1}/${maxRetries}`);
+        
+        // Use custom timeout for each retry
+        const retryTimeout = timeout / maxRetries;
+        
+        await Promise.race([
+          unifiedWebSocketService.joinRoom(sessionId, participantId),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Join timeout')), retryTimeout)
+          )
+        ]);
+        
+        console.log(`✅ ENHANCED JOIN: Successfully joined room on attempt ${currentRetry + 1}`);
+        return;
+        
+      } catch (error) {
+        currentRetry++;
+        console.error(`❌ ENHANCED JOIN: Attempt ${currentRetry} failed:`, error);
+        
+        if (currentRetry < maxRetries) {
+          const delay = 2000 * currentRetry; // Progressive delay
+          console.log(`⏳ ENHANCED JOIN: Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    throw new Error(`Failed to join room after ${maxRetries} attempts`);
+  }
+
+  // CRITICAL: Auto-discovery system for participants
+  private startAutoDiscovery() {
+    if (this.isHost) return; // Only for participants
+    
+    console.log('🔍 AUTO-DISCOVERY: Starting host discovery system...');
+    
+    // Immediate discovery attempt
+    this.performHostDiscovery();
+    
+    // Periodic discovery attempts
+    const discoveryInterval = setInterval(() => {
+      const hasActiveConnections = this.peerConnections.size > 0 && 
+        Array.from(this.peerConnections.values()).some(pc => pc.connectionState === 'connected');
+      
+      if (!hasActiveConnections) {
+        console.log('🔍 AUTO-DISCOVERY: No active connections, performing discovery...');
+        this.performHostDiscovery();
+      } else {
+        console.log('🔍 AUTO-DISCOVERY: Active connections found, stopping discovery');
+        clearInterval(discoveryInterval);
+      }
+    }, 5000); // Check every 5 seconds
+    
+    // Stop discovery after 60 seconds
+    setTimeout(() => {
+      console.log('🔍 AUTO-DISCOVERY: Stopping discovery after timeout');
+      clearInterval(discoveryInterval);
+    }, 60000);
+  }
+
+  // CRITICAL: Host discovery mechanism
+  private async performHostDiscovery() {
+    console.log('🔍 HOST DISCOVERY: Searching for host...');
+    
+    // List of potential host identifiers in order of preference
+    const potentialHosts = [
+      'host',                    // Fixed host ID
+      `host-${this.roomId}`,     // Room-specific host
+      'host-1',                  // Legacy format
+      'host-2',                  // Legacy format
+      'desktop-host',            // Desktop host
+      'main-host'                // Main host
+    ];
+    
+    for (const hostId of potentialHosts) {
+      try {
+        console.log(`🔍 HOST DISCOVERY: Attempting connection to ${hostId}...`);
+        
+        if (!this.peerConnections.has(hostId)) {
+          // Try to initiate connection
+          await this.connectionHandler.initiateCallWithRetry(hostId, 1);
+          console.log(`✅ HOST DISCOVERY: Successfully connected to host: ${hostId}`);
+          return; // Success - stop searching
+        }
+        
+      } catch (error) {
+        console.log(`⚠️ HOST DISCOVERY: Failed to connect to ${hostId}:`, error.message);
+        continue; // Try next host
+      }
+    }
+    
+    console.warn('⚠️ HOST DISCOVERY: No host found, will retry...');
+  }
+
+  // CRITICAL: Connection initiation with host discovery
+  private async initiateConnectionWithHostDiscovery(participantId: string) {
+    console.log(`🔍 CONNECTION WITH DISCOVERY: Attempting connection to ${participantId}`);
+    
+    try {
+      // First try direct connection
+      await this.connectionHandler.initiateCallWithRetry(participantId, 1);
+      console.log(`✅ CONNECTION WITH DISCOVERY: Direct connection successful to ${participantId}`);
+      
+    } catch (error) {
+      console.log(`⚠️ CONNECTION WITH DISCOVERY: Direct connection failed to ${participantId}, trying discovery...`);
+      
+      // If direct connection fails, check if this might be a host
+      if (participantId.includes('host') || participantId === 'host') {
+        await this.performHostDiscovery();
+      } else {
+        // For non-host participants, try standard retry
+        await this.connectionHandler.initiateCallWithRetry(participantId, 2);
+      }
+    }
+  }
+
   private setupWebSocketCallbacks() {
     if (this.isHost) {
       this.callbacksManager.setupHostCallbacks(
@@ -304,7 +429,7 @@ export class UnifiedWebRTCManager {
           const hostId = data.userId || data.id || data.socketId;
           if (hostId !== this.participantId) {
             console.log(`📞 UNIFIED: Initiating call to ${hostId}`);
-            this.connectionHandler.initiateCallWithRetry(hostId);
+            this.initiateConnectionWithHostDiscovery(hostId);
           }
         },
         (participants) => {
@@ -313,7 +438,7 @@ export class UnifiedWebRTCManager {
             const pId = participant.userId || participant.id || participant.socketId;
             if (pId !== this.participantId && !this.peerConnections.has(pId)) {
               console.log(`📞 UNIFIED: Connecting to existing participant ${pId}`);
-              this.connectionHandler.initiateCallWithRetry(pId);
+              this.initiateConnectionWithHostDiscovery(pId);
             }
           });
         },
@@ -327,7 +452,8 @@ export class UnifiedWebRTCManager {
   async initializeAsHost(sessionId: string): Promise<void> {
     console.log(`🏠 UNIFIED: Initializing as host for session: ${sessionId}`);
     this.roomId = sessionId;
-    this.participantId = `host-${Date.now()}`;
+    // CRITICAL FIX: Use fixed host ID for mobile discovery
+    this.participantId = 'host';
     this.isHost = true;
 
     try {
@@ -369,13 +495,18 @@ export class UnifiedWebRTCManager {
       this.updateConnectionState('websocket', 'connecting');
       await unifiedWebSocketService.connect();
       this.setupWebSocketCallbacks();
-      await unifiedWebSocketService.joinRoom(sessionId, participantId);
+      
+      // CRITICAL: Mobile-specific join timeout and retry logic
+      const joinTimeout = this.isMobile ? 90000 : 45000; // 90s for mobile, 45s for desktop
+      console.log(`📱 MOBILE-OPTIMIZED: Using ${joinTimeout}ms join timeout for ${this.isMobile ? 'mobile' : 'desktop'} device`);
+      
+      await this.joinRoomWithRetry(sessionId, participantId, joinTimeout);
       
       this.updateConnectionState('websocket', 'connected');
       console.log(`✅ UNIFIED PARTICIPANT: Connected to signaling server`);
       
       // CRITICAL: Strategic delay for mobile stability and WebSocket confirmation
-      const stabilizationDelay = this.isMobile ? 2000 : 1000;
+      const stabilizationDelay = this.isMobile ? 3000 : 1000; // Increased for mobile
       console.log(`⏳ STABILIZATION: Waiting ${stabilizationDelay}ms for connection stability...`);
       await new Promise(resolve => setTimeout(resolve, stabilizationDelay));
       
@@ -384,8 +515,8 @@ export class UnifiedWebRTCManager {
         await this.notifyLocalStream();
       }
       
-      // CRITICAL: Start connection monitoring and auto-connect logic
-      this.startConnectionInitiationTimer();
+      // CRITICAL: Start auto-discovery and connection initiation
+      this.startAutoDiscovery();
       this.setupConnectionTimeouts();
       
     } catch (error) {
@@ -415,6 +546,7 @@ export class UnifiedWebRTCManager {
     unifiedWebSocketService.notifyStreamStarted(this.participantId, streamInfo);
     console.log(`📡 UNIFIED: Stream notification sent`);
   }
+
 
   private removeParticipantConnection(participantId: string) {
     const pc = this.peerConnections.get(participantId);
@@ -550,6 +682,53 @@ export class UnifiedWebRTCManager {
     
     attemptConnection();
   }
+
+  // CRITICAL: Connection timeouts for mobile stability
+  private setupConnectionTimeouts() {
+    console.log('⏰ CONNECTION TIMEOUTS: Setting up connection timeouts...');
+    
+    // Mobile-specific timeouts
+    if (this.isMobile) {
+      // Force video display after 15 seconds if no video is showing
+      setTimeout(() => {
+        console.log('⏰ MOBILE TIMEOUT: Forcing video display after 15s...');
+        this.forceVideoDisplayForAllParticipants();
+      }, 15000);
+      
+      // Force full reconnection after 30 seconds if WebRTC is not connected
+      setTimeout(() => {
+        if (this.connectionState.webrtc !== 'connected') {
+          console.log('⏰ MOBILE TIMEOUT: Forcing reconnection after 30s...');
+          this.forceReconnectAll();
+        }
+      }, 30000);
+    }
+    
+    // Force reconnection button availability after 45 seconds
+    setTimeout(() => {
+      console.log('⏰ TIMEOUT: Reconnection button available after 45s');
+      // This could trigger a UI update in the future
+    }, 45000);
+  }
+
+  // CRITICAL: Force video display for all participants
+  private forceVideoDisplayForAllParticipants() {
+    console.log('🎥 FORCE VIDEO: Forcing video display for all participants...');
+    
+    this.peerConnections.forEach((peerConnection, participantId) => {
+      if (peerConnection.connectionState === 'connected') {
+        // Check if we have streams
+        const receiver = peerConnection.getReceivers().find(r => r.track && r.track.kind === 'video');
+        if (receiver && receiver.track) {
+          const stream = new MediaStream([receiver.track]);
+          console.log(`🎥 FORCE VIDEO: Forcing video display for ${participantId}`);
+          
+          // Trigger stream callback to force video display
+          this.callbacksManager.triggerStreamCallback(participantId, stream);
+        }
+      }
+    });
+  }
   
   // CRITICAL: Auto-connection initiation for participants
   private async initiateAutoConnection() {
@@ -656,27 +835,6 @@ export class UnifiedWebRTCManager {
     return true;
   }
 
-  // CRITICAL: Enhanced connection timeout monitoring
-  private setupConnectionTimeouts() {
-    if (this.isHost) return; // Only for participants
-    
-    console.log('⏱️ TIMEOUT MONITOR: Setting up connection timeout monitoring...');
-    
-    // WebRTC negotiation timeout (30 seconds)
-    setTimeout(() => {
-      let hasSuccessfulConnections = false;
-      this.peerConnections.forEach((pc) => {
-        if (pc.connectionState === 'connected') {
-          hasSuccessfulConnections = true;
-        }
-      });
-      
-      if (!hasSuccessfulConnections && this.peerConnections.size > 0) {
-        console.warn('⚠️ TIMEOUT MONITOR: WebRTC negotiation timeout detected, forcing reconnection...');
-        this.forceReconnectAll();
-      }
-    }, 30000);
-  }
 
   cleanup() {
     console.log(`🧹 UNIFIED: Cleaning up WebRTC manager`);
