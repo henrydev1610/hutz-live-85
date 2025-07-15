@@ -236,18 +236,13 @@ class UnifiedWebSocketService {
     this.currentRoomId = roomId;
     this.currentUserId = userId;
 
-    // CRITICAL: Enhanced join room with mobile-specific timeout
+    // CRITICAL: Enhanced join room with immediate fallback
     return new Promise((resolve, reject) => {
       let resolved = false;
       
-      // MOBILE-OPTIMIZED: Dynamic timeout based on device type
-      const isMobile = this.isMobileDevice();
-      const baseTimeout = isMobile ? 90000 : 45000; // 90s for mobile, 45s for desktop
-      console.log(`📱 WEBSOCKET: Using ${baseTimeout}ms timeout for ${isMobile ? 'mobile' : 'desktop'} device`);
-      
       const joinTimeout = setTimeout(() => {
         if (resolved) return;
-        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId} after ${baseTimeout}ms - attempting fallback join`);
+        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId} - attempting fallback join`);
         
         // Don't reject immediately - try fallback approach
         console.log(`🔄 WEBSOCKET: Attempting fallback join approach...`);
@@ -264,7 +259,7 @@ class UnifiedWebSocketService {
             reject(new Error(`Join room failed: ${fallbackError.message}`));
           }
         });
-      }, baseTimeout);
+      }, 45000); // Reduced to 45s with fallback
 
       // Success handler
       const handleJoinSuccess = (data: any) => {
@@ -474,20 +469,6 @@ class UnifiedWebSocketService {
 
   private isMobileDevice(): boolean {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  }
-
-  // CRITICAL: Network type detection for mobile optimization
-  private getNetworkType(): string {
-    const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
-    if (connection) {
-      return connection.effectiveType || connection.type || 'unknown';
-    }
-    return 'unknown';
-  }
-
-  // CRITICAL: WebRTC support detection
-  private supportsWebRTC(): boolean {
-    return !!(window.RTCPeerConnection || (window as any).webkitRTCPeerConnection || (window as any).mozRTCPeerConnection);
   }
 
   getConnectionStatus(): string {

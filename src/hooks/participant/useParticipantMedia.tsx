@@ -3,7 +3,6 @@ import { toast } from "sonner";
 import { detectMobileAggressively, checkMediaDevicesSupport, setCameraPreference } from '@/utils/media/deviceDetection';
 import { getUserMediaWithFallback } from '@/utils/media/getUserMediaFallback';
 import { setupVideoElement } from '@/utils/media/videoPlayback';
-import { getWebRTCManager } from '@/utils/webrtc';
 import { useMediaState } from './useMediaState';
 import { useMediaControls } from './useMediaControls';
 
@@ -191,64 +190,6 @@ export const useParticipantMedia = () => {
     }
   }, [localStreamRef, localVideoRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, retryMediaInitialization]);
 
-  // Update WebRTC with new stream
-  const updateWebRTCStream = useCallback(async (newStream: MediaStream) => {
-    console.log('🔄 MEDIA: Updating WebRTC with new stream:', {
-      streamId: newStream.id,
-      videoTracks: newStream.getVideoTracks().length,
-      audioTracks: newStream.getAudioTracks().length
-    });
-
-    const webrtcManager = getWebRTCManager();
-    if (webrtcManager) {
-      await webrtcManager.updateLocalStream(newStream);
-      console.log('✅ MEDIA: WebRTC stream updated successfully');
-    } else {
-      console.warn('⚠️ MEDIA: No WebRTC manager available for stream update');
-    }
-  }, []);
-
-  // Enhanced cleanup function
-  const cleanup = useCallback(() => {
-    console.log('🧹 MEDIA: Starting cleanup...');
-    
-    try {
-      // Stop all tracks in local stream
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => {
-          console.log(`🛑 MEDIA: Stopping ${track.kind} track`);
-          track.stop();
-        });
-        localStreamRef.current = null;
-      }
-
-      // Stop all tracks in screen stream
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach(track => {
-          console.log(`🛑 MEDIA: Stopping screen ${track.kind} track`);
-          track.stop();
-        });
-        screenStreamRef.current = null;
-      }
-
-      // Clear video element
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = null;
-      }
-
-      // Reset state
-      setHasVideo(false);
-      setHasAudio(false);
-      setHasScreenShare(false);
-      setIsVideoEnabled(false);
-      setIsAudioEnabled(false);
-
-      console.log('✅ MEDIA: Cleanup completed');
-    } catch (error) {
-      console.error('❌ MEDIA: Error during cleanup:', error);
-    }
-  }, [localStreamRef, screenStreamRef, localVideoRef, setHasVideo, setHasAudio, setHasScreenShare, setIsVideoEnabled, setIsAudioEnabled]);
-
   return {
     hasVideo,
     hasAudio,
@@ -260,8 +201,6 @@ export const useParticipantMedia = () => {
     initializeMedia,
     retryMediaInitialization,
     switchCamera,
-    updateWebRTCStream,
-    cleanup,
     ...mediaControls
   };
 };

@@ -19,19 +19,7 @@ const ParticipantPage = () => {
   
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
   
-  // Use consistent participant ID based on session
-  const [participantId] = useState(() => {
-    const sessionKey = `participant-${sessionId}`;
-    const storedId = sessionStorage.getItem(sessionKey);
-    if (storedId) {
-      console.log('🔑 PARTICIPANT: Using stored ID:', storedId);
-      return storedId;
-    }
-    const newId = `participant-${Date.now().toString(36)}`;
-    sessionStorage.setItem(sessionKey, newId);
-    console.log('🔑 PARTICIPANT: Created new ID:', newId);
-    return newId;
-  });
+  const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
 
   const connection = useParticipantConnection(sessionId, participantId);
@@ -50,22 +38,19 @@ const ParticipantPage = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Initialize media on mount (but don't auto-connect)
+  // Auto-initialize media and connect on mount
   useEffect(() => {
-    console.log('🚀 PARTICIPANT PAGE: Initializing media for session:', sessionId);
+    console.log('🚀 PARTICIPANT PAGE: Auto-initializing for session:', sessionId);
     
     if (sessionId) {
-      // Only initialize media, don't auto-connect
-      media.initializeMedia().catch(error => {
-        console.error('❌ PARTICIPANT: Failed to initialize media:', error);
+      autoConnectToSession().catch(error => {
+        console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
       });
     }
     
     return () => {
       try {
-        if (media.cleanup) {
-          media.cleanup();
-        }
+        media.cleanup();
       } catch (error) {
         console.error('❌ PARTICIPANT: Cleanup error:', error);
       }
@@ -99,8 +84,9 @@ const ParticipantPage = () => {
     try {
       const stream = await media.retryMediaInitialization();
       if (stream && connection.isConnected) {
-        // Update WebRTC with new stream
-        await media.updateWebRTCStream(stream);
+        // Se já conectado, pode tentar reconectar com nova mídia
+        await connection.disconnectFromSession();
+        await connection.connectToSession(stream);
       }
     } catch (error) {
       console.error('❌ PARTICIPANT: Media retry failed:', error);
