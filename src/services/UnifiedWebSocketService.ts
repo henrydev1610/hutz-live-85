@@ -37,11 +37,11 @@ class UnifiedWebSocketService {
     status: 'disconnected'
   };
   
-  // Reconnection settings
-  private maxReconnectAttempts = 10;
-  private reconnectDelay = 1000;
-  private maxReconnectDelay = 30000;
-  private backoffMultiplier = 1.5;
+  // Mobile-optimized reconnection settings
+  private maxReconnectAttempts = 15; // Mais tentativas para mobile
+  private reconnectDelay = 800; // Delay menor inicial
+  private maxReconnectDelay = 20000; // Máximo menor
+  private backoffMultiplier = 1.3; // Backoff mais suave
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
@@ -92,18 +92,29 @@ class UnifiedWebSocketService {
     console.log(`🔗 CONNECTION: Attempting to connect to ${url}`);
 
     return new Promise((resolve, reject) => {
+      const isMobile = this.isMobileDevice();
+      const timeout = isMobile ? 45000 : 20000; // 45s para mobile, 20s para desktop
+      
       const connectionTimeout = setTimeout(() => {
-        this.disconnect(); // Use disconnect instead of cleanup
-        reject(new Error('Connection timeout'));
-      }, 20000); // Aumentado para 20s
+        console.error(`❌ CONNECTION: Timeout after ${timeout}ms (${isMobile ? 'MOBILE' : 'DESKTOP'})`);
+        this.disconnect();
+        reject(new Error(`Connection timeout after ${timeout}ms`));
+      }, timeout);
 
       this.socket = io(url, {
-        transports: ['websocket', 'polling'],
-        timeout: 10000,
-        reconnection: false, // We handle reconnection ourselves
+        transports: isMobile ? ['polling', 'websocket'] : ['websocket', 'polling'], // Polling primeiro no mobile
+        timeout: isMobile ? 20000 : 10000, // Timeout maior para mobile
+        reconnection: false, // Gerenciamos nossa própria reconexão
         forceNew: true,
-        extraHeaders: this.isMobileDevice() ? {
-          'User-Agent': 'MobileWebRTCClient/1.0'
+        upgrade: true,
+        rememberUpgrade: false,
+        extraHeaders: isMobile ? {
+          'User-Agent': 'MobileWebRTCClient/1.0',
+          'X-Mobile-Device': 'true'
+        } : {},
+        query: isMobile ? {
+          'mobile': 'true',
+          'transport': 'polling'
         } : {}
       });
 
@@ -185,11 +196,20 @@ class UnifiedWebSocketService {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
+    const isMobile = this.isMobileDevice();
+    const heartbeatInterval = isMobile ? 10000 : 30000; // 10s para mobile, 30s para desktop
+    
+    console.log(`💓 HEARTBEAT: Starting ${isMobile ? 'MOBILE' : 'DESKTOP'} heartbeat every ${heartbeatInterval}ms`);
+    
     this.heartbeatInterval = setInterval(() => {
       if (this.socket?.connected) {
+        console.log(`💓 HEARTBEAT: Sending ping (${isMobile ? 'MOBILE' : 'DESKTOP'})`);
         this.socket.emit('ping');
+      } else {
+        console.warn('💓 HEARTBEAT: Socket not connected, stopping heartbeat');
+        this.stopHeartbeat();
       }
-    }, 30000); // Send heartbeat every 30 seconds
+    }, heartbeatInterval);
   }
 
   private stopHeartbeat(): void {
@@ -237,15 +257,18 @@ class UnifiedWebSocketService {
     this.currentUserId = userId;
 
     return new Promise((resolve, reject) => {
-      const joinTimeout = setTimeout(() => {
-        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
-        reject(new Error('Join room timeout'));
-      }, 30000); // Aumentado para 30s
+      const isMobile = this.isMobileDevice();
+      const joinTimeout = isMobile ? 45000 : 30000; // 45s para mobile, 30s para desktop
+      
+      const timeoutHandle = setTimeout(() => {
+        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId} after ${joinTimeout}ms (${isMobile ? 'MOBILE' : 'DESKTOP'})`);
+        reject(new Error(`Join room timeout after ${joinTimeout}ms`));
+      }, joinTimeout);
 
       // Success handler
       const handleJoinSuccess = (data: any) => {
         console.log(`✅ WEBSOCKET: Successfully joined room ${roomId}:`, data);
-        clearTimeout(joinTimeout);
+        clearTimeout(timeoutHandle);
         this.socket?.off('room_joined', handleJoinSuccess);
         this.socket?.off('join-room-response', handleJoinResponse);
         this.socket?.off('error', handleJoinError);
@@ -256,7 +279,7 @@ class UnifiedWebSocketService {
       const handleJoinResponse = (response: any) => {
         console.log(`📡 WEBSOCKET: Join room response:`, response);
         if (response?.success) {
-          clearTimeout(joinTimeout);
+          clearTimeout(timeoutHandle);
           this.socket?.off('room_joined', handleJoinSuccess);
           this.socket?.off('join-room-response', handleJoinResponse);
           this.socket?.off('error', handleJoinError);
@@ -269,7 +292,7 @@ class UnifiedWebSocketService {
       // Error handler
       const handleJoinError = (error: any) => {
         console.error(`❌ WEBSOCKET: Failed to join room ${roomId}:`, error);
-        clearTimeout(joinTimeout);
+        clearTimeout(timeoutHandle);
         this.socket?.off('room_joined', handleJoinSuccess);
         this.socket?.off('join-room-response', handleJoinResponse);
         this.socket?.off('error', handleJoinError);

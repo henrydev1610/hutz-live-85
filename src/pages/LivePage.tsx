@@ -11,6 +11,7 @@ import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useWebRTCStabilityIntegration } from '@/hooks/live/useWebRTCStabilityIntegration';
+import { useMobileConnectionDiagnostics } from '@/hooks/live/useMobileConnectionDiagnostics';
 import { ConnectionStabilityIndicator } from '@/components/live/ConnectionStabilityIndicator';
 
 const LivePage: React.FC = () => {
@@ -18,6 +19,7 @@ const LivePage: React.FC = () => {
   const state = useLivePageState();
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
   const stability = useWebRTCStabilityIntegration();
+  const mobileDiagnostics = useMobileConnectionDiagnostics();
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
   
@@ -163,6 +165,15 @@ const LivePage: React.FC = () => {
       <ConnectionHealthMonitor 
         isVisible={showHealthMonitor}
         onClose={() => setShowHealthMonitor(false)}
+      />
+      
+      {/* Mobile Connection Status */}
+      <ConnectionStabilityIndicator 
+        connectionStatus={stability.connectionStatus}
+        isStable={stability.stabilityMetrics.isStable}
+        participantCount={state.participantList.length}
+        mobileStability={mobileDiagnostics.mobileStability}
+        onReconnect={mobileDiagnostics.actions.forceReconnect}
       />
       
       {/* Debug Button */}
