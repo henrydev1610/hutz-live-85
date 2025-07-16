@@ -25,16 +25,6 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   multiplier: 2
 };
 
-// Global instance for singleton pattern
-let globalWebRTCManager: UnifiedWebRTCManager | null = null;
-
-export const getUnifiedWebRTCManager = (): UnifiedWebRTCManager => {
-  if (!globalWebRTCManager) {
-    globalWebRTCManager = new UnifiedWebRTCManager();
-  }
-  return globalWebRTCManager;
-};
-
 export class UnifiedWebRTCManager {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private localStream: MediaStream | null = null;
@@ -354,48 +344,15 @@ export class UnifiedWebRTCManager {
     try {
       this.updateConnectionState('websocket', 'connecting');
       await unifiedWebSocketService.connect();
-      
-      // CRITICAL: Verificar se WebSocket está realmente conectado antes do join
-      if (!unifiedWebSocketService.isConnected()) {
-        throw new Error('WebSocket não está conectado antes do join');
-      }
-      
       this.setupWebSocketCallbacks();
-      
-      console.log(`📍 HOST: Iniciando join da sala ${sessionId}...`);
-      
-      // CRITICAL: Join direto - o timeout já está no WebSocket Service
       await unifiedWebSocketService.joinRoom(sessionId, this.participantId);
       
-      console.log(`✅ HOST: Join da sala ${sessionId} completado com sucesso`);
       this.updateConnectionState('websocket', 'connected');
       console.log(`✅ UNIFIED HOST: Connected to signaling server`);
       
     } catch (error) {
       console.error(`❌ UNIFIED HOST: Failed to initialize:`, error);
       this.updateConnectionState('websocket', 'failed');
-      
-      // CRITICAL: Em caso de timeout, tentar reconectar após 3 segundos
-      if (error instanceof Error && error.message === "Join room timeout") {
-        console.log(`🔄 HOST: Timeout detectado, tentando reconectar em 3 segundos...`);
-        
-        // Exibir toast de erro
-        if (typeof window !== 'undefined' && window.dispatchEvent) {
-          window.dispatchEvent(new CustomEvent('webrtc-error', {
-            detail: {
-              title: "Erro WebRTC",
-              description: "Timeout na conexão - tentando reconectar...",
-              variant: "destructive"
-            }
-          }));
-        }
-        
-        setTimeout(() => {
-          console.log(`🔄 HOST: Iniciando reconexão automática...`);
-          this.initializeAsHost(sessionId);
-        }, 3000);
-      }
-      
       throw error;
     }
   }
@@ -437,28 +394,15 @@ export class UnifiedWebRTCManager {
       if (this.localStream) {
         await this.notifyLocalStream();
         
-        // CRITICAL: Add tracks to existing peer connections IMMEDIATELY
-        console.log(`🔥 ADDING TRACKS: Found ${this.peerConnections.size} peer connections`);
+        // CRITICAL: Add tracks to existing peer connections
         this.peerConnections.forEach((pc, peerId) => {
           if (this.localStream) {
             this.localStream.getTracks().forEach(track => {
-              try {
-                pc.addTrack(track, this.localStream!);
-                console.log(`🎯 [${peerId}] Track ${track.kind} adicionada ao PeerConnection`);
-              } catch (err) {
-                console.warn(`⚠️ [${peerId}] Falha ao adicionar track:`, err);
-              }
+              pc.addTrack(track, this.localStream!);
+              console.log(`🎯 Track ${track.kind} adicionada ao PeerConnection para ${peerId}`);
             });
           }
         });
-        
-        // CRITICAL: If no peer connections exist yet, force connection to host
-        if (this.peerConnections.size === 0 && !this.isHost) {
-          console.log(`🚀 FORCE CONNECTION: No peer connections found, initiating connection to host`);
-          setTimeout(() => {
-            this.connectionHandler.initiateCallWithRetry("host");
-          }, 500);
-        }
       }
       
       // CRITICAL: Start connection monitoring and auto-connect logic
@@ -844,4 +788,14 @@ export class UnifiedWebRTCManager {
   }
 }
 
-export default UnifiedWebRTCManager;
+// Create singleton instance
+let unifiedWebRTCManagerInstance: UnifiedWebRTCManager | null = null;
+
+export const getUnifiedWebRTCManager = (): UnifiedWebRTCManager => {
+  if (!unifiedWebRTCManagerInstance) {
+    unifiedWebRTCManagerInstance = new UnifiedWebRTCManager();
+  }
+  return unifiedWebRTCManagerInstance;
+};
+
+export default getUnifiedWebRTCManager();

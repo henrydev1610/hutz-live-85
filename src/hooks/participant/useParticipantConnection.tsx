@@ -1,7 +1,7 @@
 
 import { useState, useCallback } from 'react';
 import { toast } from "sonner";
-import { UnifiedWebRTCManager } from '@/utils/webrtc/UnifiedWebRTCManager';
+import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { useIsMobile } from '@/hooks/use-mobile';
 
@@ -89,19 +89,15 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         console.log(`🔗 PARTICIPANT CONNECTION: Initializing WebRTC (attempt ${retryCount + 1})`);
         
         const webrtcTimeout = isMobile ? 30000 : 20000;
-        const webrtcManager = await Promise.race([
-          Promise.resolve().then(async () => {
-            const manager = new UnifiedWebRTCManager();
-            await manager.initializeAsParticipant(sessionId, participantId, stream || undefined);
-            return manager;
-          }),
+        const { webrtc } = await Promise.race([
+          initParticipantWebRTC(sessionId, participantId, stream || undefined),
           new Promise<never>((_, reject) => 
             setTimeout(() => reject(new Error(`WebRTC timeout after ${webrtcTimeout}ms`)), webrtcTimeout)
           )
         ]);
         
         // Setup WebRTC callbacks
-        webrtcManager.setOnStreamCallback((pId: string, incomingStream: MediaStream) => {
+        webrtc.setOnStreamCallback((pId: string, incomingStream: MediaStream) => {
           console.log(`🎥 PARTICIPANT CONNECTION: Stream received from ${pId}:`, {
             streamId: incomingStream.id,
             active: incomingStream.active,
@@ -113,7 +109,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
           });
         });
         
-        webrtcManager.setOnParticipantJoinCallback((pId: string) => {
+        webrtc.setOnParticipantJoinCallback((pId: string) => {
           console.log(`👤 PARTICIPANT CONNECTION: Participant joined: ${pId}`);
         });
         
@@ -217,7 +213,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     console.log(`🔗 PARTICIPANT CONNECTION: Disconnecting`);
     
     try {
-      // CRITICAL: Cleanup will be handled by component unmount
+      cleanupWebRTC();
       
       // Verificar se o serviço WebSocket está disponível antes de desconectar
       if (unifiedWebSocketService && typeof unifiedWebSocketService.disconnect === 'function') {
