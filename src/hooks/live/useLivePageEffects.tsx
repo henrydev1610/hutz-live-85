@@ -4,6 +4,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
 import { initHostWebRTC } from '@/utils/webrtc';
+import { useStreamSynchronizer } from './useStreamSyncronizer';
 
 interface UseLivePageEffectsProps {
   sessionId: string | null;
@@ -35,6 +36,14 @@ export const useLivePageEffects = ({
   setQrCodeSvg
 }: UseLivePageEffectsProps) => {
   const { toast } = useToast();
+
+  // CRITICAL: Stream Synchronizer for assertive transmission
+  const { forceSyncNow } = useStreamSynchronizer({
+    participantStreams,
+    participantList,
+    transmissionWindowRef,
+    sessionId
+  });
 
   // QR Code generation effect
   useEffect(() => {
@@ -104,6 +113,8 @@ export const useLivePageEffects = ({
             setTimeout(() => {
               console.log('🔄 HOST: UNIFIED Updating transmission after stream received');
               updateTransmissionParticipants();
+              // CRITICAL: Also force stream sync
+              forceSyncNow();
             }, 100);
             
             // Success feedback
@@ -169,7 +180,13 @@ export const useLivePageEffects = ({
       console.log('🔄 HOST: Auto-updating transmission due to stream changes');
       setTimeout(() => {
         updateTransmissionParticipants();
+        // CRITICAL: Force stream sync to ensure consistency
+        forceSyncNow();
       }, 300);
     }
-  }, [participantStreams, participantList, transmissionOpen]);
+  }, [participantStreams, participantList, transmissionOpen, updateTransmissionParticipants, forceSyncNow]);
+
+  return {
+    forceSyncNow
+  };
 };

@@ -88,7 +88,7 @@ const LivePage: React.FC = () => {
   });
 
   // Use the effects hook
-  useLivePageEffects({
+  const { forceSyncNow } = useLivePageEffects({
     sessionId: state.sessionId,
     participantStreams: state.participantStreams,
     participantList: state.participantList,
@@ -195,6 +195,9 @@ const LivePage: React.FC = () => {
           onClick={() => {
             console.log('🔄 HOST: Force stream update requested');
             forceStreamUpdate();
+            if (forceSyncNow) {
+              forceSyncNow();
+            }
             updateTransmissionParticipants();
           }}
           className="bg-green-500 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-600 transition-colors"
