@@ -18,6 +18,9 @@ const ParticipantPage = () => {
   const navigate = useNavigate();
   
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
+  console.log('🌐 PARTICIPANT PAGE: Current URL:', window.location.href);
+  console.log('🔗 PARTICIPANT PAGE: Access method:', 
+    new URLSearchParams(window.location.search).has('qr') ? 'QR Code' : 'Direct URL');
   
   const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
