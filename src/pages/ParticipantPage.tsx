@@ -10,6 +10,7 @@ import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPr
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+import { CameraSwitcher } from '@/components/participant/CameraSwitcher';
 
 const ParticipantPage = () => {
   console.log('🎯 PARTICIPANT PAGE: Starting render');
@@ -124,6 +125,24 @@ const ParticipantPage = () => {
     }
   };
 
+  const handleSwitchCamera = async (facing: 'user' | 'environment') => {
+    try {
+      console.log(`📱 Switching camera to ${facing}...`);
+      
+      const newStream = await media.switchCamera(facing);
+      
+      if (newStream && connection.isConnected) {
+        console.log('🔄 Reconnecting with new camera stream...');
+        // Reconectar com a nova stream
+        await connection.disconnectFromSession();
+        await connection.connectToSession(newStream);
+        console.log('✅ Reconnected with new camera successfully');
+      }
+    } catch (error) {
+      console.error('❌ PARTICIPANT: Failed to switch camera:', error);
+    }
+  };
+
   const handleRetryMedia = async () => {
     try {
       const stream = await media.retryMediaInitialization();
@@ -139,8 +158,8 @@ const ParticipantPage = () => {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
+      <div className="container mx-auto p-4 max-w-lg md:max-w-2xl lg:max-w-4xl">
         {/* Header */}
         <ParticipantHeader
           sessionId={sessionId}
@@ -182,6 +201,15 @@ const ParticipantPage = () => {
           hasAudio={media.hasAudio}
           onRetryMedia={handleRetryMedia}
         />
+
+        {/* Camera Switcher - Mobile Only */}
+        <div className="mb-4 flex justify-center">
+          <CameraSwitcher
+            onSwitchCamera={handleSwitchCamera}
+            isLoading={connection.isConnecting}
+            hasVideo={media.hasVideo}
+          />
+        </div>
 
         {/* Video Preview */}
         <ParticipantVideoPreview

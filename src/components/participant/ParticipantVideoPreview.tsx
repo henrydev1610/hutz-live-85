@@ -49,11 +49,11 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
       )}
       
       <Card className="mb-6 bg-black/30 border-white/10">
-      <CardHeader>
-        <CardTitle className="text-white">Sua Transmissão</CardTitle>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-white text-lg">Sua Transmissão</CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+      <CardContent className="px-4 pb-4">
+        <div className="relative aspect-[3/4] md:aspect-video bg-black rounded-lg overflow-hidden">
           <video
             ref={localVideoRef}
             autoPlay

@@ -37,14 +37,14 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
 }) => {
   return (
     <Card className="bg-black/30 border-white/10">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-center gap-4">
+      <CardContent className="p-4 md:p-6">
+        <div className="flex items-center justify-center gap-3 md:gap-4 flex-wrap">
           {/* Vídeo - sempre mostrar, mas desabilitar se não disponível */}
           <Button
             variant={hasVideo ? (isVideoEnabled ? "default" : "destructive") : "outline"}
             size="lg"
             onClick={onToggleVideo}
-            className="h-12 w-12 rounded-full"
+            className="h-14 w-14 md:h-12 md:w-12 rounded-full"
             disabled={isConnecting || !hasVideo}
             title={!hasVideo ? "Câmera não disponível" : "Alternar câmera"}
           >
@@ -56,7 +56,7 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
             variant={hasAudio ? (isAudioEnabled ? "default" : "destructive") : "outline"}
             size="lg"
             onClick={onToggleAudio}
-            className="h-12 w-12 rounded-full"
+            className="h-14 w-14 md:h-12 md:w-12 rounded-full"
             disabled={isConnecting || !hasAudio}
             title={!hasAudio ? "Microfone não disponível" : "Alternar microfone"}
           >
@@ -67,7 +67,7 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
             variant={hasScreenShare ? "default" : "outline"}
             size="lg"
             onClick={onToggleScreenShare}
-            className="h-12 w-12 rounded-full"
+            className="h-14 w-14 md:h-12 md:w-12 rounded-full"
             disabled={isConnecting}
             title="Compartilhar tela"
           >
@@ -79,7 +79,7 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
             size="lg"
             onClick={isConnected ? onDisconnect : onConnect}
             disabled={isConnecting}
-            className="h-12 w-12 rounded-full"
+            className="h-14 w-14 md:h-12 md:w-12 rounded-full"
             title={isConnected ? "Desconectar" : "Conectar"}
           >
             {isConnected ? <PhoneOff className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
@@ -88,7 +88,7 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
           <Button
             variant="outline"
             size="lg"
-            className="h-12 w-12 rounded-full"
+            className="h-14 w-14 md:h-12 md:w-12 rounded-full"
             disabled
             title="Configurações (em breve)"
           >
