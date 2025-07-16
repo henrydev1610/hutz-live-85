@@ -196,6 +196,19 @@ export const useTransmissionWindow = () => {
               }
             }
             keepAlive();
+            
+            // CRITICAL: Access shared streams from parent window
+            function getSharedStream(participantId) {
+              if (window.opener && window.opener.sharedParticipantStreams) {
+                const stream = window.opener.sharedParticipantStreams[participantId];
+                if (stream && stream.getTracks().length > 0) {
+                  console.log("✅ TRANSMISSION: Found shared stream for", participantId, "with", stream.getTracks().length, "tracks");
+                  return stream;
+                }
+              }
+              console.log("⚠️ TRANSMISSION: No shared stream found for", participantId);
+              return null;
+            }
 
             // CRITICAL: Create video element ONLY for remote streams
             async function createVideoElementFromStream(slotElement, participantId) {
@@ -222,31 +235,31 @@ export const useTransmissionWindow = () => {
               videoElement.style.willChange = 'transform';
               videoElement.style.transition = 'none';
               
-              // CRITICAL: NEVER use local camera - only remote streams
-              console.log("🎯 TRANSMISSION: Checking for remote stream from:", participantId);
+            // CRITICAL: Get stream from shared reference
+            console.log("🎯 TRANSMISSION: Checking for shared stream from:", participantId);
+            
+            // Check if we have a shared stream from parent window
+            const sharedStream = getSharedStream(participantId);
+            if (sharedStream) {
+              console.log("✅ TRANSMISSION: Found shared stream with", sharedStream.getTracks().length, "tracks");
+              videoElement.srcObject = sharedStream;
               
-              // Check if we have a remote stream from participant
-              const remoteStream = participantStreams[participantId];
-              if (remoteStream && remoteStream.getTracks().length > 0) {
-                console.log("✅ TRANSMISSION: Found remote stream with", remoteStream.getTracks().length, "tracks");
-                videoElement.srcObject = remoteStream;
-                
-                videoElement.onloadedmetadata = () => {
-                  console.log("📊 TRANSMISSION: Remote video metadata loaded for", participantId);
-                  videoElement.play().catch(err => {
-                    console.warn("⚠️ TRANSMISSION: Video play failed:", err);
-                  });
-                };
-              } else {
-                console.log("⚠️ TRANSMISSION: No remote stream available for", participantId, "- using placeholder");
-                // Use placeholder instead of trying to access local camera
-                if (!window.localPlaceholderStream) {
-                  window.localPlaceholderStream = createPlaceholderStream();
-                }
-                if (window.localPlaceholderStream) {
-                  videoElement.srcObject = window.localPlaceholderStream;
-                }
+              videoElement.onloadedmetadata = () => {
+                console.log("📊 TRANSMISSION: Shared video metadata loaded for", participantId);
+                videoElement.play().catch(err => {
+                  console.warn("⚠️ TRANSMISSION: Video play failed:", err);
+                });
+              };
+            } else {
+              console.log("⚠️ TRANSMISSION: No shared stream available for", participantId, "- using placeholder");
+              // Use placeholder instead of trying to access local camera
+              if (!window.localPlaceholderStream) {
+                window.localPlaceholderStream = createPlaceholderStream();
               }
+              if (window.localPlaceholderStream) {
+                videoElement.srcObject = window.localPlaceholderStream;
+              }
+            }
                 
               slotElement.appendChild(videoElement);
               activeVideoElements[slotElement.id] = videoElement;
@@ -352,6 +365,18 @@ export const useTransmissionWindow = () => {
                   if (slotElement) {
                     await createVideoElementFromStream(slotElement, data.participantId);
                     slotElement.dataset.participantId = data.participantId;
+                  }
+                }
+              }
+              else if (data.type === 'force-stream-update' && data.participantId) {
+                console.log('🔄 TRANSMISSION: Force updating stream for participant:', data.participantId);
+                
+                // Find existing slot and update
+                const slotIndex = participantSlots[data.participantId];
+                if (slotIndex !== undefined) {
+                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                  if (slotElement) {
+                    await createVideoElementFromStream(slotElement, data.participantId);
                   }
                 }
               }

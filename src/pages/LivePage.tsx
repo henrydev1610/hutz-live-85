@@ -12,6 +12,7 @@ import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useWebRTCStabilityIntegration } from '@/hooks/live/useWebRTCStabilityIntegration';
 import { useHostRemoteStreamManager } from '@/hooks/live/useHostRemoteStreamManager';
+import { useStreamForwarding } from '@/hooks/live/useStreamForwarding';
 import { ConnectionStabilityIndicator } from '@/components/live/ConnectionStabilityIndicator';
 
 const LivePage: React.FC = () => {
@@ -26,6 +27,14 @@ const LivePage: React.FC = () => {
   useHostRemoteStreamManager({
     participantStreams: state.participantStreams,
     participantList: state.participantList,
+    transmissionWindowRef
+  });
+  
+  // CRITICAL: Forward streams to transmission window
+  const { forceStreamUpdate } = useStreamForwarding({
+    participantStreams: state.participantStreams,
+    participantList: state.participantList,
+    sessionId: state.sessionId,
     transmissionWindowRef
   });
   
@@ -179,6 +188,18 @@ const LivePage: React.FC = () => {
           className="bg-blue-500 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
         >
           {showHealthMonitor ? 'Ocultar' : 'Mostrar'} Diagnósticos
+        </button>
+        
+        {/* Force Stream Update Button */}
+        <button
+          onClick={() => {
+            console.log('🔄 HOST: Force stream update requested');
+            forceStreamUpdate();
+            updateTransmissionParticipants();
+          }}
+          className="bg-green-500 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-600 transition-colors"
+        >
+          Atualizar Streams
         </button>
         
         {/* Quick Status Indicator */}

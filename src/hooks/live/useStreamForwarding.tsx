@@ -20,7 +20,7 @@ export const useStreamForwarding = ({
   useEffect(() => {
     if (!sessionId) return;
 
-    // Initialize broadcast channel for real stream forwarding
+    // Initialize broadcast channel
     const channelName = `live-session-${sessionId}`;
     broadcastChannelRef.current = new BroadcastChannel(channelName);
     
@@ -39,38 +39,41 @@ export const useStreamForwarding = ({
     };
   }, [sessionId]);
 
-  // CRITICAL: Forward real MediaStream objects to transmission window
+  // CRITICAL: Create shared stream reference for transmission window
   useEffect(() => {
-    if (!broadcastChannelRef.current || !sessionId) return;
+    if (!sessionId || !transmissionWindowRef.current) return;
+
+    // Create a global shared reference for streams
+    if (!window.sharedParticipantStreams) {
+      window.sharedParticipantStreams = {};
+    }
 
     const forwardStreams = () => {
       const selectedParticipants = participantList.filter(p => p.selected && p.hasVideo);
       
       console.log(`🎥 STREAM FORWARDING: Processing ${selectedParticipants.length} selected participants`);
 
+      // Clear old streams
+      window.sharedParticipantStreams = {};
+
       selectedParticipants.forEach(participant => {
         const stream = participantStreams[participant.id];
         
         if (stream && stream.getTracks().length > 0) {
-          console.log(`✅ STREAM FORWARDING: Forwarding stream for ${participant.id} with ${stream.getTracks().length} tracks`);
+          console.log(`✅ STREAM FORWARDING: Sharing stream for ${participant.id} with ${stream.getTracks().length} tracks`);
           
-          // Send to transmission window via BroadcastChannel
-          broadcastChannelRef.current?.postMessage({
-            type: 'participant-stream-data',
-            participantId: participant.id,
-            hasStream: true,
-            trackCount: stream.getTracks().length,
-            streamId: stream.id,
-            timestamp: Date.now()
-          });
-
-          // Also send via postMessage if transmission window is open
+          // Share stream reference globally
+          window.sharedParticipantStreams[participant.id] = stream;
+          
+          // Send notification to transmission window
           if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
             transmissionWindowRef.current.postMessage({
               type: 'participant-stream-ready',
               participantId: participant.id,
-              stream: stream, // This won't transfer the actual stream, but indicates it's ready
-              streamId: stream.id
+              hasStream: true,
+              trackCount: stream.getTracks().length,
+              streamId: stream.id,
+              timestamp: Date.now()
             }, '*');
           }
         } else {
@@ -78,7 +81,7 @@ export const useStreamForwarding = ({
         }
       });
 
-      // Send participants update
+      // Send participants update via BroadcastChannel
       broadcastChannelRef.current?.postMessage({
         type: 'update-participants',
         participants: participantList.map(p => ({
@@ -88,8 +91,25 @@ export const useStreamForwarding = ({
           hasVideo: p.hasVideo,
           active: p.active
         })),
+        selectedWithVideo: selectedParticipants.length,
         timestamp: Date.now()
       });
+
+      // Also send via postMessage
+      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+        transmissionWindowRef.current.postMessage({
+          type: 'update-participants',
+          participants: participantList.map(p => ({
+            id: p.id,
+            name: p.name,
+            selected: p.selected,
+            hasVideo: p.hasVideo,
+            active: p.active
+          })),
+          selectedWithVideo: selectedParticipants.length,
+          timestamp: Date.now()
+        }, '*');
+      }
     };
 
     // Forward streams immediately and then every 2 seconds
@@ -112,18 +132,31 @@ export const useStreamForwarding = ({
 
     const selectedParticipants = participantList.filter(p => p.selected && p.hasVideo);
     
+    // Update shared streams
+    if (!window.sharedParticipantStreams) {
+      window.sharedParticipantStreams = {};
+    }
+    
     selectedParticipants.forEach(participant => {
       const stream = participantStreams[participant.id];
       
       if (stream && stream.getTracks().length > 0) {
-        broadcastChannelRef.current?.postMessage({
-          type: 'force-stream-update',
-          participantId: participant.id,
-          hasStream: true,
-          trackCount: stream.getTracks().length,
-          streamId: stream.id,
-          timestamp: Date.now()
-        });
+        console.log(`🔄 STREAM FORWARDING: Force updating stream for ${participant.id}`);
+        
+        // Update shared reference
+        window.sharedParticipantStreams[participant.id] = stream;
+        
+        // Send notification
+        if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+          transmissionWindowRef.current.postMessage({
+            type: 'force-stream-update',
+            participantId: participant.id,
+            hasStream: true,
+            trackCount: stream.getTracks().length,
+            streamId: stream.id,
+            timestamp: Date.now()
+          }, '*');
+        }
       }
     });
   };
