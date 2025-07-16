@@ -105,8 +105,14 @@ export class UnifiedWebRTCManager {
     if (unifiedWebSocketService.isConnected()) {
       this.updateConnectionState('websocket', 'connected');
     } else {
-      this.updateConnectionState('websocket', 'failed');
-      this.handleWebSocketFailure();
+      // Only update to failed if we have the necessary IDs for reconnection
+      if (this.roomId && this.participantId) {
+        this.updateConnectionState('websocket', 'failed');
+        this.handleWebSocketFailure();
+      } else {
+        // If we don't have IDs, just mark as disconnected, not failed
+        this.updateConnectionState('websocket', 'disconnected');
+      }
     }
 
     // Enhanced WebRTC peer connection monitoring
@@ -172,6 +178,13 @@ export class UnifiedWebRTCManager {
   }
 
   private async handleWebSocketFailure() {
+    // Only attempt reconnection if we have the necessary IDs
+    if (!this.roomId || !this.participantId) {
+      console.warn('⚠️ WebSocket failure detected but missing IDs for reconnection');
+      console.log(`🔍 FAILURE STATE: roomId=${this.roomId}, participantId=${this.participantId}`);
+      return;
+    }
+    
     console.log('🔄 WebSocket connection failed, attempting recovery...');
     
     try {
@@ -183,10 +196,12 @@ export class UnifiedWebRTCManager {
 
   private async reconnectWebSocket() {
     if (!this.roomId || !this.participantId) {
-      console.error('❌ Cannot reconnect: missing room or participant ID');
+      console.warn('⚠️ RECONNECT: Missing room or participant ID, skipping reconnection');
+      console.log(`🔍 RECONNECT STATE: roomId=${this.roomId}, participantId=${this.participantId}`);
       return;
     }
 
+    console.log(`🔄 RECONNECT: Attempting with roomId=${this.roomId}, participantId=${this.participantId}`);
     this.updateConnectionState('websocket', 'connecting');
     
     try {
@@ -199,10 +214,12 @@ export class UnifiedWebRTCManager {
       console.log('✅ WebSocket reconnected successfully');
       this.updateConnectionState('websocket', 'connected');
       
-      // Trigger WebRTC reconnection for existing participants
-      this.peerConnections.forEach((_, participantId) => {
-        this.initiateConnectionRecovery(participantId);
-      });
+      // Only trigger WebRTC reconnection if we have valid connections
+      if (this.peerConnections.size > 0) {
+        this.peerConnections.forEach((_, participantId) => {
+          this.initiateConnectionRecovery(participantId);
+        });
+      }
       
     } catch (error) {
       console.error('❌ WebSocket reconnection failed:', error);
