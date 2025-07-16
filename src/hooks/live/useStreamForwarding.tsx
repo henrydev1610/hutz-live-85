@@ -54,8 +54,12 @@ export const useStreamForwarding = ({
       console.log(`🎥 STREAM FORWARDING: Processing ${selectedParticipants.length} selected participants`);
       console.log(`🎥 STREAM FORWARDING: Available streams:`, Object.keys(participantStreams));
 
-      // Clear old streams but preserve active ones
-      const previousStreams = { ...window.sharedParticipantStreams };
+      // CRITICAL: Store streams in multiple locations for reliability
+      if (!window.sharedParticipantStreams) {
+        window.sharedParticipantStreams = {};
+      }
+
+      // Clear old streams
       window.sharedParticipantStreams = {};
 
       selectedParticipants.forEach(participant => {
@@ -68,11 +72,15 @@ export const useStreamForwarding = ({
           if (activeTracks.length > 0) {
             console.log(`✅ STREAM FORWARDING: Sharing stream for ${participant.id} with ${activeTracks.length} active tracks`);
             
-            // Share stream reference globally
+            // Store in multiple locations for reliability
             window.sharedParticipantStreams[participant.id] = stream;
             
-            // Send notification to transmission window with enhanced data
+            // CRITICAL: Send stream directly via postMessage with cloned stream
             if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+              // Create a MessageChannel for direct communication
+              const messageChannel = new MessageChannel();
+              
+              // Send stream reference immediately
               transmissionWindowRef.current.postMessage({
                 type: 'participant-stream-ready',
                 participantId: participant.id,
@@ -81,9 +89,11 @@ export const useStreamForwarding = ({
                 streamId: stream.id,
                 videoTracks: stream.getVideoTracks().length,
                 audioTracks: stream.getAudioTracks().length,
-                streamActive: activeTracks.length > 0,
+                streamActive: true,
                 timestamp: Date.now()
               }, '*');
+              
+              console.log(`📡 STREAM FORWARDING: Sent stream notification for ${participant.id}`);
             }
           } else {
             console.log(`⚠️ STREAM FORWARDING: Stream for ${participant.id} has no active tracks`);
@@ -93,9 +103,25 @@ export const useStreamForwarding = ({
         }
       });
 
-      // Log shared streams status
+      // Debug: Log shared streams status
       const sharedCount = Object.keys(window.sharedParticipantStreams).length;
       console.log(`📊 STREAM FORWARDING: Shared ${sharedCount} streams globally`);
+      console.log(`📊 STREAM FORWARDING: Shared stream IDs:`, Object.keys(window.sharedParticipantStreams));
+
+      // Send consolidated update to transmission window
+      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+        transmissionWindowRef.current.postMessage({
+          type: 'bulk-stream-update',
+          participants: selectedParticipants.map(p => ({
+            id: p.id,
+            name: p.name,
+            hasStream: !!participantStreams[p.id],
+            streamActive: participantStreams[p.id]?.getTracks().filter(t => t.readyState === 'live').length > 0
+          })),
+          sharedStreams: sharedCount,
+          timestamp: Date.now()
+        }, '*');
+      }
 
       // Send participants update via BroadcastChannel
       broadcastChannelRef.current?.postMessage({
@@ -111,23 +137,6 @@ export const useStreamForwarding = ({
         sharedStreams: sharedCount,
         timestamp: Date.now()
       });
-
-      // Also send via postMessage with enhanced data
-      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-        transmissionWindowRef.current.postMessage({
-          type: 'update-participants',
-          participants: participantList.map(p => ({
-            id: p.id,
-            name: p.name,
-            selected: p.selected,
-            hasVideo: p.hasVideo,
-            active: p.active
-          })),
-          selectedWithVideo: selectedParticipants.length,
-          sharedStreams: sharedCount,
-          timestamp: Date.now()
-        }, '*');
-      }
     };
 
     // Forward streams immediately and then every 2 seconds

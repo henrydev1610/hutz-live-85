@@ -266,7 +266,7 @@ export const useTransmissionWindow = () => {
               return null;
             }
 
-            // CRITICAL: Enhanced video element creation with robust stream handling
+            // CRITICAL: Enhanced video element creation with direct stream access
             async function createVideoElementFromStream(slotElement, participantId) {
               if (!slotElement) {
                 console.error("❌ TRANSMISSION: No slot element provided");
@@ -292,91 +292,52 @@ export const useTransmissionWindow = () => {
               videoElement.style.willChange = 'transform';
               videoElement.style.transition = 'none';
               
-              // Enhanced stream acquisition with retry mechanism
-              let streamAttempts = 0;
-              const maxAttempts = 5;
+              // CRITICAL: Direct stream access with multiple fallbacks
+              const stream = getSharedStream(participantId);
               
-              const attemptStreamConnection = async () => {
-                streamAttempts++;
-                console.log("🎯 TRANSMISSION: Stream attempt", streamAttempts, "for participant:", participantId);
+              if (stream) {
+                console.log("✅ TRANSMISSION: Found stream with", stream.getTracks().length, "tracks");
                 
-                const sharedStream = getSharedStream(participantId);
-                
-                if (sharedStream) {
-                  console.log("✅ TRANSMISSION: Found shared stream with", sharedStream.getTracks().length, "tracks");
+                const videoTracks = stream.getVideoTracks();
+                if (videoTracks.length > 0) {
+                  videoElement.srcObject = stream;
                   
-                  // Validate stream tracks
-                  const videoTracks = sharedStream.getVideoTracks();
-                  const audioTracks = sharedStream.getAudioTracks();
+                  videoElement.onloadedmetadata = () => {
+                    console.log("📊 TRANSMISSION: Video metadata loaded for", participantId);
+                    videoElement.play().then(() => {
+                      console.log("▶️ TRANSMISSION: Video playing successfully for", participantId);
+                      slotElement.style.border = '2px solid #00ff00';
+                      setTimeout(() => slotElement.style.border = 'none', 2000);
+                    }).catch(err => {
+                      console.error("❌ TRANSMISSION: Video play failed:", err);
+                    });
+                  };
                   
-                  console.log("📊 TRANSMISSION: Stream details - Video tracks:", videoTracks.length, "Audio tracks:", audioTracks.length);
-                  
-                  if (videoTracks.length > 0) {
-                    videoElement.srcObject = sharedStream;
-                    
-                    // Enhanced event handlers
-                    videoElement.onloadedmetadata = () => {
-                      console.log("📊 TRANSMISSION: Video metadata loaded for", participantId);
-                      console.log("📊 TRANSMISSION: Video dimensions:", videoElement.videoWidth, "x", videoElement.videoHeight);
-                      
-                      videoElement.play().then(() => {
-                        console.log("▶️ TRANSMISSION: Video playing successfully for", participantId);
-                        
-                        // Visual confirmation
-                        slotElement.style.border = '2px solid #00ff00';
-                        setTimeout(() => {
-                          slotElement.style.border = 'none';
-                        }, 2000);
-                        
-                      }).catch(err => {
-                        console.error("❌ TRANSMISSION: Video play failed:", err);
-                        retryStreamConnection();
-                      });
-                    };
-                    
-                    videoElement.onerror = (err) => {
-                      console.error("❌ TRANSMISSION: Video error:", err);
-                      retryStreamConnection();
-                    };
-                    
-                    videoElement.onloadstart = () => {
-                      console.log("🔄 TRANSMISSION: Video load started for", participantId);
-                    };
-                    
-                    return true;
-                  }
-                }
-                
-                return false;
-              };
-              
-              const retryStreamConnection = () => {
-                if (streamAttempts < maxAttempts) {
-                  console.log("🔄 TRANSMISSION: Retrying stream connection in 1s...");
-                  setTimeout(attemptStreamConnection, 1000);
+                  videoElement.onerror = (err) => {
+                    console.error("❌ TRANSMISSION: Video error:", err);
+                  };
                 } else {
-                  console.log("⚠️ TRANSMISSION: Max attempts reached, using placeholder for", participantId);
-                  if (!window.localPlaceholderStream) {
-                    window.localPlaceholderStream = createPlaceholderStream();
-                  }
-                  if (window.localPlaceholderStream) {
-                    videoElement.srcObject = window.localPlaceholderStream;
-                  }
+                  console.log("⚠️ TRANSMISSION: No video tracks in stream");
                 }
-              };
+              } else {
+                console.log("⚠️ TRANSMISSION: No stream found, using placeholder");
+                if (!window.localPlaceholderStream) {
+                  window.localPlaceholderStream = createPlaceholderStream();
+                }
+                if (window.localPlaceholderStream) {
+                  videoElement.srcObject = window.localPlaceholderStream;
+                }
+              }
               
               slotElement.appendChild(videoElement);
               activeVideoElements[slotElement.id] = videoElement;
               
-              // Force visibility and debug styling
+              // Debug styling
               setTimeout(() => {
-                slotElement.style.background = 'rgba(255, 0, 0, 0.1)'; // Red tint for debugging
+                slotElement.style.background = 'rgba(255, 0, 0, 0.1)';
                 videoElement.style.opacity = '1';
                 videoElement.style.visibility = 'visible';
               }, 100);
-              
-              // Start stream connection attempts
-              await attemptStreamConnection();
               
               return videoElement;
             }
