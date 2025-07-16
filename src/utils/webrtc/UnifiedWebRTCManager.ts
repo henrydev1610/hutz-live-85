@@ -435,6 +435,16 @@ export class UnifiedWebRTCManager {
     
     unifiedWebSocketService.notifyStreamStarted(this.participantId, streamInfo);
     console.log(`📡 UNIFIED: Stream notification sent`);
+    
+    // ✅ CRÍTICO: Notificação extra via WebSocket para garantir que o host saiba
+    unifiedWebSocketService.sendCustomEvent('stream-ready', {
+      participantId: this.participantId,
+      streamId: this.localStream.id,
+      timestamp: Date.now(),
+      trackCount: this.localStream.getTracks().length,
+      hasVideo: this.localStream.getVideoTracks().length > 0
+    });
+    console.log(`🚀 STREAM-READY event sent for participant ${this.participantId}`);
   }
 
   private removeParticipantConnection(participantId: string) {

@@ -69,8 +69,13 @@ export const useParticipantMedia = () => {
       // Import and register stream  
       const webRTCManager = (await import('@/utils/webrtc/UnifiedWebRTCManager')).default;
       if (webRTCManager.setOutgoingStream) {
+        // ✅ AGUARDA ESTABILIZAÇÃO DO STREAM ANTES DE REGISTRAR
+        await new Promise(resolve => setTimeout(resolve, 300));
         webRTCManager.setOutgoingStream(stream);
-        console.log(`✅ Stream registered with WebRTC Manager`);
+        console.log(`✅ Stream registered with WebRTC Manager after stabilization`);
+        
+        // ✅ EMIT EVENTO STREAM-READY PARA GARANTIR NOTIFICAÇÃO
+        console.log("📡 Stream do participante conectado", stream.getTracks());
       }
       
       const videoTracks = stream.getVideoTracks();

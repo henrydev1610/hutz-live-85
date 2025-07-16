@@ -450,6 +450,17 @@ class UnifiedWebSocketService {
     });
   }
 
+  // ✅ CRÍTICO: Enviar eventos customizados
+  sendCustomEvent(eventType: string, data: any): void {
+    if (!this.socket || !this.isConnected()) {
+      console.warn(`⚠️ Cannot send ${eventType}: Socket not connected`);
+      return;
+    }
+    
+    console.log(`📡 Sending custom event: ${eventType}`, data);
+    this.socket.emit(eventType, data);
+  }
+
   // Force reconnection
   async forceReconnect(): Promise<void> {
     console.log('🔄 CONNECTION: Forcing reconnect...');
