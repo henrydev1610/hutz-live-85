@@ -415,9 +415,17 @@ class UnifiedWebSocketService {
       this.reconnectTimer = null;
     }
 
+    // Proteção contra null reference
     if (this.socket) {
-      this.socket.disconnect();
+      try {
+        this.socket.disconnect();
+        console.log('✅ CONNECTION: Socket disconnected successfully');
+      } catch (error) {
+        console.error('❌ CONNECTION: Error disconnecting socket:', error);
+      }
       this.socket = null;
+    } else {
+      console.log('⚠️ CONNECTION: No socket to disconnect');
     }
 
     this.metrics.status = 'disconnected';

@@ -72,7 +72,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
 
         // Etapa 2: Join room com timeout e retry
         console.log(`🔗 PARTICIPANT CONNECTION: Joining room (attempt ${retryCount + 1})`);
-        const joinTimeout = isMobile ? 20000 : 15000;
+        const joinTimeout = isMobile ? 60000 : 45000; // Aumentado para 60s mobile, 45s desktop
         
         await Promise.race([
           unifiedWebSocketService.joinRoom(sessionId, participantId),
@@ -210,7 +210,14 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     
     try {
       cleanupWebRTC();
-      unifiedWebSocketService.disconnect();
+      
+      // Verificar se o serviço WebSocket está disponível antes de desconectar
+      if (unifiedWebSocketService && typeof unifiedWebSocketService.disconnect === 'function') {
+        unifiedWebSocketService.disconnect();
+      } else {
+        console.warn('⚠️ PARTICIPANT CONNECTION: WebSocket service not available for disconnect');
+      }
+      
       setIsConnected(false);
       setConnectionStatus('disconnected');
       toast.success('Desconectado da sessão');
