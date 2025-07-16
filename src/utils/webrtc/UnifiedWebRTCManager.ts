@@ -362,16 +362,10 @@ export class UnifiedWebRTCManager {
       
       this.setupWebSocketCallbacks();
       
-      console.log(`📍 HOST: Iniciando join da sala ${sessionId} com timeout de 60s...`);
+      console.log(`📍 HOST: Iniciando join da sala ${sessionId}...`);
       
-      // CRITICAL: Join com timeout para evitar travamento
-      const joinTimeout = 60000;
-      await Promise.race([
-        unifiedWebSocketService.joinRoom(sessionId, this.participantId),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Join room timeout")), joinTimeout)
-        )
-      ]);
+      // CRITICAL: Join direto - o timeout já está no WebSocket Service
+      await unifiedWebSocketService.joinRoom(sessionId, this.participantId);
       
       console.log(`✅ HOST: Join da sala ${sessionId} completado com sucesso`);
       this.updateConnectionState('websocket', 'connected');
