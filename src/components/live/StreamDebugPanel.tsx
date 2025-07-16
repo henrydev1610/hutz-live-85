@@ -9,23 +9,43 @@ interface StreamDebugPanelProps {
   participantList: Participant[];
   participantStreams: {[id: string]: MediaStream};
   onForceRefresh?: () => void;
+  transmissionWindowRef?: React.MutableRefObject<Window | null>;
+  onForceStreamUpdate?: () => void;
 }
 
 const StreamDebugPanel: React.FC<StreamDebugPanelProps> = ({
   participantList,
   participantStreams,
-  onForceRefresh
+  onForceRefresh,
+  transmissionWindowRef,
+  onForceStreamUpdate
 }) => {
   const [debugInfo, setDebugInfo] = useState(streamSynchronizer.getDebugInfo());
   const [isVisible, setIsVisible] = useState(false);
+  const [transmissionStatus, setTransmissionStatus] = useState({
+    connected: false,
+    sharedStreams: 0
+  });
 
   useEffect(() => {
     const interval = setInterval(() => {
       setDebugInfo(streamSynchronizer.getDebugInfo());
+      
+      // Check transmission window status
+      if (transmissionWindowRef?.current) {
+        const connected = !transmissionWindowRef.current.closed;
+        const sharedStreams = (window as any).sharedParticipantStreams ? 
+          Object.keys((window as any).sharedParticipantStreams).length : 0;
+        
+        setTransmissionStatus({
+          connected,
+          sharedStreams
+        });
+      }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [transmissionWindowRef]);
 
   if (!isVisible) {
     return (
@@ -74,6 +94,19 @@ const StreamDebugPanel: React.FC<StreamDebugPanelProps> = ({
               <div>C/ Stream: <Badge variant="outline" className="bg-yellow-500/20">{participantsWithStreams}</Badge></div>
             </div>
           </div>
+
+          {/* Transmission Window Status */}
+          {transmissionWindowRef && (
+            <div>
+              <h4 className="font-semibold text-cyan-300 mb-1">Transmissão:</h4>
+              <div className="space-y-1">
+                <div>Status: <Badge variant={transmissionStatus.connected ? "default" : "destructive"}>
+                  {transmissionStatus.connected ? "Conectado" : "Desconectado"}
+                </Badge></div>
+                <div>Streams Compartilhados: <Badge variant="outline" className="bg-purple-500/20">{transmissionStatus.sharedStreams}</Badge></div>
+              </div>
+            </div>
+          )}
 
           {/* Stream Synchronizer Stats */}
           <div>
@@ -130,6 +163,36 @@ const StreamDebugPanel: React.FC<StreamDebugPanelProps> = ({
               ⚡ Force Sync
             </Button>
           </div>
+
+          {/* Transmission Actions */}
+          {transmissionWindowRef && onForceStreamUpdate && (
+            <div className="flex gap-2">
+              <Button 
+                onClick={onForceStreamUpdate}
+                size="sm" 
+                variant="outline"
+                className="flex-1 bg-cyan-500/20 border-cyan-500 text-cyan-300 hover:bg-cyan-500/30"
+              >
+                📡 Force Transmission
+              </Button>
+              <Button 
+                onClick={() => {
+                  // Emergency recovery
+                  if ((window as any).sharedParticipantStreams) {
+                    (window as any).sharedParticipantStreams = {};
+                  }
+                  setTimeout(() => {
+                    onForceStreamUpdate();
+                  }, 500);
+                }}
+                size="sm" 
+                variant="outline"
+                className="flex-1 bg-red-500/20 border-red-500 text-red-300 hover:bg-red-500/30"
+              >
+                🚨 Emergency Fix
+              </Button>
+            </div>
+          )}
 
           {/* Recovery Attempts */}
           {Object.keys(debugInfo.recoveryAttempts).length > 0 && (

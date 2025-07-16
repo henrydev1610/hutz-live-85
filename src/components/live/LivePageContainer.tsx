@@ -16,6 +16,8 @@ interface LivePageContainerProps {
   onGenerateQRCode: () => void;
   onQRCodeToTransmission: () => void;
   closeFinalAction: () => void;
+  transmissionWindowRef?: React.MutableRefObject<Window | null>;
+  onForceStreamUpdate?: () => void;
 }
 
 const LivePageContainer: React.FC<LivePageContainerProps> = ({
@@ -29,7 +31,9 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
   onRemoveImage,
   onGenerateQRCode,
   onQRCodeToTransmission,
-  closeFinalAction
+  closeFinalAction,
+  transmissionWindowRef,
+  onForceStreamUpdate
 }) => {
   return (
     <div className="min-h-screen container mx-auto py-8 px-4 relative">
@@ -46,6 +50,8 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
         onRemoveImage={onRemoveImage}
         onGenerateQRCode={onGenerateQRCode}
         onQRCodeToTransmission={onQRCodeToTransmission}
+        transmissionWindowRef={transmissionWindowRef}
+        onForceStreamUpdate={onForceStreamUpdate}
       />
       
       <FinalActionDialog

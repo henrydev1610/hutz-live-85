@@ -52,34 +52,50 @@ export const useStreamForwarding = ({
       const selectedParticipants = participantList.filter(p => p.selected && p.hasVideo);
       
       console.log(`🎥 STREAM FORWARDING: Processing ${selectedParticipants.length} selected participants`);
+      console.log(`🎥 STREAM FORWARDING: Available streams:`, Object.keys(participantStreams));
 
-      // Clear old streams
+      // Clear old streams but preserve active ones
+      const previousStreams = { ...window.sharedParticipantStreams };
       window.sharedParticipantStreams = {};
 
       selectedParticipants.forEach(participant => {
         const stream = participantStreams[participant.id];
         
         if (stream && stream.getTracks().length > 0) {
-          console.log(`✅ STREAM FORWARDING: Sharing stream for ${participant.id} with ${stream.getTracks().length} tracks`);
+          // Validate stream tracks are still active
+          const activeTracks = stream.getTracks().filter(track => track.readyState === 'live');
           
-          // Share stream reference globally
-          window.sharedParticipantStreams[participant.id] = stream;
-          
-          // Send notification to transmission window
-          if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-            transmissionWindowRef.current.postMessage({
-              type: 'participant-stream-ready',
-              participantId: participant.id,
-              hasStream: true,
-              trackCount: stream.getTracks().length,
-              streamId: stream.id,
-              timestamp: Date.now()
-            }, '*');
+          if (activeTracks.length > 0) {
+            console.log(`✅ STREAM FORWARDING: Sharing stream for ${participant.id} with ${activeTracks.length} active tracks`);
+            
+            // Share stream reference globally
+            window.sharedParticipantStreams[participant.id] = stream;
+            
+            // Send notification to transmission window with enhanced data
+            if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+              transmissionWindowRef.current.postMessage({
+                type: 'participant-stream-ready',
+                participantId: participant.id,
+                hasStream: true,
+                trackCount: activeTracks.length,
+                streamId: stream.id,
+                videoTracks: stream.getVideoTracks().length,
+                audioTracks: stream.getAudioTracks().length,
+                streamActive: activeTracks.length > 0,
+                timestamp: Date.now()
+              }, '*');
+            }
+          } else {
+            console.log(`⚠️ STREAM FORWARDING: Stream for ${participant.id} has no active tracks`);
           }
         } else {
           console.log(`⚠️ STREAM FORWARDING: No stream available for ${participant.id}`);
         }
       });
+
+      // Log shared streams status
+      const sharedCount = Object.keys(window.sharedParticipantStreams).length;
+      console.log(`📊 STREAM FORWARDING: Shared ${sharedCount} streams globally`);
 
       // Send participants update via BroadcastChannel
       broadcastChannelRef.current?.postMessage({
@@ -92,10 +108,11 @@ export const useStreamForwarding = ({
           active: p.active
         })),
         selectedWithVideo: selectedParticipants.length,
+        sharedStreams: sharedCount,
         timestamp: Date.now()
       });
 
-      // Also send via postMessage
+      // Also send via postMessage with enhanced data
       if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
         transmissionWindowRef.current.postMessage({
           type: 'update-participants',
@@ -107,6 +124,7 @@ export const useStreamForwarding = ({
             active: p.active
           })),
           selectedWithVideo: selectedParticipants.length,
+          sharedStreams: sharedCount,
           timestamp: Date.now()
         }, '*');
       }

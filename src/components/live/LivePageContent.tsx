@@ -19,6 +19,8 @@ interface LivePageContentProps {
   onRemoveImage: () => void;
   onGenerateQRCode: () => void;
   onQRCodeToTransmission: () => void;
+  transmissionWindowRef?: React.MutableRefObject<Window | null>;
+  onForceStreamUpdate?: () => void;
 }
 
 const LivePageContent: React.FC<LivePageContentProps> = ({
@@ -31,7 +33,9 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
   onFileSelect,
   onRemoveImage,
   onGenerateQRCode,
-  onQRCodeToTransmission
+  onQRCodeToTransmission,
+  transmissionWindowRef,
+  onForceStreamUpdate
 }) => {
   // Calculate real participants and active streams
   const realParticipants = state.participantList.filter((p: Participant) => !p.id.startsWith('placeholder-'));
