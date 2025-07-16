@@ -8,6 +8,7 @@ import { useParticipantLifecycle } from './useParticipantLifecycle';
 import { useParticipantAutoSelection } from './useParticipantAutoSelection';
 import { useParticipantStreamMonitoring } from './useParticipantStreamMonitoring';
 import { useForceVideoDisplay } from './useForceVideoDisplay';
+import { useStreamRecovery } from './useStreamRecovery';
 
 interface UseParticipantManagementProps {
   participantList: Participant[];
@@ -73,6 +74,13 @@ export const useParticipantManagement = ({
   useForceVideoDisplay({
     participantList,
     participantStreams
+  });
+
+  // RECOVERY: Stream recovery system
+  useStreamRecovery({
+    transmissionWindowRef,
+    participantStreams,
+    sessionId
   });
 
   // REMOVED: Legacy WebRTC callbacks - now handled by UnifiedWebRTCManager

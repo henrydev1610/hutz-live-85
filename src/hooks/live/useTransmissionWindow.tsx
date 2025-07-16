@@ -261,6 +261,9 @@ export const useTransmissionWindow = () => {
             // Start periodic checking
             setTimeout(periodicStreamCheck, 2000);
             
+            // Start stream heartbeat
+            setTimeout(startStreamHeartbeat, 1000);
+            
             // CRITICAL: Debug stream access and implement fallback
             function debugStreamAccess() {
               console.log("🔍 TRANSMISSION: Debugging stream access...");
@@ -293,6 +296,7 @@ export const useTransmissionWindow = () => {
                   const activeTracks = stream.getTracks().filter(track => track.readyState === 'live');
                   if (activeTracks.length > 0) {
                     console.log("✅ TRANSMISSION: Found shared stream for", participantId, "with", activeTracks.length, "active tracks");
+                    participantStreams[participantId] = stream; // Cache it
                     return stream;
                   }
                 }
@@ -314,7 +318,17 @@ export const useTransmissionWindow = () => {
                 }
               }
               
-              // FALLBACK 3: Try postMessage request for stream
+              // FALLBACK 3: Try backup stream location
+              if (window.opener && window.opener.streamBackup && window.opener.streamBackup[participantId]) {
+                const stream = window.opener.streamBackup[participantId];
+                if (stream && stream.getTracks().length > 0) {
+                  console.log("🔄 TRANSMISSION: Using backup stream for", participantId);
+                  participantStreams[participantId] = stream; // Cache it
+                  return stream;
+                }
+              }
+              
+              // FALLBACK 4: Try postMessage request for stream
               if (window.opener && !window.opener.closed) {
                 console.log("📡 TRANSMISSION: Requesting stream for", participantId, "via postMessage");
                 window.opener.postMessage({

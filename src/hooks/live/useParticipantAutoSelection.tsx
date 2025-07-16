@@ -54,8 +54,16 @@ export const useParticipantAutoSelection = ({
   useEffect(() => {
     console.log('🎯 CRITICAL: Auto-selecting participants with streams');
     
+    // Filter for streams with active video tracks
+    const activeStreams = Object.entries(participantStreams).filter(([_, stream]) => {
+      const videoTracks = stream.getVideoTracks();
+      return videoTracks.length > 0 && videoTracks.some(track => track.readyState === 'live');
+    });
+    
+    console.log(`🎯 Found ${activeStreams.length} streams with active video tracks`);
+    
     // Sort participants by mobile priority
-    const sortedStreams = Object.entries(participantStreams).sort(([idA], [idB]) => {
+    const sortedStreams = activeStreams.sort(([idA], [idB]) => {
       const participantA = participantList.find(p => p.id === idA);
       const participantB = participantList.find(p => p.id === idB);
       
@@ -69,7 +77,7 @@ export const useParticipantAutoSelection = ({
     sortedStreams.forEach(([participantId, stream]) => {
       const participant = participantList.find(p => p.id === participantId);
       
-      if (participant && !participant.selected && stream.active) {
+      if (participant && !participant.selected) {
         console.log(`✅ AUTO-SELECTING participant ${participantId} for transmission ${participant.isMobile ? '(MOBILE PRIORITY)' : '(DESKTOP)'}`);
         
         setParticipantList(prev => prev.map(p => 

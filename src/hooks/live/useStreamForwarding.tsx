@@ -58,8 +58,11 @@ export const useStreamForwarding = ({
         window.sharedParticipantStreams = {};
       }
 
-      // Clear old streams
-      window.sharedParticipantStreams = {};
+      // NEVER clear active streams - only add/update them
+      // Create backup in multiple locations
+      if (!window.streamBackup) {
+        window.streamBackup = {};
+      }
 
       selectedParticipants.forEach(participant => {
         const stream = participantStreams[participant.id];
@@ -73,6 +76,7 @@ export const useStreamForwarding = ({
             
             // CRITICAL: Store in multiple locations for reliability
             window.sharedParticipantStreams[participant.id] = stream;
+            window.streamBackup[participant.id] = stream;
             
             // CRITICAL: Ensure transmission window can access the stream
             if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {

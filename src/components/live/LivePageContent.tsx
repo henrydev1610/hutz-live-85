@@ -6,6 +6,7 @@ import TransmissionControls from '@/components/live/TransmissionControls';
 import LiveControlTabs from '@/components/live/LiveControlTabs';
 import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
 import StreamDebugPanel from '@/components/live/StreamDebugPanel';
+import { StreamDebugMonitor } from '@/components/live/StreamDebugMonitor';
 import { Participant } from '@/components/live/ParticipantGrid';
 
 interface LivePageContentProps {
@@ -108,6 +109,14 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
           participantCount={realParticipants.length}
           activeStreams={activeStreams}
           onTestConnection={participantManagement.testConnection}
+        />
+
+        {/* Stream Debug Monitor */}
+        <StreamDebugMonitor
+          participantStreams={state.participantStreams}
+          participantList={state.participantList}
+          transmissionWindowRef={transmissionWindowRef}
+          onForceUpdate={onForceStreamUpdate}
         />
       </div>
       
