@@ -295,9 +295,10 @@ export class UnifiedWebRTCManager {
         (data) => {
           console.log(`🏠 UNIFIED PARTICIPANT: Host or participant connected:`, data);
           const hostId = data.userId || data.id || data.socketId;
-          if (hostId !== this.participantId) {
-            console.log(`📞 UNIFIED: Initiating call to ${hostId}`);
-            this.connectionHandler.initiateCallWithRetry(hostId);
+          // CRITICAL: Always try to connect to static "host" ID
+          if (hostId !== this.participantId && (hostId === "host" || hostId.includes("host"))) {
+            console.log(`📞 UNIFIED: Initiating call to host: ${hostId}`);
+            this.connectionHandler.initiateCallWithRetry("host"); // Always use static "host"
           }
         },
         (participants) => {

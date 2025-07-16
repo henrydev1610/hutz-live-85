@@ -56,7 +56,7 @@ export const useLivePageEffects = ({
     };
   }, [sessionId]);
 
-  // Enhanced session initialization effect
+  // Enhanced session initialization effect with stream forwarding integration
   useEffect(() => {
     if (sessionId) {
       console.log('🚀 HOST: INITIALIZING SESSION:', sessionId);
@@ -81,10 +81,10 @@ export const useLivePageEffects = ({
         }
       });
 
-      // Initialize WebRTC with enhanced logging - UNIFIED SYSTEM
+      // Initialize WebRTC with CRITICAL static host ID - UNIFIED SYSTEM
       initHostWebRTC(sessionId).then(result => {
         if (result && result.webrtc) {
-          console.log('✅ HOST: UNIFIED WebRTC initialized successfully');
+          console.log('✅ HOST: UNIFIED WebRTC initialized with STATIC HOST ID');
           
           // CRITICAL: Set up callbacks for stream and participant management
           result.webrtc.setOnStreamCallback((participantId, stream) => {
@@ -97,7 +97,7 @@ export const useLivePageEffects = ({
               timestamp: Date.now()
             });
             
-            // Direct stream processing with immediate effect
+            // CRITICAL: Direct stream processing for immediate visibility
             handleParticipantStream(participantId, stream);
             
             // Force immediate update to transmission participants
@@ -118,12 +118,12 @@ export const useLivePageEffects = ({
             handleParticipantJoin(participantId);
           });
 
-          console.log('🔗 HOST: UNIFIED WebRTC callbacks configured successfully');
+          console.log('🔗 HOST: UNIFIED WebRTC callbacks configured with STATIC HOST ID');
           
           // Success notification
           toast({
             title: "WebRTC Ativo",
-            description: "Sistema pronto para receber conexões",
+            description: "Host pronto para receber participantes (ID: host)",
           });
           
         } else {
@@ -148,7 +148,7 @@ export const useLivePageEffects = ({
       return () => {
         console.log('🧹 HOST: Cleaning up session');
         cleanup();
-        // HOST: No local stream to cleanup
+        // HOST: No local stream to cleanup - only manages remote streams
       };
     }
   }, [sessionId]);

@@ -24,30 +24,43 @@ const ParticipantPage = () => {
   
   const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [connectionProgress, setConnectionProgress] = useState<string>('Iniciando...');
 
   const connection = useParticipantConnection(sessionId, participantId);
   const media = useParticipantMedia();
 
-  // Monitor signaling service status
+  // Enhanced monitoring for connection progress
   useEffect(() => {
-    const checkSignalingStatus = () => {
+    const updateStatus = () => {
       const status = unifiedWebSocketService.getConnectionStatus();
       setSignalingStatus(status);
+      
+      // Update connection progress based on status
+      if (status === 'connecting') {
+        setConnectionProgress(`Conectando... (tentativa ${connectionAttempts + 1})`);
+      } else if (status === 'connected') {
+        setConnectionProgress('Conectado ao servidor');
+      } else if (status === 'failed') {
+        setConnectionProgress(`Falha de conexão (tentativa ${connectionAttempts})`);
+      } else {
+        setConnectionProgress('Desconectado');
+      }
     };
 
-    const interval = setInterval(checkSignalingStatus, 1000);
-    checkSignalingStatus();
+    const interval = setInterval(updateStatus, 1000);
+    updateStatus();
 
     return () => clearInterval(interval);
-  }, []);
+  }, [connectionAttempts]);
 
-  // Auto-initialize media and connect on mount
+  // Enhanced auto-connect with better error handling
   useEffect(() => {
-    console.log('🚀 PARTICIPANT PAGE: Auto-initializing for session:', sessionId);
-    
     if (sessionId) {
       autoConnectToSession().catch(error => {
         console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
+        setConnectionAttempts(prev => prev + 1);
+        setConnectionProgress(`Erro de conexão: ${error.message}`);
       });
     }
     
@@ -62,24 +75,52 @@ const ParticipantPage = () => {
 
   const autoConnectToSession = async () => {
     try {
+      console.log('🔄 AUTO-CONNECT: Initializing media and connecting to session...');
+      setConnectionProgress('Inicializando câmera...');
+      
       const stream = await media.initializeMedia();
-      // Conectar sempre, mesmo que stream seja null (modo degradado)
-      await connection.connectToSession(stream);
+      if (stream) {
+        console.log('✅ AUTO-CONNECT: Media initialized, connecting to session...');
+        setConnectionProgress('Conectando à sessão...');
+        await connection.connectToSession(stream);
+        setConnectionProgress('Conectado com sucesso!');
+      } else {
+        console.warn('⚠️ AUTO-CONNECT: No media stream available, connecting without media');
+        setConnectionProgress('Conectando sem câmera...');
+        await connection.connectToSession();
+      }
     } catch (error) {
-      console.error('❌ PARTICIPANT: Auto-connection failed:', error);
+      console.error('❌ AUTO-CONNECT: Failed:', error);
+      setConnectionAttempts(prev => prev + 1);
+      setConnectionProgress(`Erro de conexão: ${error.message}`);
+      
+      // Retry after delay for mobile devices
+      if (connectionAttempts < 5) {
+        setTimeout(() => {
+          autoConnectToSession();
+        }, 5000 + (connectionAttempts * 2000)); // Progressive delay
+      }
+      throw error;
     }
   };
 
   const handleConnect = async () => {
     try {
+      setConnectionAttempts(prev => prev + 1);
+      setConnectionProgress('Reconectando...');
+      
       let stream = media.localStreamRef.current;
       if (!stream) {
+        setConnectionProgress('Reinicializando câmera...');
         stream = await media.initializeMedia();
       }
-      // Conectar sempre, mesmo que stream seja null (modo degradado)
+      
+      setConnectionProgress('Conectando à sessão...');
       await connection.connectToSession(stream);
+      setConnectionProgress('Conectado com sucesso!');
     } catch (error) {
       console.error('❌ PARTICIPANT: Manual connection failed:', error);
+      setConnectionProgress(`Erro: ${error.message}`);
     }
   };
 
@@ -114,6 +155,24 @@ const ParticipantPage = () => {
           isConnecting={connection.isConnecting}
           onRetryConnect={handleConnect}
         />
+
+        {/* Enhanced connection status with progress */}
+        <div className="mb-4 p-4 bg-muted rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">Status da Conexão:</span>
+            <span className={`text-sm px-2 py-1 rounded ${
+              connection.isConnected ? 'bg-green-100 text-green-800' : 
+              signalingStatus === 'connecting' ? 'bg-yellow-100 text-yellow-800' : 
+              'bg-red-100 text-red-800'
+            }`}>
+              {connection.isConnected ? 'Conectado' : signalingStatus}
+            </span>
+          </div>
+          <div className="text-xs text-muted-foreground mb-2">{connectionProgress}</div>
+          <div className="text-xs text-muted-foreground">
+            Tentativas: {connectionAttempts} | Sinal: {signalingStatus}
+          </div>
+        </div>
 
         {/* Connection Status Details */}
         <ParticipantConnectionStatus

@@ -197,7 +197,7 @@ export const useTransmissionWindow = () => {
             }
             keepAlive();
 
-            // ENHANCED: Create video element with better error handling and stream assignment
+            // CRITICAL: Create video element ONLY for remote streams
             async function createVideoElementFromStream(slotElement, participantId) {
               if (!slotElement) {
                 console.error("❌ TRANSMISSION: No slot element provided");
@@ -222,29 +222,24 @@ export const useTransmissionWindow = () => {
               videoElement.style.willChange = 'transform';
               videoElement.style.transition = 'none';
               
-              // HOST: Only display remote streams - no local camera
-              try {
-                console.log("🎯 TRANSMISSION: Waiting for remote stream from participants");
-                
-                // Wait for remote stream to be available
-                const remoteStream = participantStreams[participantId];
-                if (remoteStream) {
-                  videoElement.srcObject = remoteStream;
-                  console.log("✅ TRANSMISSION: Remote stream assigned successfully");
-                } else {
-                  console.log("⚠️ TRANSMISSION: No remote stream available for", participantId);
-                }
+              // CRITICAL: NEVER use local camera - only remote streams
+              console.log("🎯 TRANSMISSION: Checking for remote stream from:", participantId);
+              
+              // Check if we have a remote stream from participant
+              const remoteStream = participantStreams[participantId];
+              if (remoteStream && remoteStream.getTracks().length > 0) {
+                console.log("✅ TRANSMISSION: Found remote stream with", remoteStream.getTracks().length, "tracks");
+                videoElement.srcObject = remoteStream;
                 
                 videoElement.onloadedmetadata = () => {
-                  console.log("📊 TRANSMISSION: Video metadata loaded for", participantId);
+                  console.log("📊 TRANSMISSION: Remote video metadata loaded for", participantId);
                   videoElement.play().catch(err => {
                     console.warn("⚠️ TRANSMISSION: Video play failed:", err);
                   });
                 };
-                
-              } catch (mediaError) {
-                console.warn("⚠️ TRANSMISSION: Cannot access media, using placeholder");
-                // Fallback to placeholder if no media access
+              } else {
+                console.log("⚠️ TRANSMISSION: No remote stream available for", participantId, "- using placeholder");
+                // Use placeholder instead of trying to access local camera
                 if (!window.localPlaceholderStream) {
                   window.localPlaceholderStream = createPlaceholderStream();
                 }

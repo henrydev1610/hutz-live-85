@@ -237,10 +237,12 @@ class UnifiedWebSocketService {
     this.currentUserId = userId;
 
     return new Promise((resolve, reject) => {
+      // CRITICAL: Mobile devices need longer timeout due to network instability
+      const isMobile = this.isMobileDevice();
       const joinTimeout = setTimeout(() => {
-        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
+        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId} (${isMobile ? 'mobile' : 'desktop'})`);
         reject(new Error('Join room timeout'));
-      }, 30000); // Aumentado para 30s
+      }, isMobile ? 45000 : 30000); // 45s for mobile, 30s for desktop
 
       // Success handler
       const handleJoinSuccess = (data: any) => {
