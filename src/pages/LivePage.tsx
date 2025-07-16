@@ -13,6 +13,8 @@ import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessa
 import { useWebRTCStabilityIntegration } from '@/hooks/live/useWebRTCStabilityIntegration';
 import { useHostRemoteStreamManager } from '@/hooks/live/useHostRemoteStreamManager';
 import { useStreamForwarding } from '@/hooks/live/useStreamForwarding';
+import { useVideoStreamValidator } from '@/hooks/live/useVideoStreamValidator';
+import { useStreamDebugMonitor } from '@/hooks/live/useStreamDebugMonitor';
 import { ConnectionStabilityIndicator } from '@/components/live/ConnectionStabilityIndicator';
 
 const LivePage: React.FC = () => {
@@ -112,6 +114,20 @@ const LivePage: React.FC = () => {
     updateTransmissionParticipants,
     handleParticipantJoin: participantManagement.handleParticipantJoin,
     transferStreamToTransmission: participantManagement.transferStreamToTransmission
+  });
+
+  // CRITICAL: Video stream validation system
+  const { hasActiveStreams, validationsPassed } = useVideoStreamValidator({
+    participantStreams: state.participantStreams,
+    participantList: state.participantList,
+    transmissionOpen: state.transmissionOpen
+  });
+
+  // CRITICAL: Debug monitoring system
+  useStreamDebugMonitor({
+    participantStreams: state.participantStreams,
+    participantList: state.participantList,
+    transmissionOpen: state.transmissionOpen
   });
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {

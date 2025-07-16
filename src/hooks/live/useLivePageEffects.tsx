@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
-import { initHostWebRTC } from '@/utils/webrtc';
+import { UnifiedWebRTCManager } from '@/utils/webrtc/UnifiedWebRTCManager';
 import { useStreamSynchronizer } from './useStreamSyncronizer';
 
 interface UseLivePageEffectsProps {
@@ -90,71 +90,68 @@ export const useLivePageEffects = ({
         }
       });
 
-      // Initialize WebRTC with CRITICAL static host ID - UNIFIED SYSTEM
-      initHostWebRTC(sessionId).then(result => {
-        if (result && result.webrtc) {
-          console.log('✅ HOST: UNIFIED WebRTC initialized with STATIC HOST ID');
-          
-          // CRITICAL: Set up callbacks for stream and participant management
-          result.webrtc.setOnStreamCallback((participantId, stream) => {
-            console.log('🎥 HOST: UNIFIED STREAM RECEIVED from:', participantId, {
-              streamId: stream.id,
-              trackCount: stream.getTracks().length,
-              videoTracks: stream.getVideoTracks().length,
-              audioTracks: stream.getAudioTracks().length,
-              active: stream.active,
-              timestamp: Date.now()
-            });
-            
-            // CRITICAL: Direct stream processing for immediate visibility
-            handleParticipantStream(participantId, stream);
-            
-            // Force immediate update to transmission participants
-            setTimeout(() => {
-              console.log('🔄 HOST: UNIFIED Updating transmission after stream received');
-              updateTransmissionParticipants();
-              // CRITICAL: Also force stream sync
-              forceSyncNow();
-            }, 100);
-            
-            // Success feedback
-            toast({
-              title: "Câmera Conectada",
-              description: `Recebendo vídeo de ${participantId}`,
-            });
+      // CRITICAL: Initialize UNIFIED WebRTC directly - Single System
+      const initWebRTC = async () => {
+        const webrtcManager = new UnifiedWebRTCManager();
+        
+        try {
+          await webrtcManager.initializeAsHost(sessionId);
+        console.log('✅ HOST: UNIFIED WebRTC initialized with static host ID');
+        
+        // CRITICAL: Set up callbacks for stream and participant management  
+        webrtcManager.setOnStreamCallback((participantId, stream) => {
+          console.log('🎥 HOST: UNIFIED STREAM RECEIVED from:', participantId, {
+            streamId: stream.id,
+            trackCount: stream.getTracks().length,
+            videoTracks: stream.getVideoTracks().length,
+            audioTracks: stream.getAudioTracks().length,
+            active: stream.active,
+            timestamp: Date.now()
           });
           
-          result.webrtc.setOnParticipantJoinCallback((participantId) => {
-            console.log('👤 HOST: UNIFIED Participant join callback from WebRTC:', participantId);
-            handleParticipantJoin(participantId);
+          // CRITICAL: Direct stream processing for immediate visibility
+          handleParticipantStream(participantId, stream);
+          
+          // Force immediate update to transmission participants
+          setTimeout(() => {
+            console.log('🔄 HOST: UNIFIED Updating transmission after stream received');
+            updateTransmissionParticipants();
+            // CRITICAL: Also force stream sync
+            forceSyncNow();
+          }, 100);
+          
+          // Success feedback
+          toast({
+            title: "Câmera Conectada",
+            description: `Recebendo vídeo de ${participantId}`,
           });
+        });
+        
+        webrtcManager.setOnParticipantJoinCallback((participantId) => {
+          console.log('👤 HOST: UNIFIED Participant join callback from WebRTC:', participantId);
+          handleParticipantJoin(participantId);
+        });
 
-          console.log('🔗 HOST: UNIFIED WebRTC callbacks configured with STATIC HOST ID');
-          
-          // Success notification
+        console.log('🔗 HOST: UNIFIED WebRTC callbacks configured');
+        
+        // Success notification
+        toast({
+          title: "WebRTC Ativo",
+          description: "Host pronto para receber participantes",
+        });
+        
+      } catch (error) {
+        console.error('❌ HOST: UNIFIED WebRTC initialization error:', error);
+        
           toast({
-            title: "WebRTC Ativo",
-            description: "Host pronto para receber participantes (ID: host)",
-          });
-          
-        } else {
-          console.error('❌ HOST: Failed to initialize UNIFIED WebRTC');
-          
-          toast({
-            title: "Erro de inicialização",
-            description: "Falha ao inicializar WebRTC. Verifique a conexão.",
+            title: "Erro WebRTC",
+            description: "Problema na inicialização do WebRTC",
             variant: "destructive"
           });
         }
-      }).catch(error => {
-        console.error('❌ HOST: UNIFIED WebRTC initialization error:', error);
-        
-        toast({
-          title: "Erro WebRTC",
-          description: "Problema na inicialização do WebRTC",
-          variant: "destructive"
-        });
-      });
+      };
+      
+      initWebRTC();
 
       return () => {
         console.log('🧹 HOST: Cleaning up session');

@@ -66,16 +66,27 @@ export const useParticipantMedia = () => {
         tracks: stream.getTracks().length
       });
       
-      // Import and register stream  
-      const webRTCManager = (await import('@/utils/webrtc/UnifiedWebRTCManager')).default;
+      // CRITICAL: Stabilization period for mobile devices
+      console.log("⏳ Aguardando estabilização do stream...");
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // CRITICAL: Import and register stream directly with UnifiedWebRTCManager
+      const { getUnifiedWebRTCManager } = await import('@/utils/webrtc/UnifiedWebRTCManager');
+      const webRTCManager = getUnifiedWebRTCManager();
+      
       if (webRTCManager.setOutgoingStream) {
-        // ✅ AGUARDA ESTABILIZAÇÃO DO STREAM ANTES DE REGISTRAR
-        await new Promise(resolve => setTimeout(resolve, 300));
         webRTCManager.setOutgoingStream(stream);
-        console.log(`✅ Stream registered with WebRTC Manager after stabilization`);
+        console.log(`✅ Stream registered with UNIFIED WebRTC Manager`);
         
-        // ✅ EMIT EVENTO STREAM-READY PARA GARANTIR NOTIFICAÇÃO
-        console.log("📡 Stream do participante conectado", stream.getTracks());
+        // CRITICAL: Log stream details for debugging
+        console.log("📡 Stream do participante conectado", {
+          streamId: stream.id,
+          tracks: stream.getTracks().map(t => ({
+            kind: t.kind,
+            enabled: t.enabled,
+            readyState: t.readyState
+          }))
+        });
       }
       
       const videoTracks = stream.getVideoTracks();
@@ -181,7 +192,8 @@ export const useParticipantMedia = () => {
         tracks: newStream.getTracks().length
       });
       
-      const webRTCManager = (await import('@/utils/webrtc/UnifiedWebRTCManager')).default;
+      const { getUnifiedWebRTCManager } = await import('@/utils/webrtc/UnifiedWebRTCManager');
+      const webRTCManager = getUnifiedWebRTCManager();
       if (webRTCManager.setOutgoingStream) {
         webRTCManager.setOutgoingStream(newStream);
         console.log(`✅ New stream registered with WebRTC Manager`);
