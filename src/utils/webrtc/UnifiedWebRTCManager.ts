@@ -376,6 +376,16 @@ export class UnifiedWebRTCManager {
       // Notify stream if available
       if (this.localStream) {
         await this.notifyLocalStream();
+        
+        // CRITICAL: Add tracks to existing peer connections
+        this.peerConnections.forEach((pc, peerId) => {
+          if (this.localStream) {
+            this.localStream.getTracks().forEach(track => {
+              pc.addTrack(track, this.localStream!);
+              console.log(`🎯 Track ${track.kind} adicionada ao PeerConnection para ${peerId}`);
+            });
+          }
+        });
       }
       
       // CRITICAL: Start connection monitoring and auto-connect logic
@@ -428,6 +438,33 @@ export class UnifiedWebRTCManager {
     this.connectionHandler.clearRetries(participantId);
     this.connectionHandler.clearHeartbeat(participantId);
     this.connectionMetrics.delete(participantId);
+  }
+
+  // CRITICAL: Set outgoing stream and add tracks to existing peer connections
+  setOutgoingStream(stream: MediaStream) {
+    console.log(`🔗 UNIFIED: Setting outgoing stream:`, {
+      streamId: stream.id,
+      trackCount: stream.getTracks().length,
+      videoTracks: stream.getVideoTracks().length,
+      audioTracks: stream.getAudioTracks().length
+    });
+    
+    this.localStream = stream;
+    
+    // Add tracks to all existing peer connections
+    this.peerConnections.forEach((pc, peerId) => {
+      console.log(`🎯 Adding tracks to existing peer connection: ${peerId}`);
+      stream.getTracks().forEach(track => {
+        try {
+          pc.addTrack(track, stream);
+          console.log(`✅ Track ${track.kind} added to PeerConnection for ${peerId}`);
+        } catch (error) {
+          console.error(`❌ Failed to add track ${track.kind} to ${peerId}:`, error);
+        }
+      });
+    });
+    
+    console.log(`📡 Stream registered and tracks added to ${this.peerConnections.size} connections`);
   }
 
   // Public API methods
@@ -723,3 +760,15 @@ export class UnifiedWebRTCManager {
     console.log(`✅ UNIFIED: Cleanup completed`);
   }
 }
+
+// Create singleton instance
+let unifiedWebRTCManagerInstance: UnifiedWebRTCManager | null = null;
+
+export const getUnifiedWebRTCManager = (): UnifiedWebRTCManager => {
+  if (!unifiedWebRTCManagerInstance) {
+    unifiedWebRTCManagerInstance = new UnifiedWebRTCManager();
+  }
+  return unifiedWebRTCManagerInstance;
+};
+
+export default getUnifiedWebRTCManager();

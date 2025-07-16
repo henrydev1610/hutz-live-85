@@ -8,6 +8,7 @@ import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
 import StreamDebugPanel from '@/components/live/StreamDebugPanel';
 import { StreamDebugMonitor } from '@/components/live/StreamDebugMonitor';
 import { Participant } from '@/components/live/ParticipantGrid';
+import { HostDebugVideo } from '@/components/live/HostDebugVideo';
 
 interface LivePageContentProps {
   state: any;
@@ -167,6 +168,14 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
           });
         }}
       />
+      
+      {/* Debug video for first active stream */}
+      {Object.keys(state.participantStreams).length > 0 && (
+        <HostDebugVideo 
+          stream={Object.values(state.participantStreams)[0] as MediaStream} 
+          participantId={Object.keys(state.participantStreams)[0]}
+        />
+      )}
     </div>
   );
 };

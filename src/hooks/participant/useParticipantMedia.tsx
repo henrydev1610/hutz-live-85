@@ -60,6 +60,19 @@ export const useParticipantMedia = () => {
 
       localStreamRef.current = stream;
       
+      // CRITICAL: Register stream with UnifiedWebRTCManager
+      console.log(`🔗 REGISTERING stream with WebRTC Manager:`, {
+        streamId: stream.id,
+        tracks: stream.getTracks().length
+      });
+      
+      // Import and register stream  
+      const webRTCManager = (await import('@/utils/webrtc/UnifiedWebRTCManager')).default;
+      if (webRTCManager.setOutgoingStream) {
+        webRTCManager.setOutgoingStream(stream);
+        console.log(`✅ Stream registered with WebRTC Manager`);
+      }
+      
       const videoTracks = stream.getVideoTracks();
       const audioTracks = stream.getAudioTracks();
       
@@ -156,6 +169,19 @@ export const useParticipantMedia = () => {
 
       // Update state
       localStreamRef.current = newStream;
+      
+      // CRITICAL: Re-register new stream with WebRTC Manager
+      console.log(`🔗 RE-REGISTERING new stream after camera switch:`, {
+        streamId: newStream.id,
+        tracks: newStream.getTracks().length
+      });
+      
+      const webRTCManager = (await import('@/utils/webrtc/UnifiedWebRTCManager')).default;
+      if (webRTCManager.setOutgoingStream) {
+        webRTCManager.setOutgoingStream(newStream);
+        console.log(`✅ New stream registered with WebRTC Manager`);
+      }
+      
       const videoTracks = newStream.getVideoTracks();
       const audioTracks = newStream.getAudioTracks();
       
