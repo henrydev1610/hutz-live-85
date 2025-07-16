@@ -354,15 +354,54 @@ export class UnifiedWebRTCManager {
     try {
       this.updateConnectionState('websocket', 'connecting');
       await unifiedWebSocketService.connect();
-      this.setupWebSocketCallbacks();
-      await unifiedWebSocketService.joinRoom(sessionId, this.participantId);
       
+      // CRITICAL: Verificar se WebSocket está realmente conectado antes do join
+      if (!unifiedWebSocketService.isConnected()) {
+        throw new Error('WebSocket não está conectado antes do join');
+      }
+      
+      this.setupWebSocketCallbacks();
+      
+      console.log(`📍 HOST: Iniciando join da sala ${sessionId} com timeout de 60s...`);
+      
+      // CRITICAL: Join com timeout para evitar travamento
+      const joinTimeout = 60000;
+      await Promise.race([
+        unifiedWebSocketService.joinRoom(sessionId, this.participantId),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Join room timeout")), joinTimeout)
+        )
+      ]);
+      
+      console.log(`✅ HOST: Join da sala ${sessionId} completado com sucesso`);
       this.updateConnectionState('websocket', 'connected');
       console.log(`✅ UNIFIED HOST: Connected to signaling server`);
       
     } catch (error) {
       console.error(`❌ UNIFIED HOST: Failed to initialize:`, error);
       this.updateConnectionState('websocket', 'failed');
+      
+      // CRITICAL: Em caso de timeout, tentar reconectar após 3 segundos
+      if (error instanceof Error && error.message === "Join room timeout") {
+        console.log(`🔄 HOST: Timeout detectado, tentando reconectar em 3 segundos...`);
+        
+        // Exibir toast de erro
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('webrtc-error', {
+            detail: {
+              title: "Erro WebRTC",
+              description: "Timeout na conexão - tentando reconectar...",
+              variant: "destructive"
+            }
+          }));
+        }
+        
+        setTimeout(() => {
+          console.log(`🔄 HOST: Iniciando reconexão automática...`);
+          this.initializeAsHost(sessionId);
+        }, 3000);
+      }
+      
       throw error;
     }
   }
