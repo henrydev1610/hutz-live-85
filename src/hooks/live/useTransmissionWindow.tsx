@@ -221,7 +221,45 @@ export const useTransmissionWindow = () => {
               }, 5000);
             }
             
-            startStreamHeartbeat();
+            // CRITICAL: Aggressive stream checking with periodic retries
+            function periodicStreamCheck() {
+              console.log("🔄 TRANSMISSION: Periodic stream check started");
+              
+              setInterval(() => {
+                // Check all assigned participants for streams
+                Object.entries(participantSlots).forEach(([participantId, slotIndex]) => {
+                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                  if (slotElement && !slotElement.querySelector('video')) {
+                    console.log("🔄 TRANSMISSION: Retrying stream assignment for", participantId);
+                    createVideoElementFromStream(slotElement, participantId);
+                  }
+                });
+                
+                // Try to get any available streams from window.opener
+                if (window.opener && window.opener.sharedParticipantStreams) {
+                  const availableStreams = Object.keys(window.opener.sharedParticipantStreams);
+                  console.log("🔍 TRANSMISSION: Available streams in periodic check:", availableStreams);
+                  
+                  availableStreams.forEach(participantId => {
+                    if (!participantSlots[participantId] && availableSlots.length > 0) {
+                      console.log("🎯 TRANSMISSION: Auto-assigning slot to detected stream:", participantId);
+                      
+                      const slotIndex = availableSlots.shift();
+                      participantSlots[participantId] = slotIndex;
+                      
+                      const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                      if (slotElement) {
+                        createVideoElementFromStream(slotElement, participantId);
+                        slotElement.dataset.participantId = participantId;
+                      }
+                    }
+                  });
+                }
+              }, 3000); // Check every 3 seconds
+            }
+            
+            // Start periodic checking
+            setTimeout(periodicStreamCheck, 2000);
             
             // CRITICAL: Debug stream access and implement fallback
             function debugStreamAccess() {
@@ -243,23 +281,47 @@ export const useTransmissionWindow = () => {
               }
             }
             
-            // CRITICAL: Enhanced stream access with fallback
+            // CRITICAL: Enhanced stream access with multiple fallbacks and aggressive retries
             function getSharedStream(participantId) {
+              console.log("🔍 TRANSMISSION: Getting shared stream for", participantId);
               debugStreamAccess();
               
-              // Primary method: Direct access to shared streams
-              if (window.opener && window.opener.sharedParticipantStreams) {
+              // PRIMARY: Direct access to window.opener.sharedParticipantStreams
+              if (window.opener && window.opener.sharedParticipantStreams && window.opener.sharedParticipantStreams[participantId]) {
                 const stream = window.opener.sharedParticipantStreams[participantId];
                 if (stream && stream.getTracks().length > 0) {
-                  console.log("✅ TRANSMISSION: Found shared stream for", participantId, "with", stream.getTracks().length, "tracks");
+                  const activeTracks = stream.getTracks().filter(track => track.readyState === 'live');
+                  if (activeTracks.length > 0) {
+                    console.log("✅ TRANSMISSION: Found shared stream for", participantId, "with", activeTracks.length, "active tracks");
+                    return stream;
+                  }
+                }
+              }
+              
+              // FALLBACK 1: Check cached streams
+              if (participantStreams[participantId]) {
+                console.log("🔄 TRANSMISSION: Using cached stream for", participantId);
+                return participantStreams[participantId];
+              }
+              
+              // FALLBACK 2: Try to access from global window object
+              if (window.sharedParticipantStreams && window.sharedParticipantStreams[participantId]) {
+                const stream = window.sharedParticipantStreams[participantId];
+                if (stream && stream.getTracks().length > 0) {
+                  console.log("🔄 TRANSMISSION: Using global shared stream for", participantId);
+                  participantStreams[participantId] = stream; // Cache it
                   return stream;
                 }
               }
               
-              // Fallback: Check cached streams
-              if (participantStreams[participantId]) {
-                console.log("🔄 TRANSMISSION: Using cached stream for", participantId);
-                return participantStreams[participantId];
+              // FALLBACK 3: Try postMessage request for stream
+              if (window.opener && !window.opener.closed) {
+                console.log("📡 TRANSMISSION: Requesting stream for", participantId, "via postMessage");
+                window.opener.postMessage({
+                  type: 'request-participant-stream',
+                  participantId: participantId,
+                  timestamp: Date.now()
+                }, '*');
               }
               
               console.log("⚠️ TRANSMISSION: No shared stream found for", participantId);

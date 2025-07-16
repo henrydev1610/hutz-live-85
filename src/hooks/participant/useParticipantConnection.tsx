@@ -156,9 +156,13 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         retryCount++;
         
         if (retryCount < maxRetries) {
-          // Cleanup antes de retry
+          // Cleanup antes de retry com proteção contra null
           try {
-            unifiedWebSocketService.disconnect();
+            if (unifiedWebSocketService && typeof unifiedWebSocketService.disconnect === 'function') {
+              unifiedWebSocketService.disconnect();
+            } else {
+              console.warn('⚠️ WebSocket service not available for cleanup');
+            }
           } catch (cleanupError) {
             console.warn('⚠️ Error during cleanup:', cleanupError);
           }
