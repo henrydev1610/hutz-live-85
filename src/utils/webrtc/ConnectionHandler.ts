@@ -1,5 +1,6 @@
 
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+import { webRTCCallbacks } from './WebRTCCallbacksSingleton';
 
 export class ConnectionHandler {
   private peerConnections: Map<string, RTCPeerConnection>;
@@ -113,6 +114,9 @@ export class ConnectionHandler {
       if (this.streamCallback) {
         this.streamCallback(participantId, remoteStream);
       }
+      
+      // CRÍTICO: Disparar callback via singleton para sincronização completa
+      webRTCCallbacks.triggerStreamCallback(participantId, remoteStream);
       
       // CRÍTICO: Backup direto no window global
       if (typeof window !== 'undefined') {
