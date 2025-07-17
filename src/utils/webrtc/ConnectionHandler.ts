@@ -138,13 +138,26 @@ export class ConnectionHandler {
         this.notifyTransmissionWindows(participantId, remoteStream);
       }
 
-      // FASE 2: CALLBACKS APÓS ARMAZENAMENTO
+      // FASE 4: GARANTIR CALLBACK FUNCIONANDO - Múltiplas camadas de callback
+      console.log(`🎯 FASE 4: Executando callbacks para ${participantId}`);
+      
+      // Callback 1: Callback local do ConnectionHandler
       if (this.streamCallback) {
-        this.streamCallback(participantId, remoteStream);
+        try {
+          this.streamCallback(participantId, remoteStream);
+          console.log(`✅ FASE 4: Local callback executed for ${participantId}`);
+        } catch (error) {
+          console.error(`❌ FASE 4: Local callback failed for ${participantId}:`, error);
+        }
+      } else {
+        console.warn(`⚠️ FASE 4: No local stream callback set for ${participantId}`);
       }
       
-      // CRÍTICO: Disparar callback via singleton para sincronização completa
-      webRTCCallbacks.triggerStreamCallback(participantId, remoteStream);
+      // Callback 2: Singleton callback com verificação
+      this.handleSingletonCallback(participantId, remoteStream);
+      
+      // Callback 3: Redundância adicional - direct window callback
+      this.handleWindowCallback(participantId, remoteStream);
     };
 
     // CRITICAL: Add local stream if available (for participants)
@@ -418,6 +431,53 @@ export class ConnectionHandler {
 
     // Re-enviar notificações
     this.notifyTransmissionWindows(participantId, stream);
+  }
+
+  // FASE 4: Callback methods to avoid async in ontrack
+  private handleSingletonCallback(participantId: string, remoteStream: MediaStream): void {
+    try {
+      if (webRTCCallbacks && typeof webRTCCallbacks.triggerStreamCallback === 'function') {
+        webRTCCallbacks.triggerStreamCallback(participantId, remoteStream);
+        console.log(`✅ FASE 4: Singleton callback executed for ${participantId}`);
+      } else {
+        console.error(`❌ FASE 4: WebRTCCallbacks singleton not available or invalid`);
+        
+        // Fallback: tentar importar singleton novamente (sem await)
+        import('./WebRTCCallbacksSingleton').then(({ webRTCCallbacks: fallbackCallbacks }) => {
+          if (fallbackCallbacks && typeof fallbackCallbacks.triggerStreamCallback === 'function') {
+            fallbackCallbacks.triggerStreamCallback(participantId, remoteStream);
+            console.log(`✅ FASE 4: Fallback singleton callback executed for ${participantId}`);
+          }
+        }).catch(error => {
+          console.error(`❌ FASE 4: Fallback import failed for ${participantId}:`, error);
+        });
+      }
+    } catch (error) {
+      console.error(`❌ FASE 4: Singleton callback failed for ${participantId}:`, error);
+    }
+  }
+
+  private handleWindowCallback(participantId: string, remoteStream: MediaStream): void {
+    try {
+      if (typeof window !== 'undefined') {
+        // Declare the property if it doesn't exist
+        if (!('hostStreamCallbacks' in window)) {
+          (window as any).hostStreamCallbacks = [];
+        }
+        
+        const callbacks = (window as any).hostStreamCallbacks;
+        if (Array.isArray(callbacks)) {
+          callbacks.forEach((callback: any) => {
+            if (typeof callback === 'function') {
+              callback(participantId, remoteStream);
+            }
+          });
+          console.log(`✅ FASE 4: Window callbacks executed for ${participantId}`);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ FASE 4: Window callbacks failed for ${participantId}:`, error);
+    }
   }
 
   cleanup(): void {

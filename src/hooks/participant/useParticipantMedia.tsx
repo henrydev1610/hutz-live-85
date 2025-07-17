@@ -60,27 +60,58 @@ export const useParticipantMedia = () => {
 
       localStreamRef.current = stream;
       
-      // FASE 2: CORRECT TIMING - Stream registration AFTER WebRTC init
-      console.log(`🎬 MEDIA: Stream obtained, preparing for delayed registration:`, {
+      // FASE 2: AGUARDAR WebRTC MANAGER ESTAR PRONTO ANTES DE REGISTRAR
+      console.log(`🎬 FASE 2: Stream obtained, waiting for WebRTC manager:`, {
         streamId: stream.id,
         tracks: stream.getTracks().length
       });
       
-      // FASE 1: Use singleton instance from webrtc.ts instead of direct import
-      const { getWebRTCManager } = await import('@/utils/webrtc');
-      const webRTCManager = getWebRTCManager();
+      // FASE 2: Implementar sistema de retry para registro do stream
+      const registerStreamWithRetry = async (maxAttempts = 10) => {
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const { getWebRTCManager } = await import('@/utils/webrtc');
+            const webRTCManager = getWebRTCManager();
+            
+            if (webRTCManager && typeof webRTCManager.setOutgoingStream === 'function') {
+              // Aguardar estabilização do stream antes de registrar
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              webRTCManager.setOutgoingStream(stream);
+              console.log(`✅ FASE 2: Stream registered successfully on attempt ${attempt}`);
+              
+              // Verificar se o registro foi bem sucedido
+              // Note: getLocalStream method may not exist, so we'll skip verification for now
+              console.log(`✅ FASE 2: Stream registration completed on attempt ${attempt}`);
+              return true;
+            } else {
+              throw new Error(`WebRTC manager not ready on attempt ${attempt}`);
+            }
+          } catch (error) {
+            console.warn(`⚠️ FASE 2: Stream registration attempt ${attempt} failed:`, error);
+            
+            if (attempt === maxAttempts) {
+              console.error(`❌ FASE 2: Failed to register stream after ${maxAttempts} attempts`);
+              toast.error('Stream registration failed - connection may be unstable');
+              return false;
+            }
+            
+            // Aguardar antes de tentar novamente (exponential backoff)
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+            console.log(`🔄 FASE 2: Retrying stream registration in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        }
+        return false;
+      };
       
-      if (webRTCManager) {
-        // ✅ AGUARDA ESTABILIZAÇÃO DO STREAM ANTES DE REGISTRAR (rule 1)
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        webRTCManager.setOutgoingStream(stream);
-        console.log(`✅ FASE 1: Stream registered with correct singleton instance`);
-        
-        // ✅ EMIT EVENTO STREAM-READY PARA O HOST (rule 1)
-        console.log("📡 Stream do participante conectado", stream.getTracks());
+      // Executar registro com retry
+      const registrationSuccess = await registerStreamWithRetry();
+      
+      if (registrationSuccess) {
+        console.log("📡 FASE 2: Stream do participante conectado e registrado com sucesso!");
       } else {
-        console.warn(`⚠️ FASE 1: No WebRTC manager available yet, stream will be registered later`);
+        console.error("❌ FASE 2: Failed to register participant stream");
       }
       
       const videoTracks = stream.getVideoTracks();
@@ -180,20 +211,45 @@ export const useParticipantMedia = () => {
       // Update state
       localStreamRef.current = newStream;
       
-      // FASE 1: Use singleton instance from webrtc.ts for camera switch
-      console.log(`🔗 FASE 1: Re-registering new stream after camera switch:`, {
+      // FASE 2: Re-registrar stream após switch de câmera com retry
+      console.log(`🔗 FASE 2: Re-registering new stream after camera switch:`, {
         streamId: newStream.id,
         tracks: newStream.getTracks().length
       });
       
-      const { getWebRTCManager } = await import('@/utils/webrtc');
-      const webRTCManager = getWebRTCManager();
+      // Usar a mesma função de retry para consistência
+      const registerSwitchedStreamWithRetry = async (maxAttempts = 5) => {
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const { getWebRTCManager } = await import('@/utils/webrtc');
+            const webRTCManager = getWebRTCManager();
+            
+            if (webRTCManager && typeof webRTCManager.setOutgoingStream === 'function') {
+              webRTCManager.setOutgoingStream(newStream);
+              console.log(`✅ FASE 2: New stream registered on attempt ${attempt}`);
+              return true;
+            } else {
+              throw new Error(`WebRTC manager not available on attempt ${attempt}`);
+            }
+          } catch (error) {
+            console.warn(`⚠️ FASE 2: Camera switch registration attempt ${attempt} failed:`, error);
+            
+            if (attempt === maxAttempts) {
+              console.error(`❌ FASE 2: Failed to register switched stream after ${maxAttempts} attempts`);
+              return false;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+        return false;
+      };
       
-      if (webRTCManager) {
-        webRTCManager.setOutgoingStream(newStream);
-        console.log(`✅ FASE 1: New stream registered with correct singleton instance`);
-      } else {
-        console.warn(`⚠️ FASE 1: No WebRTC manager available during camera switch`);
+      const switchRegistrationSuccess = await registerSwitchedStreamWithRetry();
+      
+      if (!switchRegistrationSuccess) {
+        console.error("❌ FASE 2: Failed to register switched camera stream");
+        toast.error('Camera switch may not be visible to other participants');
       }
       
       const videoTracks = newStream.getVideoTracks();

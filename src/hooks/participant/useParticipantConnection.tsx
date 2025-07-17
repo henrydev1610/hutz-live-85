@@ -19,15 +19,15 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       return;
     }
 
-    // FASE 2: Evitar múltiplas tentativas simultâneas
+    // FASE 1: Evitar múltiplas tentativas simultâneas
     if (connectionInProgress) {
-      console.log('⚠️ CONNECTION ALREADY IN PROGRESS, skipping...');
+      console.log('⚠️ FASE 1: CONNECTION ALREADY IN PROGRESS, skipping...');
       return;
     }
 
-    console.log(`🔗 PARTICIPANT CONNECTION: Starting connection process for ${participantId}`);
-    console.log(`📱 PARTICIPANT CONNECTION: Mobile device: ${isMobile}`);
-    console.log(`🎥 PARTICIPANT CONNECTION: Has stream: ${!!stream}`);
+    console.log(`🔗 FASE 1: Starting connection process for ${participantId}`);
+    console.log(`📱 FASE 1: Mobile device: ${isMobile}`);
+    console.log(`🎥 FASE 1: Has stream: ${!!stream}`);
     
     setConnectionInProgress(true);
     setIsConnecting(true);
@@ -93,20 +93,45 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         // Aguardar mais tempo para estabilização no mobile
         await new Promise(resolve => setTimeout(resolve, isMobile ? 2000 : 1000));
 
-        // Etapa 3: Conectar WebRTC com configurações específicas para mobile
-        console.log(`🔗 PARTICIPANT CONNECTION: Initializing WebRTC (attempt ${retryCount + 1})`);
+        // FASE 1: Conectar WebRTC com aguardo de estabilização
+        console.log(`🔗 FASE 1: Initializing WebRTC (attempt ${retryCount + 1})`);
         
-        const webrtcTimeout = isMobile ? 30000 : 20000;
-        const { webrtc } = await Promise.race([
+        const webrtcTimeout = isMobile ? 45000 : 30000; // Aumentado para 45s mobile
+        const webRTCResult = await Promise.race([
           initParticipantWebRTC(sessionId, participantId, stream || undefined),
           new Promise<never>((_, reject) => 
             setTimeout(() => reject(new Error(`WebRTC timeout after ${webrtcTimeout}ms`)), webrtcTimeout)
           )
         ]);
         
+        const { webrtc: webRTCManager } = webRTCResult;
+        
+        // FASE 1: Aguardar WebRTC estar completamente pronto antes de prosseguir
+        console.log(`⏳ FASE 1: Waiting for WebRTC readiness...`);
+        let webRTCReady = false;
+        let readyAttempts = 0;
+        const maxReadyAttempts = isMobile ? 20 : 15; // 20s mobile, 15s desktop
+        
+        while (!webRTCReady && readyAttempts < maxReadyAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          readyAttempts++;
+          
+          // Verificar se o WebRTC manager está pronto para operar
+          if (webRTCManager && typeof webRTCManager.setOutgoingStream === 'function') {
+            console.log(`✅ FASE 1: WebRTC manager ready after ${readyAttempts}s`);
+            webRTCReady = true;
+          } else {
+            console.log(`⏳ FASE 1: Waiting for WebRTC readiness... (${readyAttempts}/${maxReadyAttempts})`);
+          }
+        }
+        
+        if (!webRTCReady) {
+          throw new Error(`WebRTC manager not ready after ${maxReadyAttempts}s`);
+        }
+        
         // Setup WebRTC callbacks
-        webrtc.setOnStreamCallback((pId: string, incomingStream: MediaStream) => {
-          console.log(`🎥 PARTICIPANT CONNECTION: Stream received from ${pId}:`, {
+        webRTCManager.setOnStreamCallback((pId: string, incomingStream: MediaStream) => {
+          console.log(`🎥 FASE 1: Stream received from ${pId}:`, {
             streamId: incomingStream.id,
             active: incomingStream.active,
             tracks: incomingStream.getTracks().map(t => ({
@@ -117,11 +142,11 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
           });
         });
         
-        webrtc.setOnParticipantJoinCallback((pId: string) => {
-          console.log(`👤 PARTICIPANT CONNECTION: Participant joined: ${pId}`);
+        webRTCManager.setOnParticipantJoinCallback((pId: string) => {
+          console.log(`👤 FASE 1: Participant joined: ${pId}`);
         });
         
-        console.log(`✅ PARTICIPANT CONNECTION: WebRTC initialized successfully`);
+        console.log(`✅ FASE 1: WebRTC initialized and ready!`);
         
         // Verificar se o stream local foi enviado corretamente
         if (stream) {
