@@ -4,7 +4,7 @@
 
 export const getWebSocketURL = (): string => {
   // Use variável de ambiente se definida
-  const envApiUrl = import.meta.env.VITE_API_URL;
+  const envApiUrl = import.meta.env.VITE_API_URL || 'htttp://localhost:3001';
   
   if (envApiUrl) {
     console.log(`🔧 CONNECTION: Using environment API URL: ${envApiUrl}`);
