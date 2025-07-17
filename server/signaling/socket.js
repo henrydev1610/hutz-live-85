@@ -3,10 +3,21 @@ const connections = new Map(); // socketId -> { roomId, userId, socketRef }
 const rooms = new Map(); // roomId -> Set of socketIds
 
 // Configuração dos servidores STUN/TURN
+// FASE 4: Enhanced ICE server configuration with TURN servers
 const getICEServers = () => {
   const servers = [];
   
-  // Servidores STUN
+  // Multiple STUN servers for redundancy
+  const defaultStunServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.services.mozilla.com' }
+  ];
+  
+  // Use custom STUN servers if provided, otherwise use defaults
   if (process.env.STUN_SERVERS) {
     try {
       const stunServers = JSON.parse(process.env.STUN_SERVERS);
@@ -15,17 +26,13 @@ const getICEServers = () => {
       });
     } catch (error) {
       console.warn('Invalid STUN_SERVERS format, using defaults');
-      servers.push({ urls: 'stun:stun.l.google.com:19302' });
+      servers.push(...defaultStunServers);
     }
   } else {
-    // Servidores STUN padrão
-    servers.push(
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
-    );
+    servers.push(...defaultStunServers);
   }
   
-  // Servidores TURN (se configurados)
+  // TURN servers for production NAT traversal
   if (process.env.TURN_SERVERS) {
     try {
       const turnServers = JSON.parse(process.env.TURN_SERVERS);
@@ -33,8 +40,18 @@ const getICEServers = () => {
     } catch (error) {
       console.warn('Invalid TURN_SERVERS format');
     }
+  } else {
+    // Default TURN servers (replace with your production credentials)
+    if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+      servers.push({
+        urls: process.env.TURN_URL,
+        username: process.env.TURN_USERNAME,
+        credential: process.env.TURN_CREDENTIAL
+      });
+    }
   }
   
+  console.log(`🌐 ICE Servers configured: ${servers.length} servers (${servers.filter(s => s.urls.includes('turn')).length} TURN, ${servers.filter(s => s.urls.includes('stun')).length} STUN)`);
   return servers;
 };
 

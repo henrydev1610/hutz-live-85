@@ -430,16 +430,20 @@ class UnifiedWebSocketService {
     this.isConnecting = false;
   }
 
-  // Health check method
+  // FASE 4: Health check method for connection testing
   async healthCheck(): Promise<boolean> {
-    if (!this.isConnected()) {
-      return false;
-    }
-
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve(false), 5000);
+      if (!this.socket || !this.socket.connected) {
+        resolve(false);
+        return;
+      }
       
-      this.socket!.emit('ping', (response: any) => {
+      // Send ping and wait for pong with device-optimized timeout
+      const timeouts = this.isMobileDevice() ? 8000 : 5000; // Longer timeout for mobile
+      const timeout = setTimeout(() => resolve(false), timeouts);
+      
+      this.socket.emit('heartbeat', { timestamp: Date.now() });
+      this.socket.once('heartbeat', () => {
         clearTimeout(timeout);
         resolve(true);
       });

@@ -3,7 +3,7 @@ import { ConnectionHandler } from './ConnectionHandler';
 import { SignalingHandler } from './SignalingHandler';
 import { ParticipantManager } from './ParticipantManager';
 import { WebRTCCallbacks } from './WebRTCCallbacks';
-import { MEDIA_CONSTRAINTS } from './WebRTCConfig';
+import { MEDIA_CONSTRAINTS, WEBRTC_CONFIG, getTimeoutConfig } from './WebRTCConfig';
 
 interface ConnectionState {
   websocket: 'disconnected' | 'connecting' | 'connected' | 'failed';
@@ -58,8 +58,22 @@ export class UnifiedWebRTCManager {
   constructor() {
     console.log('🔧 UNIFIED WebRTC Manager initialized');
     this.detectMobile();
+    this.updateRetryConfigForDevice();
     this.initializeComponents();
     this.setupHealthMonitoring();
+  }
+
+  
+  // FASE 4: Update retry config based on device type for optimal timeouts
+  private updateRetryConfigForDevice() {
+    const timeouts = getTimeoutConfig();
+    this.retryConfig = {
+      maxRetries: this.isMobile ? 7 : 5,              // More retries for mobile
+      initialDelay: timeouts.retry,                   // Device-specific retry delay
+      maxDelay: this.isMobile ? 60000 : 30000,       // Longer max delay for mobile
+      multiplier: this.isMobile ? 1.8 : 2             // Gentler backoff for mobile
+    };
+    console.log(`📱 FASE 4: Updated retry config for ${this.isMobile ? 'mobile' : 'desktop'}:`, this.retryConfig);
   }
 
   private detectMobile() {
