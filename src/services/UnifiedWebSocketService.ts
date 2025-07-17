@@ -291,14 +291,7 @@ class UnifiedWebSocketService {
         console.log(`📡 WEBSOCKET: Sending join request (attempt ${attempt})`);
         
         try {
-          // Try multiple event formats for compatibility
-          this.socket?.emit('join_room', { 
-            roomId, 
-            userId,
-            timestamp: Date.now(),
-            attempt
-          });
-          
+          // Send only the correct event that server expects
           this.socket?.emit('join-room', { 
             roomId, 
             userId,
