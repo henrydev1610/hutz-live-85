@@ -58,8 +58,28 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
       
       // Show stream in video element
       if (videoRef.current) {
+        console.log('🎬 Setting stream to video element:', stream);
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(console.error);
+        
+        // Force video to show immediately
+        videoRef.current.onloadedmetadata = () => {
+          console.log('📺 Video metadata loaded, dimensions:', 
+            videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
+          videoRef.current?.play().catch(console.error);
+        };
+        
+        // Immediate play attempt
+        videoRef.current.play()
+          .then(() => console.log('▶️ Video playback started successfully'))
+          .catch((error) => {
+            console.error('❌ Video playback failed:', error);
+            // Try again after a short delay
+            setTimeout(() => {
+              videoRef.current?.play().catch(console.error);
+            }, 100);
+          });
+      } else {
+        console.error('❌ Video ref not available');
       }
       
       setTestStream(stream);
@@ -169,7 +189,7 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
         </div>
 
         {/* Camera Test Preview */}
-        {testStream && (
+        {testStream ? (
           <div className="pt-4 border-t">
             <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-3">
               <video
@@ -184,6 +204,24 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
                   🔴 Ao Vivo
                 </Badge>
               </div>
+            </div>
+          </div>
+        ) : (
+          <div className="pt-4 border-t">
+            <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden mb-3 flex items-center justify-center">
+              <div className="text-gray-400 text-center">
+                <Video className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Clique em "Testar Conexão" para ver o vídeo</p>
+              </div>
+              {/* Hidden video element for debugging */}
+              <video
+                ref={videoRef}
+                autoPlay
+                muted
+                playsInline
+                className="absolute inset-0 w-full h-full object-cover"
+                style={{ display: testStream ? 'block' : 'none' }}
+              />
             </div>
           </div>
         )}
