@@ -1,4 +1,3 @@
-
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 export class ConnectionHandler {
@@ -41,7 +40,6 @@ export class ConnectionHandler {
     const peerConnection = new RTCPeerConnection(config);
     this.peerConnections.set(participantId, peerConnection);
 
-    // ICE candidate handling
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         console.log(`🧊 Sending ICE candidate to: ${participantId}`);
@@ -49,10 +47,9 @@ export class ConnectionHandler {
       }
     };
 
-    // Connection state monitoring
     peerConnection.onconnectionstatechange = () => {
       console.log(`🔗 Connection state for ${participantId}:`, peerConnection.connectionState);
-      
+
       if (peerConnection.connectionState === 'connected') {
         console.log(`✅ Peer connection established with: ${participantId}`);
         if (this.participantJoinCallback) {
@@ -64,7 +61,6 @@ export class ConnectionHandler {
       }
     };
 
-    // CRITICAL: Enhanced stream handling for incoming tracks with mobile optimization
     peerConnection.ontrack = (event) => {
       console.log(`🎥 MOBILE-CRITICAL: Track received from ${participantId}:`, {
         kind: event.track.kind,
@@ -85,7 +81,6 @@ export class ConnectionHandler {
           streamActive: stream.active
         });
 
-        // Enhanced callback trigger with multiple fallbacks for mobile
         const triggerCallback = () => {
           if (this.streamCallback) {
             console.log(`🚀 MOBILE-IMMEDIATE: Triggering stream callback for ${participantId}`);
@@ -93,7 +88,6 @@ export class ConnectionHandler {
               this.streamCallback(participantId, stream);
             } catch (error) {
               console.error(`❌ Stream callback error for ${participantId}:`, error);
-              // Retry once more if callback fails
               setTimeout(() => {
                 if (this.streamCallback) {
                   this.streamCallback(participantId, stream);
@@ -105,24 +99,12 @@ export class ConnectionHandler {
           }
         };
 
-        // Immediate trigger
         triggerCallback();
-        
-        // Backup trigger after minimal delay to ensure mobile streams are captured
-        setTimeout(() => {
-          console.log(`🔄 MOBILE-BACKUP: Backup trigger for ${participantId}`);
-          triggerCallback();
-        }, 100);
+        setTimeout(() => triggerCallback(), 100);
+        setTimeout(() => triggerCallback(), 500);
 
-        // Additional backup for problematic mobile connections
-        setTimeout(() => {
-          console.log(`🔄 MOBILE-FINAL: Final backup trigger for ${participantId}`);
-          triggerCallback();
-        }, 500);
-        
       } else {
         console.warn(`⚠️ MOBILE: Track received from ${participantId} but no streams attached`);
-        // Try to create stream from track for mobile compatibility
         if (event.track) {
           const syntheticStream = new MediaStream([event.track]);
           console.log(`🔧 MOBILE-FIX: Created synthetic stream for ${participantId}`);
@@ -133,13 +115,23 @@ export class ConnectionHandler {
       }
     };
 
-    // Add local stream if available (for participants)
+    // ✅ ALTERAÇÃO: usar replaceTrack ao invés de addTrack redundante
     const localStream = this.getLocalStream();
     if (localStream) {
-      console.log(`📤 Adding local stream to peer connection for: ${participantId}`);
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-        console.log(`➕ Added ${track.kind} track to peer connection`);
+      console.log(`📤 Preparing to push local tracks to: ${participantId}`);
+      const senders = peerConnection.getSenders();
+
+      localStream.getTracks().forEach(newTrack => {
+        const existingSender = senders.find(s => s.track?.kind === newTrack.kind);
+        if (existingSender) {
+          console.log(`🔁 Replacing ${newTrack.kind} track for: ${participantId}`);
+          existingSender.replaceTrack(newTrack).catch(err =>
+            console.error(`❌ Failed to replace ${newTrack.kind} track for ${participantId}:`, err)
+          );
+        } else {
+          console.log(`➕ Adding new ${newTrack.kind} track to: ${participantId}`);
+          peerConnection.addTrack(newTrack, localStream);
+        }
       });
     }
 
@@ -148,20 +140,20 @@ export class ConnectionHandler {
 
   async initiateCallWithRetry(participantId: string, maxRetries: number = 3): Promise<void> {
     const currentRetries = this.retryAttempts.get(participantId) || 0;
-    
+
     if (currentRetries >= maxRetries) {
       console.error(`❌ Max retry attempts reached for: ${participantId}`);
       return;
     }
 
     this.retryAttempts.set(participantId, currentRetries + 1);
-    
+
     try {
       await this.initiateCall(participantId);
-      this.retryAttempts.delete(participantId); // Reset on success
+      this.retryAttempts.delete(participantId);
     } catch (error) {
       console.error(`❌ Call initiation failed for ${participantId} (attempt ${currentRetries + 1}):`, error);
-      
+
       if (currentRetries + 1 < maxRetries) {
         console.log(`🔄 Retrying call to ${participantId} in 2 seconds...`);
         setTimeout(() => {
@@ -175,16 +167,16 @@ export class ConnectionHandler {
     console.log(`📞 Initiating call to: ${participantId}`);
 
     const peerConnection = this.createPeerConnection(participantId);
-    
+
     try {
       const offer = await peerConnection.createOffer({
         offerToReceiveVideo: true,
         offerToReceiveAudio: true
       });
-      
+
       await peerConnection.setLocalDescription(offer);
       console.log(`📤 Sending offer to: ${participantId}`);
-      
+
       unifiedWebSocketService.sendOffer(participantId, offer);
     } catch (error) {
       console.error(`❌ Failed to create/send offer to ${participantId}:`, error);
@@ -194,18 +186,15 @@ export class ConnectionHandler {
 
   private handleConnectionFailure(participantId: string): void {
     console.log(`🔄 Handling connection failure for: ${participantId}`);
-    
-    // Clean up failed connection
+
     const peerConnection = this.peerConnections.get(participantId);
     if (peerConnection) {
       peerConnection.close();
       this.peerConnections.delete(participantId);
     }
-    
-    // Clear heartbeat
+
     this.clearHeartbeat(participantId);
-    
-    // Attempt retry after delay
+
     setTimeout(() => {
       this.initiateCallWithRetry(participantId);
     }, 3000);
@@ -213,25 +202,21 @@ export class ConnectionHandler {
 
   startHeartbeat(participantId: string): void {
     console.log(`💓 Starting heartbeat for: ${participantId}`);
-    
-    // Enhanced heartbeat frequency for mobile connections
+
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    const heartbeatInterval = isMobile ? 5000 : 30000; // 5s for mobile, 30s for desktop
-    
+    const heartbeatInterval = isMobile ? 5000 : 30000;
+
     console.log(`💓 MOBILE-OPTIMIZED: Using ${heartbeatInterval}ms heartbeat for ${participantId} (${isMobile ? 'Mobile' : 'Desktop'})`);
-    
+
     const interval = setInterval(() => {
       const peerConnection = this.peerConnections.get(participantId);
       if (peerConnection && peerConnection.connectionState === 'connected') {
         console.log(`💓 Heartbeat sent to: ${participantId}`);
-        // Enhanced heartbeat for mobile - check connection quality
+
         if (isMobile) {
-          // Send ping via data channel or check ICE connection state
-          console.log(`📱 MOBILE HEARTBEAT: Connection state: ${peerConnection.connectionState}, ICE state: ${peerConnection.iceConnectionState}`);
-          
-          // If ICE connection is not stable, trigger recovery
+          console.log(`📱 MOBILE HEARTBEAT: ICE state: ${peerConnection.iceConnectionState}`);
           if (peerConnection.iceConnectionState !== 'connected' && peerConnection.iceConnectionState !== 'completed') {
-            console.warn(`⚠️ MOBILE HEARTBEAT: Unstable ICE connection detected for ${participantId}: ${peerConnection.iceConnectionState}`);
+            console.warn(`⚠️ MOBILE HEARTBEAT: Unstable ICE connection for ${participantId}`);
             this.handleConnectionFailure(participantId);
           }
         }
@@ -240,7 +225,7 @@ export class ConnectionHandler {
         this.clearHeartbeat(participantId);
       }
     }, heartbeatInterval);
-    
+
     this.heartbeatIntervals.set(participantId, interval);
   }
 
@@ -259,15 +244,13 @@ export class ConnectionHandler {
 
   cleanup(): void {
     console.log('🧹 Cleaning up ConnectionHandler');
-    
-    // Clear all heartbeats
+
     this.heartbeatIntervals.forEach((interval, participantId) => {
       clearInterval(interval);
       console.log(`💔 Cleared heartbeat for: ${participantId}`);
     });
     this.heartbeatIntervals.clear();
-    
-    // Clear retry attempts
+
     this.retryAttempts.clear();
   }
 }
