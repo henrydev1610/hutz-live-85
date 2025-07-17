@@ -140,6 +140,10 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
         />
       )}
 
+      {/* DEBUG: Informações de debug SEMPRE visíveis */}
+      <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-1 rounded z-30">
+        {participant.hasVideo ? 'HAS_VIDEO' : 'NO_VIDEO'} | {participant.active ? 'ACTIVE' : 'INACTIVE'} | {participant.isMobile ? '📱' : '💻'} | {isHealthy ? '💚' : '💔'}
+      </div>
       
       {/* Show placeholder when participant is active but no video is playing or unhealthy */}
       {participant.active && stream && (!hasPlayingVideo() || !isHealthy) && (

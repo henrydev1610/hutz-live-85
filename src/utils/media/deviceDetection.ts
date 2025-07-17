@@ -47,8 +47,7 @@ export const checkMediaDevicesSupport = (): boolean => {
 
 export const getCameraPreference = (): 'user' | 'environment' => {
   const saved = localStorage.getItem('cameraPreference');
-  const isMobile = detectMobileAggressively();
-  return (saved as 'user' | 'environment') || (isMobile ? 'environment' : 'user');
+  return (saved as 'user' | 'environment') || 'user';
 };
 
 export const setCameraPreference = (preference: 'user' | 'environment'): void => {

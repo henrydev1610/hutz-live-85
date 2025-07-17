@@ -4,10 +4,10 @@ import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
 import { initHostWebRTC } from '@/utils/webrtc';
-import { useStreamSynchronizer } from './useStreamSyncronizer';
 
 interface UseLivePageEffectsProps {
   sessionId: string | null;
+  localStream: MediaStream | null;
   participantStreams: {[id: string]: MediaStream};
   participantList: Participant[];
   transmissionOpen: boolean;
@@ -23,6 +23,7 @@ interface UseLivePageEffectsProps {
 
 export const useLivePageEffects = ({
   sessionId,
+  localStream,
   participantStreams,
   participantList,
   transmissionOpen,
@@ -36,14 +37,6 @@ export const useLivePageEffects = ({
   setQrCodeSvg
 }: UseLivePageEffectsProps) => {
   const { toast } = useToast();
-
-  // CRITICAL: Stream Synchronizer for assertive transmission
-  const { forceSyncNow } = useStreamSynchronizer({
-    participantStreams,
-    participantList,
-    transmissionWindowRef,
-    sessionId
-  });
 
   // QR Code generation effect
   useEffect(() => {
@@ -61,25 +54,17 @@ export const useLivePageEffects = ({
       if (sessionId) {
         cleanupSession(sessionId);
       }
-      // HOST: No local stream to cleanup - only manages remote streams
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
     };
-  }, [sessionId]);
+  }, [sessionId, localStream]);
 
-  // Enhanced session initialization effect with stream forwarding integration
+  // Enhanced session initialization effect
   useEffect(() => {
     if (sessionId) {
       console.log('🚀 HOST: INITIALIZING SESSION:', sessionId);
       window.sessionStorage.setItem('currentSessionId', sessionId);
-      
-      // CRÍTICO: Inicializar objetos globais para transmissão
-      if (!window.sharedParticipantStreams) {
-        window.sharedParticipantStreams = {};
-        console.log('🌐 GLOBAL: sharedParticipantStreams initialized');
-      }
-      if (!window.streamBackup) {
-        window.streamBackup = {};
-        console.log('🌐 GLOBAL: streamBackup initialized');
-      }
       
       const cleanup = initializeHostSession(sessionId, {
         onParticipantJoin: (id) => {
@@ -100,100 +85,34 @@ export const useLivePageEffects = ({
         }
       });
 
-      // Initialize WebRTC with CRITICAL static host ID - UNIFIED SYSTEM
+      // Initialize WebRTC with enhanced logging
       initHostWebRTC(sessionId).then(result => {
         if (result && result.webrtc) {
-          console.log('✅ HOST: UNIFIED WebRTC initialized with STATIC HOST ID');
+          console.log('✅ HOST: WebRTC initialized successfully');
           
-          // CRITICAL: Set up callbacks for stream and participant management
           result.webrtc.setOnStreamCallback((participantId, stream) => {
-            console.log('🎥 HOST: UNIFIED STREAM RECEIVED from:', participantId, {
+            console.log('🎥 HOST: RECEIVED STREAM from:', participantId, {
               streamId: stream.id,
               trackCount: stream.getTracks().length,
               videoTracks: stream.getVideoTracks().length,
-              audioTracks: stream.getAudioTracks().length,
-              active: stream.active,
-              timestamp: Date.now()
+              active: stream.active
             });
             
-            // IMEDIATO: Armazenar no window global para transmissão
-            if (!window.sharedParticipantStreams) {
-              window.sharedParticipantStreams = {};
-            }
-            if (!window.streamBackup) {
-              window.streamBackup = {};
-            }
+            handleParticipantStream(participantId, stream);
             
-            window.sharedParticipantStreams[participantId] = stream;
-            window.streamBackup[participantId] = stream;
-            
-            console.log('📡 GLOBAL: Stream stored in window objects for transmission access', {
-              participantId,
-              streamId: stream.id,
-              globalKeys: Object.keys(window.sharedParticipantStreams),
-              backupKeys: Object.keys(window.streamBackup)
-            });
-            
-          // FASE 3: PROPAGAÇÃO ATIVA IMEDIATA para janela /live
-          if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-            console.log(`📡 FASE 3: Enviando stream ${participantId} para janela /live via postMessage`);
-            try {
-              transmissionWindowRef.current.postMessage({
-                type: 'immediate-stream-available',
-                participantId: participantId,
-                streamId: stream.id,
-                timestamp: Date.now(),
-                action: 'force-display'
-              }, '*');
-            } catch (error) {
-              console.error(`❌ FASE 3: Erro ao enviar postMessage:`, error);
-            }
-          }
-
-          // CRITICAL: Direct stream processing for immediate visibility
-          handleParticipantStream(participantId, stream);
-          
-          // Force immediate update to transmission participants
-          setTimeout(() => {
-            console.log('🔄 HOST: UNIFIED Updating transmission after stream received');
-            updateTransmissionParticipants();
-            // CRITICAL: Also force stream sync
-            forceSyncNow();
-            
-            // FASE 4: SISTEMA DE VERIFICAÇÃO - verificar se a janela /live exibiu o stream
+            // Update transmission immediately
             setTimeout(() => {
-              if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-                transmissionWindowRef.current.postMessage({
-                  type: 'verify-stream-display',
-                  participantId: participantId,
-                  verificationId: `verify-${Date.now()}`
-                }, '*');
-              }
-            }, 2000);
-          }, 100);
-            
-            // Success feedback
-            toast({
-              title: "Câmera Conectada",
-              description: `Recebendo vídeo de ${participantId}`,
-            });
+              console.log('🔄 HOST: Updating transmission after stream received');
+              updateTransmissionParticipants();
+            }, 200);
           });
           
           result.webrtc.setOnParticipantJoinCallback((participantId) => {
-            console.log('👤 HOST: UNIFIED Participant join callback from WebRTC:', participantId);
+            console.log('👤 HOST: PARTICIPANT JOIN via WebRTC:', participantId);
             handleParticipantJoin(participantId);
           });
-
-          console.log('🔗 HOST: UNIFIED WebRTC callbacks configured with STATIC HOST ID');
-          
-          // Success notification
-          toast({
-            title: "WebRTC Ativo",
-            description: "Host pronto para receber participantes (ID: host)",
-          });
-          
         } else {
-          console.error('❌ HOST: Failed to initialize UNIFIED WebRTC');
+          console.error('❌ HOST: Failed to initialize WebRTC');
           
           toast({
             title: "Erro de inicialização",
@@ -202,7 +121,7 @@ export const useLivePageEffects = ({
           });
         }
       }).catch(error => {
-        console.error('❌ HOST: UNIFIED WebRTC initialization error:', error);
+        console.error('❌ HOST: WebRTC initialization error:', error);
         
         toast({
           title: "Erro WebRTC",
@@ -214,7 +133,9 @@ export const useLivePageEffects = ({
       return () => {
         console.log('🧹 HOST: Cleaning up session');
         cleanup();
-        // HOST: No local stream to cleanup - only manages remote streams
+        if (localStream) {
+          localStream.getTracks().forEach(track => track.stop());
+        }
       };
     }
   }, [sessionId]);
@@ -235,13 +156,7 @@ export const useLivePageEffects = ({
       console.log('🔄 HOST: Auto-updating transmission due to stream changes');
       setTimeout(() => {
         updateTransmissionParticipants();
-        // CRITICAL: Force stream sync to ensure consistency
-        forceSyncNow();
       }, 300);
     }
-  }, [participantStreams, participantList, transmissionOpen, updateTransmissionParticipants, forceSyncNow]);
-
-  return {
-    forceSyncNow
-  };
+  }, [participantStreams, participantList, transmissionOpen]);
 };

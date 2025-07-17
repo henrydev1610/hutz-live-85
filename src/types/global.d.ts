@@ -13,11 +13,6 @@ interface Window {
   _fallbackChannels?: {
     [key: string]: BroadcastChannel;
   };
-  transmissionWindow?: boolean;
-  isKeepAliveActive?: boolean;
-  localPlaceholderStream?: MediaStream;
-  sharedParticipantStreams?: {[id: string]: MediaStream};
-  streamBackup?: {[id: string]: MediaStream};
 }
 
 // Define NodeJS namespace if it doesn't exist to fix Timeout type issues

@@ -10,7 +10,6 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
-  const [connectionInProgress, setConnectionInProgress] = useState(false); // FASE 2: Evitar race conditions
   const isMobile = useIsMobile();
 
   const connectToSession = useCallback(async (stream?: MediaStream | null) => {
@@ -19,17 +18,10 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       return;
     }
 
-    // FASE 2: Evitar múltiplas tentativas simultâneas
-    if (connectionInProgress) {
-      console.log('⚠️ CONNECTION ALREADY IN PROGRESS, skipping...');
-      return;
-    }
-
     console.log(`🔗 PARTICIPANT CONNECTION: Starting connection process for ${participantId}`);
     console.log(`📱 PARTICIPANT CONNECTION: Mobile device: ${isMobile}`);
     console.log(`🎥 PARTICIPANT CONNECTION: Has stream: ${!!stream}`);
     
-    setConnectionInProgress(true);
     setIsConnecting(true);
     setConnectionStatus('connecting');
     setError(null);
@@ -80,7 +72,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
 
         // Etapa 2: Join room com timeout e retry
         console.log(`🔗 PARTICIPANT CONNECTION: Joining room (attempt ${retryCount + 1})`);
-        const joinTimeout = isMobile ? 60000 : 45000; // Aumentado para 60s mobile, 45s desktop
+        const joinTimeout = isMobile ? 20000 : 15000;
         
         await Promise.race([
           unifiedWebSocketService.joinRoom(sessionId, participantId),
@@ -164,13 +156,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         retryCount++;
         
         if (retryCount < maxRetries) {
-          // Cleanup antes de retry com proteção contra null
+          // Cleanup antes de retry
           try {
-            if (unifiedWebSocketService && typeof unifiedWebSocketService.disconnect === 'function') {
-              unifiedWebSocketService.disconnect();
-            } else {
-              console.warn('⚠️ WebSocket service not available for cleanup');
-            }
+            unifiedWebSocketService.disconnect();
           } catch (cleanupError) {
             console.warn('⚠️ Error during cleanup:', cleanupError);
           }
@@ -214,23 +202,15 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       toast.error(`📱 ${errorMessage}`);
     } finally {
       setIsConnecting(false);
-      setConnectionInProgress(false); // FASE 2: Liberar flag de conexão em progresso
     }
-  }, [sessionId, participantId, isMobile, connectionInProgress]);
+  }, [sessionId, participantId, isMobile]);
 
   const disconnectFromSession = useCallback(() => {
     console.log(`🔗 PARTICIPANT CONNECTION: Disconnecting`);
     
     try {
       cleanupWebRTC();
-      
-      // Verificar se o serviço WebSocket está disponível antes de desconectar
-      if (unifiedWebSocketService && typeof unifiedWebSocketService.disconnect === 'function') {
-        unifiedWebSocketService.disconnect();
-      } else {
-        console.warn('⚠️ PARTICIPANT CONNECTION: WebSocket service not available for disconnect');
-      }
-      
+      unifiedWebSocketService.disconnect();
       setIsConnected(false);
       setConnectionStatus('disconnected');
       toast.success('Desconectado da sessão');
@@ -247,7 +227,6 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     error,
     connectToSession,
     disconnectFromSession,
-    isMobile,
-    connectionInProgress // FASE 2: Expor flag de conexão em progresso
+    isMobile
   };
 };

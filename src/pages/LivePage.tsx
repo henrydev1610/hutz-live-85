@@ -10,33 +10,13 @@ import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
-import { useWebRTCStabilityIntegration } from '@/hooks/live/useWebRTCStabilityIntegration';
-import { useHostRemoteStreamManager } from '@/hooks/live/useHostRemoteStreamManager';
-import { useStreamForwarding } from '@/hooks/live/useStreamForwarding';
-import { ConnectionStabilityIndicator } from '@/components/live/ConnectionStabilityIndicator';
 
 const LivePage: React.FC = () => {
   const { toast } = useToast();
   const state = useLivePageState();
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
-  const stability = useWebRTCStabilityIntegration();
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
-  
-  // HOST: Manage remote streams display (no local camera)
-  useHostRemoteStreamManager({
-    participantStreams: state.participantStreams,
-    participantList: state.participantList,
-    transmissionWindowRef
-  });
-  
-  // CRITICAL: Forward streams to transmission window
-  const { forceStreamUpdate } = useStreamForwarding({
-    participantStreams: state.participantStreams,
-    participantList: state.participantList,
-    sessionId: state.sessionId,
-    transmissionWindowRef
-  });
   
   const { closeFinalAction } = useFinalAction({
     finalActionOpen: state.finalActionOpen,
@@ -88,8 +68,9 @@ const LivePage: React.FC = () => {
   });
 
   // Use the effects hook
-  const { forceSyncNow } = useLivePageEffects({
+  useLivePageEffects({
     sessionId: state.sessionId,
+    localStream: state.localStream,
     participantStreams: state.participantStreams,
     participantList: state.participantList,
     transmissionOpen: state.transmissionOpen,
@@ -181,35 +162,13 @@ const LivePage: React.FC = () => {
         onClose={() => setShowHealthMonitor(false)}
       />
       
-      {/* Enhanced Debug Button */}
-      <div className="fixed bottom-4 left-4 space-y-2">
-        <button
-          onClick={() => setShowHealthMonitor(!showHealthMonitor)}
-          className="bg-blue-500 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
-        >
-          {showHealthMonitor ? 'Ocultar' : 'Mostrar'} Diagnósticos
-        </button>
-        
-        {/* Force Stream Update Button */}
-        <button
-          onClick={() => {
-            console.log('🔄 HOST: Force stream update requested');
-            forceStreamUpdate();
-            if (forceSyncNow) {
-              forceSyncNow();
-            }
-            updateTransmissionParticipants();
-          }}
-          className="bg-green-500 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-600 transition-colors"
-        >
-          Atualizar Streams
-        </button>
-        
-        {/* Quick Status Indicator */}
-        <div className="bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
-          WebRTC: {stability.connectionStatus.webrtc === 'connected' ? '✅ Conectado' : '❌ Desconectado'}
-        </div>
-      </div>
+      {/* Debug Button */}
+      <button
+        onClick={() => setShowHealthMonitor(!showHealthMonitor)}
+        className="fixed bottom-4 left-4 bg-blue-500 text-white p-2 rounded-full text-xs z-50"
+      >
+        Debug
+      </button>
     </div>
   );
 };

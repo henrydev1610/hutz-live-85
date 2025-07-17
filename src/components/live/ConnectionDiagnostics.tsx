@@ -32,55 +32,34 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
   const { toast } = useToast();
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [lastTestResult, setLastTestResult] = useState<'success' | 'error' | null>(null);
-  const [testStream, setTestStream] = useState<MediaStream | null>(null);
-  const videoRef = React.useRef<HTMLVideoElement>(null);
 
   const handleTestConnection = async () => {
-    if (testStream) {
-      // Stop current test
-      stopTestStream();
-      return;
-    }
-
     setIsTestingConnection(true);
     setLastTestResult(null);
     
     try {
-      console.log('🎥 Testing camera connection...');
-      
-      // Test getUserMedia with desktop-friendly constraints
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 640, height: 480 }, 
-        audio: false 
-      });
-      
-      console.log('✅ Camera test successful, showing preview');
-      
-      // Show stream in video element
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(console.error);
-      }
-      
-      setTestStream(stream);
-      setLastTestResult('success');
+      // Test getUserMedia
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       
       toast({
         title: "Teste de câmera bem-sucedido",
-        description: "Sua câmera está funcionando! Clique novamente para parar."
+        description: "Sua câmera está funcionando corretamente"
       });
+      
+      // Clean up test stream
+      stream.getTracks().forEach(track => track.stop());
       
       // Call the provided test function
       onTestConnection();
       
-    } catch (error) {
-      console.error('❌ Camera test failed:', error);
+      setLastTestResult('success');
       
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    } catch (error) {
+      console.error('Test connection failed:', error);
       
       toast({
         title: "Erro no teste de conexão",
-        description: `Verifique as permissões da câmera: ${errorMessage}`,
+        description: "Verifique as permissões da câmera",
         variant: "destructive"
       });
       
@@ -88,24 +67,6 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
     } finally {
       setIsTestingConnection(false);
     }
-  };
-
-  const stopTestStream = () => {
-    console.log('🛑 Stopping camera test');
-    
-    if (testStream) {
-      testStream.getTracks().forEach(track => track.stop());
-      setTestStream(null);
-    }
-    
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    
-    toast({
-      title: "Teste finalizado",
-      description: "Câmera desconectada"
-    });
   };
 
   const getConnectionStatus = () => {
@@ -168,43 +129,18 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
           </div>
         </div>
 
-        {/* Camera Test Preview */}
-        {testStream && (
-          <div className="pt-4 border-t">
-            <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-3">
-              <video
-                ref={videoRef}
-                autoPlay
-                muted
-                playsInline
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute top-2 left-2">
-                <Badge variant="default" className="bg-green-600">
-                  🔴 Ao Vivo
-                </Badge>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Test Connection Button */}
         <div className="pt-4 border-t">
           <Button 
             onClick={handleTestConnection}
             disabled={isTestingConnection}
             className="w-full"
-            variant={testStream ? 'destructive' : (lastTestResult === 'success' ? 'default' : 'outline')}
+            variant={lastTestResult === 'success' ? 'default' : 'outline'}
           >
             {isTestingConnection ? (
               <>
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                 Testando...
-              </>
-            ) : testStream ? (
-              <>
-                <XCircle className="mr-2 h-4 w-4" />
-                Parar Teste de Vídeo
               </>
             ) : (
               <>
@@ -214,7 +150,7 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
             )}
           </Button>
           
-          {lastTestResult && !testStream && (
+          {lastTestResult && (
             <div className="mt-2 text-center text-sm">
               {lastTestResult === 'success' ? (
                 <span className="text-green-600">✅ Teste bem-sucedido</span>

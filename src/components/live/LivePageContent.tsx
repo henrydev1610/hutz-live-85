@@ -6,9 +6,7 @@ import TransmissionControls from '@/components/live/TransmissionControls';
 import LiveControlTabs from '@/components/live/LiveControlTabs';
 import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
 import StreamDebugPanel from '@/components/live/StreamDebugPanel';
-import { StreamDebugMonitor } from '@/components/live/StreamDebugMonitor';
 import { Participant } from '@/components/live/ParticipantGrid';
-import { HostDebugVideo } from '@/components/live/HostDebugVideo';
 
 interface LivePageContentProps {
   state: any;
@@ -21,8 +19,6 @@ interface LivePageContentProps {
   onRemoveImage: () => void;
   onGenerateQRCode: () => void;
   onQRCodeToTransmission: () => void;
-  transmissionWindowRef?: React.MutableRefObject<Window | null>;
-  onForceStreamUpdate?: () => void;
 }
 
 const LivePageContent: React.FC<LivePageContentProps> = ({
@@ -35,9 +31,7 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
   onFileSelect,
   onRemoveImage,
   onGenerateQRCode,
-  onQRCodeToTransmission,
-  transmissionWindowRef,
-  onForceStreamUpdate
+  onQRCodeToTransmission
 }) => {
   // Calculate real participants and active streams
   const realParticipants = state.participantList.filter((p: Participant) => !p.id.startsWith('placeholder-'));
@@ -111,14 +105,6 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
           activeStreams={activeStreams}
           onTestConnection={participantManagement.testConnection}
         />
-
-        {/* Stream Debug Monitor */}
-        <StreamDebugMonitor
-          participantStreams={state.participantStreams}
-          participantList={state.participantList}
-          transmissionWindowRef={transmissionWindowRef}
-          onForceUpdate={onForceStreamUpdate}
-        />
       </div>
       
       <div>
@@ -168,14 +154,6 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
           });
         }}
       />
-      
-      {/* Debug video for first active stream */}
-      {Object.keys(state.participantStreams).length > 0 && (
-        <HostDebugVideo 
-          stream={Object.values(state.participantStreams)[0] as MediaStream} 
-          participantId={Object.keys(state.participantStreams)[0]}
-        />
-      )}
     </div>
   );
 };

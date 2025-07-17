@@ -28,7 +28,7 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 export class UnifiedWebRTCManager {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private localStream: MediaStream | null = null;
-  public roomId: string | null = null; // FASE 3: Make public for sync verification
+  private roomId: string | null = null;
   private participantId: string | null = null;
   private isHost: boolean = false;
   private isMobile: boolean = false;
@@ -76,20 +76,11 @@ export class UnifiedWebRTCManager {
     // Link signaling handler with connection handler
     this.signalingHandler.setConnectionHandler(this.connectionHandler);
     
-    // Setup stream callback chain - RULE 2: Host reception
+    // Setup stream callback chain
     this.connectionHandler.setStreamCallback((participantId, stream) => {
       console.log(`🎥 UNIFIED: Stream received from ${participantId}`);
-      
-      // RULE 2: Create MediaStream for host reception  
-      const remoteStream = new MediaStream();
-      stream.getTracks().forEach(track => {
-        remoteStream.addTrack(track);
-      });
-      
-      console.log(`📡 Host recebeu track ${stream.getVideoTracks()[0]?.kind} de participante`);
-      
       this.updateConnectionMetrics(participantId, { streamReceived: true });
-      this.callbacksManager.triggerStreamCallback(participantId, remoteStream);
+      this.callbacksManager.triggerStreamCallback(participantId, stream);
     });
     
     this.connectionHandler.setParticipantJoinCallback((participantId) => {
@@ -101,7 +92,7 @@ export class UnifiedWebRTCManager {
 
   private setupHealthMonitoring() {
     // Aggressive health monitoring for mobile connections
-    const healthCheckInterval = this.isMobile ? 2000 : 5000; // 2s for mobile, 5s for desktop
+    const healthCheckInterval = this.isMobile ? 3000 : 10000; // 3s for mobile, 10s for desktop
     console.log(`🏥 HEALTH MONITOR: Using ${healthCheckInterval}ms intervals for ${this.isMobile ? 'mobile' : 'desktop'} device`);
     
     this.healthCheckInterval = setInterval(() => {
@@ -114,56 +105,26 @@ export class UnifiedWebRTCManager {
     if (unifiedWebSocketService.isConnected()) {
       this.updateConnectionState('websocket', 'connected');
     } else {
-      // Only update to failed if we have the necessary IDs for reconnection
-      if (this.roomId && this.participantId) {
-        this.updateConnectionState('websocket', 'failed');
-        this.handleWebSocketFailure();
-      } else {
-        // If we don't have IDs, just mark as disconnected, not failed
-        this.updateConnectionState('websocket', 'disconnected');
-      }
+      this.updateConnectionState('websocket', 'failed');
+      this.handleWebSocketFailure();
     }
 
-    // Enhanced WebRTC peer connection monitoring
+    // Check WebRTC peer connections
     let hasActiveConnections = false;
-    let hasFailedConnections = false;
-    
     this.peerConnections.forEach((pc, participantId) => {
-      const connectionState = pc.connectionState;
-      const iceConnectionState = pc.iceConnectionState;
-      
-      console.log(`🔍 HEALTH CHECK: ${participantId} - Connection: ${connectionState}, ICE: ${iceConnectionState}`);
-      
-      if (connectionState === 'connected' && 
-          (iceConnectionState === 'connected' || iceConnectionState === 'completed')) {
+      if (pc.connectionState === 'connected') {
         hasActiveConnections = true;
-        this.updateConnectionMetrics(participantId, { 
-          connectionState, 
-          iceConnectionState, 
-          lastHealthCheck: Date.now(),
-          healthy: true 
-        });
-      } else if (connectionState === 'failed' || iceConnectionState === 'failed') {
-        hasFailedConnections = true;
-        console.log(`🔄 HEALTH CHECK: Connection failed for ${participantId}, initiating recovery`);
-        this.handlePeerConnectionFailure(participantId);
-      } else if (connectionState === 'disconnected' && iceConnectionState === 'disconnected') {
-        console.log(`⚠️ HEALTH CHECK: Connection disconnected for ${participantId}, attempting reconnection`);
+      } else if (pc.connectionState === 'failed') {
+        console.log(`🔄 Peer connection failed for ${participantId}, attempting recovery`);
         this.handlePeerConnectionFailure(participantId);
       }
     });
 
-    // Update WebRTC connection state
     if (hasActiveConnections) {
       this.updateConnectionState('webrtc', 'connected');
-    } else if (hasFailedConnections || this.peerConnections.size > 0) {
+    } else if (this.peerConnections.size > 0) {
       this.updateConnectionState('webrtc', 'failed');
-    } else {
-      this.updateConnectionState('webrtc', 'disconnected');
     }
-    
-    // Log overall health status
-    console.log(`🏥 HEALTH REPORT: WebSocket: ${this.connectionState.websocket}, WebRTC: ${this.connectionState.webrtc}, Overall: ${this.connectionState.overall}`);
   }
 
   private updateConnectionState(component: keyof ConnectionState, state: ConnectionState['websocket']) {
@@ -187,13 +148,6 @@ export class UnifiedWebRTCManager {
   }
 
   private async handleWebSocketFailure() {
-    // Only attempt reconnection if we have the necessary IDs
-    if (!this.roomId || !this.participantId) {
-      console.warn('⚠️ WebSocket failure detected but missing IDs for reconnection');
-      console.log(`🔍 FAILURE STATE: roomId=${this.roomId}, participantId=${this.participantId}`);
-      return;
-    }
-    
     console.log('🔄 WebSocket connection failed, attempting recovery...');
     
     try {
@@ -205,12 +159,10 @@ export class UnifiedWebRTCManager {
 
   private async reconnectWebSocket() {
     if (!this.roomId || !this.participantId) {
-      console.warn('⚠️ RECONNECT: Missing room or participant ID, skipping reconnection');
-      console.log(`🔍 RECONNECT STATE: roomId=${this.roomId}, participantId=${this.participantId}`);
+      console.error('❌ Cannot reconnect: missing room or participant ID');
       return;
     }
 
-    console.log(`🔄 RECONNECT: Attempting with roomId=${this.roomId}, participantId=${this.participantId}`);
     this.updateConnectionState('websocket', 'connecting');
     
     try {
@@ -223,12 +175,10 @@ export class UnifiedWebRTCManager {
       console.log('✅ WebSocket reconnected successfully');
       this.updateConnectionState('websocket', 'connected');
       
-      // Only trigger WebRTC reconnection if we have valid connections
-      if (this.peerConnections.size > 0) {
-        this.peerConnections.forEach((_, participantId) => {
-          this.initiateConnectionRecovery(participantId);
-        });
-      }
+      // Trigger WebRTC reconnection for existing participants
+      this.peerConnections.forEach((_, participantId) => {
+        this.initiateConnectionRecovery(participantId);
+      });
       
     } catch (error) {
       console.error('❌ WebSocket reconnection failed:', error);
@@ -321,10 +271,9 @@ export class UnifiedWebRTCManager {
         (data) => {
           console.log(`🏠 UNIFIED PARTICIPANT: Host or participant connected:`, data);
           const hostId = data.userId || data.id || data.socketId;
-          // CRITICAL: Always try to connect to static "host" ID
-          if (hostId !== this.participantId && (hostId === "host" || hostId.includes("host"))) {
-            console.log(`📞 UNIFIED: Initiating call to host: ${hostId}`);
-            this.connectionHandler.initiateCallWithRetry("host"); // Always use static "host"
+          if (hostId !== this.participantId) {
+            console.log(`📞 UNIFIED: Initiating call to ${hostId}`);
+            this.connectionHandler.initiateCallWithRetry(hostId);
           }
         },
         (participants) => {
@@ -351,15 +300,8 @@ export class UnifiedWebRTCManager {
     this.isHost = true;
 
     try {
-      console.log('🔍 HOST: Checking WebSocket connection before join...');
-      
-      if (!unifiedWebSocketService.isConnected()) {
-        console.log('🔗 HOST: Connecting to WebSocket...');
-        this.updateConnectionState('websocket', 'connecting');
-        await unifiedWebSocketService.connect();
-      }
-      
-      console.log('🚪 HOST: Joining room...');
+      this.updateConnectionState('websocket', 'connecting');
+      await unifiedWebSocketService.connect();
       this.setupWebSocketCallbacks();
       await unifiedWebSocketService.joinRoom(sessionId, this.participantId);
       
@@ -369,34 +311,18 @@ export class UnifiedWebRTCManager {
     } catch (error) {
       console.error(`❌ UNIFIED HOST: Failed to initialize:`, error);
       this.updateConnectionState('websocket', 'failed');
-      
-      // Auto-reconnection with error toast
-      if (error.message.includes("timeout")) {
-        console.log('🔄 HOST: Attempting auto-reconnection in 3s...');
-        setTimeout(() => {
-          this.initializeAsHost(sessionId);
-        }, 3000);
-      }
-      
       throw error;
     }
   }
 
   async initializeAsParticipant(sessionId: string, participantId: string, stream?: MediaStream): Promise<void> {
     console.log(`👤 UNIFIED: Initializing as participant ${participantId} for session ${sessionId}`);
-    
-    // FASE 4: Garantir que initializeAsParticipant só seja chamado uma vez por sessão
-    if (this.roomId === sessionId && this.participantId === participantId) {
-      console.log(`✅ UNIFIED: Already initialized for session ${sessionId} with participant ${participantId}`);
-      return;
-    }
-    
     this.roomId = sessionId;
     this.participantId = participantId;
     this.isHost = false;
 
     try {
-      // CRITICAL: Phase 1 - Store stream reference first
+      // IMPORTANT: Only use stream provided by useParticipantMedia - no local media creation
       if (stream) {
         this.localStream = stream;
         console.log(`📹 UNIFIED: Using provided stream from useParticipantMedia:`, {
@@ -409,122 +335,24 @@ export class UnifiedWebRTCManager {
         console.warn(`⚠️ UNIFIED: No stream provided - participant must initialize media first`);
       }
 
-      // CRITICAL: Phase 2 - WebSocket initialization with enhanced logging
-      console.log(`🔗 PARTICIPANT: Starting WebSocket connection...`);
       this.updateConnectionState('websocket', 'connecting');
-      
       await unifiedWebSocketService.connect();
-      console.log(`✅ PARTICIPANT: WebSocket connected, setting up callbacks...`);
-      
       this.setupWebSocketCallbacks();
       await unifiedWebSocketService.joinRoom(sessionId, participantId);
       
       this.updateConnectionState('websocket', 'connected');
       console.log(`✅ UNIFIED PARTICIPANT: Connected to signaling server`);
       
-      // CRITICAL: Phase 3 - Enhanced WebRTC initialization sequence
-      console.log(`🎯 WEBRTC INIT: Starting WebRTC connection sequence...`);
-      
-      // Strategic delay for mobile stability and WebSocket confirmation
-      const stabilizationDelay = this.isMobile ? 3000 : 2000;
-      console.log(`⏳ STABILIZATION: Waiting ${stabilizationDelay}ms for connection stability...`);
-      await new Promise(resolve => setTimeout(resolve, stabilizationDelay));
-      
-      // CRITICAL: Phase 4 - Force WebRTC connection initiation
-      console.log(`🔥 WEBRTC FORCE: Initiating WebRTC connection to host...`);
-      
-      // Notify stream availability first
+      // Notify stream if available
       if (this.localStream) {
         await this.notifyLocalStream();
-        console.log(`📡 STREAM READY: Notified host of stream availability`);
       }
-      
-      // CRITICAL: Force connection to host with retry mechanism
-      const hostConnectionDelay = this.isMobile ? 1500 : 1000;
-      setTimeout(async () => {
-        try {
-          console.log(`📞 WEBRTC CONNECT: Initiating call to host after ${hostConnectionDelay}ms delay`);
-          await this.connectionHandler.initiateCallWithRetry("host", 3);
-          
-          // CRITICAL: Add tracks after successful connection
-          setTimeout(() => {
-            this.ensureTracksAdded();
-          }, 1000);
-          
-        } catch (error) {
-          console.error(`❌ WEBRTC CONNECT: Failed to connect to host:`, error);
-          this.updateConnectionState('webrtc', 'failed');
-        }
-      }, hostConnectionDelay);
       
     } catch (error) {
       console.error(`❌ UNIFIED PARTICIPANT: Failed to initialize:`, error);
       this.updateConnectionState('websocket', 'failed');
       throw error;
     }
-  }
-
-  // CRITICAL: Enhanced track management with stable connection handling
-  private ensureTracksAdded() {
-    if (!this.localStream) {
-      console.warn(`⚠️ TRACKS: No local stream available to add tracks`);
-      return;
-    }
-
-    console.log(`🎯 TRACKS: Ensuring tracks are added to all peer connections with enhanced stability...`);
-    
-    this.peerConnections.forEach((pc, peerId) => {
-      if (pc.connectionState === 'closed') {
-        console.warn(`⚠️ TRACKS: Skipping closed connection for ${peerId}`);
-        return;
-      }
-
-      console.log(`🎯 TRACKS: Processing tracks for ${peerId}`, {
-        connectionState: pc.connectionState,
-        signalingState: pc.signalingState,
-        iceConnectionState: pc.iceConnectionState
-      });
-
-      const tracks = this.localStream!.getTracks();
-      console.log(`🎯 TRACKS: Processing ${tracks.length} tracks for ${peerId}`);
-
-      tracks.forEach(track => {
-        try {
-          const existingSender = pc.getSenders().find(s => s.track?.kind === track.kind);
-          
-          if (existingSender) {
-            // Use replaceTrack when sender already exists
-            existingSender.replaceTrack(track).then(() => {
-              console.log(`🔄 TRACKS: Replaced ${track.kind} track for ${peerId}`);
-            }).catch(err => {
-              console.warn(`⚠️ TRACKS: Failed to replace ${track.kind} track for ${peerId}:`, err);
-            });
-          } else {
-            // Only add new tracks if connection is stable
-            if (pc.signalingState === 'stable' || pc.connectionState === 'connected') {
-              pc.addTrack(track, this.localStream!);
-              console.log(`✅ TRACKS: Added ${track.kind} track to ${peerId}`);
-            } else {
-              console.log(`⏳ TRACKS: Connection not stable for ${peerId} (${pc.signalingState}), delaying track addition`);
-              
-              // Retry after connection stabilizes
-              setTimeout(() => {
-                if (pc.signalingState === 'stable' && pc.connectionState !== 'closed') {
-                  try {
-                    pc.addTrack(track, this.localStream!);
-                    console.log(`✅ TRACKS: Added ${track.kind} track to ${peerId} (delayed)`);
-                  } catch (error) {
-                    console.error(`❌ TRACKS: Delayed track addition failed for ${peerId}:`, error);
-                  }
-                }
-              }, 1000);
-            }
-          }
-        } catch (error) {
-          console.error(`❌ TRACKS: Error processing ${track.kind} track for ${peerId}:`, error);
-        }
-      });
-    });
   }
 
   private async notifyLocalStream() {
@@ -546,16 +374,6 @@ export class UnifiedWebRTCManager {
     
     unifiedWebSocketService.notifyStreamStarted(this.participantId, streamInfo);
     console.log(`📡 UNIFIED: Stream notification sent`);
-    
-    // ✅ CRÍTICO: Notificação extra via WebSocket para garantir que o host saiba
-    unifiedWebSocketService.sendCustomEvent('stream-ready', {
-      participantId: this.participantId,
-      streamId: this.localStream.id,
-      timestamp: Date.now(),
-      trackCount: this.localStream.getTracks().length,
-      hasVideo: this.localStream.getVideoTracks().length > 0
-    });
-    console.log(`🚀 STREAM-READY event sent for participant ${this.participantId}`);
   }
 
   private removeParticipantConnection(participantId: string) {
@@ -576,72 +394,6 @@ export class UnifiedWebRTCManager {
     this.connectionHandler.clearRetries(participantId);
     this.connectionHandler.clearHeartbeat(participantId);
     this.connectionMetrics.delete(participantId);
-  }
-
-  // CRITICAL: Enhanced stream transmission with stable connection handling
-  setOutgoingStream(stream: MediaStream) {
-    console.log(`🎯 STREAM: Setting outgoing stream with enhanced stability`, {
-      streamId: stream.id,
-      tracks: stream.getTracks().length,
-      videoTracks: stream.getVideoTracks().length,
-      audioTracks: stream.getAudioTracks().length
-    });
-    
-    this.localStream = stream;
-
-    this.peerConnections.forEach((pc, peerId) => {
-      if (pc.connectionState === 'closed') return;
-
-      console.log(`🎯 Attempting to add/replace tracks to ${peerId}`, {
-        connectionState: pc.connectionState,
-        signalingState: pc.signalingState,
-        iceConnectionState: pc.iceConnectionState
-      });
-
-      stream.getTracks().forEach(track => {
-        try {
-          const existingSender = pc.getSenders().find(s => s.track?.kind === track.kind);
-          
-          if (existingSender) {
-            // Use replaceTrack to avoid renegotiation when possible
-            existingSender.replaceTrack(track).then(() => {
-              console.log(`🔄 Replaced ${track.kind} track for ${peerId}`);
-            }).catch(err => {
-              console.warn(`⚠️ Failed to replace ${track.kind} track for ${peerId}, falling back to add:`, err);
-              // Fallback to remove/add if replace fails
-              try {
-                pc.removeTrack(existingSender);
-                pc.addTrack(track, stream);
-                console.log(`➕ Added ${track.kind} track for ${peerId} (fallback)`);
-              } catch (fallbackErr) {
-                console.error(`❌ Fallback failed for ${track.kind} track on ${peerId}:`, fallbackErr);
-              }
-            });
-          } else {
-            // Check if connection is in stable state before adding tracks
-            if (pc.signalingState === 'stable') {
-              pc.addTrack(track, stream);
-              console.log(`➕ Added ${track.kind} track for ${peerId}`);
-            } else {
-              console.log(`⏳ Connection not stable for ${peerId} (${pc.signalingState}), track will be added later`);
-            }
-          }
-        } catch (err) {
-          console.warn(`⚠️ Failed to process ${track.kind} track for ${peerId}:`, err);
-        }
-      });
-    });
-
-    // Notify the host of stream availability
-    if (this.roomId && this.participantId) {
-      unifiedWebSocketService.sendCustomEvent('stream-ready', {
-        roomId: this.roomId,
-        participantId: this.participantId,
-        streamId: stream.id,
-        tracks: stream.getTracks().length
-      });
-      console.log(`📡 Stream-ready event sent for room ${this.roomId}`);
-    }
   }
 
   // Public API methods
@@ -670,220 +422,6 @@ export class UnifiedWebRTCManager {
 
   getConnectionMetrics() {
     return new Map(this.connectionMetrics);
-  }
-
-  getPeerConnections(): Map<string, RTCPeerConnection> {
-    return new Map(this.peerConnections);
-  }
-
-  // CRITICAL: Force connection attempt for specific participant
-  async forceParticipantConnection(participantId: string): Promise<void> {
-    console.log(`🔧 FORCE CONNECTION: Attempting connection for ${participantId}`);
-    
-    // Clean up existing connection if any
-    const existingConnection = this.peerConnections.get(participantId);
-    if (existingConnection) {
-      console.log(`🧹 FORCE CONNECTION: Cleaning up existing connection for ${participantId}`);
-      existingConnection.close();
-      this.peerConnections.delete(participantId);
-    }
-    
-    // Force new connection attempt
-    try {
-      await this.connectionHandler.initiateCallWithRetry(participantId, 3);
-      console.log(`✅ FORCE CONNECTION: Successfully initiated for ${participantId}`);
-    } catch (error) {
-      console.error(`❌ FORCE CONNECTION: Failed for ${participantId}:`, error);
-      throw error;
-    }
-  }
-
-  // CRITICAL: Force reconnection for all participants
-  async forceReconnectAll(): Promise<void> {
-    console.log('🔧 FORCE RECONNECT: Attempting reconnection for all participants');
-    
-    const participantIds = Array.from(this.peerConnections.keys());
-    
-    for (const participantId of participantIds) {
-      try {
-        await this.forceParticipantConnection(participantId);
-        // Wait a bit between connections to avoid overwhelming
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } catch (error) {
-        console.error(`❌ FORCE RECONNECT: Failed for ${participantId}:`, error);
-      }
-    }
-  }
-
-  // CRITICAL: Start connection initiation timer for participants
-  private startConnectionInitiationTimer() {
-    if (this.isHost) return; // Only for participants
-    
-    console.log('🕐 INITIATION TIMER: Starting connection initiation monitoring...');
-    
-    // Progressive connection attempts with exponential backoff
-    const attemptConnection = (attempt: number = 1) => {
-      const maxAttempts = 5;
-      const baseDelay = 3000; // Start checking after 3 seconds
-      
-      if (attempt > maxAttempts) {
-        console.error('❌ INITIATION TIMER: Max connection attempts reached');
-        return;
-      }
-      
-      const delay = baseDelay * Math.pow(1.5, attempt - 1);
-      
-      setTimeout(() => {
-        console.log(`🔍 INITIATION TIMER: Connection check attempt ${attempt}/${maxAttempts}`);
-        
-        // Check if we have any active WebRTC connections
-        let hasActiveConnections = false;
-        this.peerConnections.forEach((pc, participantId) => {
-          if (pc.connectionState === 'connected' || pc.connectionState === 'connecting') {
-            hasActiveConnections = true;
-          }
-        });
-        
-        if (!hasActiveConnections && unifiedWebSocketService.isConnected()) {
-          console.log(`🚀 INITIATION TIMER: No active connections detected, triggering auto-connect...`);
-          this.initiateAutoConnection();
-        }
-        
-        // Schedule next attempt
-        if (attempt < maxAttempts) {
-          attemptConnection(attempt + 1);
-        }
-      }, delay);
-    };
-    
-    attemptConnection();
-  }
-  
-  // CRITICAL: Auto-connection initiation for participants
-  private async initiateAutoConnection() {
-    try {
-      console.log('🔄 AUTO-CONNECT: Attempting to establish WebRTC connections...');
-      
-      // Try to connect to host first
-      const hostId = `host-${this.roomId}`;
-      console.log(`📞 AUTO-CONNECT: Attempting connection to potential host: ${hostId}`);
-      
-      try {
-        await this.connectionHandler.initiateCallWithRetry(hostId, 2);
-      } catch (error) {
-        console.log(`⚠️ AUTO-CONNECT: Failed to connect to ${hostId}, trying generic host connection`);
-        
-        // Fallback: try to connect using a generic host identifier
-        const genericHostId = 'host';
-        await this.connectionHandler.initiateCallWithRetry(genericHostId, 2);
-      }
-      
-    } catch (error) {
-      console.error('❌ AUTO-CONNECT: Failed to establish connection:', error);
-    }
-  }
-
-  // CRITICAL: Test connection functionality
-  async testConnection(): Promise<boolean> {
-    console.log('🧪 TEST CONNECTION: Starting connection test');
-    
-    try {
-      // Test WebSocket connection
-      if (!this.roomId || !this.participantId) {
-        console.error('❌ TEST CONNECTION: Missing room or participant ID');
-        return false;
-      }
-      
-      // Test signaling server connection
-      const isWebSocketHealthy = await this.testWebSocketConnection();
-      if (!isWebSocketHealthy) {
-        console.error('❌ TEST CONNECTION: WebSocket test failed');
-        return false;
-      }
-      
-      // Test peer connections
-      const arePeerConnectionsHealthy = this.testPeerConnections();
-      if (!arePeerConnectionsHealthy) {
-        console.error('❌ TEST CONNECTION: Peer connections test failed');
-        return false;
-      }
-      
-      console.log('✅ TEST CONNECTION: All tests passed');
-      return true;
-      
-    } catch (error) {
-      console.error('❌ TEST CONNECTION: Test failed:', error);
-      return false;
-    }
-  }
-
-  private async testWebSocketConnection(): Promise<boolean> {
-    try {
-      if (!unifiedWebSocketService.isConnected()) {
-        console.log('🔄 TEST CONNECTION: WebSocket not connected, attempting reconnection');
-        await unifiedWebSocketService.connect();
-      }
-      
-      const healthCheck = await unifiedWebSocketService.healthCheck();
-      console.log('🧪 TEST CONNECTION: WebSocket health check result:', healthCheck);
-      
-      return healthCheck;
-    } catch (error) {
-      console.error('❌ TEST CONNECTION: WebSocket test failed:', error);
-      return false;
-    }
-  }
-
-  private testPeerConnections(): boolean {
-    let healthyConnections = 0;
-    let totalConnections = this.peerConnections.size;
-    
-    this.peerConnections.forEach((pc, participantId) => {
-      const isHealthy = pc.connectionState === 'connected' && 
-                       pc.iceConnectionState === 'connected';
-      
-      console.log(`🧪 TEST CONNECTION: ${participantId} - ${isHealthy ? 'healthy' : 'unhealthy'}`, {
-        connectionState: pc.connectionState,
-        iceConnectionState: pc.iceConnectionState,
-        signalingState: pc.signalingState
-      });
-      
-      if (isHealthy) {
-        healthyConnections++;
-      }
-    });
-    
-    // If we have connections, at least 50% should be healthy
-    if (totalConnections > 0) {
-      const healthRatio = healthyConnections / totalConnections;
-      console.log(`🧪 TEST CONNECTION: Health ratio: ${healthRatio} (${healthyConnections}/${totalConnections})`);
-      return healthRatio >= 0.5;
-    }
-    
-    // If no connections, that's okay for host
-    return true;
-  }
-
-  // CRITICAL: Enhanced connection timeout monitoring
-  private setupConnectionTimeouts() {
-    if (this.isHost) return; // Only for participants
-    
-    console.log('⏱️ TIMEOUT MONITOR: Setting up connection timeout monitoring...');
-    
-    // WebRTC negotiation timeout (30 seconds)
-    setTimeout(() => {
-      let hasSuccessfulConnections = false;
-      this.peerConnections.forEach((pc) => {
-        if (pc.connectionState === 'connected') {
-          hasSuccessfulConnections = true;
-        }
-      });
-      
-      if (!hasSuccessfulConnections && this.peerConnections.size > 0) {
-        console.warn('⚠️ TIMEOUT MONITOR: WebRTC negotiation timeout detected, forcing reconnection...');
-        this.forceReconnectAll();
-      }
-    }, 30000);
   }
 
   cleanup() {
@@ -937,15 +475,3 @@ export class UnifiedWebRTCManager {
     console.log(`✅ UNIFIED: Cleanup completed`);
   }
 }
-
-// Create singleton instance
-let unifiedWebRTCManagerInstance: UnifiedWebRTCManager | null = null;
-
-export const getUnifiedWebRTCManager = (): UnifiedWebRTCManager => {
-  if (!unifiedWebRTCManagerInstance) {
-    unifiedWebRTCManagerInstance = new UnifiedWebRTCManager();
-  }
-  return unifiedWebRTCManagerInstance;
-};
-
-export default getUnifiedWebRTCManager();

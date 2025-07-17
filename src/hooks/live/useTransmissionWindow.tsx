@@ -196,153 +196,8 @@ export const useTransmissionWindow = () => {
               }
             }
             keepAlive();
-            
-            // CRITICAL: Stream heartbeat and monitoring
-            function startStreamHeartbeat() {
-              setInterval(() => {
-                const activeVideoCount = Object.keys(activeVideoElements).length;
-                const activeStreamCount = Object.keys(participantStreams).length;
-                
-                console.log("💓 TRANSMISSION: Heartbeat - Active videos:", activeVideoCount, "Active streams:", activeStreamCount);
-                
-                // Check if videos are actually playing
-                Object.entries(activeVideoElements).forEach(([slotId, videoElement]) => {
-                  if (videoElement && videoElement.srcObject) {
-                    const playing = !videoElement.paused && !videoElement.ended && videoElement.readyState > 2;
-                    console.log("💓 TRANSMISSION: Video", slotId, "playing:", playing, "readyState:", videoElement.readyState);
-                  }
-                });
-                
-                // Debug shared streams access
-                if (window.opener && window.opener.sharedParticipantStreams) {
-                  const sharedCount = Object.keys(window.opener.sharedParticipantStreams).length;
-                  console.log("💓 TRANSMISSION: Shared streams available:", sharedCount);
-                }
-              }, 5000);
-            }
-            
-            // CRITICAL: Aggressive stream checking with periodic retries
-            function periodicStreamCheck() {
-              console.log("🔄 TRANSMISSION: Periodic stream check started");
-              
-              setInterval(() => {
-                // Check all assigned participants for streams
-                Object.entries(participantSlots).forEach(([participantId, slotIndex]) => {
-                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                  if (slotElement && !slotElement.querySelector('video')) {
-                    console.log("🔄 TRANSMISSION: Retrying stream assignment for", participantId);
-                    createVideoElementFromStream(slotElement, participantId);
-                  }
-                });
-                
-                // Try to get any available streams from window.opener
-                if (window.opener && window.opener.sharedParticipantStreams) {
-                  const availableStreams = Object.keys(window.opener.sharedParticipantStreams);
-                  console.log("🔍 TRANSMISSION: Available streams in periodic check:", availableStreams);
-                  
-                  availableStreams.forEach(participantId => {
-                    if (!participantSlots[participantId] && availableSlots.length > 0) {
-                      console.log("🎯 TRANSMISSION: Auto-assigning slot to detected stream:", participantId);
-                      
-                      const slotIndex = availableSlots.shift();
-                      participantSlots[participantId] = slotIndex;
-                      
-                      const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                      if (slotElement) {
-                        createVideoElementFromStream(slotElement, participantId);
-                        slotElement.dataset.participantId = participantId;
-                      }
-                    }
-                  });
-                }
-              }, 3000); // Check every 3 seconds
-            }
-            
-            // Start periodic checking
-            setTimeout(periodicStreamCheck, 2000);
-            
-            // Start stream heartbeat
-            setTimeout(startStreamHeartbeat, 1000);
-            
-            // CRITICAL: Debug stream access and implement fallback
-            function debugStreamAccess() {
-              console.log("🔍 TRANSMISSION: Debugging stream access...");
-              console.log("📍 window.opener exists:", !!window.opener);
-              
-              if (window.opener) {
-                console.log("📍 window.opener.sharedParticipantStreams exists:", !!window.opener.sharedParticipantStreams);
-                
-                if (window.opener.sharedParticipantStreams) {
-                  const streamIds = Object.keys(window.opener.sharedParticipantStreams);
-                  console.log("📍 Available stream IDs:", streamIds);
-                  
-                  streamIds.forEach(id => {
-                    const stream = window.opener.sharedParticipantStreams[id];
-                    console.log("📍 Stream", id, "- tracks:", stream?.getTracks()?.length || 0);
-                  });
-                }
-              }
-            }
-            
-            // CRITICAL: Enhanced stream access with multiple fallbacks and aggressive retries
-            function getSharedStream(participantId) {
-              console.log("🔍 TRANSMISSION: Getting shared stream for", participantId);
-              debugStreamAccess();
-              
-              // PRIMARY: Direct access to window.opener.sharedParticipantStreams
-              if (window.opener && window.opener.sharedParticipantStreams && window.opener.sharedParticipantStreams[participantId]) {
-                const stream = window.opener.sharedParticipantStreams[participantId];
-                if (stream && stream.getTracks().length > 0) {
-                  const activeTracks = stream.getTracks().filter(track => track.readyState === 'live');
-                  if (activeTracks.length > 0) {
-                    console.log("✅ TRANSMISSION: Found shared stream for", participantId, "with", activeTracks.length, "active tracks");
-                    participantStreams[participantId] = stream; // Cache it
-                    return stream;
-                  }
-                }
-              }
-              
-              // FALLBACK 1: Check cached streams
-              if (participantStreams[participantId]) {
-                console.log("🔄 TRANSMISSION: Using cached stream for", participantId);
-                return participantStreams[participantId];
-              }
-              
-              // FALLBACK 2: Try to access from global window object
-              if (window.sharedParticipantStreams && window.sharedParticipantStreams[participantId]) {
-                const stream = window.sharedParticipantStreams[participantId];
-                if (stream && stream.getTracks().length > 0) {
-                  console.log("🔄 TRANSMISSION: Using global shared stream for", participantId);
-                  participantStreams[participantId] = stream; // Cache it
-                  return stream;
-                }
-              }
-              
-              // FALLBACK 3: Try backup stream location
-              if (window.opener && window.opener.streamBackup && window.opener.streamBackup[participantId]) {
-                const stream = window.opener.streamBackup[participantId];
-                if (stream && stream.getTracks().length > 0) {
-                  console.log("🔄 TRANSMISSION: Using backup stream for", participantId);
-                  participantStreams[participantId] = stream; // Cache it
-                  return stream;
-                }
-              }
-              
-              // FALLBACK 4: Try postMessage request for stream
-              if (window.opener && !window.opener.closed) {
-                console.log("📡 TRANSMISSION: Requesting stream for", participantId, "via postMessage");
-                window.opener.postMessage({
-                  type: 'request-participant-stream',
-                  participantId: participantId,
-                  timestamp: Date.now()
-                }, '*');
-              }
-              
-              console.log("⚠️ TRANSMISSION: No shared stream found for", participantId);
-              return null;
-            }
 
-            // CRITICAL: Enhanced video element creation with direct stream access
+            // ENHANCED: Create video element with better error handling and stream assignment
             async function createVideoElementFromStream(slotElement, participantId) {
               if (!slotElement) {
                 console.error("❌ TRANSMISSION: No slot element provided");
@@ -357,7 +212,6 @@ export const useTransmissionWindow = () => {
               videoElement.playsInline = true;
               videoElement.muted = true;
               videoElement.setAttribute('playsinline', '');
-              videoElement.setAttribute('webkit-playsinline', '');
                 
               videoElement.style.width = '100%';
               videoElement.style.height = '100%';
@@ -368,35 +222,27 @@ export const useTransmissionWindow = () => {
               videoElement.style.willChange = 'transform';
               videoElement.style.transition = 'none';
               
-              // CRITICAL: Direct stream access with multiple fallbacks
-              const stream = getSharedStream(participantId);
-              
-              if (stream) {
-                console.log("✅ TRANSMISSION: Found stream with", stream.getTracks().length, "tracks");
+              // CRITICAL: Try to get real stream from host via getUserMedia clone
+              try {
+                console.log("🎯 TRANSMISSION: Attempting to get user media for display");
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                  video: true, 
+                  audio: false 
+                });
                 
-                const videoTracks = stream.getVideoTracks();
-                if (videoTracks.length > 0) {
-                  videoElement.srcObject = stream;
-                  
-                  videoElement.onloadedmetadata = () => {
-                    console.log("📊 TRANSMISSION: Video metadata loaded for", participantId);
-                    videoElement.play().then(() => {
-                      console.log("▶️ TRANSMISSION: Video playing successfully for", participantId);
-                      slotElement.style.border = '2px solid #00ff00';
-                      setTimeout(() => slotElement.style.border = 'none', 2000);
-                    }).catch(err => {
-                      console.error("❌ TRANSMISSION: Video play failed:", err);
-                    });
-                  };
-                  
-                  videoElement.onerror = (err) => {
-                    console.error("❌ TRANSMISSION: Video error:", err);
-                  };
-                } else {
-                  console.log("⚠️ TRANSMISSION: No video tracks in stream");
-                }
-              } else {
-                console.log("⚠️ TRANSMISSION: No stream found, using placeholder");
+                videoElement.srcObject = stream;
+                console.log("✅ TRANSMISSION: Video stream assigned successfully");
+                
+                videoElement.onloadedmetadata = () => {
+                  console.log("📊 TRANSMISSION: Video metadata loaded for", participantId);
+                  videoElement.play().catch(err => {
+                    console.warn("⚠️ TRANSMISSION: Video play failed:", err);
+                  });
+                };
+                
+              } catch (mediaError) {
+                console.warn("⚠️ TRANSMISSION: Cannot access media, using placeholder");
+                // Fallback to placeholder if no media access
                 if (!window.localPlaceholderStream) {
                   window.localPlaceholderStream = createPlaceholderStream();
                 }
@@ -404,13 +250,13 @@ export const useTransmissionWindow = () => {
                   videoElement.srcObject = window.localPlaceholderStream;
                 }
               }
-              
+                
               slotElement.appendChild(videoElement);
               activeVideoElements[slotElement.id] = videoElement;
               
-              // Debug styling
+              // Force visibility
               setTimeout(() => {
-                slotElement.style.background = 'rgba(255, 0, 0, 0.1)';
+                slotElement.style.background = 'transparent';
                 videoElement.style.opacity = '1';
                 videoElement.style.visibility = 'visible';
               }, 100);
@@ -465,34 +311,7 @@ export const useTransmissionWindow = () => {
               const data = event.data;
               console.log("📨 TRANSMISSION: Received message:", data.type, data);
                 
-              // FASE 3: Processar notificações de stream via BroadcastChannel
-              if (data.type === 'stream-available-immediate' && data.participantId) {
-                console.log('🚀 FASE 3: Stream imediato via channel:', data.participantId);
-                
-                // Forçar cache do stream
-                if (window.opener && window.opener.sharedParticipantStreams) {
-                  const stream = window.opener.sharedParticipantStreams[data.participantId];
-                  if (stream) {
-                    participantStreams[data.participantId] = stream;
-                    console.log('⚡ FASE 3: Stream cached via channel:', data.participantId);
-                  }
-                }
-                
-                // Atribuir slot imediatamente
-                if (!participantSlots[data.participantId] && availableSlots.length > 0) {
-                  const slotIndex = availableSlots.shift();
-                  participantSlots[data.participantId] = slotIndex;
-                    
-                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                  if (slotElement) {
-                    console.log("⚡ FASE 3: Atribuindo slot", slotIndex, "para", data.participantId);
-                    await createVideoElementFromStream(slotElement, data.participantId);
-                    slotElement.dataset.participantId = data.participantId;
-                  }
-                }
-              }
-              
-              else if (data.type === 'video-stream' && data.participantId && data.hasStream) {
+              if (data.type === 'video-stream' && data.participantId && data.hasStream) {
                 console.log('🎥 TRANSMISSION: Processing video stream for participant:', data.participantId);
                   
                 if (!participantSlots[data.participantId] && availableSlots.length > 0) {
@@ -518,112 +337,14 @@ export const useTransmissionWindow = () => {
                 }
               }
             });
-            
-            // FASE 4: BroadcastChannel para verificação
-            const verificationChannel = new BroadcastChannel(\`verification-\${sessionId}\`);
-            verificationChannel.addEventListener('message', (event) => {
-              const data = event.data;
-              
-              if (data.type === 'verify-stream-reception' && data.participantId) {
-                console.log('🔍 FASE 4: Verificação de recepção solicitada:', data.participantId);
-                
-                const slotIndex = participantSlots[data.participantId];
-                const hasSlot = slotIndex !== undefined;
-                const hasVideo = hasSlot ? document.getElementById("participant-slot-" + slotIndex)?.querySelector('video') : false;
-                
-                // Responder com status
-                verificationChannel.postMessage({
-                  type: 'stream-reception-confirmed',
-                  participantId: data.participantId,
-                  requestId: data.requestId,
-                  hasSlot: hasSlot,
-                  hasVideo: !!hasVideo,
-                  timestamp: Date.now()
-                });
-                
-                console.log('📋 FASE 4: Status enviado:', { hasSlot, hasVideo });
-              }
-            });
 
-            // ENHANCED: Handle window messages from host with stream caching
+            // ENHANCED: Handle window messages from host
             window.addEventListener('message', async (event) => {
               const data = event.data;
-              console.log("📩 TRANSMISSION: Received window message:", data.type, data);
+              console.log("📩 TRANSMISSION: Received window message:", data.type);
               
-              // FASE 3: Processar notificações imediatas de stream
-              if (data.type === 'immediate-stream-available' && data.participantId) {
-                console.log('🚀 FASE 3: Stream imediato disponível para:', data.participantId);
-                
-                // Forçar atualização imediata do cache
-                if (window.opener && window.opener.sharedParticipantStreams) {
-                  const stream = window.opener.sharedParticipantStreams[data.participantId];
-                  if (stream) {
-                    participantStreams[data.participantId] = stream;
-                    console.log('⚡ FASE 3: Stream cached for immediate display:', data.participantId);
-                  }
-                }
-                
-                // Atribuir slot imediatamente se não existir
-                if (!participantSlots[data.participantId] && availableSlots.length > 0) {
-                  const slotIndex = availableSlots.shift();
-                  participantSlots[data.participantId] = slotIndex;
-                  
-                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                  if (slotElement) {
-                    console.log('⚡ FASE 3: Criando vídeo imediatamente para slot:', slotIndex);
-                    await createVideoElementFromStream(slotElement, data.participantId);
-                    slotElement.dataset.participantId = data.participantId;
-                  }
-                } else if (participantSlots[data.participantId]) {
-                  // Atualizar slot existente
-                  const slotIndex = participantSlots[data.participantId];
-                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                  if (slotElement) {
-                    console.log('⚡ FASE 3: Atualizando vídeo existente para slot:', slotIndex);
-                    await createVideoElementFromStream(slotElement, data.participantId);
-                  }
-                }
-              }
-              
-              // FASE 4: Responder a verificação de recepção
-              else if (data.type === 'verify-stream-display' && data.participantId) {
-                console.log('🔍 FASE 4: Verificando exibição do stream:', data.participantId);
-                
-                const slotIndex = participantSlots[data.participantId];
-                if (slotIndex !== undefined) {
-                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                  const hasVideo = slotElement && slotElement.querySelector('video');
-                  
-                  if (hasVideo) {
-                    // Confirmar que o stream está sendo exibido
-                    window.opener.postMessage({
-                      type: 'stream-display-confirmed',
-                      participantId: data.participantId,
-                      verificationId: data.verificationId,
-                      timestamp: Date.now()
-                    }, '*');
-                    console.log('✅ FASE 4: Stream confirmado para:', data.participantId);
-                  } else {
-                    // Stream não está sendo exibido - solicitar nova tentativa
-                    console.log('❌ FASE 4: Stream não confirmado para:', data.participantId);
-                    setTimeout(async () => {
-                      await createVideoElementFromStream(slotElement, data.participantId);
-                    }, 100);
-                  }
-                }
-              }
-              
-              else if (data.type === 'participant-stream-ready' && data.participantId) {
+              if (data.type === 'participant-stream-ready' && data.participantId) {
                 console.log('🎯 TRANSMISSION: Stream ready for participant:', data.participantId);
-                
-                // Cache stream reference immediately
-                if (window.opener && window.opener.sharedParticipantStreams) {
-                  const stream = window.opener.sharedParticipantStreams[data.participantId];
-                  if (stream) {
-                    participantStreams[data.participantId] = stream;
-                    console.log('💾 TRANSMISSION: Cached stream for', data.participantId);
-                  }
-                }
                 
                 // Assign slot if not already assigned
                 if (!participantSlots[data.participantId] && availableSlots.length > 0) {
@@ -634,27 +355,6 @@ export const useTransmissionWindow = () => {
                   if (slotElement) {
                     await createVideoElementFromStream(slotElement, data.participantId);
                     slotElement.dataset.participantId = data.participantId;
-                  }
-                }
-              }
-              else if (data.type === 'force-stream-update' && data.participantId) {
-                console.log('🔄 TRANSMISSION: Force updating stream for participant:', data.participantId);
-                
-                // Update cached stream first
-                if (window.opener && window.opener.sharedParticipantStreams) {
-                  const stream = window.opener.sharedParticipantStreams[data.participantId];
-                  if (stream) {
-                    participantStreams[data.participantId] = stream;
-                    console.log('🔄 TRANSMISSION: Updated cached stream for', data.participantId);
-                  }
-                }
-                
-                // Find existing slot and update
-                const slotIndex = participantSlots[data.participantId];
-                if (slotIndex !== undefined) {
-                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
-                  if (slotElement) {
-                    await createVideoElementFromStream(slotElement, data.participantId);
                   }
                 }
               }

@@ -237,15 +237,10 @@ class UnifiedWebSocketService {
     this.currentUserId = userId;
 
     return new Promise((resolve, reject) => {
-      // FIXED: Single optimized timeout
       const joinTimeout = setTimeout(() => {
-        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId} (${userId})`);
-        // Clean up listeners on timeout
-        this.socket?.off('room_joined', handleJoinSuccess);
-        this.socket?.off('join-room-response', handleJoinResponse);
-        this.socket?.off('error', handleJoinError);
+        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
         reject(new Error('Join room timeout'));
-      }, 20000); // 20s single timeout
+      }, 30000); // Aumentado para 30s
 
       // Success handler
       const handleJoinSuccess = (data: any) => {
@@ -330,16 +325,8 @@ class UnifiedWebSocketService {
       return;
     }
 
-    const payload = { 
-      targetUserId, 
-      offer,
-      roomId: this.currentRoomId,
-      fromUserId: this.currentUserId,
-      timestamp: Date.now()
-    };
-
-    console.log('📞 SIGNALING: Sending offer to:', targetUserId, 'in room:', this.currentRoomId);
-    this.socket!.emit('offer', payload);
+    console.log('📞 SIGNALING: Sending offer to:', targetUserId);
+    this.socket!.emit('offer', { targetUserId, offer });
   }
 
   sendAnswer(targetUserId: string, answer: RTCSessionDescriptionInit): void {
@@ -348,16 +335,8 @@ class UnifiedWebSocketService {
       return;
     }
 
-    const payload = {
-      targetUserId, 
-      answer,
-      roomId: this.currentRoomId,
-      fromUserId: this.currentUserId,
-      timestamp: Date.now()
-    };
-
-    console.log('✅ SIGNALING: Sending answer to:', targetUserId, 'in room:', this.currentRoomId);
-    this.socket!.emit('answer', payload);
+    console.log('✅ SIGNALING: Sending answer to:', targetUserId);
+    this.socket!.emit('answer', { targetUserId, answer });
   }
 
   sendIceCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
@@ -366,16 +345,8 @@ class UnifiedWebSocketService {
       return;
     }
 
-    const payload = {
-      targetUserId, 
-      candidate,
-      roomId: this.currentRoomId,
-      fromUserId: this.currentUserId,
-      timestamp: Date.now()
-    };
-
-    console.log('🧊 SIGNALING: Sending ICE candidate to:', targetUserId, 'in room:', this.currentRoomId);
-    this.socket!.emit('ice-candidate', payload);
+    console.log('🧊 SIGNALING: Sending ICE candidate to:', targetUserId);
+    this.socket!.emit('ice-candidate', { targetUserId, candidate });
   }
 
   notifyStreamStarted(participantId: string, streamInfo: any): void {
@@ -418,17 +389,9 @@ class UnifiedWebSocketService {
       this.reconnectTimer = null;
     }
 
-    // Proteção contra null reference
     if (this.socket) {
-      try {
-        this.socket.disconnect();
-        console.log('✅ CONNECTION: Socket disconnected successfully');
-      } catch (error) {
-        console.error('❌ CONNECTION: Error disconnecting socket:', error);
-      }
+      this.socket.disconnect();
       this.socket = null;
-    } else {
-      console.log('⚠️ CONNECTION: No socket to disconnect');
     }
 
     this.metrics.status = 'disconnected';
@@ -451,17 +414,6 @@ class UnifiedWebSocketService {
         resolve(true);
       });
     });
-  }
-
-  // ✅ CRÍTICO: Enviar eventos customizados
-  sendCustomEvent(eventType: string, data: any): void {
-    if (!this.socket || !this.isConnected()) {
-      console.warn(`⚠️ Cannot send ${eventType}: Socket not connected`);
-      return;
-    }
-    
-    console.log(`📡 Sending custom event: ${eventType}`, data);
-    this.socket.emit(eventType, data);
   }
 
   // Force reconnection

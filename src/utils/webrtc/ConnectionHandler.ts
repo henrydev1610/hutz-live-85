@@ -1,6 +1,5 @@
 
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
-import { webRTCCallbacks } from './WebRTCCallbacksSingleton';
 
 export class ConnectionHandler {
   private peerConnections: Map<string, RTCPeerConnection>;
@@ -9,7 +8,6 @@ export class ConnectionHandler {
   private participantJoinCallback: ((participantId: string) => void) | null = null;
   private retryAttempts: Map<string, number> = new Map();
   private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
-  private remoteStreams: Map<string, MediaStream> = new Map();
 
   constructor(
     peerConnections: Map<string, RTCPeerConnection>,
@@ -30,146 +28,119 @@ export class ConnectionHandler {
   }
 
   createPeerConnection(participantId: string): RTCPeerConnection {
-    console.log(`🔗 CRITICAL: Creating peer connection for: ${participantId}`);
+    console.log(`🔗 Creating peer connection for: ${participantId}`);
 
     const config = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
+        { urls: 'stun:stun2.l.google.com:19302' }
       ]
     };
 
     const peerConnection = new RTCPeerConnection(config);
     this.peerConnections.set(participantId, peerConnection);
 
-    console.log(`✅ CRITICAL: Peer connection created for ${participantId}`, {
-      iceGatheringState: peerConnection.iceGatheringState,
-      connectionState: peerConnection.connectionState,
-      signalingState: peerConnection.signalingState
-    });
-
-    // ICE candidate handling with detailed logging
+    // ICE candidate handling
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log(`🧊 CRITICAL: ICE candidate generated for ${participantId}:`, {
-          type: event.candidate.type,
-          protocol: event.candidate.protocol,
-          address: event.candidate.address,
-          port: event.candidate.port
-        });
+        console.log(`🧊 Sending ICE candidate to: ${participantId}`);
         unifiedWebSocketService.sendIceCandidate(participantId, event.candidate);
-      } else {
-        console.log(`🧊 CRITICAL: ICE gathering completed for ${participantId}`);
-      }
-    };
-
-    // ICE connection state monitoring
-    peerConnection.oniceconnectionstatechange = () => {
-      console.log(`🧊 CRITICAL: ICE connection state changed for ${participantId}:`, peerConnection.iceConnectionState);
-      
-      if (peerConnection.iceConnectionState === 'connected' || peerConnection.iceConnectionState === 'completed') {
-        console.log(`✅ CRITICAL: ICE connection established for ${participantId}`);
-      } else if (peerConnection.iceConnectionState === 'failed') {
-        console.error(`❌ CRITICAL: ICE connection failed for ${participantId}`);
-        this.handleConnectionFailure(participantId);
       }
     };
 
     // Connection state monitoring
     peerConnection.onconnectionstatechange = () => {
-      console.log(`🔗 CRITICAL: Connection state for ${participantId}:`, peerConnection.connectionState);
+      console.log(`🔗 Connection state for ${participantId}:`, peerConnection.connectionState);
       
       if (peerConnection.connectionState === 'connected') {
-        console.log(`✅ CRITICAL: Peer connection established with: ${participantId}`);
+        console.log(`✅ Peer connection established with: ${participantId}`);
         if (this.participantJoinCallback) {
           this.participantJoinCallback(participantId);
         }
       } else if (peerConnection.connectionState === 'failed') {
-        console.log(`❌ CRITICAL: Peer connection failed with: ${participantId}`);
+        console.log(`❌ Peer connection failed with: ${participantId}`);
         this.handleConnectionFailure(participantId);
       }
     };
 
-    // UNIFIED: Track reception and stream unification
+    // CRITICAL: Enhanced stream handling for incoming tracks with mobile optimization
     peerConnection.ontrack = (event) => {
-      console.log(`📺 UNIFIED: Track received from ${participantId}: ${event.track.kind}`);
-      
-      let remoteStream = this.remoteStreams.get(participantId);
-
-      if (!remoteStream) {
-        remoteStream = new MediaStream();
-        this.remoteStreams.set(participantId, remoteStream);
-      }
-
-      remoteStream.addTrack(event.track);
-
-      console.log(`📡 REMOTE STREAM UPDATED for ${participantId}`, {
-        streamId: remoteStream.id,
-        totalTracks: remoteStream.getTracks().length,
-        videoTracks: remoteStream.getVideoTracks().length,
-        audioTracks: remoteStream.getAudioTracks().length,
-        active: remoteStream.active
+      console.log(`🎥 MOBILE-CRITICAL: Track received from ${participantId}:`, {
+        kind: event.track.kind,
+        trackId: event.track.id,
+        streamCount: event.streams.length,
+        streamIds: event.streams.map(s => s.id),
+        readyState: event.track.readyState,
+        enabled: event.track.enabled
       });
 
-      // FASE 1: ARMAZENAMENTO IMEDIATO - Garantir que o stream seja armazenado ANTES de qualquer callback
-      if (typeof window !== 'undefined') {
-        if (!window.sharedParticipantStreams) {
-          window.sharedParticipantStreams = {};
-        }
-        if (!window.streamBackup) {
-          window.streamBackup = {};
-        }
-        
-        // Armazenamento redundante e imediato
-        window.sharedParticipantStreams[participantId] = remoteStream;
-        window.streamBackup[participantId] = remoteStream;
-        
-        console.log(`🚀 FASE 1: Stream armazenado IMEDIATAMENTE para ${participantId}`, {
-          streamId: remoteStream.id,
-          totalGlobalStreams: Object.keys(window.sharedParticipantStreams).length,
-          streamIsActive: remoteStream.active,
-          hasVideoTracks: remoteStream.getVideoTracks().length > 0
+      if (event.streams && event.streams.length > 0) {
+        const stream = event.streams[0];
+        console.log(`📹 MOBILE-CRITICAL: Processing stream from ${participantId}:`, {
+          streamId: stream.id,
+          trackCount: stream.getTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length,
+          streamActive: stream.active
         });
 
-        // FASE 3: PROPAGAÇÃO ATIVA IMEDIATA - Notificar todas as janelas /live abertas
-        this.notifyTransmissionWindows(participantId, remoteStream);
-      }
+        // Enhanced callback trigger with multiple fallbacks for mobile
+        const triggerCallback = () => {
+          if (this.streamCallback) {
+            console.log(`🚀 MOBILE-IMMEDIATE: Triggering stream callback for ${participantId}`);
+            try {
+              this.streamCallback(participantId, stream);
+            } catch (error) {
+              console.error(`❌ Stream callback error for ${participantId}:`, error);
+              // Retry once more if callback fails
+              setTimeout(() => {
+                if (this.streamCallback) {
+                  this.streamCallback(participantId, stream);
+                }
+              }, 50);
+            }
+          } else {
+            console.error(`❌ MOBILE-CRITICAL: No stream callback set for ${participantId}`);
+          }
+        };
 
-      // FASE 2: CALLBACKS APÓS ARMAZENAMENTO
-      if (this.streamCallback) {
-        this.streamCallback(participantId, remoteStream);
+        // Immediate trigger
+        triggerCallback();
+        
+        // Backup trigger after minimal delay to ensure mobile streams are captured
+        setTimeout(() => {
+          console.log(`🔄 MOBILE-BACKUP: Backup trigger for ${participantId}`);
+          triggerCallback();
+        }, 100);
+
+        // Additional backup for problematic mobile connections
+        setTimeout(() => {
+          console.log(`🔄 MOBILE-FINAL: Final backup trigger for ${participantId}`);
+          triggerCallback();
+        }, 500);
+        
+      } else {
+        console.warn(`⚠️ MOBILE: Track received from ${participantId} but no streams attached`);
+        // Try to create stream from track for mobile compatibility
+        if (event.track) {
+          const syntheticStream = new MediaStream([event.track]);
+          console.log(`🔧 MOBILE-FIX: Created synthetic stream for ${participantId}`);
+          if (this.streamCallback) {
+            this.streamCallback(participantId, syntheticStream);
+          }
+        }
       }
-      
-      // CRÍTICO: Disparar callback via singleton para sincronização completa
-      webRTCCallbacks.triggerStreamCallback(participantId, remoteStream);
     };
 
-    // CRITICAL: Add local stream if available (for participants)
+    // Add local stream if available (for participants)
     const localStream = this.getLocalStream();
     if (localStream) {
-      console.log(`📤 CRITICAL: Adding local stream to peer connection for: ${participantId}`, {
-        streamId: localStream.id,
-        videoTracks: localStream.getVideoTracks().length,
-        audioTracks: localStream.getAudioTracks().length
-      });
-      
+      console.log(`📤 Adding local stream to peer connection for: ${participantId}`);
       localStream.getTracks().forEach(track => {
-        try {
-          peerConnection.addTrack(track, localStream);
-          console.log(`➕ CRITICAL: Added ${track.kind} track to peer connection for ${participantId}`, {
-            trackId: track.id,
-            enabled: track.enabled,
-            readyState: track.readyState
-          });
-        } catch (error) {
-          console.error(`❌ CRITICAL: Failed to add track for ${participantId}:`, error);
-        }
+        peerConnection.addTrack(track, localStream);
+        console.log(`➕ Added ${track.kind} track to peer connection`);
       });
-    } else {
-      console.log(`⚠️ CRITICAL: No local stream available for ${participantId}`);
     }
 
     return peerConnection;
@@ -180,7 +151,7 @@ export class ConnectionHandler {
     
     if (currentRetries >= maxRetries) {
       console.error(`❌ Max retry attempts reached for: ${participantId}`);
-      throw new Error(`Max retry attempts (${maxRetries}) reached for ${participantId}`);
+      return;
     }
 
     this.retryAttempts.set(participantId, currentRetries + 1);
@@ -188,55 +159,35 @@ export class ConnectionHandler {
     try {
       await this.initiateCall(participantId);
       this.retryAttempts.delete(participantId); // Reset on success
-      console.log(`✅ RETRY SUCCESS: Call initiated successfully for ${participantId} on attempt ${currentRetries + 1}`);
     } catch (error) {
       console.error(`❌ Call initiation failed for ${participantId} (attempt ${currentRetries + 1}):`, error);
       
       if (currentRetries + 1 < maxRetries) {
-        // Exponential backoff: 2s, 4s, 8s...
-        const delay = 2000 * Math.pow(2, currentRetries);
-        console.log(`🔄 RETRY SCHEDULE: Retrying call to ${participantId} in ${delay}ms (attempt ${currentRetries + 2}/${maxRetries})`);
-        
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return this.initiateCallWithRetry(participantId, maxRetries);
-      } else {
-        console.error(`❌ RETRY EXHAUSTED: All retry attempts failed for ${participantId}`);
-        throw error;
+        console.log(`🔄 Retrying call to ${participantId} in 2 seconds...`);
+        setTimeout(() => {
+          this.initiateCallWithRetry(participantId, maxRetries);
+        }, 2000);
       }
     }
   }
 
   private async initiateCall(participantId: string): Promise<void> {
-    console.log(`📞 CRITICAL: Initiating call to: ${participantId}`);
+    console.log(`📞 Initiating call to: ${participantId}`);
 
     const peerConnection = this.createPeerConnection(participantId);
     
     try {
-      // Create offer with detailed options
       const offer = await peerConnection.createOffer({
         offerToReceiveVideo: true,
-        offerToReceiveAudio: true,
-        iceRestart: false
-      });
-      
-      console.log(`📋 CRITICAL: Offer created for ${participantId}:`, {
-        type: offer.type,
-        sdpLines: offer.sdp?.split('\n').length || 0,
-        hasVideo: offer.sdp?.includes('video') || false,
-        hasAudio: offer.sdp?.includes('audio') || false
+        offerToReceiveAudio: true
       });
       
       await peerConnection.setLocalDescription(offer);
-      console.log(`📤 CRITICAL: Local description set for ${participantId}`, {
-        signalingState: peerConnection.signalingState,
-        iceGatheringState: peerConnection.iceGatheringState
-      });
+      console.log(`📤 Sending offer to: ${participantId}`);
       
-      console.log(`📤 CRITICAL: Sending offer to: ${participantId}`);
       unifiedWebSocketService.sendOffer(participantId, offer);
-      
     } catch (error) {
-      console.error(`❌ CRITICAL: Failed to create/send offer to ${participantId}:`, error);
+      console.error(`❌ Failed to create/send offer to ${participantId}:`, error);
       throw error;
     }
   }
@@ -249,20 +200,6 @@ export class ConnectionHandler {
     if (peerConnection) {
       peerConnection.close();
       this.peerConnections.delete(participantId);
-    }
-    
-    // Clean up remote stream
-    this.remoteStreams.delete(participantId);
-    
-    // Clean up global stream references
-    if (typeof window !== 'undefined') {
-      if (window.sharedParticipantStreams && window.sharedParticipantStreams[participantId]) {
-        delete window.sharedParticipantStreams[participantId];
-      }
-      if (window.streamBackup && window.streamBackup[participantId]) {
-        delete window.streamBackup[participantId];
-      }
-      console.log(`🧹 GLOBAL: Cleaned up stream references for ${participantId}`);
     }
     
     // Clear heartbeat
@@ -320,106 +257,6 @@ export class ConnectionHandler {
     this.retryAttempts.delete(participantId);
   }
 
-  // FASE 3: Sistema de propagação ativa para janelas /live
-  private notifyTransmissionWindows(participantId: string, stream: MediaStream): void {
-    console.log(`📡 FASE 3: Notificando janelas /live sobre stream de ${participantId}`);
-    
-    // Tentar notificar através de múltiplos canais
-    const sessionId = window.sessionStorage.getItem('currentSessionId');
-    
-    if (sessionId) {
-      // Canal principal
-      try {
-        const channel = new BroadcastChannel(`live-session-${sessionId}`);
-        channel.postMessage({
-          type: 'stream-available-immediate',
-          participantId: participantId,
-          streamId: stream.id,
-          trackCount: stream.getTracks().length,
-          hasVideo: stream.getVideoTracks().length > 0,
-          hasAudio: stream.getAudioTracks().length > 0,
-          timestamp: Date.now()
-        });
-        console.log(`📡 FASE 3: Broadcast message sent for ${participantId}`);
-        channel.close();
-      } catch (error) {
-        console.error(`❌ FASE 3: Broadcast channel error:`, error);
-      }
-
-      // Canal backup
-      try {
-        const backupChannel = new BroadcastChannel(`telao-session-${sessionId}`);
-        backupChannel.postMessage({
-          type: 'force-stream-update',
-          participantId: participantId,
-          action: 'immediate-display'
-        });
-        console.log(`📡 FASE 3: Backup broadcast sent for ${participantId}`);
-        backupChannel.close();
-      } catch (error) {
-        console.error(`❌ FASE 3: Backup broadcast error:`, error);
-      }
-    }
-
-    // FASE 4: Sistema de verificação - verificar se a janela recebeu o stream
-    setTimeout(() => {
-      this.verifyStreamReception(participantId, stream);
-    }, 2000);
-  }
-
-  // FASE 4: Sistema de verificação e retry
-  private verifyStreamReception(participantId: string, stream: MediaStream): void {
-    console.log(`🔍 FASE 4: Verificando recepção do stream para ${participantId}`);
-    
-    const sessionId = window.sessionStorage.getItem('currentSessionId');
-    if (!sessionId) return;
-
-    // Criar canal de verificação
-    const verificationChannel = new BroadcastChannel(`verification-${sessionId}`);
-    
-    // Enviar solicitação de status
-    verificationChannel.postMessage({
-      type: 'verify-stream-reception',
-      participantId: participantId,
-      requestId: `verify-${Date.now()}`
-    });
-
-    // Aguardar resposta por 3 segundos
-    const timeout = setTimeout(() => {
-      console.log(`⚠️ FASE 4: Timeout na verificação para ${participantId} - reenviando stream`);
-      this.retryStreamPropagation(participantId, stream);
-      verificationChannel.close();
-    }, 3000);
-
-    // Escutar resposta
-    verificationChannel.onmessage = (event) => {
-      if (event.data.type === 'stream-reception-confirmed' && event.data.participantId === participantId) {
-        console.log(`✅ FASE 4: Stream confirmado para ${participantId}`);
-        clearTimeout(timeout);
-        verificationChannel.close();
-      }
-    };
-  }
-
-  // FASE 4: Retry de propagação do stream
-  private retryStreamPropagation(participantId: string, stream: MediaStream): void {
-    console.log(`🔄 FASE 4: Retry de propagação para ${participantId}`);
-    
-    // Re-armazenar o stream com força
-    if (typeof window !== 'undefined') {
-      window.sharedParticipantStreams = window.sharedParticipantStreams || {};
-      window.streamBackup = window.streamBackup || {};
-      
-      window.sharedParticipantStreams[participantId] = stream;
-      window.streamBackup[participantId] = stream;
-      
-      console.log(`🔄 FASE 4: Stream re-armazenado para ${participantId}`);
-    }
-
-    // Re-enviar notificações
-    this.notifyTransmissionWindows(participantId, stream);
-  }
-
   cleanup(): void {
     console.log('🧹 Cleaning up ConnectionHandler');
     
@@ -429,9 +266,6 @@ export class ConnectionHandler {
       console.log(`💔 Cleared heartbeat for: ${participantId}`);
     });
     this.heartbeatIntervals.clear();
-    
-    // Clear remote streams
-    this.remoteStreams.clear();
     
     // Clear retry attempts
     this.retryAttempts.clear();

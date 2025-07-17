@@ -34,38 +34,34 @@ export const CameraSwitcher: React.FC<CameraSwitcherProps> = ({
 
   // Only show camera switcher on mobile devices with video
   if (!isMobile || !hasVideo) {
-    return (
-      <div className="text-xs text-white/50 text-center">
-        {!isMobile ? 'Troca de câmera disponível apenas no celular' : 'Câmera não disponível'}
-      </div>
-    );
+    return null;
   }
 
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex items-center gap-2">
       <Button
         variant="outline"
-        size="default"
+        size="sm"
         onClick={handleSwitchCamera}
         disabled={isLoading}
-        className="bg-black/50 border-white/20 text-white hover:bg-white/10 px-6 py-3"
+        className="bg-black/50 border-white/20 text-white hover:bg-white/10"
       >
-        <RotateCcw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+        <RotateCcw className="h-4 w-4 mr-2" />
         {currentPreference === 'user' ? (
           <>
             <Camera className="h-4 w-4 mr-1" />
-            Trocar para Traseira
+            Frontal
           </>
         ) : (
           <>
             <Video className="h-4 w-4 mr-1" />
-            Trocar para Frontal
+            Traseira
           </>
         )}
       </Button>
       
-      <div className="text-xs text-white/70 text-center">
-        Câmera Atual: {currentPreference === 'user' ? 'Frontal 🤳' : 'Traseira 📸'}
+      <div className="text-xs text-white/70">
+        Câmera: {currentPreference === 'user' ? 'Frontal' : 'Traseira'}
       </div>
     </div>
   );

@@ -20,12 +20,7 @@ export class SignalingHandler {
   }
 
   async handleOffer(data: any) {
-    console.log('📤 CRITICAL: Handling offer from:', data.fromUserId || data.fromSocketId, {
-      offerType: data.offer?.type,
-      sdpLines: data.offer?.sdp?.split('\n').length || 0,
-      hasVideo: data.offer?.sdp?.includes('video') || false,
-      hasAudio: data.offer?.sdp?.includes('audio') || false
-    });
+    console.log('📤 Handling offer from:', data.fromUserId || data.fromSocketId);
     
     const participantId = data.fromUserId || data.fromSocketId;
     
@@ -35,67 +30,36 @@ export class SignalingHandler {
       : this.createBasicPeerConnection(participantId);
     
     try {
-      console.log(`📋 CRITICAL: Setting remote description for ${participantId}`);
       await peerConnection.setRemoteDescription(data.offer);
       
-      console.log(`📋 CRITICAL: Remote description set for ${participantId}`, {
-        signalingState: peerConnection.signalingState,
-        iceConnectionState: peerConnection.iceConnectionState
-      });
-      
       const answer = await peerConnection.createAnswer();
-      console.log(`📋 CRITICAL: Answer created for ${participantId}:`, {
-        type: answer.type,
-        sdpLines: answer.sdp?.split('\n').length || 0
-      });
-      
       await peerConnection.setLocalDescription(answer);
-      console.log(`📋 CRITICAL: Local description set for ${participantId}`, {
-        signalingState: peerConnection.signalingState
-      });
       
       unifiedWebSocketService.sendAnswer(participantId, answer);
-      console.log('📥 CRITICAL: Answer sent to:', participantId);
-      
+      console.log('📥 Answer sent to:', participantId);
     } catch (error) {
-      console.error('❌ CRITICAL: Failed to handle offer:', error);
-      throw error;
+      console.error('❌ Failed to handle offer:', error);
     }
   }
 
   async handleAnswer(data: any) {
-    console.log('📥 CRITICAL: Handling answer from:', data.fromUserId || data.fromSocketId, {
-      answerType: data.answer?.type,
-      sdpLines: data.answer?.sdp?.split('\n').length || 0
-    });
+    console.log('📥 Handling answer from:', data.fromUserId || data.fromSocketId);
     
     const participantId = data.fromUserId || data.fromSocketId;
     const peerConnection = this.peerConnections.get(participantId);
     
     if (peerConnection) {
       try {
-        console.log(`📋 CRITICAL: Setting remote description (answer) for ${participantId}`);
         await peerConnection.setRemoteDescription(data.answer);
-        
-        console.log('✅ CRITICAL: Answer processed for:', participantId, {
-          signalingState: peerConnection.signalingState,
-          iceConnectionState: peerConnection.iceConnectionState
-        });
+        console.log('✅ Answer processed for:', participantId);
       } catch (error) {
-        console.error('❌ CRITICAL: Failed to handle answer:', error);
-        throw error;
+        console.error('❌ Failed to handle answer:', error);
       }
-    } else {
-      console.error('❌ CRITICAL: No peer connection found for answer from:', participantId);
     }
   }
 
   async handleIceCandidate(data: any) {
-    console.log('🧊 CRITICAL: Handling ICE candidate from:', data.fromUserId || data.fromSocketId, {
-      candidateType: data.candidate?.type,
-      protocol: data.candidate?.protocol,
-      address: data.candidate?.address
-    });
+    console.log('🧊 Handling ICE candidate from:', data.fromUserId || data.fromSocketId);
     
     const participantId = data.fromUserId || data.fromSocketId;
     const peerConnection = this.peerConnections.get(participantId);
@@ -103,13 +67,10 @@ export class SignalingHandler {
     if (peerConnection) {
       try {
         await peerConnection.addIceCandidate(data.candidate);
-        console.log('✅ CRITICAL: ICE candidate added for:', participantId);
+        console.log('✅ ICE candidate added for:', participantId);
       } catch (error) {
-        console.error('❌ CRITICAL: Failed to add ICE candidate:', error);
-        // Don't throw - ICE candidates can fail and that's sometimes normal
+        console.error('❌ Failed to add ICE candidate:', error);
       }
-    } else {
-      console.error('❌ CRITICAL: No peer connection found for ICE candidate from:', participantId);
     }
   }
 
