@@ -91,19 +91,22 @@ export class ConnectionHandler {
       }
     };
 
-    // ✅ CRITICAL: Host ontrack callback conforme instruções técnicas
+    // FIXED: Immediate track reception and stream creation
     peerConnection.ontrack = (event) => {
-      const remoteStream = new MediaStream();
-      remoteStream.addTrack(event.track);
-
-      console.log(`📡 Host recebeu track:`, event.track.kind);
-      console.log(`📡 Host recebeu track ${event.track.kind} de participante`);
+      console.log(`📺 FIXED: Track received from ${participantId}: ${event.track.kind}`);
       
+      // Create stream with track
+      const remoteStream = new MediaStream([event.track]);
+      
+      console.log(`📡 FIXED: Stream created for ${participantId}`, {
+        streamId: remoteStream.id,
+        tracks: remoteStream.getTracks().length
+      });
+      
+      // IMMEDIATE callback execution
       if (this.streamCallback) {
         this.streamCallback(participantId, remoteStream);
-        console.log(`✅ Stream callback executado para ${participantId}`);
-      } else {
-        console.error(`❌ No stream callback set for ${participantId}`);
+        console.log(`✅ FIXED: Stream forwarded to host for ${participantId}`);
       }
     };
 

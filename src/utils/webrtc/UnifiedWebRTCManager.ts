@@ -509,31 +509,50 @@ export class UnifiedWebRTCManager {
     this.connectionMetrics.delete(participantId);
   }
 
-  // CRITICAL: Set outgoing stream and add tracks to existing peer connections
+  // CRITICAL FIX: Immediate stream transmission
   setOutgoingStream(stream: MediaStream) {
-    console.log(`🔗 UNIFIED: Setting outgoing stream:`, {
+    console.log(`🚀 FIXED: Setting outgoing stream for transmission`, {
       streamId: stream.id,
-      trackCount: stream.getTracks().length,
-      videoTracks: stream.getVideoTracks().length,
-      audioTracks: stream.getAudioTracks().length
+      tracks: stream.getTracks().length
     });
     
     this.localStream = stream;
     
-    // Add tracks to all existing peer connections
+    // IMMEDIATE: Add to ALL peer connections RIGHT NOW
     this.peerConnections.forEach((pc, peerId) => {
-      console.log(`🎯 Adding tracks to existing peer connection: ${peerId}`);
-      stream.getTracks().forEach(track => {
-        try {
-          pc.addTrack(track, stream);
-          console.log(`✅ Track ${track.kind} added to PeerConnection for ${peerId}`);
-        } catch (error) {
-          console.error(`❌ Failed to add track ${track.kind} to ${peerId}:`, error);
-        }
-      });
+      if (pc.connectionState !== 'closed') {
+        console.log(`📤 IMMEDIATE: Adding tracks to ${peerId}`);
+        
+        stream.getTracks().forEach(track => {
+          try {
+            // Remove existing tracks first to avoid conflicts
+            const existingSenders = pc.getSenders();
+            existingSenders.forEach(sender => {
+              if (sender.track && sender.track.kind === track.kind) {
+                pc.removeTrack(sender);
+              }
+            });
+            
+            // Add new track
+            pc.addTrack(track, stream);
+            console.log(`✅ IMMEDIATE: ${track.kind} track added to ${peerId}`);
+          } catch (error) {
+            console.warn(`⚠️ Track add error for ${peerId}:`, error);
+          }
+        });
+      }
     });
     
-    console.log(`📡 Stream registered and tracks added to ${this.peerConnections.size} connections`);
+    // EMIT stream-ready event immediately
+    if (this.roomId) {
+      unifiedWebSocketService.sendCustomEvent('stream-ready', {
+        roomId: this.roomId,
+        participantId: this.participantId,
+        streamId: stream.id,
+        tracks: stream.getTracks().length
+      });
+      console.log(`📡 IMMEDIATE: Emitted stream-ready for room ${this.roomId}`);
+    }
   }
 
   // Public API methods
