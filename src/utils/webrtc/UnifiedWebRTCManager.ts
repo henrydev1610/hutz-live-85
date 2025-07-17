@@ -76,11 +76,20 @@ export class UnifiedWebRTCManager {
     // Link signaling handler with connection handler
     this.signalingHandler.setConnectionHandler(this.connectionHandler);
     
-    // Setup stream callback chain
+    // Setup stream callback chain - RULE 2: Host reception
     this.connectionHandler.setStreamCallback((participantId, stream) => {
       console.log(`🎥 UNIFIED: Stream received from ${participantId}`);
+      
+      // RULE 2: Create MediaStream for host reception  
+      const remoteStream = new MediaStream();
+      stream.getTracks().forEach(track => {
+        remoteStream.addTrack(track);
+      });
+      
+      console.log(`📡 Host recebeu track ${stream.getVideoTracks()[0]?.kind} de participante`);
+      
       this.updateConnectionMetrics(participantId, { streamReceived: true });
-      this.callbacksManager.triggerStreamCallback(participantId, stream);
+      this.callbacksManager.triggerStreamCallback(participantId, remoteStream);
     });
     
     this.connectionHandler.setParticipantJoinCallback((participantId) => {
@@ -342,8 +351,15 @@ export class UnifiedWebRTCManager {
     this.isHost = true;
 
     try {
-      this.updateConnectionState('websocket', 'connecting');
-      await unifiedWebSocketService.connect();
+      console.log('🔍 HOST: Checking WebSocket connection before join...');
+      
+      if (!unifiedWebSocketService.isConnected()) {
+        console.log('🔗 HOST: Connecting to WebSocket...');
+        this.updateConnectionState('websocket', 'connecting');
+        await unifiedWebSocketService.connect();
+      }
+      
+      console.log('🚪 HOST: Joining room...');
       this.setupWebSocketCallbacks();
       await unifiedWebSocketService.joinRoom(sessionId, this.participantId);
       
@@ -353,6 +369,15 @@ export class UnifiedWebRTCManager {
     } catch (error) {
       console.error(`❌ UNIFIED HOST: Failed to initialize:`, error);
       this.updateConnectionState('websocket', 'failed');
+      
+      // Auto-reconnection with error toast
+      if (error.message.includes("timeout")) {
+        console.log('🔄 HOST: Attempting auto-reconnection in 3s...');
+        setTimeout(() => {
+          this.initializeAsHost(sessionId);
+        }, 3000);
+      }
+      
       throw error;
     }
   }
@@ -394,12 +419,20 @@ export class UnifiedWebRTCManager {
       if (this.localStream) {
         await this.notifyLocalStream();
         
-        // CRITICAL: Add tracks to existing peer connections
+      // CRITICAL: Assertive addTrack() for all peer connections
         this.peerConnections.forEach((pc, peerId) => {
           if (this.localStream) {
             this.localStream.getTracks().forEach(track => {
-              pc.addTrack(track, this.localStream!);
-              console.log(`🎯 Track ${track.kind} adicionada ao PeerConnection para ${peerId}`);
+              // Check if track already exists to avoid duplicate
+              const existingSenders = pc.getSenders();
+              const trackExists = existingSenders.some(sender => sender.track === track);
+              
+              if (!trackExists) {
+                pc.addTrack(track, this.localStream!);
+                console.log(`🎯 [${peerId}] Track ${track.kind} adicionada ao PeerConnection`);
+              } else {
+                console.log(`🔄 [${peerId}] Track ${track.kind} já existe no PeerConnection`);
+              }
             });
           }
         });

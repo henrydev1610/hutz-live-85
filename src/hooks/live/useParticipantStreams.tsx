@@ -83,7 +83,13 @@ export const useParticipantStreams = ({
   }, [updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast]);
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
-    console.log('🎬 UNIFIED-CRITICAL: Handling participant stream for:', participantId);
+    console.log('🎬 RULE-CRITICAL: Handling participant stream for:', participantId);
+    
+    // RULE 2: Validate stream according to custom instructions
+    if (!stream || !stream.getVideoTracks().length) {
+      console.warn(`❌ RULE VALIDATION: Stream invalid for ${participantId}`);
+      return;
+    }
     
     // ENHANCED mobile detection with settings fallback
     const isMobileStream = participantId.includes('mobile') || participantId.includes('qr') || 
@@ -97,7 +103,9 @@ export const useParticipantStreams = ({
                             }
                           });
     
-    console.log('🎬 UNIFIED-STREAM-INFO:', {
+    // RULE 2: Detailed stream logging as required
+    console.log('📡 Vídeo remoto recebido', stream);
+    console.log('🎬 RULE-STREAM-INFO:', {
       id: participantId,
       hasVideoTracks: stream.getVideoTracks().length,
       hasAudioTracks: stream.getAudioTracks().length,
@@ -105,7 +113,8 @@ export const useParticipantStreams = ({
       streamActive: stream.active,
       isMobile: isMobileStream,
       streamId: stream.id,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      readyState: stream.getVideoTracks()[0]?.readyState
     });
     
     // UNIFIED: FORCE immediate stream state update FIRST

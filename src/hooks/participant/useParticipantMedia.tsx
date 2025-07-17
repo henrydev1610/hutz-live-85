@@ -60,23 +60,25 @@ export const useParticipantMedia = () => {
 
       localStreamRef.current = stream;
       
-      // CRITICAL: Register stream with UnifiedWebRTCManager
-      console.log(`🔗 REGISTERING stream with WebRTC Manager:`, {
+      // CRITICAL: Early stream registration BEFORE WebRTC init
+      console.log(`🔗 EARLY REGISTRATION: Stream with WebRTC Manager:`, {
         streamId: stream.id,
         tracks: stream.getTracks().length
       });
       
-      // Import and register stream  
+      // Import and register stream immediately
       const webRTCManager = (await import('@/utils/webrtc/UnifiedWebRTCManager')).default;
+      
+      // ✅ AGUARDA ESTABILIZAÇÃO DO STREAM ANTES DE REGISTRAR (rule 1)
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       if (webRTCManager.setOutgoingStream) {
-        // ✅ AGUARDA ESTABILIZAÇÃO DO STREAM ANTES DE REGISTRAR
-        await new Promise(resolve => setTimeout(resolve, 300));
         webRTCManager.setOutgoingStream(stream);
         console.log(`✅ Stream registered with WebRTC Manager after stabilization`);
-        
-        // ✅ EMIT EVENTO STREAM-READY PARA GARANTIR NOTIFICAÇÃO
-        console.log("📡 Stream do participante conectado", stream.getTracks());
       }
+      
+      // ✅ EMIT EVENTO STREAM-READY PARA O HOST (rule 1)
+      console.log("📡 Stream do participante conectado", stream.getTracks());
       
       const videoTracks = stream.getVideoTracks();
       const audioTracks = stream.getAudioTracks();
