@@ -71,6 +71,16 @@ export const useLivePageEffects = ({
       console.log('🚀 HOST: INITIALIZING SESSION:', sessionId);
       window.sessionStorage.setItem('currentSessionId', sessionId);
       
+      // CRÍTICO: Inicializar objetos globais para transmissão
+      if (!window.sharedParticipantStreams) {
+        window.sharedParticipantStreams = {};
+        console.log('🌐 GLOBAL: sharedParticipantStreams initialized');
+      }
+      if (!window.streamBackup) {
+        window.streamBackup = {};
+        console.log('🌐 GLOBAL: streamBackup initialized');
+      }
+      
       const cleanup = initializeHostSession(sessionId, {
         onParticipantJoin: (id) => {
           console.log('📥 HOST: Participant join event:', id);
@@ -104,6 +114,24 @@ export const useLivePageEffects = ({
               audioTracks: stream.getAudioTracks().length,
               active: stream.active,
               timestamp: Date.now()
+            });
+            
+            // IMEDIATO: Armazenar no window global para transmissão
+            if (!window.sharedParticipantStreams) {
+              window.sharedParticipantStreams = {};
+            }
+            if (!window.streamBackup) {
+              window.streamBackup = {};
+            }
+            
+            window.sharedParticipantStreams[participantId] = stream;
+            window.streamBackup[participantId] = stream;
+            
+            console.log('📡 GLOBAL: Stream stored in window objects for transmission access', {
+              participantId,
+              streamId: stream.id,
+              globalKeys: Object.keys(window.sharedParticipantStreams),
+              backupKeys: Object.keys(window.streamBackup)
             });
             
             // CRITICAL: Direct stream processing for immediate visibility

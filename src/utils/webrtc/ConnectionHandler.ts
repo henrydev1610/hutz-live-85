@@ -113,6 +113,24 @@ export class ConnectionHandler {
       if (this.streamCallback) {
         this.streamCallback(participantId, remoteStream);
       }
+      
+      // CRÍTICO: Backup direto no window global
+      if (typeof window !== 'undefined') {
+        if (!window.sharedParticipantStreams) {
+          window.sharedParticipantStreams = {};
+        }
+        if (!window.streamBackup) {
+          window.streamBackup = {};
+        }
+        
+        window.sharedParticipantStreams[participantId] = remoteStream;
+        window.streamBackup[participantId] = remoteStream;
+        
+        console.log(`🌐 BACKUP: Stream stored directly in global objects for ${participantId}`, {
+          streamId: remoteStream.id,
+          totalGlobalStreams: Object.keys(window.sharedParticipantStreams).length
+        });
+      }
     };
 
     // CRITICAL: Add local stream if available (for participants)
@@ -221,6 +239,17 @@ export class ConnectionHandler {
     
     // Clean up remote stream
     this.remoteStreams.delete(participantId);
+    
+    // Clean up global stream references
+    if (typeof window !== 'undefined') {
+      if (window.sharedParticipantStreams && window.sharedParticipantStreams[participantId]) {
+        delete window.sharedParticipantStreams[participantId];
+      }
+      if (window.streamBackup && window.streamBackup[participantId]) {
+        delete window.streamBackup[participantId];
+      }
+      console.log(`🧹 GLOBAL: Cleaned up stream references for ${participantId}`);
+    }
     
     // Clear heartbeat
     this.clearHeartbeat(participantId);
