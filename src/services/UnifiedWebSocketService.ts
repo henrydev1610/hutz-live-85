@@ -291,7 +291,14 @@ class UnifiedWebSocketService {
         console.log(`📡 WEBSOCKET: Sending join request (attempt ${attempt})`);
         
         try {
-          // Send only the correct event that server expects
+          // Try multiple event formats for compatibility
+          this.socket?.emit('join_room', { 
+            roomId, 
+            userId,
+            timestamp: Date.now(),
+            attempt
+          });
+          
           this.socket?.emit('join-room', { 
             roomId, 
             userId,
@@ -430,20 +437,16 @@ class UnifiedWebSocketService {
     this.isConnecting = false;
   }
 
-  // FASE 4: Health check method for connection testing
+  // Health check method
   async healthCheck(): Promise<boolean> {
+    if (!this.isConnected()) {
+      return false;
+    }
+
     return new Promise((resolve) => {
-      if (!this.socket || !this.socket.connected) {
-        resolve(false);
-        return;
-      }
+      const timeout = setTimeout(() => resolve(false), 5000);
       
-      // Send ping and wait for pong with device-optimized timeout
-      const timeouts = this.isMobileDevice() ? 8000 : 5000; // Longer timeout for mobile
-      const timeout = setTimeout(() => resolve(false), timeouts);
-      
-      this.socket.emit('heartbeat', { timestamp: Date.now() });
-      this.socket.once('heartbeat', () => {
+      this.socket!.emit('ping', (response: any) => {
         clearTimeout(timeout);
         resolve(true);
       });
