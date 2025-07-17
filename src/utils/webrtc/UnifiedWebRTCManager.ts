@@ -464,14 +464,14 @@ export class UnifiedWebRTCManager {
     }
   }
 
-  // CRITICAL: Phase 5 - Ensure tracks are properly added
+  // CRITICAL: Enhanced track management with stable connection handling
   private ensureTracksAdded() {
     if (!this.localStream) {
       console.warn(`⚠️ TRACKS: No local stream available to add tracks`);
       return;
     }
 
-    console.log(`🎯 TRACKS: Ensuring tracks are added to all peer connections...`);
+    console.log(`🎯 TRACKS: Ensuring tracks are added to all peer connections with enhanced stability...`);
     
     this.peerConnections.forEach((pc, peerId) => {
       if (pc.connectionState === 'closed') {
@@ -479,23 +479,49 @@ export class UnifiedWebRTCManager {
         return;
       }
 
+      console.log(`🎯 TRACKS: Processing tracks for ${peerId}`, {
+        connectionState: pc.connectionState,
+        signalingState: pc.signalingState,
+        iceConnectionState: pc.iceConnectionState
+      });
+
       const tracks = this.localStream!.getTracks();
-      console.log(`🎯 TRACKS: Adding ${tracks.length} tracks to ${peerId}`);
+      console.log(`🎯 TRACKS: Processing ${tracks.length} tracks for ${peerId}`);
 
       tracks.forEach(track => {
         try {
-          // Check if track already exists to avoid duplicate
-          const existingSenders = pc.getSenders();
-          const trackExists = existingSenders.some(sender => sender.track === track);
+          const existingSender = pc.getSenders().find(s => s.track?.kind === track.kind);
           
-          if (!trackExists) {
-            pc.addTrack(track, this.localStream!);
-            console.log(`✅ TRACKS: Added ${track.kind} track to ${peerId}`);
+          if (existingSender) {
+            // Use replaceTrack when sender already exists
+            existingSender.replaceTrack(track).then(() => {
+              console.log(`🔄 TRACKS: Replaced ${track.kind} track for ${peerId}`);
+            }).catch(err => {
+              console.warn(`⚠️ TRACKS: Failed to replace ${track.kind} track for ${peerId}:`, err);
+            });
           } else {
-            console.log(`⚠️ TRACKS: Track ${track.kind} already exists for ${peerId}`);
+            // Only add new tracks if connection is stable
+            if (pc.signalingState === 'stable' || pc.connectionState === 'connected') {
+              pc.addTrack(track, this.localStream!);
+              console.log(`✅ TRACKS: Added ${track.kind} track to ${peerId}`);
+            } else {
+              console.log(`⏳ TRACKS: Connection not stable for ${peerId} (${pc.signalingState}), delaying track addition`);
+              
+              // Retry after connection stabilizes
+              setTimeout(() => {
+                if (pc.signalingState === 'stable' && pc.connectionState !== 'closed') {
+                  try {
+                    pc.addTrack(track, this.localStream!);
+                    console.log(`✅ TRACKS: Added ${track.kind} track to ${peerId} (delayed)`);
+                  } catch (error) {
+                    console.error(`❌ TRACKS: Delayed track addition failed for ${peerId}:`, error);
+                  }
+                }
+              }, 1000);
+            }
           }
         } catch (error) {
-          console.error(`❌ TRACKS: Error adding ${track.kind} track to ${peerId}:`, error);
+          console.error(`❌ TRACKS: Error processing ${track.kind} track for ${peerId}:`, error);
         }
       });
     });
@@ -552,49 +578,69 @@ export class UnifiedWebRTCManager {
     this.connectionMetrics.delete(participantId);
   }
 
-  // CRITICAL FIX: Immediate stream transmission
+  // CRITICAL: Enhanced stream transmission with stable connection handling
   setOutgoingStream(stream: MediaStream) {
-    console.log(`🚀 FIXED: Setting outgoing stream for transmission`, {
+    console.log(`🎯 STREAM: Setting outgoing stream with enhanced stability`, {
       streamId: stream.id,
-      tracks: stream.getTracks().length
+      tracks: stream.getTracks().length,
+      videoTracks: stream.getVideoTracks().length,
+      audioTracks: stream.getAudioTracks().length
     });
     
     this.localStream = stream;
-    
-    // IMMEDIATE: Add to ALL peer connections RIGHT NOW
+
     this.peerConnections.forEach((pc, peerId) => {
-      if (pc.connectionState !== 'closed') {
-        console.log(`📤 IMMEDIATE: Adding tracks to ${peerId}`);
-        
-        stream.getTracks().forEach(track => {
-          try {
-            // Remove existing tracks first to avoid conflicts
-            const existingSenders = pc.getSenders();
-            existingSenders.forEach(sender => {
-              if (sender.track && sender.track.kind === track.kind) {
-                pc.removeTrack(sender);
+      if (pc.connectionState === 'closed') return;
+
+      console.log(`🎯 Attempting to add/replace tracks to ${peerId}`, {
+        connectionState: pc.connectionState,
+        signalingState: pc.signalingState,
+        iceConnectionState: pc.iceConnectionState
+      });
+
+      stream.getTracks().forEach(track => {
+        try {
+          const existingSender = pc.getSenders().find(s => s.track?.kind === track.kind);
+          
+          if (existingSender) {
+            // Use replaceTrack to avoid renegotiation when possible
+            existingSender.replaceTrack(track).then(() => {
+              console.log(`🔄 Replaced ${track.kind} track for ${peerId}`);
+            }).catch(err => {
+              console.warn(`⚠️ Failed to replace ${track.kind} track for ${peerId}, falling back to add:`, err);
+              // Fallback to remove/add if replace fails
+              try {
+                pc.removeTrack(existingSender);
+                pc.addTrack(track, stream);
+                console.log(`➕ Added ${track.kind} track for ${peerId} (fallback)`);
+              } catch (fallbackErr) {
+                console.error(`❌ Fallback failed for ${track.kind} track on ${peerId}:`, fallbackErr);
               }
             });
-            
-            // Add new track
-            pc.addTrack(track, stream);
-            console.log(`✅ IMMEDIATE: ${track.kind} track added to ${peerId}`);
-          } catch (error) {
-            console.warn(`⚠️ Track add error for ${peerId}:`, error);
+          } else {
+            // Check if connection is in stable state before adding tracks
+            if (pc.signalingState === 'stable') {
+              pc.addTrack(track, stream);
+              console.log(`➕ Added ${track.kind} track for ${peerId}`);
+            } else {
+              console.log(`⏳ Connection not stable for ${peerId} (${pc.signalingState}), track will be added later`);
+            }
           }
-        });
-      }
+        } catch (err) {
+          console.warn(`⚠️ Failed to process ${track.kind} track for ${peerId}:`, err);
+        }
+      });
     });
-    
-    // EMIT stream-ready event immediately
-    if (this.roomId) {
+
+    // Notify the host of stream availability
+    if (this.roomId && this.participantId) {
       unifiedWebSocketService.sendCustomEvent('stream-ready', {
         roomId: this.roomId,
         participantId: this.participantId,
         streamId: stream.id,
         tracks: stream.getTracks().length
       });
-      console.log(`📡 IMMEDIATE: Emitted stream-ready for room ${this.roomId}`);
+      console.log(`📡 Stream-ready event sent for room ${this.roomId}`);
     }
   }
 
