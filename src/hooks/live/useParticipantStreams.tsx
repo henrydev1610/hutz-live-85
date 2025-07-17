@@ -83,13 +83,20 @@ export const useParticipantStreams = ({
   }, [updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast]);
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
-    console.log('🎬 RULE-CRITICAL: Handling participant stream for:', participantId);
+    console.log('🎬 FASE 3: CRITICAL UNIFIED stream handler for:', participantId);
     
-    // RULE 2: Validate stream according to custom instructions
+    // FASE 3: Enhanced stream validation according to custom instructions
     if (!stream || !stream.getVideoTracks().length) {
-      console.warn(`❌ RULE VALIDATION: Stream invalid for ${participantId}`);
+      console.warn(`❌ FASE 3: Stream invalid for ${participantId}`, {
+        streamExists: !!stream,
+        tracks: stream?.getTracks()?.length || 0,
+        videoTracks: stream?.getVideoTracks()?.length || 0
+      });
       return;
     }
+    
+    // FASE 3: Critical stream validation - ensure stream is ready
+    console.log(`📡 Vídeo remoto recebido`, stream);
     
     // ENHANCED mobile detection with settings fallback
     const isMobileStream = participantId.includes('mobile') || participantId.includes('qr') || 
@@ -103,9 +110,8 @@ export const useParticipantStreams = ({
                             }
                           });
     
-    // RULE 2: Detailed stream logging as required
-    console.log('📡 Vídeo remoto recebido', stream);
-    console.log('🎬 RULE-STREAM-INFO:', {
+    // FASE 3: Critical stream logging as required by rules
+    console.log('🎬 FASE 3-STREAM-INFO:', {
       id: participantId,
       hasVideoTracks: stream.getVideoTracks().length,
       hasAudioTracks: stream.getAudioTracks().length,
@@ -117,14 +123,14 @@ export const useParticipantStreams = ({
       readyState: stream.getVideoTracks()[0]?.readyState
     });
     
-    // UNIFIED: FORCE immediate stream state update FIRST
+    // FASE 3: FORCE immediate stream state update FIRST with UNIFIED manager
     setParticipantStreams(prev => {
       const updated = { ...prev, [participantId]: stream };
-      console.log('🔄 UNIFIED-STREAM: Updated streams for:', participantId);
+      console.log('🔄 FASE 3-UNIFIED-STREAM: Updated streams for:', participantId);
       return updated;
     });
     
-    // UNIFIED: FORCE immediate participant state update - with mobile detection
+    // FASE 3: FORCE immediate participant state update - with mobile detection
     setParticipantList(prev => {
       const updated = prev.map(p => 
         p.id === participantId 
