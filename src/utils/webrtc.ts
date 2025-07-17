@@ -37,42 +37,40 @@ export const initHostWebRTC = async (sessionId: string) => {
 
 export const initParticipantWebRTC = async (sessionId: string, participantId?: string, stream?: MediaStream) => {
   try {
-    console.log('🚀 FASE 1: Initializing participant WebRTC for session:', sessionId);
+    console.log('🚀 UNIFIED: Connecting participant to EXISTING WebRTC session:', sessionId);
     
-    // FASE 1: Verificar se já existe uma conexão válida antes de criar nova
-    if (webrtcManager) {
-      const existingState = webrtcManager.getConnectionState();
-      console.log('🔍 FASE 1: EXISTING PARTICIPANT CONNECTION STATE:', existingState);
+    // CRITICAL: SEMPRE usar a instância existente do HOST se disponível
+    if (webrtcManager && webrtcManager.roomId === sessionId) {
+      console.log('✅ UNIFIED: REUSING existing HOST WebRTC manager for participant connection');
       
-      // FASE 3: Sincronização mais rigorosa - verificar sessionId também
-      if (webrtcManager.roomId === sessionId && 
-          (existingState.overall === 'connected' || existingState.overall === 'connecting')) {
-        console.log('✅ FASE 1: REUSING existing participant WebRTC manager (same session, already connected)');
-        
-        // FASE 2: Se stream disponível, registrar imediatamente na instância existente
-        if (stream) {
-          console.log('🎬 FASE 2: Registering stream with existing WebRTC manager');
-          await new Promise(resolve => setTimeout(resolve, 300)); // Estabilização
-          webrtcManager.setOutgoingStream(stream);
-          console.log('✅ FASE 2: Stream registered with existing manager');
-        }
-        
-        return { webrtc: webrtcManager };
+      // CRITICAL: Registrar stream na instância HOST existente
+      if (stream) {
+        console.log('🎬 UNIFIED: Registering participant stream with HOST WebRTC manager');
+        await new Promise(resolve => setTimeout(resolve, 300)); // Estabilização
+        webrtcManager.setOutgoingStream(stream);
+        console.log('✅ UNIFIED: Participant stream registered with HOST manager');
       }
       
-      // Só limpar se realmente necessário
-      console.log('🧹 FASE 1: Cleaning up failed/different session WebRTC manager');
+      // CRITICAL: Stream já registrado, apenas retornar instância HOST existente
+      console.log('✅ UNIFIED: Using existing HOST WebRTC for participant stream forwarding');
+      
+      return { webrtc: webrtcManager };
+    }
+    
+    // Se não há HOST, criar nova instância (modo standalone)
+    console.log('🔄 UNIFIED: No HOST found, creating standalone participant WebRTC');
+    if (webrtcManager) {
       webrtcManager.cleanup();
     }
     
     webrtcManager = new UnifiedWebRTCManager();
     await webrtcManager.initializeAsParticipant(sessionId, participantId || `participant-${Date.now()}`, stream);
     
-    console.log('✅ FASE 1: Participant WebRTC manager initialized and stored in singleton');
+    console.log('✅ UNIFIED: Standalone participant WebRTC manager created');
     return { webrtc: webrtcManager };
     
   } catch (error) {
-    console.error('❌ FASE 1: Failed to initialize participant WebRTC:', error);
+    console.error('❌ UNIFIED: Failed to initialize participant WebRTC:', error);
     throw error;
   }
 };

@@ -104,18 +104,8 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
           )
         ]);
         
-        // Setup WebRTC callbacks
-        webrtc.setOnStreamCallback((pId: string, incomingStream: MediaStream) => {
-          console.log(`🎥 PARTICIPANT CONNECTION: Stream received from ${pId}:`, {
-            streamId: incomingStream.id,
-            active: incomingStream.active,
-            tracks: incomingStream.getTracks().map(t => ({
-              kind: t.kind,
-              enabled: t.enabled,
-              readyState: t.readyState
-            }))
-          });
-        });
+        // CRITICAL: NÃO configurar callbacks aqui - deixar o HOST gerenciar
+        console.log('✅ UNIFIED: Participant connected to HOST WebRTC manager - streams will be forwarded to HOST callbacks');
         
         webrtc.setOnParticipantJoinCallback((pId: string) => {
           console.log(`👤 PARTICIPANT CONNECTION: Participant joined: ${pId}`);
