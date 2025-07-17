@@ -90,14 +90,14 @@ export const useLivePageEffects = ({
         }
       });
 
-      // FASE 1: Initialize WebRTC with UNIFIED singleton system
+      // Initialize WebRTC with CRITICAL static host ID - UNIFIED SYSTEM
       initHostWebRTC(sessionId).then(result => {
         if (result && result.webrtc) {
-          console.log('✅ FASE 1: HOST UNIFIED WebRTC initialized successfully');
+          console.log('✅ HOST: UNIFIED WebRTC initialized with STATIC HOST ID');
           
-          // FASE 2: Set up callbacks for stream management on UNIFIED instance
+          // CRITICAL: Set up callbacks for stream and participant management
           result.webrtc.setOnStreamCallback((participantId, stream) => {
-            console.log('🎥 FASE 2: HOST UNIFIED STREAM RECEIVED from:', participantId, {
+            console.log('🎥 HOST: UNIFIED STREAM RECEIVED from:', participantId, {
               streamId: stream.id,
               trackCount: stream.getTracks().length,
               videoTracks: stream.getVideoTracks().length,
@@ -106,15 +106,14 @@ export const useLivePageEffects = ({
               timestamp: Date.now()
             });
             
-            // FASE 3: Direct stream processing for immediate visibility
-            console.log('📡 Vídeo remoto recebido', stream);
+            // CRITICAL: Direct stream processing for immediate visibility
             handleParticipantStream(participantId, stream);
             
-            // FASE 3: Force immediate update to transmission participants
+            // Force immediate update to transmission participants
             setTimeout(() => {
-              console.log('🔄 FASE 3: HOST Updating transmission after UNIFIED stream received');
+              console.log('🔄 HOST: UNIFIED Updating transmission after stream received');
               updateTransmissionParticipants();
-              // FASE 3: Also force stream sync
+              // CRITICAL: Also force stream sync
               forceSyncNow();
             }, 100);
             
@@ -126,11 +125,11 @@ export const useLivePageEffects = ({
           });
           
           result.webrtc.setOnParticipantJoinCallback((participantId) => {
-            console.log('👤 FASE 2: HOST UNIFIED Participant join callback from WebRTC:', participantId);
+            console.log('👤 HOST: UNIFIED Participant join callback from WebRTC:', participantId);
             handleParticipantJoin(participantId);
           });
 
-          console.log('🔗 FASE 2: HOST UNIFIED WebRTC callbacks configured successfully');
+          console.log('🔗 HOST: UNIFIED WebRTC callbacks configured with STATIC HOST ID');
           
           // Success notification
           toast({

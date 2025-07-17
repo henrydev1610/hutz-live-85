@@ -598,16 +598,10 @@ export class UnifiedWebRTCManager {
     }
   }
 
-  // Public API methods - FASE 2: Enhanced callback management
+  // Public API methods
   setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
-    console.log('📞 FASE 2: Setting stream callback on UNIFIED manager');
+    console.log('📞 UNIFIED: Setting stream callback');
     this.callbacksManager.setOnStreamCallback(callback);
-  }
-
-  // FASE 5: Manual stream callback trigger for recovery
-  triggerStreamCallback(participantId: string, stream: MediaStream) {
-    console.log('🔄 FASE 5: Manually triggering stream callback for:', participantId);
-    this.callbacksManager.triggerStreamCallback(participantId, stream);
   }
 
   setOnParticipantJoinCallback(callback: (participantId: string) => void) {
