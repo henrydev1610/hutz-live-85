@@ -137,12 +137,25 @@ export class UnifiedWebRTCManager {
       if (connectionState === 'connected' && 
           (iceConnectionState === 'connected' || iceConnectionState === 'completed')) {
         hasActiveConnections = true;
+        
+        // Check media flow health
+        const mediaHealth = this.checkMediaFlowHealth(pc, participantId);
+        
         this.updateConnectionMetrics(participantId, { 
           connectionState, 
           iceConnectionState, 
           lastHealthCheck: Date.now(),
-          healthy: true 
+          healthy: true,
+          mediaFlowing: mediaHealth.isHealthy,
+          inboundMedia: mediaHealth.inbound,
+          outboundMedia: mediaHealth.outbound
         });
+        
+        // If media is not flowing, trigger recovery
+        if (!mediaHealth.isHealthy && this.localStream) {
+          console.warn(`⚠️ HEALTH CHECK: Media not flowing for ${participantId}, attempting recovery`);
+          this.verifyTracksAndReattach();
+        }
       } else if (connectionState === 'failed' || iceConnectionState === 'failed') {
         hasFailedConnections = true;
         console.log(`🔄 HEALTH CHECK: Connection failed for ${participantId}, initiating recovery`);
@@ -164,6 +177,46 @@ export class UnifiedWebRTCManager {
     
     // Log overall health status
     console.log(`🏥 HEALTH REPORT: WebSocket: ${this.connectionState.websocket}, WebRTC: ${this.connectionState.webrtc}, Overall: ${this.connectionState.overall}`);
+  }
+  
+  // Check if media is actually flowing through the connection
+  private checkMediaFlowHealth(pc: RTCPeerConnection, participantId: string): {isHealthy: boolean, inbound: boolean, outbound: boolean} {
+    let inboundHealthy = false;
+    let outboundHealthy = false;
+    
+    // Check receivers (inbound media)
+    const receivers = pc.getReceivers();
+    receivers.forEach(receiver => {
+      if (receiver.track && receiver.track.readyState === 'live' && !receiver.track.muted) {
+        inboundHealthy = true;
+      }
+    });
+    
+    // Check senders (outbound media)
+    const senders = pc.getSenders();
+    senders.forEach(sender => {
+      if (sender.track && sender.track.readyState === 'live' && sender.track.enabled) {
+        outboundHealthy = true;
+      }
+    });
+    
+    const isHealthy = this.isHost ? inboundHealthy : outboundHealthy;
+    
+    if (!isHealthy) {
+      console.warn(`⚠️ MEDIA HEALTH: Issues detected for ${participantId}`, {
+        role: this.isHost ? 'host' : 'participant',
+        inbound: inboundHealthy,
+        outbound: outboundHealthy,
+        receivers: receivers.length,
+        senders: senders.length
+      });
+    }
+    
+    return {
+      isHealthy,
+      inbound: inboundHealthy,
+      outbound: outboundHealthy
+    };
   }
 
   private updateConnectionState(component: keyof ConnectionState, state: ConnectionState['websocket']) {
@@ -439,17 +492,38 @@ export class UnifiedWebRTCManager {
         console.log(`📡 STREAM READY: Notified host of stream availability`);
       }
       
+      // CRITICAL: Ensure stream is ready before WebRTC connection
+      if (this.localStream) {
+        console.log(`🎯 STREAM VALIDATION: Verifying local stream before WebRTC connection`, {
+          streamId: this.localStream.id,
+          tracks: this.localStream.getTracks().map(t => ({
+            kind: t.kind,
+            enabled: t.enabled,
+            readyState: t.readyState,
+            muted: t.muted
+          }))
+        });
+      }
+      
       // CRITICAL: Force connection to host with retry mechanism
       const hostConnectionDelay = this.isMobile ? 1500 : 1000;
       setTimeout(async () => {
         try {
           console.log(`📞 WEBRTC CONNECT: Initiating call to host after ${hostConnectionDelay}ms delay`);
+          
+          // Double-check stream availability before connection
+          if (!this.localStream) {
+            console.error(`❌ WEBRTC CONNECT: No local stream available, aborting connection`);
+            this.updateConnectionState('webrtc', 'failed');
+            return;
+          }
+          
           await this.connectionHandler.initiateCallWithRetry("host", 3);
           
-          // CRITICAL: Add tracks after successful connection
+          // CRITICAL: Verify tracks are properly attached
           setTimeout(() => {
-            this.ensureTracksAdded();
-          }, 1000);
+            this.verifyTracksAndReattach();
+          }, 500);
           
         } catch (error) {
           console.error(`❌ WEBRTC CONNECT: Failed to connect to host:`, error);
@@ -499,6 +573,80 @@ export class UnifiedWebRTCManager {
         }
       });
     });
+  }
+  
+  // CRITICAL: Verify tracks and reattach if needed
+  private verifyTracksAndReattach() {
+    if (!this.localStream) {
+      console.warn(`⚠️ VERIFY: No local stream available`);
+      return;
+    }
+    
+    console.log(`🔍 VERIFY: Checking track attachment for all connections...`);
+    
+    this.peerConnections.forEach((pc, peerId) => {
+      if (pc.connectionState === 'closed' || pc.connectionState === 'failed') {
+        console.warn(`⚠️ VERIFY: Skipping ${peerId} - connection ${pc.connectionState}`);
+        return;
+      }
+      
+      const senders = pc.getSenders();
+      const localTracks = this.localStream!.getTracks();
+      
+      console.log(`🔍 VERIFY: ${peerId} has ${senders.length} senders for ${localTracks.length} tracks`);
+      
+      // Check each local track
+      localTracks.forEach(track => {
+        const senderForTrack = senders.find(s => s.track === track);
+        
+        if (!senderForTrack) {
+          console.warn(`⚠️ VERIFY: Missing sender for ${track.kind} track on ${peerId}, reattaching...`);
+          
+          try {
+            // Remove any existing sender for this track type
+            const existingSender = senders.find(s => s.track?.kind === track.kind);
+            if (existingSender && existingSender.track !== track) {
+              pc.removeTrack(existingSender);
+              console.log(`🔄 VERIFY: Removed old ${track.kind} sender`);
+            }
+            
+            // Add the track
+            const sender = pc.addTrack(track, this.localStream!);
+            console.log(`✅ VERIFY: Reattached ${track.kind} track to ${peerId}`, {
+              senderId: sender.track?.id,
+              enabled: sender.track?.enabled
+            });
+            
+            // Force renegotiation if in stable state
+            if (pc.signalingState === 'stable') {
+              console.log(`🔄 VERIFY: Triggering renegotiation for ${peerId}`);
+              this.triggerRenegotiation(peerId, pc);
+            }
+          } catch (error) {
+            console.error(`❌ VERIFY: Failed to reattach ${track.kind} track to ${peerId}:`, error);
+          }
+        } else {
+          console.log(`✅ VERIFY: ${track.kind} track properly attached to ${peerId}`);
+        }
+      });
+    });
+  }
+  
+  // Trigger renegotiation after track changes
+  private async triggerRenegotiation(peerId: string, pc: RTCPeerConnection) {
+    try {
+      console.log(`🔄 RENEGOTIATION: Creating new offer for ${peerId}`);
+      
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      
+      // Send the new offer
+      unifiedWebSocketService.sendOffer(peerId, offer);
+      
+      console.log(`✅ RENEGOTIATION: New offer sent to ${peerId}`);
+    } catch (error) {
+      console.error(`❌ RENEGOTIATION: Failed for ${peerId}:`, error);
+    }
   }
 
   private async notifyLocalStream() {

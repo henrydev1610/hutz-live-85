@@ -66,7 +66,9 @@ export class SignalingHandler {
   async handleAnswer(data: any) {
     console.log('📥 CRITICAL: Handling answer from:', data.fromUserId || data.fromSocketId, {
       answerType: data.answer?.type,
-      sdpLines: data.answer?.sdp?.split('\n').length || 0
+      sdpLines: data.answer?.sdp?.split('\n').length || 0,
+      hasVideo: data.answer?.sdp?.includes('m=video') || false,
+      hasAudio: data.answer?.sdp?.includes('m=audio') || false
     });
     
     const participantId = data.fromUserId || data.fromSocketId;
@@ -74,13 +76,33 @@ export class SignalingHandler {
     
     if (peerConnection) {
       try {
+        // Validate answer before setting
+        if (!data.answer || !data.answer.sdp || !data.answer.type) {
+          throw new Error('Invalid answer format');
+        }
+        
+        // Check signaling state
+        if (peerConnection.signalingState !== 'have-local-offer') {
+          console.warn(`⚠️ CRITICAL: Unexpected signaling state for answer: ${peerConnection.signalingState}`);
+        }
+        
         console.log(`📋 CRITICAL: Setting remote description (answer) for ${participantId}`);
         await peerConnection.setRemoteDescription(data.answer);
         
         console.log('✅ CRITICAL: Answer processed for:', participantId, {
           signalingState: peerConnection.signalingState,
-          iceConnectionState: peerConnection.iceConnectionState
+          iceConnectionState: peerConnection.iceConnectionState,
+          connectionState: peerConnection.connectionState
         });
+        
+        // Log current senders/receivers
+        const senders = peerConnection.getSenders();
+        const receivers = peerConnection.getReceivers();
+        console.log(`📊 CRITICAL: Connection stats for ${participantId}:`, {
+          senders: senders.map(s => ({kind: s.track?.kind, active: !!s.track})),
+          receivers: receivers.map(r => ({kind: r.track?.kind, active: !!r.track}))
+        });
+        
       } catch (error) {
         console.error('❌ CRITICAL: Failed to handle answer:', error);
         throw error;
