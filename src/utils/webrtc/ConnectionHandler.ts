@@ -36,22 +36,8 @@ export class ConnectionHandler {
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
-        // Public TURN servers for better connectivity
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
-      ],
-      iceCandidatePoolSize: 10,
-      bundlePolicy: 'max-bundle' as RTCBundlePolicy,
-      rtcpMuxPolicy: 'require' as RTCRtcpMuxPolicy
+        { urls: 'stun:stun4.l.google.com:19302' }
+      ]
     };
 
     const peerConnection = new RTCPeerConnection(config);
@@ -105,46 +91,22 @@ export class ConnectionHandler {
       }
     };
 
-    // FIXED: Track collection with complete stream handling
-    const remoteStreams = new Map<string, MediaStream>();
-    
+    // FIXED: Immediate track reception and stream creation
     peerConnection.ontrack = (event) => {
-      console.log(`📺 FIXED: Track received from ${participantId}: ${event.track.kind}`, {
-        trackId: event.track.id,
-        streamIds: event.streams.map(s => s.id),
-        enabled: event.track.enabled,
-        muted: event.track.muted
+      console.log(`📺 FIXED: Track received from ${participantId}: ${event.track.kind}`);
+      
+      // Create stream with track
+      const remoteStream = new MediaStream([event.track]);
+      
+      console.log(`📡 FIXED: Stream created for ${participantId}`, {
+        streamId: remoteStream.id,
+        tracks: remoteStream.getTracks().length
       });
       
-      // Handle streams properly - use the stream from the event
-      if (event.streams && event.streams.length > 0) {
-        const stream = event.streams[0];
-        
-        // Store or update the stream
-        if (!remoteStreams.has(stream.id)) {
-          remoteStreams.set(stream.id, stream);
-          console.log(`🎬 FIXED: New stream registered for ${participantId}`, {
-            streamId: stream.id,
-            videoTracks: stream.getVideoTracks().length,
-            audioTracks: stream.getAudioTracks().length
-          });
-          
-          // Trigger callback with complete stream
-          if (this.streamCallback) {
-            this.streamCallback(participantId, stream);
-            console.log(`✅ FIXED: Complete stream forwarded to host for ${participantId}`);
-          }
-        } else {
-          console.log(`📝 FIXED: Track added to existing stream for ${participantId}`);
-        }
-      } else {
-        // Fallback: create new stream if no streams in event
-        console.warn(`⚠️ FIXED: No streams in track event, creating new stream for ${participantId}`);
-        const fallbackStream = new MediaStream([event.track]);
-        
-        if (this.streamCallback) {
-          this.streamCallback(participantId, fallbackStream);
-        }
+      // IMMEDIATE callback execution
+      if (this.streamCallback) {
+        this.streamCallback(participantId, remoteStream);
+        console.log(`✅ FIXED: Stream forwarded to host for ${participantId}`);
       }
     };
 
@@ -213,29 +175,6 @@ export class ConnectionHandler {
     const peerConnection = this.createPeerConnection(participantId);
     
     try {
-      // Ensure tracks are added before creating offer
-      const localStream = this.getLocalStream();
-      if (localStream) {
-        const senders = peerConnection.getSenders();
-        const hasVideoSender = senders.some(s => s.track?.kind === 'video');
-        const hasAudioSender = senders.some(s => s.track?.kind === 'audio');
-        
-        console.log(`🎯 OFFER PREP: Checking senders - Video: ${hasVideoSender}, Audio: ${hasAudioSender}`);
-        
-        // Add missing tracks if needed
-        if (!hasVideoSender && localStream.getVideoTracks().length > 0) {
-          const videoTrack = localStream.getVideoTracks()[0];
-          peerConnection.addTrack(videoTrack, localStream);
-          console.log(`➕ OFFER PREP: Added missing video track`);
-        }
-        
-        if (!hasAudioSender && localStream.getAudioTracks().length > 0) {
-          const audioTrack = localStream.getAudioTracks()[0];
-          peerConnection.addTrack(audioTrack, localStream);
-          console.log(`➕ OFFER PREP: Added missing audio track`);
-        }
-      }
-      
       // Create offer with detailed options
       const offer = await peerConnection.createOffer({
         offerToReceiveVideo: true,
@@ -243,23 +182,12 @@ export class ConnectionHandler {
         iceRestart: false
       });
       
-      // Validate SDP contains media lines
-      const sdpValidation = {
-        hasVideo: offer.sdp?.includes('m=video') || false,
-        hasAudio: offer.sdp?.includes('m=audio') || false,
-        videoCodecs: offer.sdp?.match(/a=rtpmap:.*video.*/g)?.length || 0,
-        audioCodecs: offer.sdp?.match(/a=rtpmap:.*audio.*/g)?.length || 0
-      };
-      
       console.log(`📋 CRITICAL: Offer created for ${participantId}:`, {
         type: offer.type,
         sdpLines: offer.sdp?.split('\n').length || 0,
-        ...sdpValidation
+        hasVideo: offer.sdp?.includes('video') || false,
+        hasAudio: offer.sdp?.includes('audio') || false
       });
-      
-      if (!sdpValidation.hasVideo && localStream?.getVideoTracks().length > 0) {
-        console.warn(`⚠️ OFFER VALIDATION: Video tracks present but no video in SDP!`);
-      }
       
       await peerConnection.setLocalDescription(offer);
       console.log(`📤 CRITICAL: Local description set for ${participantId}`, {

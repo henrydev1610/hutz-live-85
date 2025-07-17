@@ -33,11 +33,6 @@ export class UnifiedWebRTCManager {
   private isHost: boolean = false;
   private isMobile: boolean = false;
   
-  // FASE 2: Stream buffering for early arrivals
-  private streamBuffer: Map<string, MediaStream> = new Map();
-  private streamBufferTimeout: NodeJS.Timeout | null = null;
-  private callbacksConfigured: boolean = false;
-  
   // Components
   private connectionHandler: ConnectionHandler;
   private signalingHandler: SignalingHandler;
@@ -94,15 +89,7 @@ export class UnifiedWebRTCManager {
       console.log(`📡 Host recebeu track ${stream.getVideoTracks()[0]?.kind} de participante`);
       
       this.updateConnectionMetrics(participantId, { streamReceived: true });
-      
-      // FASE 2: Check if callbacks are configured, if not buffer the stream
-      if (this.callbacksConfigured) {
-        console.log('✅ UNIFIED: Callbacks configured, processing stream immediately');
-        this.callbacksManager.triggerStreamCallback(participantId, remoteStream);
-      } else {
-        console.log('⚠️ UNIFIED: Callbacks not ready, buffering stream for', participantId);
-        this.bufferStream(participantId, remoteStream);
-      }
+      this.callbacksManager.triggerStreamCallback(participantId, remoteStream);
     });
     
     this.connectionHandler.setParticipantJoinCallback((participantId) => {
@@ -150,25 +137,12 @@ export class UnifiedWebRTCManager {
       if (connectionState === 'connected' && 
           (iceConnectionState === 'connected' || iceConnectionState === 'completed')) {
         hasActiveConnections = true;
-        
-        // Check media flow health
-        const mediaHealth = this.checkMediaFlowHealth(pc, participantId);
-        
         this.updateConnectionMetrics(participantId, { 
           connectionState, 
           iceConnectionState, 
           lastHealthCheck: Date.now(),
-          healthy: true,
-          mediaFlowing: mediaHealth.isHealthy,
-          inboundMedia: mediaHealth.inbound,
-          outboundMedia: mediaHealth.outbound
+          healthy: true 
         });
-        
-        // If media is not flowing, trigger recovery
-        if (!mediaHealth.isHealthy && this.localStream) {
-          console.warn(`⚠️ HEALTH CHECK: Media not flowing for ${participantId}, attempting recovery`);
-          this.verifyTracksAndReattach();
-        }
       } else if (connectionState === 'failed' || iceConnectionState === 'failed') {
         hasFailedConnections = true;
         console.log(`🔄 HEALTH CHECK: Connection failed for ${participantId}, initiating recovery`);
@@ -190,46 +164,6 @@ export class UnifiedWebRTCManager {
     
     // Log overall health status
     console.log(`🏥 HEALTH REPORT: WebSocket: ${this.connectionState.websocket}, WebRTC: ${this.connectionState.webrtc}, Overall: ${this.connectionState.overall}`);
-  }
-  
-  // Check if media is actually flowing through the connection
-  private checkMediaFlowHealth(pc: RTCPeerConnection, participantId: string): {isHealthy: boolean, inbound: boolean, outbound: boolean} {
-    let inboundHealthy = false;
-    let outboundHealthy = false;
-    
-    // Check receivers (inbound media)
-    const receivers = pc.getReceivers();
-    receivers.forEach(receiver => {
-      if (receiver.track && receiver.track.readyState === 'live' && !receiver.track.muted) {
-        inboundHealthy = true;
-      }
-    });
-    
-    // Check senders (outbound media)
-    const senders = pc.getSenders();
-    senders.forEach(sender => {
-      if (sender.track && sender.track.readyState === 'live' && sender.track.enabled) {
-        outboundHealthy = true;
-      }
-    });
-    
-    const isHealthy = this.isHost ? inboundHealthy : outboundHealthy;
-    
-    if (!isHealthy) {
-      console.warn(`⚠️ MEDIA HEALTH: Issues detected for ${participantId}`, {
-        role: this.isHost ? 'host' : 'participant',
-        inbound: inboundHealthy,
-        outbound: outboundHealthy,
-        receivers: receivers.length,
-        senders: senders.length
-      });
-    }
-    
-    return {
-      isHealthy,
-      inbound: inboundHealthy,
-      outbound: outboundHealthy
-    };
   }
 
   private updateConnectionState(component: keyof ConnectionState, state: ConnectionState['websocket']) {
@@ -505,38 +439,17 @@ export class UnifiedWebRTCManager {
         console.log(`📡 STREAM READY: Notified host of stream availability`);
       }
       
-      // CRITICAL: Ensure stream is ready before WebRTC connection
-      if (this.localStream) {
-        console.log(`🎯 STREAM VALIDATION: Verifying local stream before WebRTC connection`, {
-          streamId: this.localStream.id,
-          tracks: this.localStream.getTracks().map(t => ({
-            kind: t.kind,
-            enabled: t.enabled,
-            readyState: t.readyState,
-            muted: t.muted
-          }))
-        });
-      }
-      
       // CRITICAL: Force connection to host with retry mechanism
       const hostConnectionDelay = this.isMobile ? 1500 : 1000;
       setTimeout(async () => {
         try {
           console.log(`📞 WEBRTC CONNECT: Initiating call to host after ${hostConnectionDelay}ms delay`);
-          
-          // Double-check stream availability before connection
-          if (!this.localStream) {
-            console.error(`❌ WEBRTC CONNECT: No local stream available, aborting connection`);
-            this.updateConnectionState('webrtc', 'failed');
-            return;
-          }
-          
           await this.connectionHandler.initiateCallWithRetry("host", 3);
           
-          // CRITICAL: Verify tracks are properly attached
+          // CRITICAL: Add tracks after successful connection
           setTimeout(() => {
-            this.verifyTracksAndReattach();
-          }, 500);
+            this.ensureTracksAdded();
+          }, 1000);
           
         } catch (error) {
           console.error(`❌ WEBRTC CONNECT: Failed to connect to host:`, error);
@@ -586,80 +499,6 @@ export class UnifiedWebRTCManager {
         }
       });
     });
-  }
-  
-  // CRITICAL: Verify tracks and reattach if needed
-  private verifyTracksAndReattach() {
-    if (!this.localStream) {
-      console.warn(`⚠️ VERIFY: No local stream available`);
-      return;
-    }
-    
-    console.log(`🔍 VERIFY: Checking track attachment for all connections...`);
-    
-    this.peerConnections.forEach((pc, peerId) => {
-      if (pc.connectionState === 'closed' || pc.connectionState === 'failed') {
-        console.warn(`⚠️ VERIFY: Skipping ${peerId} - connection ${pc.connectionState}`);
-        return;
-      }
-      
-      const senders = pc.getSenders();
-      const localTracks = this.localStream!.getTracks();
-      
-      console.log(`🔍 VERIFY: ${peerId} has ${senders.length} senders for ${localTracks.length} tracks`);
-      
-      // Check each local track
-      localTracks.forEach(track => {
-        const senderForTrack = senders.find(s => s.track === track);
-        
-        if (!senderForTrack) {
-          console.warn(`⚠️ VERIFY: Missing sender for ${track.kind} track on ${peerId}, reattaching...`);
-          
-          try {
-            // Remove any existing sender for this track type
-            const existingSender = senders.find(s => s.track?.kind === track.kind);
-            if (existingSender && existingSender.track !== track) {
-              pc.removeTrack(existingSender);
-              console.log(`🔄 VERIFY: Removed old ${track.kind} sender`);
-            }
-            
-            // Add the track
-            const sender = pc.addTrack(track, this.localStream!);
-            console.log(`✅ VERIFY: Reattached ${track.kind} track to ${peerId}`, {
-              senderId: sender.track?.id,
-              enabled: sender.track?.enabled
-            });
-            
-            // Force renegotiation if in stable state
-            if (pc.signalingState === 'stable') {
-              console.log(`🔄 VERIFY: Triggering renegotiation for ${peerId}`);
-              this.triggerRenegotiation(peerId, pc);
-            }
-          } catch (error) {
-            console.error(`❌ VERIFY: Failed to reattach ${track.kind} track to ${peerId}:`, error);
-          }
-        } else {
-          console.log(`✅ VERIFY: ${track.kind} track properly attached to ${peerId}`);
-        }
-      });
-    });
-  }
-  
-  // Trigger renegotiation after track changes
-  private async triggerRenegotiation(peerId: string, pc: RTCPeerConnection) {
-    try {
-      console.log(`🔄 RENEGOTIATION: Creating new offer for ${peerId}`);
-      
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      
-      // Send the new offer
-      unifiedWebSocketService.sendOffer(peerId, offer);
-      
-      console.log(`✅ RENEGOTIATION: New offer sent to ${peerId}`);
-    } catch (error) {
-      console.error(`❌ RENEGOTIATION: Failed for ${peerId}:`, error);
-    }
   }
 
   private async notifyLocalStream() {
@@ -759,17 +598,16 @@ export class UnifiedWebRTCManager {
     }
   }
 
-  // Public API methods
+  // Public API methods - FASE 2: Enhanced callback management
   setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
-    console.log('🔧 UNIFIED: Setting stream callback and marking as configured');
+    console.log('📞 FASE 2: Setting stream callback on UNIFIED manager');
     this.callbacksManager.setOnStreamCallback(callback);
-    this.callbacksConfigured = true;
-    
-    // FASE 2: Process any buffered streams immediately after callback setup
-    if (this.streamBuffer.size > 0) {
-      console.log(`🔄 UNIFIED: Processing ${this.streamBuffer.size} buffered streams`);
-      this.processBufferedStreams();
-    }
+  }
+
+  // FASE 5: Manual stream callback trigger for recovery
+  triggerStreamCallback(participantId: string, stream: MediaStream) {
+    console.log('🔄 FASE 5: Manually triggering stream callback for:', participantId);
+    this.callbacksManager.triggerStreamCallback(participantId, stream);
   }
 
   setOnParticipantJoinCallback(callback: (participantId: string) => void) {
@@ -1008,46 +846,6 @@ export class UnifiedWebRTCManager {
     }, 30000);
   }
 
-  // FASE 2: Buffer stream for early arrivals
-  private bufferStream(participantId: string, stream: MediaStream) {
-    console.log(`📦 UNIFIED: Buffering stream for ${participantId}`);
-    this.streamBuffer.set(participantId, stream);
-    
-    // Set timeout to prevent memory leaks
-    if (this.streamBufferTimeout) {
-      clearTimeout(this.streamBufferTimeout);
-    }
-    
-    this.streamBufferTimeout = setTimeout(() => {
-      console.log('⏰ UNIFIED: Stream buffer timeout, clearing buffered streams');
-      this.streamBuffer.clear();
-      this.streamBufferTimeout = null;
-    }, 30000); // 30 second timeout
-  }
-  
-  // FASE 2: Process buffered streams when callbacks are ready
-  processBufferedStreams() {
-    if (this.streamBuffer.size === 0) {
-      console.log('📦 UNIFIED: No buffered streams to process');
-      return;
-    }
-    
-    console.log(`🔄 UNIFIED: Processing ${this.streamBuffer.size} buffered streams`);
-    
-    this.streamBuffer.forEach((stream, participantId) => {
-      console.log(`🎥 UNIFIED: Processing buffered stream for ${participantId}`);
-      this.callbacksManager.triggerStreamCallback(participantId, stream);
-    });
-    
-    // Clear buffer after processing
-    this.streamBuffer.clear();
-    
-    if (this.streamBufferTimeout) {
-      clearTimeout(this.streamBufferTimeout);
-      this.streamBufferTimeout = null;
-    }
-  }
-
   cleanup() {
     console.log(`🧹 UNIFIED: Cleaning up WebRTC manager`);
     
@@ -1055,13 +853,6 @@ export class UnifiedWebRTCManager {
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
-    }
-    
-    // FASE 2: Clear stream buffer
-    this.streamBuffer.clear();
-    if (this.streamBufferTimeout) {
-      clearTimeout(this.streamBufferTimeout);
-      this.streamBufferTimeout = null;
     }
     
     // Clear retry timeouts
@@ -1102,8 +893,6 @@ export class UnifiedWebRTCManager {
       overall: 'disconnected'
     };
     this.connectionMetrics.clear();
-    
-    this.callbacksConfigured = false;
     
     console.log(`✅ UNIFIED: Cleanup completed`);
   }

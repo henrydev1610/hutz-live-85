@@ -78,9 +78,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         // Aguardar estabilização da conexão WebSocket
         await new Promise(resolve => setTimeout(resolve, isMobile ? 1000 : 500));
 
-        // Etapa 2: Join room com timeout e retry - FASE 4: Otimização mobile
+        // Etapa 2: Join room com timeout e retry
         console.log(`🔗 PARTICIPANT CONNECTION: Joining room (attempt ${retryCount + 1})`);
-        const joinTimeout = isMobile ? 90000 : 60000; // FASE 4: Aumentado para 90s mobile, 60s desktop
+        const joinTimeout = isMobile ? 60000 : 45000; // Aumentado para 60s mobile, 45s desktop
         
         await Promise.race([
           unifiedWebSocketService.joinRoom(sessionId, participantId),
@@ -93,10 +93,10 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         // Aguardar mais tempo para estabilização no mobile
         await new Promise(resolve => setTimeout(resolve, isMobile ? 2000 : 1000));
 
-        // Etapa 3: Conectar WebRTC com configurações específicas para mobile - FASE 4
+        // Etapa 3: Conectar WebRTC com configurações específicas para mobile
         console.log(`🔗 PARTICIPANT CONNECTION: Initializing WebRTC (attempt ${retryCount + 1})`);
         
-        const webrtcTimeout = isMobile ? 45000 : 30000; // FASE 4: Aumentado para 45s mobile, 30s desktop
+        const webrtcTimeout = isMobile ? 30000 : 20000;
         const { webrtc } = await Promise.race([
           initParticipantWebRTC(sessionId, participantId, stream || undefined),
           new Promise<never>((_, reject) => 
@@ -104,8 +104,18 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
           )
         ]);
         
-        // CRITICAL: NÃO configurar callbacks aqui - deixar o HOST gerenciar
-        console.log('✅ UNIFIED: Participant connected to HOST WebRTC manager - streams will be forwarded to HOST callbacks');
+        // Setup WebRTC callbacks
+        webrtc.setOnStreamCallback((pId: string, incomingStream: MediaStream) => {
+          console.log(`🎥 PARTICIPANT CONNECTION: Stream received from ${pId}:`, {
+            streamId: incomingStream.id,
+            active: incomingStream.active,
+            tracks: incomingStream.getTracks().map(t => ({
+              kind: t.kind,
+              enabled: t.enabled,
+              readyState: t.readyState
+            }))
+          });
+        });
         
         webrtc.setOnParticipantJoinCallback((pId: string) => {
           console.log(`👤 PARTICIPANT CONNECTION: Participant joined: ${pId}`);

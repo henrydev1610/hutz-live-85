@@ -1,11 +1,10 @@
-
 import { useCallback } from 'react';
 import { toast } from "sonner";
-import { useMediaState } from './useMediaState';
-import { useMediaControls } from './useMediaControls';
 import { detectMobileAggressively, checkMediaDevicesSupport, setCameraPreference } from '@/utils/media/deviceDetection';
 import { getUserMediaWithFallback } from '@/utils/media/getUserMediaFallback';
 import { setupVideoElement } from '@/utils/media/videoPlayback';
+import { useMediaState } from './useMediaState';
+import { useMediaControls } from './useMediaControls';
 
 export const useParticipantMedia = () => {
   const mediaState = useMediaState();
@@ -37,18 +36,6 @@ export const useParticipantMedia = () => {
     setHasScreenShare
   });
 
-  // 🔁 Função auxiliar para garantir que o WebRTCManager esteja pronto antes de usar
-  const waitForWebRTCManager = async (maxWait = 1500, interval = 100) => {
-    const { getWebRTCManager } = await import('@/utils/webrtc');
-    const start = Date.now();
-    while (Date.now() - start < maxWait) {
-      const manager = getWebRTCManager();
-      if (manager) return manager;
-      await new Promise(res => setTimeout(res, interval));
-    }
-    return null;
-  };
-
   const initializeMedia = useCallback(async () => {
     const isMobile = detectMobileAggressively();
     
@@ -60,7 +47,7 @@ export const useParticipantMedia = () => {
       if (!checkMediaDevicesSupport()) {
         throw new Error('getUserMedia not supported');
       }
-
+      
       const stream = await getUserMediaWithFallback();
 
       if (!stream) {
@@ -72,41 +59,63 @@ export const useParticipantMedia = () => {
       }
 
       localStreamRef.current = stream;
-
-      console.log(`🎬 MEDIA: Stream obtained, waiting for WebRTCManager to be ready`, {
+      
+      // FASE 2: CORRECT TIMING - Stream registration AFTER WebRTC init
+      console.log(`🎬 MEDIA: Stream obtained, preparing for delayed registration:`, {
         streamId: stream.id,
         tracks: stream.getTracks().length
       });
-
-      const webRTCManager = await waitForWebRTCManager();
-
+      
+      // FASE 1: Use singleton instance from webrtc.ts instead of direct import
+      const { getWebRTCManager } = await import('@/utils/webrtc');
+      const webRTCManager = getWebRTCManager();
+      
       if (webRTCManager) {
+        // ✅ AGUARDA ESTABILIZAÇÃO DO STREAM ANTES DE REGISTRAR (rule 1)
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
         webRTCManager.setOutgoingStream(stream);
         console.log(`✅ FASE 1: Stream registered with correct singleton instance`);
+        
+        // ✅ EMIT EVENTO STREAM-READY PARA O HOST (rule 1)
         console.log("📡 Stream do participante conectado", stream.getTracks());
       } else {
-        console.warn(`⚠️ FASE 1: WebRTC manager not available after waiting - stream will be registered later`);
+        console.warn(`⚠️ FASE 1: No WebRTC manager available yet, stream will be registered later`);
       }
-
+      
       const videoTracks = stream.getVideoTracks();
       const audioTracks = stream.getAudioTracks();
-
+      
+      console.log(`✅ MEDIA: Stream obtained:`, {
+        videoTracks: videoTracks.length,
+        audioTracks: audioTracks.length,
+        deviceType: isMobile ? 'MOBILE' : 'DESKTOP'
+      });
+      
       setHasVideo(videoTracks.length > 0);
       setHasAudio(audioTracks.length > 0);
       setIsVideoEnabled(videoTracks.length > 0);
       setIsAudioEnabled(audioTracks.length > 0);
-
+      
+      // Setup video element
       if (localVideoRef.current && videoTracks.length > 0) {
         await setupVideoElement(localVideoRef.current, stream);
       }
-
-      toast.success(`${isMobile ? '📱 Mobile' : '🖥️ Desktop'} camera connected! Video: ${videoTracks.length > 0 ? '✅' : '❌'}, Audio: ${audioTracks.length > 0 ? '✅' : '❌'}`);
+      
+      const deviceType = isMobile ? '📱 Mobile' : '🖥️ Desktop';
+      const videoStatus = videoTracks.length > 0 ? '✅' : '❌';
+      const audioStatus = audioTracks.length > 0 ? '✅' : '❌';
+      
+      toast.success(`${deviceType} camera connected! Video: ${videoStatus}, Audio: ${audioStatus}`);
       
       return stream;
-
+      
     } catch (error) {
       console.error(`❌ MEDIA: Failed to initialize ${isMobile ? 'mobile' : 'desktop'} camera:`, error);
-      toast.error(`Camera initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+      
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      toast.error(`Camera initialization failed: ${errorMsg}`);
+      
       setHasVideo(false);
       setHasAudio(false);
       return null;
@@ -115,15 +124,20 @@ export const useParticipantMedia = () => {
 
   const retryMediaInitialization = useCallback(async () => {
     console.log('🔄 MEDIA: Retrying media initialization...');
+    
+    // Clean up previous stream
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
     }
+    
+    // Reset state
     setHasVideo(false);
     setHasAudio(false);
-
+    
     try {
-      return await initializeMedia();
+      const stream = await initializeMedia();
+      return stream;
     } catch (error) {
       console.error('❌ MEDIA: Retry failed:', error);
       toast.error('Failed to retry media connection');
@@ -133,64 +147,85 @@ export const useParticipantMedia = () => {
 
   const switchCamera = useCallback(async (facing: 'user' | 'environment') => {
     const isMobile = detectMobileAggressively();
+    
     if (!isMobile) {
       toast.warning('Camera switching only available on mobile devices');
       return;
     }
 
     console.log(`📱 CAMERA SWITCH: Switching to ${facing} camera`);
-
+    
     try {
+      // Stop current stream
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
         localStreamRef.current = null;
       }
 
+      // Clear video element
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = null;
       }
 
+      // Set new camera preference
       setCameraPreference(facing);
+      
+      // Get new stream with new camera
       const newStream = await getUserMediaWithFallback();
-
-      if (!newStream) throw new Error(`Cannot access ${facing} camera`);
-
-      localStreamRef.current = newStream;
-
-      const webRTCManager = await waitForWebRTCManager();
-
-      if (webRTCManager) {
-        webRTCManager.setOutgoingStream(newStream);
-        console.log(`✅ CAMERA SWITCH: New stream registered`);
-      } else {
-        console.warn(`⚠️ CAMERA SWITCH: WebRTC manager not available during switch`);
+      
+      if (!newStream) {
+        throw new Error(`Cannot access ${facing === 'user' ? 'front' : 'back'} camera`);
       }
 
+      // Update state
+      localStreamRef.current = newStream;
+      
+      // FASE 1: Use singleton instance from webrtc.ts for camera switch
+      console.log(`🔗 FASE 1: Re-registering new stream after camera switch:`, {
+        streamId: newStream.id,
+        tracks: newStream.getTracks().length
+      });
+      
+      const { getWebRTCManager } = await import('@/utils/webrtc');
+      const webRTCManager = getWebRTCManager();
+      
+      if (webRTCManager) {
+        webRTCManager.setOutgoingStream(newStream);
+        console.log(`✅ FASE 1: New stream registered with correct singleton instance`);
+      } else {
+        console.warn(`⚠️ FASE 1: No WebRTC manager available during camera switch`);
+      }
+      
       const videoTracks = newStream.getVideoTracks();
       const audioTracks = newStream.getAudioTracks();
-
+      
       setHasVideo(videoTracks.length > 0);
       setHasAudio(audioTracks.length > 0);
       setIsVideoEnabled(videoTracks.length > 0);
       setIsAudioEnabled(audioTracks.length > 0);
-
+      
+      // Setup video element
       if (localVideoRef.current && videoTracks.length > 0) {
         await setupVideoElement(localVideoRef.current, newStream);
       }
-
+      
       toast.success(`📱 ${facing === 'user' ? 'Front' : 'Back'} camera activated!`);
+      
       return newStream;
-
+      
     } catch (error) {
       console.error(`❌ CAMERA SWITCH: Failed to switch to ${facing}:`, error);
-      toast.error(`Failed to switch camera: ${error instanceof Error ? error.message : String(error)}`);
-
+      
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      toast.error(`Failed to switch camera: ${errorMsg}`);
+      
+      // Try to reinitialize
       try {
         await retryMediaInitialization();
       } catch (recoveryError) {
         console.error('❌ CAMERA SWITCH: Recovery also failed:', recoveryError);
       }
-
+      
       throw error;
     }
   }, [localStreamRef, localVideoRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, retryMediaInitialization]);
