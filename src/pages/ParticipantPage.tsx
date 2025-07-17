@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
@@ -12,6 +11,7 @@ import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { CameraSwitcher } from '@/components/participant/CameraSwitcher';
+import { getWebRTCConnectionState } from '@/utils/webrtc';
 
 const ParticipantPage = () => {
   console.log('🎯 PARTICIPANT PAGE: Starting render');
@@ -28,11 +28,12 @@ const ParticipantPage = () => {
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
   const [connectionAttempts, setConnectionAttempts] = useState(0);
   const [connectionProgress, setConnectionProgress] = useState<string>('Iniciando...');
+  const [webrtcState, setWebrtcState] = useState<any>({ overall: 'disconnected' });
 
   const connection = useParticipantConnection(sessionId, participantId);
   const media = useParticipantMedia();
 
-  // CONEXÃO CONTÍNUA: Mantém WebRTC sempre conectado
+  // ENHANCED: Conexão contínua melhorada
   const continuousConnection = useWebRTCContinuousConnection({
     sessionId,
     participantId,
@@ -43,21 +44,32 @@ const ParticipantPage = () => {
     isMobile: connection.isMobile
   });
 
-  // Enhanced monitoring for connection progress
+  // ENHANCED: Monitoramento melhorado com WebRTC state
   useEffect(() => {
     const updateStatus = () => {
-      const status = unifiedWebSocketService.getConnectionStatus();
-      setSignalingStatus(status);
+      const wsStatus = unifiedWebSocketService.getConnectionStatus();
+      const webrtcConnectionState = getWebRTCConnectionState();
       
-      // Update connection progress based on status
-      if (status === 'connecting') {
-        setConnectionProgress(`Conectando... (tentativa ${connectionAttempts + 1})`);
-      } else if (status === 'connected') {
-        setConnectionProgress('Conectado ao servidor');
-      } else if (status === 'failed') {
-        setConnectionProgress(`Falha de conexão (tentativa ${connectionAttempts})`);
+      setSignalingStatus(wsStatus);
+      setWebrtcState(webrtcConnectionState);
+      
+      // ENHANCED: Update connection progress with detailed status
+      if (wsStatus === 'connecting') {
+        setConnectionProgress(`Conectando ao servidor... (tentativa ${connectionAttempts + 1})`);
+      } else if (wsStatus === 'connected') {
+        if (webrtcConnectionState.webrtc === 'connected') {
+          setConnectionProgress('✅ Conectado e transmitindo');
+        } else if (webrtcConnectionState.webrtc === 'connecting') {
+          setConnectionProgress('🔄 Conectado ao servidor, iniciando WebRTC...');
+        } else if (webrtcConnectionState.webrtc === 'failed') {
+          setConnectionProgress('⚠️ Servidor conectado, WebRTC com falha');
+        } else {
+          setConnectionProgress('📡 Conectado ao servidor, aguardando WebRTC...');
+        }
+      } else if (wsStatus === 'failed') {
+        setConnectionProgress(`❌ Falha de conexão (tentativa ${connectionAttempts})`);
       } else {
-        setConnectionProgress('Desconectado');
+        setConnectionProgress('⚪ Desconectado');
       }
     };
 
@@ -67,13 +79,13 @@ const ParticipantPage = () => {
     return () => clearInterval(interval);
   }, [connectionAttempts]);
 
-  // Enhanced auto-connect with better error handling
+  // ENHANCED: Auto-connect com retry melhorado
   useEffect(() => {
     if (sessionId) {
       autoConnectToSession().catch(error => {
         console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
         setConnectionAttempts(prev => prev + 1);
-        setConnectionProgress(`Erro de conexão: ${error.message}`);
+        setConnectionProgress(`❌ Erro de conexão: ${error.message}`);
       });
     }
     
@@ -88,30 +100,32 @@ const ParticipantPage = () => {
 
   const autoConnectToSession = async () => {
     try {
-      console.log('🔄 AUTO-CONNECT: Initializing media and connecting to session...');
-      setConnectionProgress('Inicializando câmera...');
+      console.log('🔄 AUTO-CONNECT: Enhanced initialization starting...');
+      setConnectionProgress('📹 Inicializando câmera...');
       
       const stream = await media.initializeMedia();
       if (stream) {
         console.log('✅ AUTO-CONNECT: Media initialized, connecting to session...');
-        setConnectionProgress('Conectando à sessão...');
+        setConnectionProgress('🔗 Conectando à sessão...');
         await connection.connectToSession(stream);
-        setConnectionProgress('Conectado com sucesso!');
+        setConnectionProgress('✅ Conectado com sucesso!');
       } else {
         console.warn('⚠️ AUTO-CONNECT: No media stream available, connecting without media');
-        setConnectionProgress('Conectando sem câmera...');
+        setConnectionProgress('🔗 Conectando sem câmera...');
         await connection.connectToSession();
       }
     } catch (error) {
       console.error('❌ AUTO-CONNECT: Failed:', error);
       setConnectionAttempts(prev => prev + 1);
-      setConnectionProgress(`Erro de conexão: ${error.message}`);
+      setConnectionProgress(`❌ Erro de conexão: ${error.message}`);
       
-      // Retry after delay for mobile devices
-      if (connectionAttempts < 5) {
+      // ENHANCED: Retry strategy with progressive delay
+      if (connectionAttempts < 7) {
+        const delay = 3000 + (connectionAttempts * 2000); // 3s, 5s, 7s, etc.
+        console.log(`🔄 AUTO-CONNECT: Retrying in ${delay}ms...`);
         setTimeout(() => {
           autoConnectToSession();
-        }, 5000 + (connectionAttempts * 2000)); // Progressive delay
+        }, delay);
       }
       throw error;
     }
@@ -120,20 +134,20 @@ const ParticipantPage = () => {
   const handleConnect = async () => {
     try {
       setConnectionAttempts(prev => prev + 1);
-      setConnectionProgress('Reconectando...');
+      setConnectionProgress('🔄 Reconectando...');
       
       let stream = media.localStreamRef.current;
       if (!stream) {
-        setConnectionProgress('Reinicializando câmera...');
+        setConnectionProgress('📹 Reinicializando câmera...');
         stream = await media.initializeMedia();
       }
       
-      setConnectionProgress('Conectando à sessão...');
+      setConnectionProgress('🔗 Conectando à sessão...');
       await connection.connectToSession(stream);
-      setConnectionProgress('Conectado com sucesso!');
+      setConnectionProgress('✅ Conectado com sucesso!');
     } catch (error) {
       console.error('❌ PARTICIPANT: Manual connection failed:', error);
-      setConnectionProgress(`Erro: ${error.message}`);
+      setConnectionProgress(`❌ Erro: ${error.message}`);
     }
   };
 
@@ -168,6 +182,21 @@ const ParticipantPage = () => {
     }
   };
 
+  // ENHANCED: Status display logic
+  const getConnectionStatusColor = () => {
+    if (connection.isConnected && webrtcState.webrtc === 'connected') return 'bg-green-100 text-green-800';
+    if (signalingStatus === 'connecting' || webrtcState.webrtc === 'connecting') return 'bg-yellow-100 text-yellow-800';
+    if (signalingStatus === 'connected' && webrtcState.webrtc === 'disconnected') return 'bg-orange-100 text-orange-800';
+    return 'bg-red-100 text-red-800';
+  };
+
+  const getConnectionStatusText = () => {
+    if (connection.isConnected && webrtcState.webrtc === 'connected') return 'Transmitindo';
+    if (signalingStatus === 'connecting') return 'Conectando';
+    if (signalingStatus === 'connected' && webrtcState.webrtc === 'connecting') return 'Conectando WebRTC';
+    if (signalingStatus === 'connected') return 'WebRTC Pendente';
+    return 'Desconectado';
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
@@ -187,21 +216,20 @@ const ParticipantPage = () => {
           onRetryConnect={handleConnect}
         />
 
-        {/* Enhanced connection status with progress */}
+        {/* ENHANCED: Connection status with WebRTC details */}
         <div className="mb-4 p-4 bg-muted rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium">Status da Conexão:</span>
-            <span className={`text-sm px-2 py-1 rounded ${
-              connection.isConnected ? 'bg-green-100 text-green-800' : 
-              signalingStatus === 'connecting' ? 'bg-yellow-100 text-yellow-800' : 
-              'bg-red-100 text-red-800'
-            }`}>
-              {connection.isConnected ? 'Conectado' : signalingStatus}
+            <span className={`text-sm px-2 py-1 rounded ${getConnectionStatusColor()}`}>
+              {getConnectionStatusText()}
             </span>
           </div>
           <div className="text-xs text-muted-foreground mb-2">{connectionProgress}</div>
           <div className="text-xs text-muted-foreground">
-            Tentativas: {connectionAttempts} | Sinal: {signalingStatus}
+            WebSocket: {signalingStatus} | WebRTC: {webrtcState.webrtc} | Tentativas: {connectionAttempts}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">
+            Overall: {webrtcState.overall} | Stream: {media.localStreamRef.current ? 'Ativo' : 'Inativo'}
           </div>
         </div>
 
@@ -214,11 +242,26 @@ const ParticipantPage = () => {
           onRetryMedia={handleRetryMedia}
         />
 
-        {/* CONEXÃO CONTÍNUA: Indicador e controle */}
+        {/* ENHANCED: Continuous connection status with detailed feedback */}
         {continuousConnection.isReconnecting && (
           <div className="mb-4 p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-md">
             <p className="text-yellow-400 text-sm">
               🔄 Reconectando automaticamente... (tentativa {continuousConnection.reconnectAttempts})
+            </p>
+            <p className="text-yellow-300 text-xs mt-1">
+              Sistema de conexão contínua ativo
+            </p>
+          </div>
+        )}
+
+        {/* ENHANCED: WebRTC Status Indicator */}
+        {signalingStatus === 'connected' && webrtcState.webrtc === 'disconnected' && (
+          <div className="mb-4 p-3 bg-orange-500/20 border border-orange-500/50 rounded-md">
+            <p className="text-orange-400 text-sm">
+              ⚠️ WebSocket conectado, mas WebRTC desconectado
+            </p>
+            <p className="text-orange-300 text-xs mt-1">
+              Reconexão automática em andamento...
             </p>
           </div>
         )}

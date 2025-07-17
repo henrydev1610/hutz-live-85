@@ -389,7 +389,7 @@ export class UnifiedWebRTCManager {
     this.isHost = false;
 
     try {
-      // IMPORTANT: Only use stream provided by useParticipantMedia - no local media creation
+      // CRITICAL: Phase 1 - Store stream reference first
       if (stream) {
         this.localStream = stream;
         console.log(`📹 UNIFIED: Using provided stream from useParticipantMedia:`, {
@@ -402,60 +402,96 @@ export class UnifiedWebRTCManager {
         console.warn(`⚠️ UNIFIED: No stream provided - participant must initialize media first`);
       }
 
+      // CRITICAL: Phase 2 - WebSocket initialization with enhanced logging
+      console.log(`🔗 PARTICIPANT: Starting WebSocket connection...`);
       this.updateConnectionState('websocket', 'connecting');
+      
       await unifiedWebSocketService.connect();
+      console.log(`✅ PARTICIPANT: WebSocket connected, setting up callbacks...`);
+      
       this.setupWebSocketCallbacks();
       await unifiedWebSocketService.joinRoom(sessionId, participantId);
       
       this.updateConnectionState('websocket', 'connected');
       console.log(`✅ UNIFIED PARTICIPANT: Connected to signaling server`);
       
-      // CRITICAL: Strategic delay for mobile stability and WebSocket confirmation
-      const stabilizationDelay = this.isMobile ? 2000 : 1000;
+      // CRITICAL: Phase 3 - Enhanced WebRTC initialization sequence
+      console.log(`🎯 WEBRTC INIT: Starting WebRTC connection sequence...`);
+      
+      // Strategic delay for mobile stability and WebSocket confirmation
+      const stabilizationDelay = this.isMobile ? 3000 : 2000;
       console.log(`⏳ STABILIZATION: Waiting ${stabilizationDelay}ms for connection stability...`);
       await new Promise(resolve => setTimeout(resolve, stabilizationDelay));
       
-      // Notify stream if available
+      // CRITICAL: Phase 4 - Force WebRTC connection initiation
+      console.log(`🔥 WEBRTC FORCE: Initiating WebRTC connection to host...`);
+      
+      // Notify stream availability first
       if (this.localStream) {
         await this.notifyLocalStream();
-        
-      // ✅ CRITICAL: Garantir que RTCPeerConnection esteja pronto antes de adicionar tracks
-        setTimeout(() => {
-          this.peerConnections.forEach((pc, peerId) => {
-            if (this.localStream && pc.connectionState !== 'closed') {
-              const tracks = this.localStream.getTracks();
-              console.log(`🎯 Adicionando ${tracks.length} tracks para ${peerId}`);
-
-              tracks.forEach(track => {
-                try {
-                  // Check if track already exists to avoid duplicate
-                  const existingSenders = pc.getSenders();
-                  const trackExists = existingSenders.some(sender => sender.track === track);
-                  
-                  if (!trackExists) {
-                    pc.addTrack(track, this.localStream!);
-                    console.log(`✅ Track ${track.kind} enviada para ${peerId}`);
-                  } else {
-                    console.log(`🔄 Track ${track.kind} já existe para ${peerId}`);
-                  }
-                } catch (err) {
-                  console.warn(`⚠️ Erro ao adicionar track para ${peerId}:`, err);
-                }
-              });
-            }
-          });
-        }, 1000); // Delay para garantir conexão
+        console.log(`📡 STREAM READY: Notified host of stream availability`);
       }
       
-      // CRITICAL: Start connection monitoring and auto-connect logic
-      this.startConnectionInitiationTimer();
-      this.setupConnectionTimeouts();
+      // CRITICAL: Force connection to host with retry mechanism
+      const hostConnectionDelay = this.isMobile ? 1500 : 1000;
+      setTimeout(async () => {
+        try {
+          console.log(`📞 WEBRTC CONNECT: Initiating call to host after ${hostConnectionDelay}ms delay`);
+          await this.connectionHandler.initiateCallWithRetry("host", 3);
+          
+          // CRITICAL: Add tracks after successful connection
+          setTimeout(() => {
+            this.ensureTracksAdded();
+          }, 1000);
+          
+        } catch (error) {
+          console.error(`❌ WEBRTC CONNECT: Failed to connect to host:`, error);
+          this.updateConnectionState('webrtc', 'failed');
+        }
+      }, hostConnectionDelay);
       
     } catch (error) {
       console.error(`❌ UNIFIED PARTICIPANT: Failed to initialize:`, error);
       this.updateConnectionState('websocket', 'failed');
       throw error;
     }
+  }
+
+  // CRITICAL: Phase 5 - Ensure tracks are properly added
+  private ensureTracksAdded() {
+    if (!this.localStream) {
+      console.warn(`⚠️ TRACKS: No local stream available to add tracks`);
+      return;
+    }
+
+    console.log(`🎯 TRACKS: Ensuring tracks are added to all peer connections...`);
+    
+    this.peerConnections.forEach((pc, peerId) => {
+      if (pc.connectionState === 'closed') {
+        console.warn(`⚠️ TRACKS: Skipping closed connection for ${peerId}`);
+        return;
+      }
+
+      const tracks = this.localStream!.getTracks();
+      console.log(`🎯 TRACKS: Adding ${tracks.length} tracks to ${peerId}`);
+
+      tracks.forEach(track => {
+        try {
+          // Check if track already exists to avoid duplicate
+          const existingSenders = pc.getSenders();
+          const trackExists = existingSenders.some(sender => sender.track === track);
+          
+          if (!trackExists) {
+            pc.addTrack(track, this.localStream!);
+            console.log(`✅ TRACKS: Added ${track.kind} track to ${peerId}`);
+          } else {
+            console.log(`⚠️ TRACKS: Track ${track.kind} already exists for ${peerId}`);
+          }
+        } catch (error) {
+          console.error(`❌ TRACKS: Error adding ${track.kind} track to ${peerId}:`, error);
+        }
+      });
+    });
   }
 
   private async notifyLocalStream() {

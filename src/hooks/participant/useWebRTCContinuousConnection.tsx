@@ -26,63 +26,94 @@ export const useWebRTCContinuousConnection = ({
   const reconnectAttemptsRef = useRef(0);
   const isReconnectingRef = useRef(false);
 
-  // Função para verificar saúde da conexão WebRTC
+  // ENHANCED: Função para verificar saúde da conexão WebRTC com detecção melhorada
   const checkWebRTCHealth = useCallback(() => {
     const webrtcState = getWebRTCConnectionState();
     
-    console.log(`🏥 CONTINUOUS: WebRTC Health Check`, {
+    console.log(`🏥 CONTINUOUS: Enhanced WebRTC Health Check`, {
       websocket: webrtcState.websocket,
       webrtc: webrtcState.webrtc,
       overall: webrtcState.overall,
       isConnected,
-      connectionStatus
+      connectionStatus,
+      hasStream: !!stream,
+      streamTracks: stream?.getTracks().length || 0
     });
 
-    // Se WebSocket conectado mas WebRTC desconectado, iniciar reconexão
-    if (webrtcState.websocket === 'connected' && 
-        webrtcState.webrtc === 'disconnected' && 
-        !isReconnectingRef.current) {
-      
-      console.log(`🔄 CONTINUOUS: WebRTC disconnected, initiating auto-reconnect`);
+    // CRITICAL: Detectar múltiplos cenários de falha
+    const needsReconnection = (
+      // WebSocket OK mas WebRTC falhou
+      (webrtcState.websocket === 'connected' && webrtcState.webrtc === 'disconnected') ||
+      // WebSocket OK mas WebRTC falhou completamente
+      (webrtcState.websocket === 'connected' && webrtcState.webrtc === 'failed') ||
+      // Overall state indica falha mesmo com WebSocket OK
+      (webrtcState.websocket === 'connected' && webrtcState.overall === 'failed') ||
+      // Participante não conectado apesar de WebSocket funcionar
+      (webrtcState.websocket === 'connected' && !isConnected && connectionStatus !== 'connecting')
+    );
+
+    if (needsReconnection && !isReconnectingRef.current) {
+      console.log(`🔄 CONTINUOUS: Connection issue detected, initiating auto-reconnect`, {
+        reason: webrtcState.websocket === 'connected' && webrtcState.webrtc === 'disconnected' ? 'WebRTC disconnected' :
+                webrtcState.websocket === 'connected' && webrtcState.webrtc === 'failed' ? 'WebRTC failed' :
+                webrtcState.websocket === 'connected' && webrtcState.overall === 'failed' ? 'Overall failed' :
+                'Participant not connected'
+      });
       initiateReconnection();
     }
-  }, [isConnected, connectionStatus]);
 
-  // Função para iniciar processo de reconexão
+    // DIAGNOSTIC: Log quando tudo está funcionando
+    if (webrtcState.websocket === 'connected' && webrtcState.webrtc === 'connected') {
+      console.log(`✅ CONTINUOUS: All connections healthy`);
+    }
+  }, [isConnected, connectionStatus, stream]);
+
+  // ENHANCED: Função para iniciar processo de reconexão com fallback robusto
   const initiateReconnection = useCallback(async () => {
     if (isReconnectingRef.current || !sessionId) return;
     
     isReconnectingRef.current = true;
     reconnectAttemptsRef.current++;
     
-    console.log(`🔄 CONTINUOUS: Starting reconnection attempt ${reconnectAttemptsRef.current}`);
+    console.log(`🔄 CONTINUOUS: Starting enhanced reconnection attempt ${reconnectAttemptsRef.current}`);
     
     try {
-      // Delay baseado no número de tentativas e dispositivo móvel
-      const baseDelay = isMobile ? 3000 : 2000;
-      const delay = Math.min(baseDelay * reconnectAttemptsRef.current, isMobile ? 15000 : 10000);
+      // ENHANCED: Delay mais agressivo para mobile
+      const baseDelay = isMobile ? 2000 : 1500;
+      const delay = Math.min(baseDelay * Math.pow(1.5, reconnectAttemptsRef.current - 1), isMobile ? 12000 : 8000);
       
       console.log(`⏱️ CONTINUOUS: Waiting ${delay}ms before reconnection...`);
       await new Promise(resolve => setTimeout(resolve, delay));
       
-      // Tentar reconectar
-      await connectToSession(stream);
+      // CRITICAL: Enhanced reconnection with stream validation
+      console.log(`🔥 CONTINUOUS: Attempting reconnection with stream validation...`);
+      
+      if (stream && stream.getTracks().length > 0) {
+        console.log(`📹 CONTINUOUS: Using existing stream with ${stream.getTracks().length} tracks`);
+        await connectToSession(stream);
+      } else {
+        console.log(`⚠️ CONTINUOUS: No valid stream, connecting without media`);
+        await connectToSession();
+      }
       
       // Reset contador em caso de sucesso
       reconnectAttemptsRef.current = 0;
-      console.log(`✅ CONTINUOUS: Reconnection successful`);
+      console.log(`✅ CONTINUOUS: Enhanced reconnection successful`);
       
     } catch (error) {
-      console.error(`❌ CONTINUOUS: Reconnection attempt ${reconnectAttemptsRef.current} failed:`, error);
+      console.error(`❌ CONTINUOUS: Enhanced reconnection attempt ${reconnectAttemptsRef.current} failed:`, error);
       
-      // Limitar tentativas consecutivas
-      if (reconnectAttemptsRef.current >= (isMobile ? 10 : 7)) {
-        console.log(`🛑 CONTINUOUS: Max reconnection attempts reached`);
+      // ENHANCED: Limitar tentativas com fallback estratégico
+      const maxAttempts = isMobile ? 12 : 8;
+      if (reconnectAttemptsRef.current >= maxAttempts) {
+        console.log(`🛑 CONTINUOUS: Max reconnection attempts (${maxAttempts}) reached`);
         toast.error('Falha na reconexão automática. Tente reconectar manualmente.');
         reconnectAttemptsRef.current = 0;
       } else {
-        // Agendar próxima tentativa
-        const nextAttemptDelay = isMobile ? 8000 : 5000;
+        // ENHANCED: Delay progressivo mais inteligente
+        const nextAttemptDelay = isMobile ? 5000 + (reconnectAttemptsRef.current * 1000) : 3000 + (reconnectAttemptsRef.current * 500);
+        console.log(`⏰ CONTINUOUS: Scheduling next attempt in ${nextAttemptDelay}ms...`);
+        
         reconnectTimeoutRef.current = setTimeout(() => {
           initiateReconnection();
         }, nextAttemptDelay);
@@ -121,8 +152,9 @@ export const useWebRTCContinuousConnection = ({
       checkWebRTCHealth();
     }, 2000);
 
-    // Health check a cada 3 segundos (mais frequente no mobile)
-    const interval = isMobile ? 3000 : 4000;
+    // ENHANCED: Health check mais agressivo para mobile
+    const interval = isMobile ? 2000 : 3000; // Mais frequente para detectar falhas rapidamente
+    console.log(`🏥 CONTINUOUS: Starting health monitoring with ${interval}ms intervals`);
     healthCheckIntervalRef.current = setInterval(checkWebRTCHealth, interval);
 
     return () => {
