@@ -8,6 +8,7 @@ export class ConnectionHandler {
   private participantJoinCallback: ((participantId: string) => void) | null = null;
   private retryAttempts: Map<string, number> = new Map();
   private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
+  private remoteStreams: Map<string, MediaStream> = new Map();
 
   constructor(
     peerConnections: Map<string, RTCPeerConnection>,
@@ -91,22 +92,26 @@ export class ConnectionHandler {
       }
     };
 
-    // FIXED: Immediate track reception and stream creation
+    // UNIFIED: Track reception and stream unification
     peerConnection.ontrack = (event) => {
-      console.log(`📺 FIXED: Track received from ${participantId}: ${event.track.kind}`);
+      console.log(`📺 UNIFIED: Track received from ${participantId}: ${event.track.kind}`);
       
-      // Create stream with track
-      const remoteStream = new MediaStream([event.track]);
-      
-      console.log(`📡 FIXED: Stream created for ${participantId}`, {
+      let remoteStream = this.remoteStreams.get(participantId);
+
+      if (!remoteStream) {
+        remoteStream = new MediaStream();
+        this.remoteStreams.set(participantId, remoteStream);
+      }
+
+      remoteStream.addTrack(event.track);
+
+      console.log(`📡 REMOTE STREAM UPDATED for ${participantId}`, {
         streamId: remoteStream.id,
-        tracks: remoteStream.getTracks().length
+        totalTracks: remoteStream.getTracks().length,
       });
-      
-      // IMMEDIATE callback execution
+
       if (this.streamCallback) {
         this.streamCallback(participantId, remoteStream);
-        console.log(`✅ FIXED: Stream forwarded to host for ${participantId}`);
       }
     };
 
@@ -214,6 +219,9 @@ export class ConnectionHandler {
       this.peerConnections.delete(participantId);
     }
     
+    // Clean up remote stream
+    this.remoteStreams.delete(participantId);
+    
     // Clear heartbeat
     this.clearHeartbeat(participantId);
     
@@ -278,6 +286,9 @@ export class ConnectionHandler {
       console.log(`💔 Cleared heartbeat for: ${participantId}`);
     });
     this.heartbeatIntervals.clear();
+    
+    // Clear remote streams
+    this.remoteStreams.clear();
     
     // Clear retry attempts
     this.retryAttempts.clear();
