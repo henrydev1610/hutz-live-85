@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
 import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
+import { useWebRTCContinuousConnection } from '@/hooks/participant/useWebRTCContinuousConnection';
 import ParticipantHeader from '@/components/participant/ParticipantHeader';
 import ParticipantErrorDisplay from '@/components/participant/ParticipantErrorDisplay';
 import ParticipantConnectionStatus from '@/components/participant/ParticipantConnectionStatus';
@@ -30,6 +31,17 @@ const ParticipantPage = () => {
 
   const connection = useParticipantConnection(sessionId, participantId);
   const media = useParticipantMedia();
+
+  // CONEXÃO CONTÍNUA: Mantém WebRTC sempre conectado
+  const continuousConnection = useWebRTCContinuousConnection({
+    sessionId,
+    participantId,
+    isConnected: connection.isConnected,
+    connectionStatus: connection.connectionStatus,
+    stream: media.localStreamRef.current,
+    connectToSession: connection.connectToSession,
+    isMobile: connection.isMobile
+  });
 
   // Enhanced monitoring for connection progress
   useEffect(() => {
@@ -201,6 +213,27 @@ const ParticipantPage = () => {
           hasAudio={media.hasAudio}
           onRetryMedia={handleRetryMedia}
         />
+
+        {/* CONEXÃO CONTÍNUA: Indicador e controle */}
+        {continuousConnection.isReconnecting && (
+          <div className="mb-4 p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-md">
+            <p className="text-yellow-400 text-sm">
+              🔄 Reconectando automaticamente... (tentativa {continuousConnection.reconnectAttempts})
+            </p>
+          </div>
+        )}
+
+        {(connection.connectionStatus === 'failed' || connection.connectionStatus === 'disconnected') && (
+          <div className="mb-4 flex justify-center">
+            <button
+              onClick={continuousConnection.forceReconnect}
+              disabled={continuousConnection.isReconnecting}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {continuousConnection.isReconnecting ? 'Reconectando...' : 'Forçar Reconexão'}
+            </button>
+          </div>
+        )}
 
         {/* Camera Switcher - Mobile Only */}
         <div className="mb-4 flex justify-center">
