@@ -33,9 +33,9 @@ const ParticipantPage = () => {
   const connection = useParticipantConnection(sessionId, participantId);
   const media = useParticipantMedia();
 
-  // ENHANCED: Conexão contínua melhorada
+  // ENHANCED: Conexão contínua melhorada - APENAS se não houver conexão em progresso
   const continuousConnection = useWebRTCContinuousConnection({
-    sessionId,
+    sessionId: connection.connectionInProgress ? null : sessionId, // FASE 2: Desabilitar se conexão em progresso
     participantId,
     isConnected: connection.isConnected,
     connectionStatus: connection.connectionStatus,

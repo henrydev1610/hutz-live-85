@@ -10,6 +10,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
+  const [connectionInProgress, setConnectionInProgress] = useState(false); // FASE 2: Evitar race conditions
   const isMobile = useIsMobile();
 
   const connectToSession = useCallback(async (stream?: MediaStream | null) => {
@@ -18,10 +19,17 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       return;
     }
 
+    // FASE 2: Evitar múltiplas tentativas simultâneas
+    if (connectionInProgress) {
+      console.log('⚠️ CONNECTION ALREADY IN PROGRESS, skipping...');
+      return;
+    }
+
     console.log(`🔗 PARTICIPANT CONNECTION: Starting connection process for ${participantId}`);
     console.log(`📱 PARTICIPANT CONNECTION: Mobile device: ${isMobile}`);
     console.log(`🎥 PARTICIPANT CONNECTION: Has stream: ${!!stream}`);
     
+    setConnectionInProgress(true);
     setIsConnecting(true);
     setConnectionStatus('connecting');
     setError(null);
@@ -206,8 +214,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       toast.error(`📱 ${errorMessage}`);
     } finally {
       setIsConnecting(false);
+      setConnectionInProgress(false); // FASE 2: Liberar flag de conexão em progresso
     }
-  }, [sessionId, participantId, isMobile]);
+  }, [sessionId, participantId, isMobile, connectionInProgress]);
 
   const disconnectFromSession = useCallback(() => {
     console.log(`🔗 PARTICIPANT CONNECTION: Disconnecting`);
@@ -238,6 +247,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     error,
     connectToSession,
     disconnectFromSession,
-    isMobile
+    isMobile,
+    connectionInProgress // FASE 2: Expor flag de conexão em progresso
   };
 };

@@ -384,6 +384,13 @@ export class UnifiedWebRTCManager {
 
   async initializeAsParticipant(sessionId: string, participantId: string, stream?: MediaStream): Promise<void> {
     console.log(`👤 UNIFIED: Initializing as participant ${participantId} for session ${sessionId}`);
+    
+    // FASE 4: Garantir que initializeAsParticipant só seja chamado uma vez por sessão
+    if (this.roomId === sessionId && this.participantId === participantId) {
+      console.log(`✅ UNIFIED: Already initialized for session ${sessionId} with participant ${participantId}`);
+      return;
+    }
+    
     this.roomId = sessionId;
     this.participantId = participantId;
     this.isHost = false;

@@ -27,8 +27,19 @@ export const initParticipantWebRTC = async (sessionId: string, participantId?: s
   try {
     console.log('🚀 Initializing participant WebRTC for session:', sessionId);
     
+    // FASE 1: Verificar se já existe uma conexão válida antes de criar nova
     if (webrtcManager) {
-      console.log('🧹 Cleaning up existing WebRTC manager');
+      const existingState = webrtcManager.getConnectionState();
+      console.log('🔍 EXISTING CONNECTION STATE:', existingState);
+      
+      // Se já existe e está conectado/conectando, reutilizar
+      if (existingState.overall === 'connected' || existingState.overall === 'connecting') {
+        console.log('✅ REUSING existing WebRTC manager (already connected)');
+        return { webrtc: webrtcManager };
+      }
+      
+      // Só limpar se realmente necessário
+      console.log('🧹 Cleaning up failed WebRTC manager');
       webrtcManager.cleanup();
     }
     
