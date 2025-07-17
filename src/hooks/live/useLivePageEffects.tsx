@@ -134,16 +134,43 @@ export const useLivePageEffects = ({
               backupKeys: Object.keys(window.streamBackup)
             });
             
-            // CRITICAL: Direct stream processing for immediate visibility
-            handleParticipantStream(participantId, stream);
+          // FASE 3: PROPAGAÇÃO ATIVA IMEDIATA para janela /live
+          if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+            console.log(`📡 FASE 3: Enviando stream ${participantId} para janela /live via postMessage`);
+            try {
+              transmissionWindowRef.current.postMessage({
+                type: 'immediate-stream-available',
+                participantId: participantId,
+                streamId: stream.id,
+                timestamp: Date.now(),
+                action: 'force-display'
+              }, '*');
+            } catch (error) {
+              console.error(`❌ FASE 3: Erro ao enviar postMessage:`, error);
+            }
+          }
+
+          // CRITICAL: Direct stream processing for immediate visibility
+          handleParticipantStream(participantId, stream);
+          
+          // Force immediate update to transmission participants
+          setTimeout(() => {
+            console.log('🔄 HOST: UNIFIED Updating transmission after stream received');
+            updateTransmissionParticipants();
+            // CRITICAL: Also force stream sync
+            forceSyncNow();
             
-            // Force immediate update to transmission participants
+            // FASE 4: SISTEMA DE VERIFICAÇÃO - verificar se a janela /live exibiu o stream
             setTimeout(() => {
-              console.log('🔄 HOST: UNIFIED Updating transmission after stream received');
-              updateTransmissionParticipants();
-              // CRITICAL: Also force stream sync
-              forceSyncNow();
-            }, 100);
+              if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+                transmissionWindowRef.current.postMessage({
+                  type: 'verify-stream-display',
+                  participantId: participantId,
+                  verificationId: `verify-${Date.now()}`
+                }, '*');
+              }
+            }, 2000);
+          }, 100);
             
             // Success feedback
             toast({

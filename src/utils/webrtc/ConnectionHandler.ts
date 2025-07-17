@@ -109,16 +109,12 @@ export class ConnectionHandler {
       console.log(`📡 REMOTE STREAM UPDATED for ${participantId}`, {
         streamId: remoteStream.id,
         totalTracks: remoteStream.getTracks().length,
+        videoTracks: remoteStream.getVideoTracks().length,
+        audioTracks: remoteStream.getAudioTracks().length,
+        active: remoteStream.active
       });
 
-      if (this.streamCallback) {
-        this.streamCallback(participantId, remoteStream);
-      }
-      
-      // CRÍTICO: Disparar callback via singleton para sincronização completa
-      webRTCCallbacks.triggerStreamCallback(participantId, remoteStream);
-      
-      // CRÍTICO: Backup direto no window global
+      // FASE 1: ARMAZENAMENTO IMEDIATO - Garantir que o stream seja armazenado ANTES de qualquer callback
       if (typeof window !== 'undefined') {
         if (!window.sharedParticipantStreams) {
           window.sharedParticipantStreams = {};
@@ -127,14 +123,28 @@ export class ConnectionHandler {
           window.streamBackup = {};
         }
         
+        // Armazenamento redundante e imediato
         window.sharedParticipantStreams[participantId] = remoteStream;
         window.streamBackup[participantId] = remoteStream;
         
-        console.log(`🌐 BACKUP: Stream stored directly in global objects for ${participantId}`, {
+        console.log(`🚀 FASE 1: Stream armazenado IMEDIATAMENTE para ${participantId}`, {
           streamId: remoteStream.id,
-          totalGlobalStreams: Object.keys(window.sharedParticipantStreams).length
+          totalGlobalStreams: Object.keys(window.sharedParticipantStreams).length,
+          streamIsActive: remoteStream.active,
+          hasVideoTracks: remoteStream.getVideoTracks().length > 0
         });
+
+        // FASE 3: PROPAGAÇÃO ATIVA IMEDIATA - Notificar todas as janelas /live abertas
+        this.notifyTransmissionWindows(participantId, remoteStream);
       }
+
+      // FASE 2: CALLBACKS APÓS ARMAZENAMENTO
+      if (this.streamCallback) {
+        this.streamCallback(participantId, remoteStream);
+      }
+      
+      // CRÍTICO: Disparar callback via singleton para sincronização completa
+      webRTCCallbacks.triggerStreamCallback(participantId, remoteStream);
     };
 
     // CRITICAL: Add local stream if available (for participants)
@@ -308,6 +318,106 @@ export class ConnectionHandler {
 
   clearRetries(participantId: string): void {
     this.retryAttempts.delete(participantId);
+  }
+
+  // FASE 3: Sistema de propagação ativa para janelas /live
+  private notifyTransmissionWindows(participantId: string, stream: MediaStream): void {
+    console.log(`📡 FASE 3: Notificando janelas /live sobre stream de ${participantId}`);
+    
+    // Tentar notificar através de múltiplos canais
+    const sessionId = window.sessionStorage.getItem('currentSessionId');
+    
+    if (sessionId) {
+      // Canal principal
+      try {
+        const channel = new BroadcastChannel(`live-session-${sessionId}`);
+        channel.postMessage({
+          type: 'stream-available-immediate',
+          participantId: participantId,
+          streamId: stream.id,
+          trackCount: stream.getTracks().length,
+          hasVideo: stream.getVideoTracks().length > 0,
+          hasAudio: stream.getAudioTracks().length > 0,
+          timestamp: Date.now()
+        });
+        console.log(`📡 FASE 3: Broadcast message sent for ${participantId}`);
+        channel.close();
+      } catch (error) {
+        console.error(`❌ FASE 3: Broadcast channel error:`, error);
+      }
+
+      // Canal backup
+      try {
+        const backupChannel = new BroadcastChannel(`telao-session-${sessionId}`);
+        backupChannel.postMessage({
+          type: 'force-stream-update',
+          participantId: participantId,
+          action: 'immediate-display'
+        });
+        console.log(`📡 FASE 3: Backup broadcast sent for ${participantId}`);
+        backupChannel.close();
+      } catch (error) {
+        console.error(`❌ FASE 3: Backup broadcast error:`, error);
+      }
+    }
+
+    // FASE 4: Sistema de verificação - verificar se a janela recebeu o stream
+    setTimeout(() => {
+      this.verifyStreamReception(participantId, stream);
+    }, 2000);
+  }
+
+  // FASE 4: Sistema de verificação e retry
+  private verifyStreamReception(participantId: string, stream: MediaStream): void {
+    console.log(`🔍 FASE 4: Verificando recepção do stream para ${participantId}`);
+    
+    const sessionId = window.sessionStorage.getItem('currentSessionId');
+    if (!sessionId) return;
+
+    // Criar canal de verificação
+    const verificationChannel = new BroadcastChannel(`verification-${sessionId}`);
+    
+    // Enviar solicitação de status
+    verificationChannel.postMessage({
+      type: 'verify-stream-reception',
+      participantId: participantId,
+      requestId: `verify-${Date.now()}`
+    });
+
+    // Aguardar resposta por 3 segundos
+    const timeout = setTimeout(() => {
+      console.log(`⚠️ FASE 4: Timeout na verificação para ${participantId} - reenviando stream`);
+      this.retryStreamPropagation(participantId, stream);
+      verificationChannel.close();
+    }, 3000);
+
+    // Escutar resposta
+    verificationChannel.onmessage = (event) => {
+      if (event.data.type === 'stream-reception-confirmed' && event.data.participantId === participantId) {
+        console.log(`✅ FASE 4: Stream confirmado para ${participantId}`);
+        clearTimeout(timeout);
+        verificationChannel.close();
+      }
+    };
+  }
+
+  // FASE 4: Retry de propagação do stream
+  private retryStreamPropagation(participantId: string, stream: MediaStream): void {
+    console.log(`🔄 FASE 4: Retry de propagação para ${participantId}`);
+    
+    // Re-armazenar o stream com força
+    if (typeof window !== 'undefined') {
+      window.sharedParticipantStreams = window.sharedParticipantStreams || {};
+      window.streamBackup = window.streamBackup || {};
+      
+      window.sharedParticipantStreams[participantId] = stream;
+      window.streamBackup[participantId] = stream;
+      
+      console.log(`🔄 FASE 4: Stream re-armazenado para ${participantId}`);
+    }
+
+    // Re-enviar notificações
+    this.notifyTransmissionWindows(participantId, stream);
   }
 
   cleanup(): void {

@@ -465,7 +465,34 @@ export const useTransmissionWindow = () => {
               const data = event.data;
               console.log("📨 TRANSMISSION: Received message:", data.type, data);
                 
-              if (data.type === 'video-stream' && data.participantId && data.hasStream) {
+              // FASE 3: Processar notificações de stream via BroadcastChannel
+              if (data.type === 'stream-available-immediate' && data.participantId) {
+                console.log('🚀 FASE 3: Stream imediato via channel:', data.participantId);
+                
+                // Forçar cache do stream
+                if (window.opener && window.opener.sharedParticipantStreams) {
+                  const stream = window.opener.sharedParticipantStreams[data.participantId];
+                  if (stream) {
+                    participantStreams[data.participantId] = stream;
+                    console.log('⚡ FASE 3: Stream cached via channel:', data.participantId);
+                  }
+                }
+                
+                // Atribuir slot imediatamente
+                if (!participantSlots[data.participantId] && availableSlots.length > 0) {
+                  const slotIndex = availableSlots.shift();
+                  participantSlots[data.participantId] = slotIndex;
+                    
+                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                  if (slotElement) {
+                    console.log("⚡ FASE 3: Atribuindo slot", slotIndex, "para", data.participantId);
+                    await createVideoElementFromStream(slotElement, data.participantId);
+                    slotElement.dataset.participantId = data.participantId;
+                  }
+                }
+              }
+              
+              else if (data.type === 'video-stream' && data.participantId && data.hasStream) {
                 console.log('🎥 TRANSMISSION: Processing video stream for participant:', data.participantId);
                   
                 if (!participantSlots[data.participantId] && availableSlots.length > 0) {
@@ -491,13 +518,102 @@ export const useTransmissionWindow = () => {
                 }
               }
             });
+            
+            // FASE 4: BroadcastChannel para verificação
+            const verificationChannel = new BroadcastChannel(\`verification-\${sessionId}\`);
+            verificationChannel.addEventListener('message', (event) => {
+              const data = event.data;
+              
+              if (data.type === 'verify-stream-reception' && data.participantId) {
+                console.log('🔍 FASE 4: Verificação de recepção solicitada:', data.participantId);
+                
+                const slotIndex = participantSlots[data.participantId];
+                const hasSlot = slotIndex !== undefined;
+                const hasVideo = hasSlot ? document.getElementById("participant-slot-" + slotIndex)?.querySelector('video') : false;
+                
+                // Responder com status
+                verificationChannel.postMessage({
+                  type: 'stream-reception-confirmed',
+                  participantId: data.participantId,
+                  requestId: data.requestId,
+                  hasSlot: hasSlot,
+                  hasVideo: !!hasVideo,
+                  timestamp: Date.now()
+                });
+                
+                console.log('📋 FASE 4: Status enviado:', { hasSlot, hasVideo });
+              }
+            });
 
             // ENHANCED: Handle window messages from host with stream caching
             window.addEventListener('message', async (event) => {
               const data = event.data;
               console.log("📩 TRANSMISSION: Received window message:", data.type, data);
               
-              if (data.type === 'participant-stream-ready' && data.participantId) {
+              // FASE 3: Processar notificações imediatas de stream
+              if (data.type === 'immediate-stream-available' && data.participantId) {
+                console.log('🚀 FASE 3: Stream imediato disponível para:', data.participantId);
+                
+                // Forçar atualização imediata do cache
+                if (window.opener && window.opener.sharedParticipantStreams) {
+                  const stream = window.opener.sharedParticipantStreams[data.participantId];
+                  if (stream) {
+                    participantStreams[data.participantId] = stream;
+                    console.log('⚡ FASE 3: Stream cached for immediate display:', data.participantId);
+                  }
+                }
+                
+                // Atribuir slot imediatamente se não existir
+                if (!participantSlots[data.participantId] && availableSlots.length > 0) {
+                  const slotIndex = availableSlots.shift();
+                  participantSlots[data.participantId] = slotIndex;
+                  
+                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                  if (slotElement) {
+                    console.log('⚡ FASE 3: Criando vídeo imediatamente para slot:', slotIndex);
+                    await createVideoElementFromStream(slotElement, data.participantId);
+                    slotElement.dataset.participantId = data.participantId;
+                  }
+                } else if (participantSlots[data.participantId]) {
+                  // Atualizar slot existente
+                  const slotIndex = participantSlots[data.participantId];
+                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                  if (slotElement) {
+                    console.log('⚡ FASE 3: Atualizando vídeo existente para slot:', slotIndex);
+                    await createVideoElementFromStream(slotElement, data.participantId);
+                  }
+                }
+              }
+              
+              // FASE 4: Responder a verificação de recepção
+              else if (data.type === 'verify-stream-display' && data.participantId) {
+                console.log('🔍 FASE 4: Verificando exibição do stream:', data.participantId);
+                
+                const slotIndex = participantSlots[data.participantId];
+                if (slotIndex !== undefined) {
+                  const slotElement = document.getElementById("participant-slot-" + slotIndex);
+                  const hasVideo = slotElement && slotElement.querySelector('video');
+                  
+                  if (hasVideo) {
+                    // Confirmar que o stream está sendo exibido
+                    window.opener.postMessage({
+                      type: 'stream-display-confirmed',
+                      participantId: data.participantId,
+                      verificationId: data.verificationId,
+                      timestamp: Date.now()
+                    }, '*');
+                    console.log('✅ FASE 4: Stream confirmado para:', data.participantId);
+                  } else {
+                    // Stream não está sendo exibido - solicitar nova tentativa
+                    console.log('❌ FASE 4: Stream não confirmado para:', data.participantId);
+                    setTimeout(async () => {
+                      await createVideoElementFromStream(slotElement, data.participantId);
+                    }, 100);
+                  }
+                }
+              }
+              
+              else if (data.type === 'participant-stream-ready' && data.participantId) {
                 console.log('🎯 TRANSMISSION: Stream ready for participant:', data.participantId);
                 
                 // Cache stream reference immediately
