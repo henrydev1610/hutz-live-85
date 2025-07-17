@@ -1,4 +1,11 @@
-// (IMPORTS SEGUEM OS MESMOS)
+
+import { useCallback } from 'react';
+import { toast } from "sonner";
+import { useMediaState } from './useMediaState';
+import { useMediaControls } from './useMediaControls';
+import { detectMobileAggressively, checkMediaDevicesSupport, setCameraPreference } from '@/utils/media/deviceDetection';
+import { getUserMediaWithFallback } from '@/utils/media/getUserMediaFallback';
+import { setupVideoElement } from '@/utils/media/videoPlayback';
 
 export const useParticipantMedia = () => {
   const mediaState = useMediaState();
