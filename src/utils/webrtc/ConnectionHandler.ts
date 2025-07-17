@@ -50,8 +50,8 @@ export class ConnectionHandler {
         }
       ],
       iceCandidatePoolSize: 10,
-      bundlePolicy: 'max-bundle',
-      rtcpMuxPolicy: 'require'
+      bundlePolicy: 'max-bundle' as RTCBundlePolicy,
+      rtcpMuxPolicy: 'require' as RTCRtcpMuxPolicy
     };
 
     const peerConnection = new RTCPeerConnection(config);

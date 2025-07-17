@@ -3,8 +3,9 @@ import { useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
-import { initHostWebRTC } from '@/utils/webrtc';
+import { initHostWebRTC, recoverStreamConnection } from '@/utils/webrtc';
 import { useStreamSynchronizer } from './useStreamSyncronizer';
+import { useStreamHealthMonitor } from './useStreamHealthMonitor';
 
 interface UseLivePageEffectsProps {
   sessionId: string | null;
@@ -43,6 +44,20 @@ export const useLivePageEffects = ({
     participantList,
     transmissionWindowRef,
     sessionId
+  });
+
+  // FASE 5: Stream Health Monitor
+  const { forceHealthCheck } = useStreamHealthMonitor({
+    participantStreams,
+    onStreamIssue: (participantId, issue) => {
+      console.log(`🏥 STREAM HEALTH ISSUE: ${participantId} - ${issue}`);
+      
+      // FASE 5: Auto-recovery attempt
+      setTimeout(() => {
+        console.log(`🔄 STREAM HEALTH: Attempting auto-recovery for ${participantId}`);
+        recoverStreamConnection(participantId);
+      }, 2000);
+    }
   });
 
   // QR Code generation effect
@@ -90,12 +105,16 @@ export const useLivePageEffects = ({
         }
       });
 
+      // FASE 1: Configure callbacks FIRST before WebRTC initialization
+      console.log('🔧 HOST: Pre-configuring stream callbacks before WebRTC init');
+      
       // Initialize WebRTC with CRITICAL static host ID - UNIFIED SYSTEM
       initHostWebRTC(sessionId).then(result => {
         if (result && result.webrtc) {
           console.log('✅ HOST: UNIFIED WebRTC initialized with STATIC HOST ID');
           
-          // CRITICAL: Set up callbacks for stream and participant management
+          // FASE 1: CRITICAL - Set up callbacks IMMEDIATELY when WebRTC is created
+          console.log('🔧 HOST: Setting up stream callbacks immediately');
           result.webrtc.setOnStreamCallback((participantId, stream) => {
             console.log('🎥 HOST: UNIFIED STREAM RECEIVED from:', participantId, {
               streamId: stream.id,
@@ -130,6 +149,10 @@ export const useLivePageEffects = ({
           });
 
           console.log('🔗 HOST: UNIFIED WebRTC callbacks configured with STATIC HOST ID');
+          
+          // FASE 2: Process any buffered streams immediately after callback setup
+          console.log('🔄 HOST: Processing any buffered streams');
+          result.webrtc.processBufferedStreams();
           
           // Success notification
           toast({
@@ -182,11 +205,14 @@ export const useLivePageEffects = ({
         updateTransmissionParticipants();
         // CRITICAL: Force stream sync to ensure consistency
         forceSyncNow();
+        // FASE 5: Force health check after stream changes
+        forceHealthCheck();
       }, 300);
     }
   }, [participantStreams, participantList, transmissionOpen, updateTransmissionParticipants, forceSyncNow]);
 
   return {
-    forceSyncNow
+    forceSyncNow,
+    forceHealthCheck
   };
 };

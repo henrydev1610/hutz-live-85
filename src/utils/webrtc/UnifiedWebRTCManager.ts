@@ -33,6 +33,11 @@ export class UnifiedWebRTCManager {
   private isHost: boolean = false;
   private isMobile: boolean = false;
   
+  // FASE 2: Stream buffering for early arrivals
+  private streamBuffer: Map<string, MediaStream> = new Map();
+  private streamBufferTimeout: NodeJS.Timeout | null = null;
+  private callbacksConfigured: boolean = false;
+  
   // Components
   private connectionHandler: ConnectionHandler;
   private signalingHandler: SignalingHandler;
@@ -89,7 +94,15 @@ export class UnifiedWebRTCManager {
       console.log(`📡 Host recebeu track ${stream.getVideoTracks()[0]?.kind} de participante`);
       
       this.updateConnectionMetrics(participantId, { streamReceived: true });
-      this.callbacksManager.triggerStreamCallback(participantId, remoteStream);
+      
+      // FASE 2: Check if callbacks are configured, if not buffer the stream
+      if (this.callbacksConfigured) {
+        console.log('✅ UNIFIED: Callbacks configured, processing stream immediately');
+        this.callbacksManager.triggerStreamCallback(participantId, remoteStream);
+      } else {
+        console.log('⚠️ UNIFIED: Callbacks not ready, buffering stream for', participantId);
+        this.bufferStream(participantId, remoteStream);
+      }
     });
     
     this.connectionHandler.setParticipantJoinCallback((participantId) => {
@@ -748,8 +761,15 @@ export class UnifiedWebRTCManager {
 
   // Public API methods
   setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
-    console.log('📞 UNIFIED: Setting stream callback');
+    console.log('🔧 UNIFIED: Setting stream callback and marking as configured');
     this.callbacksManager.setOnStreamCallback(callback);
+    this.callbacksConfigured = true;
+    
+    // FASE 2: Process any buffered streams immediately after callback setup
+    if (this.streamBuffer.size > 0) {
+      console.log(`🔄 UNIFIED: Processing ${this.streamBuffer.size} buffered streams`);
+      this.processBufferedStreams();
+    }
   }
 
   setOnParticipantJoinCallback(callback: (participantId: string) => void) {
@@ -988,6 +1008,46 @@ export class UnifiedWebRTCManager {
     }, 30000);
   }
 
+  // FASE 2: Buffer stream for early arrivals
+  private bufferStream(participantId: string, stream: MediaStream) {
+    console.log(`📦 UNIFIED: Buffering stream for ${participantId}`);
+    this.streamBuffer.set(participantId, stream);
+    
+    // Set timeout to prevent memory leaks
+    if (this.streamBufferTimeout) {
+      clearTimeout(this.streamBufferTimeout);
+    }
+    
+    this.streamBufferTimeout = setTimeout(() => {
+      console.log('⏰ UNIFIED: Stream buffer timeout, clearing buffered streams');
+      this.streamBuffer.clear();
+      this.streamBufferTimeout = null;
+    }, 30000); // 30 second timeout
+  }
+  
+  // FASE 2: Process buffered streams when callbacks are ready
+  processBufferedStreams() {
+    if (this.streamBuffer.size === 0) {
+      console.log('📦 UNIFIED: No buffered streams to process');
+      return;
+    }
+    
+    console.log(`🔄 UNIFIED: Processing ${this.streamBuffer.size} buffered streams`);
+    
+    this.streamBuffer.forEach((stream, participantId) => {
+      console.log(`🎥 UNIFIED: Processing buffered stream for ${participantId}`);
+      this.callbacksManager.triggerStreamCallback(participantId, stream);
+    });
+    
+    // Clear buffer after processing
+    this.streamBuffer.clear();
+    
+    if (this.streamBufferTimeout) {
+      clearTimeout(this.streamBufferTimeout);
+      this.streamBufferTimeout = null;
+    }
+  }
+
   cleanup() {
     console.log(`🧹 UNIFIED: Cleaning up WebRTC manager`);
     
@@ -995,6 +1055,13 @@ export class UnifiedWebRTCManager {
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
+    }
+    
+    // FASE 2: Clear stream buffer
+    this.streamBuffer.clear();
+    if (this.streamBufferTimeout) {
+      clearTimeout(this.streamBufferTimeout);
+      this.streamBufferTimeout = null;
     }
     
     // Clear retry timeouts
@@ -1035,6 +1102,8 @@ export class UnifiedWebRTCManager {
       overall: 'disconnected'
     };
     this.connectionMetrics.clear();
+    
+    this.callbacksConfigured = false;
     
     console.log(`✅ UNIFIED: Cleanup completed`);
   }
