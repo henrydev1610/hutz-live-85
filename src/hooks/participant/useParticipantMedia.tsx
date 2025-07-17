@@ -60,24 +60,28 @@ export const useParticipantMedia = () => {
 
       localStreamRef.current = stream;
       
-      // CRITICAL: Early stream registration BEFORE WebRTC init
-      console.log(`🔗 EARLY REGISTRATION: Stream with WebRTC Manager:`, {
+      // FASE 2: CORRECT TIMING - Stream registration AFTER WebRTC init
+      console.log(`🎬 MEDIA: Stream obtained, preparing for delayed registration:`, {
         streamId: stream.id,
         tracks: stream.getTracks().length
       });
       
-      // Import and register stream immediately
-      const { getUnifiedWebRTCManager } = await import('@/utils/webrtc/UnifiedWebRTCManager');
-      const webRTCManager = getUnifiedWebRTCManager();
+      // FASE 1: Use singleton instance from webrtc.ts instead of direct import
+      const { getWebRTCManager } = await import('@/utils/webrtc');
+      const webRTCManager = getWebRTCManager();
       
-      // ✅ AGUARDA ESTABILIZAÇÃO DO STREAM ANTES DE REGISTRAR (rule 1)
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      webRTCManager.setOutgoingStream(stream);
-      console.log(`✅ Stream registered with WebRTC Manager after stabilization`);
-      
-      // ✅ EMIT EVENTO STREAM-READY PARA O HOST (rule 1)
-      console.log("📡 Stream do participante conectado", stream.getTracks());
+      if (webRTCManager) {
+        // ✅ AGUARDA ESTABILIZAÇÃO DO STREAM ANTES DE REGISTRAR (rule 1)
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        webRTCManager.setOutgoingStream(stream);
+        console.log(`✅ FASE 1: Stream registered with correct singleton instance`);
+        
+        // ✅ EMIT EVENTO STREAM-READY PARA O HOST (rule 1)
+        console.log("📡 Stream do participante conectado", stream.getTracks());
+      } else {
+        console.warn(`⚠️ FASE 1: No WebRTC manager available yet, stream will be registered later`);
+      }
       
       const videoTracks = stream.getVideoTracks();
       const audioTracks = stream.getAudioTracks();
@@ -176,16 +180,21 @@ export const useParticipantMedia = () => {
       // Update state
       localStreamRef.current = newStream;
       
-      // CRITICAL: Re-register new stream with WebRTC Manager
-      console.log(`🔗 RE-REGISTERING new stream after camera switch:`, {
+      // FASE 1: Use singleton instance from webrtc.ts for camera switch
+      console.log(`🔗 FASE 1: Re-registering new stream after camera switch:`, {
         streamId: newStream.id,
         tracks: newStream.getTracks().length
       });
       
-      const { getUnifiedWebRTCManager } = await import('@/utils/webrtc/UnifiedWebRTCManager');
-      const webRTCManager = getUnifiedWebRTCManager();
-      webRTCManager.setOutgoingStream(newStream);
-      console.log(`✅ New stream registered with WebRTC Manager`);
+      const { getWebRTCManager } = await import('@/utils/webrtc');
+      const webRTCManager = getWebRTCManager();
+      
+      if (webRTCManager) {
+        webRTCManager.setOutgoingStream(newStream);
+        console.log(`✅ FASE 1: New stream registered with correct singleton instance`);
+      } else {
+        console.warn(`⚠️ FASE 1: No WebRTC manager available during camera switch`);
+      }
       
       const videoTracks = newStream.getVideoTracks();
       const audioTracks = newStream.getAudioTracks();

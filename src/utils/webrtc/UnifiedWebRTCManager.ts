@@ -28,7 +28,7 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 export class UnifiedWebRTCManager {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private localStream: MediaStream | null = null;
-  private roomId: string | null = null;
+  public roomId: string | null = null; // FASE 3: Make public for sync verification
   private participantId: string | null = null;
   private isHost: boolean = false;
   private isMobile: boolean = false;
