@@ -67,15 +67,14 @@ export const useParticipantMedia = () => {
       });
       
       // Import and register stream immediately
-      const webRTCManager = (await import('@/utils/webrtc/UnifiedWebRTCManager')).default;
+      const { getUnifiedWebRTCManager } = await import('@/utils/webrtc/UnifiedWebRTCManager');
+      const webRTCManager = getUnifiedWebRTCManager();
       
       // ✅ AGUARDA ESTABILIZAÇÃO DO STREAM ANTES DE REGISTRAR (rule 1)
       await new Promise(resolve => setTimeout(resolve, 300));
       
-      if (webRTCManager.setOutgoingStream) {
-        webRTCManager.setOutgoingStream(stream);
-        console.log(`✅ Stream registered with WebRTC Manager after stabilization`);
-      }
+      webRTCManager.setOutgoingStream(stream);
+      console.log(`✅ Stream registered with WebRTC Manager after stabilization`);
       
       // ✅ EMIT EVENTO STREAM-READY PARA O HOST (rule 1)
       console.log("📡 Stream do participante conectado", stream.getTracks());
@@ -183,11 +182,10 @@ export const useParticipantMedia = () => {
         tracks: newStream.getTracks().length
       });
       
-      const webRTCManager = (await import('@/utils/webrtc/UnifiedWebRTCManager')).default;
-      if (webRTCManager.setOutgoingStream) {
-        webRTCManager.setOutgoingStream(newStream);
-        console.log(`✅ New stream registered with WebRTC Manager`);
-      }
+      const { getUnifiedWebRTCManager } = await import('@/utils/webrtc/UnifiedWebRTCManager');
+      const webRTCManager = getUnifiedWebRTCManager();
+      webRTCManager.setOutgoingStream(newStream);
+      console.log(`✅ New stream registered with WebRTC Manager`);
       
       const videoTracks = newStream.getVideoTracks();
       const audioTracks = newStream.getAudioTracks();

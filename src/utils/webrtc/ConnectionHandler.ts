@@ -91,63 +91,19 @@ export class ConnectionHandler {
       }
     };
 
-    // CRITICAL: Enhanced stream handling for incoming tracks with mobile optimization
+    // ✅ CRITICAL: Host ontrack callback conforme instruções técnicas
     peerConnection.ontrack = (event) => {
-      console.log(`🎥 UNIFIED-CRITICAL: Track received from ${participantId}:`, {
-        kind: event.track.kind,
-        trackId: event.track.id,
-        streamCount: event.streams.length,
-        streamIds: event.streams.map(s => s.id),
-        readyState: event.track.readyState,
-        enabled: event.track.enabled,
-        timestamp: Date.now()
-      });
+      const remoteStream = new MediaStream();
+      remoteStream.addTrack(event.track);
 
-      if (event.streams && event.streams.length > 0) {
-        const stream = event.streams[0];
-        console.log(`📹 UNIFIED-CRITICAL: Processing stream from ${participantId}:`, {
-          streamId: stream.id,
-          trackCount: stream.getTracks().length,
-          videoTracks: stream.getVideoTracks().length,
-          audioTracks: stream.getAudioTracks().length,
-          streamActive: stream.active,
-          timestamp: Date.now()
-        });
-
-        // Enhanced callback trigger with mobile-first approach
-        const triggerCallback = () => {
-          if (this.streamCallback) {
-            console.log(`🚀 UNIFIED-CRITICAL: Triggering stream callback for ${participantId}`);
-            try {
-              this.streamCallback(participantId, stream);
-              console.log(`✅ UNIFIED-CRITICAL: Stream callback executed successfully for ${participantId}`);
-            } catch (error) {
-              console.error(`❌ UNIFIED-CRITICAL: Stream callback error for ${participantId}:`, error);
-            }
-          } else {
-            console.error(`❌ UNIFIED-CRITICAL: No stream callback set for ${participantId}`);
-          }
-        };
-
-        // IMMEDIATE trigger - highest priority
-        triggerCallback();
-        
-        // Backup trigger for mobile stability
-        setTimeout(() => {
-          console.log(`🔄 UNIFIED-BACKUP: Backup trigger for ${participantId}`);
-          triggerCallback();
-        }, 50);
-        
+      console.log(`📡 Host recebeu track:`, event.track.kind);
+      console.log(`📡 Host recebeu track ${event.track.kind} de participante`);
+      
+      if (this.streamCallback) {
+        this.streamCallback(participantId, remoteStream);
+        console.log(`✅ Stream callback executado para ${participantId}`);
       } else {
-        console.warn(`⚠️ UNIFIED: Track received from ${participantId} but no streams attached`);
-        // Try to create stream from track for mobile compatibility
-        if (event.track) {
-          const syntheticStream = new MediaStream([event.track]);
-          console.log(`🔧 UNIFIED-FIX: Created synthetic stream for ${participantId}`);
-          if (this.streamCallback) {
-            this.streamCallback(participantId, syntheticStream);
-          }
-        }
+        console.error(`❌ No stream callback set for ${participantId}`);
       }
     };
 

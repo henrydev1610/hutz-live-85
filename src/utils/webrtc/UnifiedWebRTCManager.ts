@@ -419,23 +419,32 @@ export class UnifiedWebRTCManager {
       if (this.localStream) {
         await this.notifyLocalStream();
         
-      // CRITICAL: Assertive addTrack() for all peer connections
-        this.peerConnections.forEach((pc, peerId) => {
-          if (this.localStream) {
-            this.localStream.getTracks().forEach(track => {
-              // Check if track already exists to avoid duplicate
-              const existingSenders = pc.getSenders();
-              const trackExists = existingSenders.some(sender => sender.track === track);
-              
-              if (!trackExists) {
-                pc.addTrack(track, this.localStream!);
-                console.log(`🎯 [${peerId}] Track ${track.kind} adicionada ao PeerConnection`);
-              } else {
-                console.log(`🔄 [${peerId}] Track ${track.kind} já existe no PeerConnection`);
-              }
-            });
-          }
-        });
+      // ✅ CRITICAL: Garantir que RTCPeerConnection esteja pronto antes de adicionar tracks
+        setTimeout(() => {
+          this.peerConnections.forEach((pc, peerId) => {
+            if (this.localStream && pc.connectionState !== 'closed') {
+              const tracks = this.localStream.getTracks();
+              console.log(`🎯 Adicionando ${tracks.length} tracks para ${peerId}`);
+
+              tracks.forEach(track => {
+                try {
+                  // Check if track already exists to avoid duplicate
+                  const existingSenders = pc.getSenders();
+                  const trackExists = existingSenders.some(sender => sender.track === track);
+                  
+                  if (!trackExists) {
+                    pc.addTrack(track, this.localStream!);
+                    console.log(`✅ Track ${track.kind} enviada para ${peerId}`);
+                  } else {
+                    console.log(`🔄 Track ${track.kind} já existe para ${peerId}`);
+                  }
+                } catch (err) {
+                  console.warn(`⚠️ Erro ao adicionar track para ${peerId}:`, err);
+                }
+              });
+            }
+          });
+        }, 1000); // Delay para garantir conexão
       }
       
       // CRITICAL: Start connection monitoring and auto-connect logic
