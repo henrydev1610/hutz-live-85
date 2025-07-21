@@ -119,10 +119,11 @@ const QRCodeOverlay: React.FC<QRCodeOverlayProps> = ({
         }}
         position={{ x: qrCodePosition.x, y: qrCodePosition.y }}
         disabled={isResizingQrCode}
-        className={`bg-white p-1 rounded-lg ${isDraggingQrCode || isResizingQrCode ? 'ring-2 ring-primary' : ''}`}
+        className={`bg-white p-1 rounded-lg z-50 ${isDraggingQrCode || isResizingQrCode ? 'ring-2 ring-primary' : ''}`}
         style={{ 
           width: `${qrCodePosition.width}px`, 
           height: `${qrCodePosition.height}px`,
+          zIndex: 50,
         }}
       >
         {qrCodeSvg ? (
@@ -160,13 +161,14 @@ const QRCodeOverlay: React.FC<QRCodeOverlayProps> = ({
         }}
         position={{ x: qrDescriptionPosition.x, y: qrDescriptionPosition.y }}
         disabled={isResizingText}
-        className={`flex items-center justify-center overflow-hidden ${isDraggingText || isResizingText ? 'ring-2 ring-primary' : ''}`}
+        className={`flex items-center justify-center overflow-hidden z-50 ${isDraggingText || isResizingText ? 'ring-2 ring-primary' : ''}`}
         style={{ 
           width: `${qrDescriptionPosition.width}px`, 
           height: `${qrDescriptionPosition.height}px`,
           color: selectedTextColor,
           fontFamily: selectedFont,
           fontSize: `${qrDescriptionFontSize}px`,
+          zIndex: 50,
         }}
       >
         {qrCodeDescription}
