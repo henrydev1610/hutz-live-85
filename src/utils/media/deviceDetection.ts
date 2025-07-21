@@ -75,9 +75,7 @@ export const detectMobileAggressively = (): boolean => {
                        Math.min(viewportWidth, viewportHeight) <= 768;
   
   // 5. Orientation API (mobile-specific)
-  const hasOrientationAPI = 'orientation' in window || 
-                           screen.orientation !== undefined ||
-                           window.screen.orientation !== undefined;
+  const hasOrientationAPI = 'orientation' in window;
   
   // 6. Device Memory (typically lower on mobile)
   const deviceMemory = (navigator as any).deviceMemory;

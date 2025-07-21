@@ -1,5 +1,4 @@
 import { detectMobileAggressively, getCameraPreference } from './deviceDetection';
-import { getOptimalConstraints } from './mediaConstraints';
 
 export const getUserMediaWithFallback = async (): Promise<MediaStream | null> => {
   const isMobile = detectMobileAggressively();
