@@ -1,13 +1,11 @@
 
 import { useCallback, useEffect } from 'react';
-import { useVideoCreation } from './useVideoCreation';
+import { useUnifiedVideoCreation } from './useUnifiedVideoCreation';
 import { useContainerManagement } from './useContainerManagement';
-import { useStreamManager } from './useStreamManager';
 
 export const useVideoElementManagement = () => {
-  const { createVideoElement, cleanup } = useVideoCreation();
-  const { findVideoContainers, createEmergencyContainer } = useContainerManagement();
-  const { processStreamSafely, resetParticipantState } = useStreamManager();
+  const { createVideoElementUnified, cleanup } = useUnifiedVideoCreation();
+  const { findVideoContainers } = useContainerManagement();
 
   useEffect(() => {
     return () => {
@@ -20,123 +18,57 @@ export const useVideoElementManagement = () => {
     stream: MediaStream, 
     transmissionWindowRef?: React.MutableRefObject<Window | null>
   ) => {
-    console.log('🎯 CRITICAL: updateVideoElementsImmediately called for:', participantId);
+    console.log('🎯 CLEAN VIDEO MANAGEMENT: Processing stream for:', participantId);
     
+    if (!stream || !stream.active) {
+      console.warn('⚠️ CLEAN VIDEO MANAGEMENT: Invalid or inactive stream for:', participantId);
+      return;
+    }
+
     try {
-      // Process the stream safely, even if it appears invalid
-      if (!stream) {
-        console.warn('⚠️ No stream provided for:', participantId);
-        return;
-      }
-
-      console.log('🔄 Processing stream with details:', {
-        participantId,
-        streamId: stream.id,
-        active: stream.active,
-        tracks: stream.getTracks().length,
-        videoTracks: stream.getVideoTracks().length,
-        audioTracks: stream.getAudioTracks().length
-      });
-
-      // Enhanced DOM ready waiting with multiple strategies
-      const waitForDOM = () => new Promise<void>((resolve) => {
+      // Wait for DOM to be ready
+      await new Promise(resolve => {
         if (document.readyState === 'complete') {
-          resolve();
-          return;
+          resolve(void 0);
+        } else {
+          const handler = () => {
+            if (document.readyState === 'complete') {
+              document.removeEventListener('readystatechange', handler);
+              resolve(void 0);
+            }
+          };
+          document.addEventListener('readystatechange', handler);
         }
-
-        let resolved = false;
-        const resolveOnce = () => {
-          if (!resolved) {
-            resolved = true;
-            resolve();
-          }
-        };
-
-        // Strategy 1: readystatechange
-        const readyHandler = () => {
-          if (document.readyState === 'complete') {
-            document.removeEventListener('readystatechange', readyHandler);
-            resolveOnce();
-          }
-        };
-        document.addEventListener('readystatechange', readyHandler);
-
-        // Strategy 2: DOMContentLoaded + load
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', resolveOnce, { once: true });
-        }
-        window.addEventListener('load', resolveOnce, { once: true });
-
-        // Strategy 3: Timeout fallback
-        setTimeout(resolveOnce, 2000);
       });
 
-      await waitForDOM();
-      
       // Additional wait for React rendering
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Find or create video containers with retries
-      let containers = await findVideoContainers(participantId);
-      let retryCount = 0;
+      // Find containers
+      const containers = await findVideoContainers(participantId);
       
-      while (containers.length === 0 && retryCount < 5) {
-        console.log(`🔄 Retry ${retryCount + 1}: Looking for containers for ${participantId}`);
-        await new Promise(resolve => setTimeout(resolve, 500));
-        containers = await findVideoContainers(participantId);
-        retryCount++;
-      }
-
-      console.log('📦 Found containers for', participantId, ':', containers.length);
-
       if (containers.length === 0) {
-        console.warn('⚠️ No containers found after retries for:', participantId);
-        // Try to find any video container as fallback
-        const fallbackContainers = document.querySelectorAll('.participant-video');
-        if (fallbackContainers.length > 0) {
-          console.log('🆘 Using fallback container strategy');
-          containers = Array.from(fallbackContainers) as HTMLElement[];
-        }
+        console.warn('⚠️ CLEAN VIDEO MANAGEMENT: No containers found for:', participantId);
+        return;
       }
 
-      // Create video element for each container with enhanced error handling
+      console.log(`📦 CLEAN VIDEO MANAGEMENT: Found ${containers.length} containers for ${participantId}`);
+
+      // Create video in each container using unified system
       for (const container of containers) {
         try {
-          await createVideoElement(container, stream);
-          console.log('✅ Video element created successfully for container');
-          
-          // Verify video is actually playing
-          const video = container.querySelector('video');
-          if (video && !video.paused) {
-            console.log('🎬 Video is playing successfully');
+          const videoElement = await createVideoElementUnified(container, stream, participantId);
+          if (videoElement) {
+            console.log('✅ CLEAN VIDEO MANAGEMENT: Video created successfully in container');
           }
         } catch (error) {
-          console.error('❌ Failed to create video element:', error);
-          // Try alternative video creation
-          try {
-            const video = document.createElement('video');
-            video.srcObject = stream;
-            video.autoplay = true;
-            video.muted = true;
-            video.playsInline = true;
-            video.style.width = '100%';
-            video.style.height = '100%';
-            video.style.objectFit = 'cover';
-            container.innerHTML = '';
-            container.appendChild(video);
-            await video.play();
-            console.log('✅ Fallback video creation successful');
-          } catch (fallbackError) {
-            console.error('❌ Fallback video creation failed:', fallbackError);
-          }
+          console.error('❌ CLEAN VIDEO MANAGEMENT: Failed to create video in container:', error);
         }
       }
 
-      // Send stream info to transmission window if available
-      if (transmissionWindowRef?.current) {
+      // Send to transmission window
+      if (transmissionWindowRef?.current && !transmissionWindowRef.current.closed) {
         try {
-          console.log('📡 Sending stream to transmission window for:', participantId);
           transmissionWindowRef.current.postMessage({
             type: 'stream_ready',
             participantId,
@@ -146,28 +78,21 @@ export const useVideoElementManagement = () => {
             active: stream.active,
             timestamp: Date.now()
           }, '*');
+          console.log('📡 CLEAN VIDEO MANAGEMENT: Stream info sent to transmission window');
         } catch (error) {
-          console.error('❌ Failed to send to transmission window:', error);
+          console.error('❌ CLEAN VIDEO MANAGEMENT: Failed to send to transmission window:', error);
         }
       }
 
-      console.log('✅ CRITICAL: updateVideoElementsImmediately completed for:', participantId);
+      console.log('✅ CLEAN VIDEO MANAGEMENT: Completed processing for:', participantId);
     } catch (error) {
-      console.error('❌ CRITICAL: Error in updateVideoElementsImmediately for:', participantId, error);
-      throw error; // Re-throw to allow retry logic
+      console.error('❌ CLEAN VIDEO MANAGEMENT: Error processing:', participantId, error);
+      throw error;
     }
-  }, [findVideoContainers, createEmergencyContainer, createVideoElement]);
-
-  const resetVideoState = useCallback((participantId: string) => {
-    console.log(`🔄 CRITICAL: Resetting video state for ${participantId}`);
-    resetParticipantState(participantId);
-  }, [resetParticipantState]);
+  }, [createVideoElementUnified, findVideoContainers]);
 
   return {
     updateVideoElementsImmediately,
-    createVideoElement,
-    findVideoContainers,
-    resetVideoState,
     cleanup
   };
 };

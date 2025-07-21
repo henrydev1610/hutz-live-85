@@ -1,8 +1,7 @@
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Participant } from './ParticipantGrid';
-import ParticipantVideoContainer from './ParticipantVideoContainer';
-import { useUniqueKeyGenerator } from '@/hooks/live/useUniqueKeyGenerator';
+import UnifiedVideoContainer from './UnifiedVideoContainer';
 
 interface ParticipantPreviewGridProps {
   participantList: Participant[];
@@ -15,107 +14,52 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   participantCount,
   participantStreams
 }) => {
-  const { generateUniqueKey } = useUniqueKeyGenerator();
+  // Filter out placeholder participants and get real participants
+  const realParticipants = participantList.filter(p => !p.id.startsWith('placeholder-'));
+  const selectedParticipants = realParticipants.filter(p => p.selected);
   
-  // Simplified calculation prioritizing streams and mobile participants
-  const { gridCols, selectedParticipants, emptySlots } = useMemo(() => {
-    const cols = Math.ceil(Math.sqrt(Math.max(participantCount, 1)));
-    
-    // CRITICAL: Prioritize participants with streams (especially mobile)
-    const participantsWithStreams = participantList.filter(p => {
-      const hasStream = participantStreams[p.id];
-      const isNonPlaceholder = !p.id.includes('placeholder');
-      const hasVideoOrActive = p.hasVideo || p.active || p.selected;
-      
-      console.log(`🔍 MOBILE-FILTER: ${p.id}:`, {
-        hasStream: !!hasStream,
-        isNonPlaceholder,
-        hasVideoOrActive,
-        isMobile: p.isMobile,
-        shouldShow: hasStream && isNonPlaceholder
-      });
-      
-      // Show if has stream OR is marked as having video/active
-      return isNonPlaceholder && (hasStream || hasVideoOrActive);
-    });
-    
-    const selected = participantsWithStreams
-      .sort((a, b) => {
-        // PRIORITY 1: Participants with actual streams
-        const aHasStream = !!participantStreams[a.id];
-        const bHasStream = !!participantStreams[b.id];
-        if (aHasStream && !bHasStream) return -1;
-        if (!aHasStream && bHasStream) return 1;
-        
-        // PRIORITY 2: Mobile participants
-        if (a.isMobile && !b.isMobile) return -1;
-        if (!a.isMobile && b.isMobile) return 1;
-        
-        // PRIORITY 3: Active participants
-        if (a.active && !b.active) return -1;
-        if (!a.active && b.active) return 1;
-        
-        // PRIORITY 4: Connection time
-        return (a.connectedAt || a.joinedAt || 0) - (b.connectedAt || b.joinedAt || 0);
-      })
-      .slice(0, participantCount);
-      
-    const empty = Math.max(0, participantCount - selected.length);
-    
-    return {
-      gridCols: cols,
-      selectedParticipants: selected,
-      emptySlots: empty
-    };
-  }, [participantList, participantCount, participantStreams]);
+  // Create placeholder participants to match participantCount if needed
+  const placeholders = Array.from({ length: Math.max(0, participantCount - realParticipants.length) }, (_, i) => ({
+    id: `placeholder-${i}`,
+    name: `P${realParticipants.length + i + 1}`,
+    joinedAt: Date.now(),
+    lastActive: Date.now(),
+    active: false,
+    selected: false,
+    hasVideo: false,
+    isMobile: false
+  }));
 
-  console.log('🎭 FIXED: ParticipantPreviewGrid render:', {
-    totalParticipants: participantList.length,
+  const allParticipants = [...selectedParticipants, ...placeholders].slice(0, participantCount);
+
+  // Grid layout based on participant count
+  const getGridClass = (count: number) => {
+    if (count <= 1) return 'grid-cols-1';
+    if (count <= 4) return 'grid-cols-2';
+    if (count <= 9) return 'grid-cols-3';
+    return 'grid-cols-4';
+  };
+
+  console.log('🎭 PREVIEW GRID: Rendering participants', {
+    realParticipants: realParticipants.length,
     selectedParticipants: selectedParticipants.length,
-    participantCount,
-    gridCols,
-    emptySlots
+    placeholders: placeholders.length,
+    totalShown: allParticipants.length,
+    streams: Object.keys(participantStreams).length
   });
 
   return (
-    <div 
-      className="participant-grid absolute right-[5%] top-[5%] bottom-[5%] left-[30%]"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
-        gap: '8px'
-      }}
-    >
-      {/* Participantes reais com chaves únicas */}
-      {selectedParticipants.map((participant, index) => (
-        <ParticipantVideoContainer
-          key={generateUniqueKey(participant.id, 'participant')}
-          participant={participant}
-          index={index}
-          stream={participantStreams[participant.id] || null}
-        />
-      ))}
-      
-      {/* Slots vazios com chaves únicas baseadas no índice */}
-      {Array.from({ length: emptySlots }).map((_, index) => {
-        const emptyKey = generateUniqueKey(`empty-${selectedParticipants.length + index}`, 'empty');
-        return (
-          <div 
-            key={emptyKey}
-            className="participant-video aspect-video bg-gray-800/30 rounded-md overflow-hidden relative border-2 border-dashed border-gray-600"
-            style={{ minHeight: '120px', minWidth: '160px' }}
-          >
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center text-white/40">
-                <svg className="w-6 h-6 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                <p className="text-xs">Aguardando</p>
-              </div>
-            </div>
-          </div>
-        );
-      })}
+    <div className="absolute inset-0 p-4">
+      <div className={`grid ${getGridClass(participantCount)} gap-2 h-full`}>
+        {allParticipants.map((participant, index) => (
+          <UnifiedVideoContainer
+            key={participant.id}
+            participant={participant}
+            index={index}
+            stream={participantStreams[participant.id] || null}
+          />
+        ))}
+      </div>
     </div>
   );
 };

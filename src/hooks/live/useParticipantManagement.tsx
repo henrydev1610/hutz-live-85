@@ -3,11 +3,9 @@ import { useEffect } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
 import { setStreamCallback, setParticipantJoinCallback } from '@/utils/webrtc';
 import { useVideoElementManagement } from './useVideoElementManagement';
-import { useParticipantStreams } from './useParticipantStreams';
+import { useCleanStreamManagement } from './useCleanStreamManagement';
 import { useParticipantLifecycle } from './useParticipantLifecycle';
 import { useParticipantAutoSelection } from './useParticipantAutoSelection';
-import { useParticipantStreamMonitoring } from './useParticipantStreamMonitoring';
-import { useForceVideoDisplay } from './useForceVideoDisplay';
 
 interface UseParticipantManagementProps {
   participantList: Participant[];
@@ -30,7 +28,8 @@ export const useParticipantManagement = ({
 }: UseParticipantManagementProps) => {
   const { updateVideoElementsImmediately } = useVideoElementManagement();
   
-  const { handleParticipantStream, handleParticipantTrack } = useParticipantStreams({
+  // Use clean stream management instead of multiple hooks
+  const { handleParticipantStream } = useCleanStreamManagement({
     setParticipantStreams,
     setParticipantList,
     updateVideoElementsImmediately,
@@ -59,36 +58,20 @@ export const useParticipantManagement = ({
     updateTransmissionParticipants
   });
 
-  useParticipantStreamMonitoring({
-    participantList,
-    setParticipantList,
-    participantStreams,
-    transmissionWindowRef,
-    updateVideoElementsImmediately,
-    transferStreamToTransmission,
-    sessionId
-  });
-
-  // EMERGENCY: Force video display hook
-  useForceVideoDisplay({
-    participantList,
-    participantStreams
-  });
-
-  // Set up WebRTC callbacks immediately
+  // Set up WebRTC callbacks
   useEffect(() => {
-    console.log('🔧 Setting up IMMEDIATE WebRTC callbacks');
+    console.log('🔧 CLEAN MANAGEMENT: Setting up WebRTC callbacks');
     
     setStreamCallback(handleParticipantStream);
     setParticipantJoinCallback(handleParticipantJoin);
     
     return () => {
-      console.log('🧹 Cleaning up WebRTC callbacks');
+      console.log('🧹 CLEAN MANAGEMENT: Cleaning up WebRTC callbacks');
     };
   }, [sessionId, handleParticipantStream, handleParticipantJoin]);
 
   const testConnection = () => {
-    console.log('🧪 Testing WebRTC connection...');
+    console.log('🧪 CLEAN MANAGEMENT: Testing connection...');
     
     const testParticipant: Participant = {
       id: `test-${Date.now()}`,
@@ -96,8 +79,9 @@ export const useParticipantManagement = ({
       joinedAt: Date.now(),
       lastActive: Date.now(),
       active: true,
-      selected: true, // Auto-select test participant
-      hasVideo: false
+      selected: true,
+      hasVideo: false,
+      isMobile: false // Will be detected properly when stream arrives
     };
     
     setParticipantList(prev => {
@@ -107,8 +91,7 @@ export const useParticipantManagement = ({
     
     navigator.mediaDevices.getUserMedia({ video: true, audio: false })
       .then(stream => {
-        console.log('✅ Test stream obtained:', stream.getTracks().length, 'tracks');
-        
+        console.log('✅ CLEAN MANAGEMENT: Test stream obtained');
         handleParticipantStream(testParticipant.id, stream);
         
         setTimeout(() => {
@@ -122,12 +105,11 @@ export const useParticipantManagement = ({
         }, 10000);
       })
       .catch(err => {
-        console.error('❌ Test connection failed:', err);
+        console.error('❌ CLEAN MANAGEMENT: Test connection failed:', err);
       });
   };
 
   return {
-    handleParticipantTrack,
     handleParticipantSelect,
     handleParticipantRemove,
     handleParticipantJoin,
