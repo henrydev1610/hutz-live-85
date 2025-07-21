@@ -42,14 +42,26 @@ const initializeSocketHandlers = (io) => {
   io.on('connection', (socket) => {
     console.log(`🔌 Client connected: ${socket.id}`);
     
-    // Evento: Entrar na sala
-    socket.on('join-room', (data) => {
+    // Suporte a múltiplos formatos de join-room
+    const handleJoinRoom = (data) => {
       try {
         const { roomId, userId } = data;
         
         if (!roomId || !userId) {
           socket.emit('error', { message: 'roomId and userId are required' });
           return;
+        }
+        
+        // Verificar se já está em uma sala
+        const existingConnection = connections.get(socket.id);
+        if (existingConnection) {
+          console.log(`⚠️ User ${userId} already in room ${existingConnection.roomId}, cleaning up...`);
+          // Remover da sala anterior
+          const oldRoom = rooms.get(existingConnection.roomId);
+          if (oldRoom) {
+            oldRoom.delete(socket.id);
+            socket.leave(existingConnection.roomId);
+          }
         }
         
         console.log(`👤 User ${userId} joining room ${roomId}`);
@@ -92,16 +104,36 @@ const initializeSocketHandlers = (io) => {
           });
         }
         
+        // Enviar confirmação de sucesso
+        socket.emit('room_joined', { 
+          success: true, 
+          roomId, 
+          userId, 
+          participants: participantsInRoom 
+        });
+        
+        socket.emit('join-room-response', { 
+          success: true, 
+          roomId, 
+          userId, 
+          participants: participantsInRoom 
+        });
+        
         socket.emit('room-participants', { participants: participantsInRoom });
-        socket.emit('participants-update', { participants: participantsInRoom });
+        socket.emit('participants-update', participantsInRoom);
         
         console.log(`✅ User ${userId} joined room ${roomId} (${participantsInRoom.length + 1} total)`);
         
       } catch (error) {
         console.error('Error in join-room:', error);
         socket.emit('error', { message: 'Failed to join room' });
+        socket.emit('join-room-response', { success: false, error: error.message });
       }
-    });
+    };
+
+    // Registrar múltiplos eventos para compatibilidade
+    socket.on('join-room', handleJoinRoom);
+    socket.on('join_room', handleJoinRoom);
     
     // Evento: Oferta WebRTC
     socket.on('offer', (data) => {

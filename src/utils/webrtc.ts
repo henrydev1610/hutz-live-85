@@ -8,11 +8,17 @@ export const initHostWebRTC = async (sessionId: string) => {
   try {
     console.log('🚀 Initializing host WebRTC for session:', sessionId);
     
+    // Cleanup mais agressivo para evitar relay duplicado
     if (webrtcManager) {
       console.log('🧹 Cleaning up existing WebRTC manager');
       webrtcManager.cleanup();
+      webrtcManager = null;
+      
+      // Aguardar limpeza completa
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
+    // Criar nova instância completamente limpa
     webrtcManager = new UnifiedWebRTCManager();
     await webrtcManager.initializeAsHost(sessionId);
     
@@ -20,7 +26,12 @@ export const initHostWebRTC = async (sessionId: string) => {
     
   } catch (error) {
     console.error('Failed to initialize host WebRTC:', error);
-    return { webrtc: webrtcManager };
+    // Em caso de erro, garantir limpeza
+    if (webrtcManager) {
+      webrtcManager.cleanup();
+      webrtcManager = null;
+    }
+    throw error;
   }
 };
 
@@ -28,11 +39,17 @@ export const initParticipantWebRTC = async (sessionId: string, participantId?: s
   try {
     console.log('🚀 Initializing participant WebRTC for session:', sessionId);
     
+    // Cleanup mais agressivo para evitar relay duplicado
     if (webrtcManager) {
       console.log('🧹 Cleaning up existing WebRTC manager');
       webrtcManager.cleanup();
+      webrtcManager = null;
+      
+      // Aguardar limpeza completa
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
+    // Criar nova instância completamente limpa
     webrtcManager = new UnifiedWebRTCManager();
     await webrtcManager.initializeAsParticipant(sessionId, participantId || `participant-${Date.now()}`, stream);
     
@@ -40,6 +57,11 @@ export const initParticipantWebRTC = async (sessionId: string, participantId?: s
     
   } catch (error) {
     console.error('Failed to initialize participant WebRTC:', error);
+    // Em caso de erro, garantir limpeza
+    if (webrtcManager) {
+      webrtcManager.cleanup();
+      webrtcManager = null;
+    }
     throw error;
   }
 };

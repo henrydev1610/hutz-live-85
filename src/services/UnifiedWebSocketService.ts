@@ -93,9 +93,9 @@ class UnifiedWebSocketService {
 
     return new Promise((resolve, reject) => {
       const connectionTimeout = setTimeout(() => {
-        this.disconnect(); // Use disconnect instead of cleanup
+        this.disconnect();
         reject(new Error('Connection timeout'));
-      }, 20000); // Aumentado para 20s
+      }, 15000); // Otimizado para 15s
 
       this.socket = io(url, {
         transports: ['websocket', 'polling'],
@@ -240,7 +240,7 @@ class UnifiedWebSocketService {
       const joinTimeout = setTimeout(() => {
         console.error(`❌ WEBSOCKET: Join room timeout for ${roomId}`);
         reject(new Error('Join room timeout'));
-      }, 30000); // Aumentado para 30s
+      }, 15000); // Otimizado para 15s
 
       // Success handler
       const handleJoinSuccess = (data: any) => {
