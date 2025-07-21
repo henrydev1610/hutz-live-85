@@ -10,6 +10,8 @@ import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
+import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
+import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
 const LivePage: React.FC = () => {
   const { toast } = useToast();
@@ -27,9 +29,20 @@ const LivePage: React.FC = () => {
     setFinalActionOpen: state.setFinalActionOpen
   });
 
-  // ENHANCED: Transmission participants update with debugging
+  // Environment detection and cache management
+  useEffect(() => {
+    const envInfo = getEnvironmentInfo();
+    console.log('🌍 LIVE PAGE: Environment detected:', envInfo);
+    
+    // Clear cache on first load to ensure fresh state
+    console.log('🧹 LIVE PAGE: Initial cache clear');
+    clearConnectionCache();
+    clearDeviceCache();
+  }, []);
+
+  // ENHANCED: Transmission participants update with debugging and cache management
   const updateTransmissionParticipants = () => {
-    console.log('🔄 HOST: Updating transmission participants');
+    console.log('🔄 HOST: Updating transmission participants with cache awareness');
     
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
       const participantsWithStreams = state.participantList.map(p => ({
@@ -39,19 +52,33 @@ const LivePage: React.FC = () => {
       
       const selectedParticipants = participantsWithStreams.filter(p => p.selected);
       
-      console.log('📊 HOST: Transmission update:', {
+      console.log('📊 HOST: Transmission update with environment info:', {
         totalParticipants: participantsWithStreams.length,
         selectedParticipants: selectedParticipants.length,
-        activeStreams: Object.keys(state.participantStreams).length
+        activeStreams: Object.keys(state.participantStreams).length,
+        environment: getEnvironmentInfo()
       });
       
-      transmissionWindowRef.current.postMessage({
-        type: 'update-participants',
-        participants: participantsWithStreams,
-        timestamp: Date.now()
-      }, '*');
-      
-      console.log('✅ HOST: Participants sent to transmission window');
+      try {
+        transmissionWindowRef.current.postMessage({
+          type: 'update-participants',
+          participants: participantsWithStreams,
+          environment: getEnvironmentInfo(),
+          timestamp: Date.now(),
+          cacheVersion: Date.now() // Force cache refresh
+        }, '*');
+        
+        console.log('✅ HOST: Participants sent to transmission window with cache busting');
+      } catch (error) {
+        console.error('❌ HOST: Failed to send participants to transmission:', error);
+        
+        // Retry with cache clear
+        console.log('🔄 HOST: Retrying with cache clear');
+        clearConnectionCache();
+        setTimeout(() => {
+          updateTransmissionParticipants();
+        }, 1000);
+      }
     } else {
       console.warn('⚠️ HOST: Transmission window not available for update');
     }
@@ -114,20 +141,26 @@ const LivePage: React.FC = () => {
     });
   };
 
-  // QR position update effect
+  // Enhanced QR position update effect with cache busting
   useEffect(() => {
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      transmissionWindowRef.current.postMessage({
-        type: 'update-qr-positions',
-        qrCodePosition: state.qrCodePosition,
-        qrDescriptionPosition: state.qrDescriptionPosition,
-        qrCodeVisible: state.qrCodeVisible,
-        qrCodeSvg: state.qrCodeSvg,
-        qrCodeDescription: state.qrCodeDescription,
-        selectedFont: state.selectedFont,
-        selectedTextColor: state.selectedTextColor,
-        qrDescriptionFontSize: state.qrDescriptionFontSize
-      }, '*');
+      try {
+        transmissionWindowRef.current.postMessage({
+          type: 'update-qr-positions',
+          qrCodePosition: state.qrCodePosition,
+          qrDescriptionPosition: state.qrDescriptionPosition,
+          qrCodeVisible: state.qrCodeVisible,
+          qrCodeSvg: state.qrCodeSvg,
+          qrCodeDescription: state.qrCodeDescription,
+          selectedFont: state.selectedFont,
+          selectedTextColor: state.selectedTextColor,
+          qrDescriptionFontSize: state.qrDescriptionFontSize,
+          cacheVersion: Date.now(), // Force cache refresh
+          environment: getEnvironmentInfo()
+        }, '*');
+      } catch (error) {
+        console.error('❌ LIVE PAGE: Failed to update QR positions:', error);
+      }
     }
   }, [
     state.qrCodePosition, 
@@ -162,13 +195,31 @@ const LivePage: React.FC = () => {
         onClose={() => setShowHealthMonitor(false)}
       />
       
-      {/* Debug Button */}
-      <button
-        onClick={() => setShowHealthMonitor(!showHealthMonitor)}
-        className="fixed bottom-4 left-4 bg-blue-500 text-white p-2 rounded-full text-xs z-50"
-      >
-        Debug
-      </button>
+      {/* Enhanced Debug Controls */}
+      <div className="fixed bottom-4 left-4 flex flex-col gap-2 z-50">
+        <button
+          onClick={() => setShowHealthMonitor(!showHealthMonitor)}
+          className="bg-blue-500 text-white p-2 rounded-full text-xs"
+          title="Debug Panel"
+        >
+          🔧 Debug
+        </button>
+        
+        <button
+          onClick={() => {
+            const envInfo = getEnvironmentInfo();
+            console.log('🌍 Environment Info:', envInfo);
+            toast({
+              title: "Environment Info",
+              description: `${envInfo.isLovable ? 'Lovable' : envInfo.isLocalhost ? 'Local' : 'Production'} - ${envInfo.wsUrl}`,
+            });
+          }}
+          className="bg-green-500 text-white p-2 rounded-full text-xs"
+          title="Environment Info"
+        >
+          🌍 Env
+        </button>
+      </div>
     </div>
   );
 };

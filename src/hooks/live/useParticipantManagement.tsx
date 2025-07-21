@@ -6,6 +6,8 @@ import { useVideoElementManagement } from './useVideoElementManagement';
 import { useCleanStreamManagement } from './useCleanStreamManagement';
 import { useParticipantLifecycle } from './useParticipantLifecycle';
 import { useParticipantAutoSelection } from './useParticipantAutoSelection';
+import { clearConnectionCache } from '@/utils/connectionUtils';
+import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
 interface UseParticipantManagementProps {
   participantList: Participant[];
@@ -28,7 +30,7 @@ export const useParticipantManagement = ({
 }: UseParticipantManagementProps) => {
   const { updateVideoElementsImmediately } = useVideoElementManagement();
   
-  // Use clean stream management instead of multiple hooks
+  // Use clean stream management with enhanced error handling
   const { handleParticipantStream } = useCleanStreamManagement({
     setParticipantStreams,
     setParticipantList,
@@ -58,20 +60,68 @@ export const useParticipantManagement = ({
     updateTransmissionParticipants
   });
 
-  // Set up WebRTC callbacks
-  useEffect(() => {
-    console.log('🔧 CLEAN MANAGEMENT: Setting up WebRTC callbacks');
+  // Enhanced stream handling with retry and cache busting
+  const enhancedHandleParticipantStream = async (participantId: string, stream: MediaStream) => {
+    console.log('🔄 ENHANCED STREAM HANDLER: Processing stream for:', participantId);
     
-    setStreamCallback(handleParticipantStream);
+    try {
+      // Clear any stale cache that might interfere
+      if (performance.now() % 10000 < 100) { // Occasionally clear cache
+        console.log('🧹 ENHANCED STREAM HANDLER: Periodic cache cleanup');
+        clearConnectionCache();
+        clearDeviceCache();
+      }
+      
+      await handleParticipantStream(participantId, stream);
+      
+      // Immediate transmission update
+      setTimeout(() => {
+        console.log('📡 ENHANCED STREAM HANDLER: Triggering transmission update');
+        updateTransmissionParticipants();
+      }, 100);
+      
+    } catch (error) {
+      console.error('❌ ENHANCED STREAM HANDLER: Error processing stream:', error);
+      
+      // Retry with cache clear
+      try {
+        console.log('🔄 ENHANCED STREAM HANDLER: Retrying with cache clear');
+        clearConnectionCache();
+        clearDeviceCache();
+        
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await handleParticipantStream(participantId, stream);
+      } catch (retryError) {
+        console.error('❌ ENHANCED STREAM HANDLER: Retry failed:', retryError);
+      }
+    }
+  };
+
+  // Set up WebRTC callbacks with cache clearing
+  useEffect(() => {
+    console.log('🔧 ENHANCED MANAGEMENT: Setting up WebRTC callbacks with cache management');
+    
+    // Clear cache on session change
+    if (sessionId) {
+      console.log('🧹 ENHANCED MANAGEMENT: Clearing cache for new session');
+      clearConnectionCache();
+      clearDeviceCache();
+    }
+    
+    setStreamCallback(enhancedHandleParticipantStream);
     setParticipantJoinCallback(handleParticipantJoin);
     
     return () => {
-      console.log('🧹 CLEAN MANAGEMENT: Cleaning up WebRTC callbacks');
+      console.log('🧹 ENHANCED MANAGEMENT: Cleaning up WebRTC callbacks');
     };
-  }, [sessionId, handleParticipantStream, handleParticipantJoin]);
+  }, [sessionId, handleParticipantJoin]);
 
   const testConnection = () => {
-    console.log('🧪 CLEAN MANAGEMENT: Testing connection...');
+    console.log('🧪 ENHANCED MANAGEMENT: Testing connection with cache clearing...');
+    
+    // Clear all cache before test
+    clearConnectionCache();
+    clearDeviceCache();
     
     const testParticipant: Participant = {
       id: `test-${Date.now()}`,
@@ -81,7 +131,7 @@ export const useParticipantManagement = ({
       active: true,
       selected: true,
       hasVideo: false,
-      isMobile: false // Will be detected properly when stream arrives
+      isMobile: false
     };
     
     setParticipantList(prev => {
@@ -91,8 +141,8 @@ export const useParticipantManagement = ({
     
     navigator.mediaDevices.getUserMedia({ video: true, audio: false })
       .then(stream => {
-        console.log('✅ CLEAN MANAGEMENT: Test stream obtained');
-        handleParticipantStream(testParticipant.id, stream);
+        console.log('✅ ENHANCED MANAGEMENT: Test stream obtained');
+        enhancedHandleParticipantStream(testParticipant.id, stream);
         
         setTimeout(() => {
           stream.getTracks().forEach(track => track.stop());
@@ -105,7 +155,7 @@ export const useParticipantManagement = ({
         }, 10000);
       })
       .catch(err => {
-        console.error('❌ CLEAN MANAGEMENT: Test connection failed:', err);
+        console.error('❌ ENHANCED MANAGEMENT: Test connection failed:', err);
       });
   };
 
@@ -113,7 +163,7 @@ export const useParticipantManagement = ({
     handleParticipantSelect,
     handleParticipantRemove,
     handleParticipantJoin,
-    handleParticipantStream,
+    handleParticipantStream: enhancedHandleParticipantStream,
     testConnection,
     transferStreamToTransmission
   };
