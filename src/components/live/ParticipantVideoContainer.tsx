@@ -1,9 +1,8 @@
 
 import React, { useCallback } from 'react';
 import { Participant } from './ParticipantGrid';
-import { useDirectVideoCreation } from '@/hooks/live/useDirectVideoCreation';
+import { useUnifiedVideoCreation } from '@/hooks/live/useUnifiedVideoCreation';
 import { useVideoHeartbeat } from '@/hooks/live/useVideoHeartbeat';
-import MobileCameraStreamProcessor from './MobileCameraStreamProcessor';
 
 interface ParticipantVideoContainerProps {
   participant: Participant;
@@ -18,21 +17,22 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
 }) => {
   const containerId = `preview-participant-video-${participant.id}`;
 
-  // Use direct video creation hook
-  const { tryCreateVideo } = useDirectVideoCreation({
-    participantId: participant.id,
-    stream: stream || null,
-    containerId
-  });
+  // Use unified video creation hook
+  const { createVideoElementUnified } = useUnifiedVideoCreation();
 
   // Video health monitoring callbacks
-  const handleVideoLost = useCallback((participantId: string) => {
+  const handleVideoLost = useCallback(async (participantId: string) => {
     console.error('💔 Video lost detected for:', participantId);
-    // Try to recreate video
-    setTimeout(() => {
-      tryCreateVideo();
-    }, 1000);
-  }, [tryCreateVideo]);
+    // Try to recreate video using unified system
+    if (stream) {
+      const container = document.getElementById(containerId);
+      if (container) {
+        setTimeout(async () => {
+          await createVideoElementUnified(container, stream, participantId);
+        }, 1000);
+      }
+    }
+  }, [createVideoElementUnified, stream, containerId]);
 
   const handleVideoRestored = useCallback((participantId: string) => {
     console.log('💚 Video restored for:', participantId);
@@ -129,16 +129,7 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
         backgroundColor: participant.hasVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
       }}
     >
-      {/* Mobile Camera Stream Processor for mobile participants */}
-      {participant.isMobile && stream && (
-        <MobileCameraStreamProcessor
-          participantId={participant.id}
-          stream={stream}
-          onStreamReady={(participantId, videoElement) => {
-            console.log(`📱 Mobile video ready for ${participantId}`);
-          }}
-        />
-      )}
+      {/* Unified video creation happens automatically when stream is available */}
 
       {/* DEBUG: Informações de debug SEMPRE visíveis */}
       <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-1 rounded z-30">
