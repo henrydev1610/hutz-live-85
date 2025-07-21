@@ -1,220 +1,174 @@
-// SIMPLIFIED getUserMedia with separate mobile/desktop logic
-import { detectMobileAggressively, checkMediaDevicesSupport } from './deviceDetection';
-import { ensurePermissionsBeforeStream } from './streamAcquisition';
-import { enumerateMediaDevices, findBackCamera } from './deviceEnumeration';
+import { detectMobileAggressively, getCameraPreference } from './deviceDetection';
+import { getOptimalConstraints } from './mediaConstraints';
 
 export const getUserMediaWithFallback = async (): Promise<MediaStream | null> => {
   const isMobile = detectMobileAggressively();
-  const deviceType = isMobile ? 'MOBILE' : 'DESKTOP';
   
-  console.log(`🎬 CAMERA: Starting ${deviceType} camera acquisition`);
-  console.log(`📱 Device Info: ${navigator.userAgent}`);
-  console.log(`📱 URL: ${window.location.href}`);
-  console.log(`🔒 HTTPS: ${window.location.protocol === 'https:'}`);
-
-  // 🔒 CRITICAL: Check HTTPS for mobile
-  if (isMobile && window.location.protocol !== 'https:') {
-    console.error('❌ HTTPS: Mobile camera requires HTTPS!');
-    throw new Error('Camera access requires HTTPS on mobile devices');
-  }
-
-  // Check basic support
-  if (!checkMediaDevicesSupport()) {
-    console.error('❌ CAMERA: getUserMedia not supported');
-    throw new Error('getUserMedia not supported');
-  }
-
-  // CRÍTICO: Verificar e solicitar permissões antes de tentar aquisição
-  console.log('🔐 CAMERA: Ensuring permissions before acquisition...');
-  const permissionsOk = await ensurePermissionsBeforeStream(isMobile);
+  console.log(`🎬 MEDIA FALLBACK: Starting ${isMobile ? 'MOBILE' : 'DESKTOP'} capture with prioritization`);
   
-  if (!permissionsOk) {
-    console.error('❌ CAMERA: Permissions not granted - will likely get "NOT FOUND"');
-    // Continue mesmo assim para tentar, pois alguns browsers são inconsistentes
+  // Mobile-specific logic with rear camera priority
+  if (isMobile) {
+    return await getMobileStreamWithRearCameraPriority();
   }
+  
+  // Desktop logic (unchanged)
+  return await getDesktopStream();
+};
 
+const getMobileStreamWithRearCameraPriority = async (): Promise<MediaStream | null> => {
+  console.log('📱 MOBILE CAPTURE: Prioritizing rear camera (environment facing)');
+  
+  // Phase 1: Try exact rear camera first (highest priority)
   try {
-    let stream: MediaStream | null = null;
+    console.log('📱 MOBILE CAPTURE: Phase 1 - Trying exact rear camera');
+    const constraints = {
+      video: {
+        facingMode: { exact: 'environment' },
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 }
+      },
+      audio: true
+    };
     
-    if (isMobile) {
-      console.log('📱 CAMERA: Using MOBILE camera logic with BACK camera priority');
-      stream = await getMobileStreamWithBackCamera();
-    } else {
-      console.log('🖥️ CAMERA: Using DESKTOP camera logic');
-      stream = await getDesktopStream();
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    console.log('✅ MOBILE CAPTURE: Exact rear camera obtained successfully');
+    
+    // Validate it's actually the rear camera
+    const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack) {
+      const settings = videoTrack.getSettings();
+      console.log('📱 MOBILE CAPTURE: Camera settings:', settings);
+      
+      if (settings.facingMode === 'environment') {
+        console.log('✅ MOBILE CAPTURE: Confirmed rear camera active');
+        return stream;
+      }
     }
     
-    if (stream && validateStream(stream)) {
-      console.log(`✅ CAMERA: ${deviceType} camera acquired successfully`);
-      return stream;
-    } else {
-      console.error(`❌ CAMERA: ${deviceType} camera acquisition failed`);
-      return null;
-    }
-    
+    return stream;
   } catch (error) {
-    console.error(`❌ CAMERA: ${deviceType} error:`, error);
+    console.log('⚠️ MOBILE CAPTURE: Phase 1 failed, trying ideal rear camera');
+  }
+  
+  // Phase 2: Try ideal rear camera
+  try {
+    console.log('📱 MOBILE CAPTURE: Phase 2 - Trying ideal rear camera');
+    const constraints = {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280, max: 1920 },
+        height: { ideal: 720, max: 1080 }
+      },
+      audio: true
+    };
+    
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    console.log('✅ MOBILE CAPTURE: Ideal rear camera obtained');
+    return stream;
+  } catch (error) {
+    console.log('⚠️ MOBILE CAPTURE: Phase 2 failed, trying any camera with audio');
+  }
+  
+  // Phase 3: Try any camera with audio
+  try {
+    console.log('📱 MOBILE CAPTURE: Phase 3 - Trying any camera with audio');
+    const constraints = {
+      video: {
+        width: { ideal: 1280, max: 1920 },
+        height: { ideal: 720, max: 1080 }
+      },
+      audio: true
+    };
+    
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    console.log('✅ MOBILE CAPTURE: Any camera with audio obtained');
+    return stream;
+  } catch (error) {
+    console.log('⚠️ MOBILE CAPTURE: Phase 3 failed, trying video only');
+  }
+  
+  // Phase 4: Try video only (last resort)
+  try {
+    console.log('📱 MOBILE CAPTURE: Phase 4 - Trying video only (last resort)');
+    const constraints = {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 640, max: 1280 },
+        height: { ideal: 480, max: 720 }
+      }
+    };
+    
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    console.log('✅ MOBILE CAPTURE: Video-only stream obtained');
+    return stream;
+  } catch (error) {
+    console.error('❌ MOBILE CAPTURE: All phases failed:', error);
     return null;
   }
 };
 
-const getMobileStreamWithBackCamera = async (): Promise<MediaStream | null> => {
-  console.log('📱 MOBILE: Starting mobile camera acquisition with BACK camera priority');
-  
-  // 🎯 STEP 1: Try to enumerate devices first to find specific back camera
-  let backCamera: MediaDeviceInfo | undefined;
-  
-  try {
-    const deviceInfo = await enumerateMediaDevices();
-    backCamera = deviceInfo.backCamera;
-    
-    if (backCamera) {
-      console.log('🎯 MOBILE: Found back camera device:', backCamera.label);
-    } else {
-      console.log('🎯 MOBILE: No specific back camera found, using facingMode fallback');
-    }
-  } catch (error) {
-    console.warn('⚠️ MOBILE: Device enumeration failed, using facingMode only:', error);
-  }
-  
-  // 🎯 STEP 2: Build constraints with BACK CAMERA PRIORITY
-  const constraints: MediaStreamConstraints[] = [];
-  
-  // 🥇 PRIORITY 1: Use specific back camera deviceId if found
-  if (backCamera && backCamera.deviceId) {
-    constraints.push({
-      video: { deviceId: { exact: backCamera.deviceId } },
-      audio: false // Start without audio for higher success rate
-    });
-  }
-  
-  // 🥈 PRIORITY 2: EXACT environment facingMode
-  constraints.push({
-    video: { facingMode: { exact: 'environment' } },
-    audio: false
-  });
-  
-  // 🥉 PRIORITY 3: IDEAL environment facingMode  
-  constraints.push({
-    video: { facingMode: { ideal: 'environment' } },
-    audio: false
-  });
-  
-  // 🏅 PRIORITY 4: Basic video (any camera)
-  constraints.push({
-    video: true,
-    audio: false
-  });
-  
-  // 💔 PRIORITY 5: Front camera fallback (ideal user)
-  constraints.push({
-    video: { facingMode: { ideal: 'user' } },
-    audio: false
-  });
-
-  // 🎯 STEP 3: Try each constraint with timeout
-  for (let i = 0; i < constraints.length; i++) {
-    try {
-      console.log(`📱 MOBILE ATTEMPT ${i + 1}/${constraints.length}:`, constraints[i]);
-      
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout')), 15000)
-      );
-      
-      const streamPromise = navigator.mediaDevices.getUserMedia(constraints[i]);
-      const stream = await Promise.race([streamPromise, timeoutPromise]);
-      
-      if (stream && stream.getVideoTracks().length > 0) {
-        const videoTrack = stream.getVideoTracks()[0];
-        const settings = videoTrack.getSettings();
-        
-        console.log('✅ MOBILE: Successfully acquired camera:', {
-          label: videoTrack.label,
-          facingMode: settings.facingMode || 'unknown',
-          deviceId: settings.deviceId || 'unknown'
-        });
-        
-        // 🎯 Check if this is actually the back camera
-        if (settings.facingMode === 'environment' || 
-            (backCamera && settings.deviceId === backCamera.deviceId)) {
-          console.log('🎯 SUCCESS: Back camera confirmed!');
-        } else {
-          console.log('📱 INFO: Using available camera (may not be back camera)');
-        }
-        
-        return stream;
-      }
-    } catch (error) {
-      console.warn(`❌ MOBILE ATTEMPT ${i + 1} failed:`, error);
-      // Wait 1 second between attempts to avoid overwhelming the system
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-  }
-  
-  console.error('❌ MOBILE: All attempts failed - no camera available');
-  return null;
-};
-
 const getDesktopStream = async (): Promise<MediaStream | null> => {
-  console.log('🖥️ DESKTOP: Starting desktop camera acquisition');
+  console.log('🖥️ DESKTOP CAPTURE: Starting desktop capture sequence');
   
-  const constraints: MediaStreamConstraints[] = [
-    // Desktop - NO facingMode
+  const desktopConstraints = [
+    // High quality desktop
     {
-      video: { width: 1280, height: 720 },
+      video: {
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 },
+        frameRate: { ideal: 30, max: 30 }
+      },
       audio: true
     },
-    // Basic desktop constraints
+    // Medium quality
     {
-      video: true,
+      video: {
+        width: { ideal: 1280, max: 1280 },
+        height: { ideal: 720, max: 720 }
+      },
+      audio: true
+    },
+    // Basic quality
+    {
+      video: {
+        width: { ideal: 640, max: 640 },
+        height: { ideal: 480, max: 480 }
+      },
       audio: true
     },
     // Video only fallback
     {
-      video: true,
-      audio: false
+      video: true
     }
   ];
-
-  for (let i = 0; i < constraints.length; i++) {
+  
+  for (let i = 0; i < desktopConstraints.length; i++) {
     try {
-      console.log(`🖥️ DESKTOP ATTEMPT ${i + 1}/${constraints.length}:`, constraints[i]);
-      const stream = await navigator.mediaDevices.getUserMedia(constraints[i]);
-      
-      if (stream && stream.getVideoTracks().length > 0) {
-        console.log('✅ DESKTOP: Successfully acquired desktop camera');
-        return stream;
-      }
+      console.log(`🖥️ DESKTOP CAPTURE: Trying constraint set ${i + 1}`);
+      const stream = await navigator.mediaDevices.getUserMedia(desktopConstraints[i]);
+      console.log(`✅ DESKTOP CAPTURE: Success with constraint set ${i + 1}`);
+      return stream;
     } catch (error) {
-      console.warn(`❌ DESKTOP ATTEMPT ${i + 1} failed:`, error);
+      console.log(`⚠️ DESKTOP CAPTURE: Constraint set ${i + 1} failed:`, error);
     }
   }
   
-  console.error('❌ DESKTOP: All attempts failed');
+  console.error('❌ DESKTOP CAPTURE: All constraint sets failed');
   return null;
 };
 
-const validateStream = (stream: MediaStream | null): boolean => {
-  if (!stream) {
-    console.error('❌ VALIDATION: No stream provided');
-    return false;
+// Helper function to get camera info for debugging
+export const getCameraInfo = async (): Promise<void> => {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+    
+    console.log('📹 CAMERA INFO: Available cameras:', videoDevices.map(device => ({
+      deviceId: device.deviceId,
+      label: device.label,
+      groupId: device.groupId
+    })));
+  } catch (error) {
+    console.error('❌ CAMERA INFO: Failed to enumerate devices:', error);
   }
-  
-  const videoTracks = stream.getVideoTracks();
-  const audioTracks = stream.getAudioTracks();
-  
-  if (videoTracks.length === 0) {
-    console.error('❌ VALIDATION: No video tracks found');
-    return false;
-  }
-  
-  console.log('✅ VALIDATION: Stream is valid', {
-    videoTracks: videoTracks.length,
-    audioTracks: audioTracks.length,
-    videoEnabled: videoTracks[0]?.enabled,
-    audioEnabled: audioTracks[0]?.enabled
-  });
-  
-  return true;
 };
