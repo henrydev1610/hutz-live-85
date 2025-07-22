@@ -176,17 +176,7 @@ const LivePage: React.FC = () => {
   return (
     <div className="relative">
       <LivePageContainer
-        state={state}
-        participantManagement={participantManagement}
-        transmissionOpen={state.transmissionOpen}
         sessionId={state.sessionId}
-        onStartTransmission={() => openTransmissionWindow(state, updateTransmissionParticipants)}
-        onFinishTransmission={() => finishTransmission(state, closeFinalAction)}
-        onFileSelect={handleFileSelect}
-        onRemoveImage={removeBackgroundImage}
-        onGenerateQRCode={() => handleGenerateQRCode(state)}
-        onQRCodeToTransmission={() => handleQRCodeToTransmission(state.setQrCodeVisible)}
-        closeFinalAction={closeFinalAction}
       />
       
       {/* Health Monitor */}

@@ -8,7 +8,8 @@ import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
 import { useParticipantManagement } from '@/hooks/live/useParticipantManagement';
 import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useForceVideoDisplay } from '@/hooks/live/useForceVideoDisplay';
-import { clearConnectionCache, clearDeviceCache } from '@/utils/connectionUtils';
+import { clearConnectionCache } from '@/utils/connectionUtils';
+import { clearDeviceCache } from '@/utils/media/deviceDetection';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -23,7 +24,6 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({ sessionId }) => {
   const [participantList, setParticipantList] = useState<Participant[]>([]);
   const [participantStreams, setParticipantStreams] = useState<{[id: string]: MediaStream}>({});
   const [isTransmitting, setIsTransmitting] = useState(false);
-  const transmissionWindowRef = useRef<Window | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newParticipantName, setNewParticipantName] = useState('');
   const [isMobile, setIsMobile] = useState(false);
@@ -41,9 +41,25 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({ sessionId }) => {
     switchCamera,
     toggleVideo,
     toggleAudio,
-    startScreenShare,
-    stopScreenShare
+    toggleScreenShare
   } = useParticipantMedia();
+
+  const {
+    transmissionWindowRef,
+    openTransmissionWindow,
+    finishTransmission
+  } = useTransmissionWindow();
+
+  const updateTransmissionParticipants = () => {
+    // Update transmission window with current participants
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      transmissionWindowRef.current.postMessage({
+        type: 'update-participants',
+        participants: participantList,
+        streams: participantStreams
+      }, '*');
+    }
+  };
 
   const {
     handleParticipantSelect,
@@ -64,17 +80,6 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({ sessionId }) => {
     sessionId,
     transmissionWindowRef,
     updateTransmissionParticipants
-  });
-
-  const {
-    openTransmissionWindow,
-    closeTransmissionWindow,
-    updateTransmissionParticipants
-  } = useTransmissionWindow({
-    participantList,
-    participantStreams,
-    transmissionWindowRef,
-    isTransmitting
   });
 
   useForceVideoDisplay({ participantList, participantStreams });
@@ -103,18 +108,36 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({ sessionId }) => {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
       }
-      closeTransmissionWindow();
+      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+        transmissionWindowRef.current.close();
+      }
     };
-  }, [sessionId, initializeMedia, closeTransmissionWindow]);
+  }, [sessionId, initializeMedia]);
 
   const handleStartTransmission = () => {
     setIsTransmitting(true);
-    openTransmissionWindow();
+    const state = {
+      participantCount: participantList.length,
+      sessionId,
+      selectedBackgroundColor: '#000000',
+      backgroundImage: null,
+      qrCodeVisible: true,
+      qrCodeSvg: null,
+      qrCodeDescription: 'Escaneie para participar',
+      qrDescriptionFontSize: 16,
+      selectedTextColor: '#ffffff',
+      selectedFont: 'Arial',
+      qrCodePosition: { x: 50, y: 50, width: 150, height: 150 },
+      qrDescriptionPosition: { x: 50, y: 220, width: 150, height: 30 }
+    };
+    openTransmissionWindow(state, updateTransmissionParticipants);
   };
 
   const handleStopTransmission = () => {
     setIsTransmitting(false);
-    closeTransmissionWindow();
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      transmissionWindowRef.current.close();
+    }
   };
 
   const handleAddParticipant = () => {
@@ -198,7 +221,7 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({ sessionId }) => {
               isVideoEnabled={isVideoEnabled}
               isAudioEnabled={isAudioEnabled}
               localStream={localStreamRef.current}
-              onRetryMedia={retryMediaInitialization}
+              onRetryMedia={async () => { await retryMediaInitialization(); }}
             />
             
             <div className="flex flex-wrap justify-center gap-2 mt-4">
@@ -217,7 +240,7 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({ sessionId }) => {
               <Button onClick={toggleAudio} disabled={!hasAudio}>
                 {isAudioEnabled ? 'Desligar Microfone' : 'Ligar Microfone'}
               </Button>
-              <Button onClick={hasScreenShare ? stopScreenShare : startScreenShare}>
+              <Button onClick={toggleScreenShare}>
                 {hasScreenShare ? 'Parar Tela' : 'Compartilhar Tela'}
               </Button>
             </div>
@@ -225,10 +248,11 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({ sessionId }) => {
 
           <div className="md:col-span-2">
             <ParticipantGrid
-              participantList={participantList}
+              sessionId={sessionId || ''}
+              participants={participantList}
               participantStreams={participantStreams}
-              onParticipantSelect={handleParticipantSelect}
-              onParticipantRemove={handleParticipantRemove}
+              onSelectParticipant={handleParticipantSelect}
+              onRemoveParticipant={handleParticipantRemove}
             />
           </div>
         </div>
