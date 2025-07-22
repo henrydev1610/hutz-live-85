@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { detectMobileAggressively, clearDeviceCache } from '@/utils/media/deviceDetection';
+import { detectMobileAggressively, clearDeviceCache, validateParticipantAccess } from '@/utils/media/deviceDetection';
 
 interface MobileGuardOptions {
   redirectTo?: string;
@@ -25,7 +25,7 @@ export const useMobileOnlyGuard = (options: MobileGuardOptions = {}) => {
 
   useEffect(() => {
     const validateMobileAccess = async () => {
-      console.log('🔒 MOBILE GUARD: Starting ENHANCED validation for camera access');
+      console.log('🔒 MOBILE GUARD: Starting ENHANCED validation with FORCE OVERRIDE support');
       
       // Clear device cache for fresh detection
       clearDeviceCache();
@@ -33,67 +33,81 @@ export const useMobileOnlyGuard = (options: MobileGuardOptions = {}) => {
       // Wait for DOM to be ready
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      // FASE 3: MOBILE DETECTION ENHANCEMENT
+      // FASE 1: Enhanced mobile detection with force parameters
       const urlParams = new URLSearchParams(window.location.search);
+      const forceMobile = urlParams.get('forceMobile') === 'true' || urlParams.get('mobile') === 'true';
       const hasQRParam = urlParams.has('qr') || urlParams.get('qr') === 'true';
-      const hasMobileParam = urlParams.has('mobile') || urlParams.get('mobile') === 'true';
-      const hasCameraParam = urlParams.get('camera') === 'environment';
-      const hasQRAccess = hasQRParam || hasMobileParam || hasCameraParam || 
-        sessionStorage.getItem('accessedViaQR') === 'true';
+      const hasCameraParam = urlParams.get('camera') === 'environment' || urlParams.get('camera') === 'user';
+      const isParticipantRoute = window.location.pathname.includes('/participant/');
       
-      // Enhanced mobile detection
-      const basicMobileDetection = detectMobileAggressively();
-      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-      const isMobileScreen = window.innerWidth <= 768 && window.innerHeight <= 1024;
-      const mobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      // CRITICAL: Force mobile if any override parameters are present
+      const hasForceOverride = forceMobile || hasQRParam || hasCameraParam || isParticipantRoute;
       
-      // CRITICAL: If QR access, bypass strict mobile detection
-      const isMobileDevice = hasQRAccess ? true : (basicMobileDetection && hasTouch && (isMobileScreen || mobileUserAgent));
+      console.log('🔒 MOBILE GUARD: Force override check:', {
+        forceMobile,
+        hasQRParam,
+        hasCameraParam,
+        isParticipantRoute,
+        hasForceOverride,
+        currentURL: window.location.href
+      });
+      
+      // Enhanced mobile detection (now includes force override logic)
+      const enhancedMobileDetection = detectMobileAggressively();
+      
+      // Use participant access validation
+      const participantValidation = validateParticipantAccess();
+      
+      const isMobileDevice = hasForceOverride || enhancedMobileDetection || participantValidation.isValid;
       
       setIsMobile(isMobileDevice);
       
       console.log('🔒 MOBILE GUARD: ENHANCED Detection result:', {
-        isMobile: isMobileDevice,
+        enhancedMobileDetection,
+        hasForceOverride,
+        participantValidation,
         allowDesktop,
-        hasQRAccess,
-        hasQRParam,
-        hasMobileParam,
-        hasCameraParam,
-        basicMobileDetection,
-        hasTouch,
-        isMobileScreen,
-        mobileUserAgent,
+        finalDecision: isMobileDevice ? 'ALLOW' : 'BLOCK',
         userAgent: navigator.userAgent.substring(0, 100),
         touchPoints: navigator.maxTouchPoints,
         screenSize: `${window.innerWidth}x${window.innerHeight}`,
-        finalDecision: isMobileDevice ? 'ALLOW' : 'BLOCK'
+        hasTouch: 'ontouchstart' in window
       });
       
-      // FASE 3: STRICT MOBILE ENFORCEMENT
+      // ENHANCED MOBILE ENFORCEMENT
       if (!isMobileDevice && !allowDesktop) {
         console.log('🚫 MOBILE GUARD: NON-MOBILE DETECTED - BLOCKING ACCESS');
+        console.log('🚫 Block reason:', participantValidation.reason);
         
         if (showToast) {
-          toast.error('🚫 Esta página é exclusiva para dispositivos móveis. Escaneie o QR Code com seu celular para acessar a câmera corretamente.');
+          toast.error(`🚫 Acesso bloqueado: ${participantValidation.reason}. Escaneie o QR Code com seu celular.`);
         }
         
         // Small delay to show toast before redirect
         setTimeout(() => {
           navigate(redirectTo, { replace: true });
-        }, 2000);
+        }, 3000);
         
         return;
       }
       
-      // If validated as mobile, mark QR access
-      if (isMobileDevice && hasQRAccess) {
-        sessionStorage.setItem('accessedViaQR', 'true');
+      // If validated as mobile, mark QR access and store validation
+      if (isMobileDevice) {
+        if (hasForceOverride) {
+          sessionStorage.setItem('accessedViaQR', 'true');
+          sessionStorage.setItem('forcedMobile', 'true');
+          console.log('✅ MOBILE GUARD: Force override applied and stored');
+        }
+        
         sessionStorage.setItem('mobileValidated', 'true');
-        console.log('✅ MOBILE GUARD: QR access validated and stored');
+        console.log('✅ MOBILE GUARD: Mobile validation passed - camera access allowed');
+        
+        if (showToast && hasForceOverride) {
+          toast.success('📱 Acesso móvel forçado - câmera do celular será ativada');
+        }
       }
       
       setIsValidated(true);
-      console.log('✅ MOBILE GUARD: Mobile validation passed - camera access allowed');
     };
 
     validateMobileAccess();

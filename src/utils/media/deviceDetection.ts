@@ -1,6 +1,6 @@
 
 /**
- * Enhanced mobile device detection with QR code access priority
+ * Enhanced mobile device detection with QR code access priority and FORCE OVERRIDE
  */
 
 // Cache busting for device detection
@@ -14,12 +14,36 @@ export const clearDeviceCache = (): void => {
 };
 
 export const detectMobileAggressively = (): boolean => {
+  // FASE 1: FORCE OVERRIDE - Check URL parameters first (HIGHEST PRIORITY)
+  const urlParams = new URLSearchParams(window.location.search);
+  const forceMobile = urlParams.get('forceMobile') === 'true' || urlParams.get('mobile') === 'true';
+  const hasQRParam = urlParams.has('qr') || urlParams.get('qr') === 'true';
+  const hasCameraParam = urlParams.get('camera') === 'environment';
+  const isParticipantRoute = window.location.pathname.includes('/participant/');
+  
+  // FORCE MOBILE if any mobile indicator is present
+  if (forceMobile || hasQRParam || hasCameraParam || isParticipantRoute) {
+    console.log('🚀 DEVICE DETECTION: FORCE MOBILE OVERRIDE ACTIVATED');
+    console.log('🚀 Override reasons:', {
+      forceMobile,
+      hasQRParam,
+      hasCameraParam,
+      isParticipantRoute,
+      url: window.location.href
+    });
+    
+    sessionStorage.setItem('accessedViaQR', 'true');
+    sessionStorage.setItem('forcedMobile', 'true');
+    cacheDeviceDetection(true);
+    return true;
+  }
+
   // Check cache first
   const cachedData = localStorage.getItem('deviceDetectionCache');
   if (cachedData) {
     try {
       const { isMobile, version, timestamp } = JSON.parse(cachedData);
-      const isExpired = Date.now() - timestamp > 5000; // Shorter cache for participant page
+      const isExpired = Date.now() - timestamp > 5000;
       
       if (!isExpired && version === DEVICE_DETECTION_VERSION) {
         console.log(`📱 DEVICE DETECTION: Using cached result: ${isMobile ? 'MOBILE' : 'DESKTOP'}`);
@@ -31,25 +55,9 @@ export const detectMobileAggressively = (): boolean => {
     }
   }
 
-  console.log('🔍 DEVICE DETECTION: Performing AGGRESSIVE fresh detection');
+  console.log('🔍 DEVICE DETECTION: Performing ENHANCED fresh detection');
   
-  // 1. QR CODE ACCESS - HIGHEST PRIORITY for mobile detection
-  const urlParams = new URLSearchParams(window.location.search);
-  const hasQRParam = urlParams.has('qr') || urlParams.get('qr') === 'true' || 
-                     urlParams.has('mobile') || urlParams.get('mobile') === 'true';
-  const isQRAccess = hasQRParam || 
-    document.referrer.includes('qr') || 
-    sessionStorage.getItem('accessedViaQR') === 'true' ||
-    window.location.pathname.includes('/participant/');
-    
-  if (isQRAccess) {
-    console.log('📱 DEVICE DETECTION: QR/Participant access detected - FORCING MOBILE');
-    sessionStorage.setItem('accessedViaQR', 'true');
-    cacheDeviceDetection(true);
-    return true;
-  }
-  
-  // 2. Enhanced User Agent Check with mobile-specific patterns
+  // Enhanced User Agent Check with mobile-specific patterns
   const userAgent = navigator.userAgent.toLowerCase();
   const mobileKeywords = [
     'android', 'iphone', 'ipad', 'ipod', 'mobile', 'mobi', 
@@ -60,12 +68,12 @@ export const detectMobileAggressively = (): boolean => {
   ];
   const mobileUA = mobileKeywords.some(keyword => userAgent.includes(keyword));
   
-  // 3. Enhanced Touch Detection
+  // Enhanced Touch Detection
   const hasTouchScreen = 'ontouchstart' in window && 
                         navigator.maxTouchPoints > 0 &&
                         window.TouchEvent !== undefined;
   
-  // 4. Screen Size Detection (more aggressive for mobile)
+  // Screen Size Detection (more aggressive for mobile)
   const screenWidth = window.screen.width;
   const screenHeight = window.screen.height;
   const viewportWidth = window.innerWidth;
@@ -74,18 +82,12 @@ export const detectMobileAggressively = (): boolean => {
   const isSmallScreen = Math.min(screenWidth, screenHeight) <= 768 ||
                        Math.min(viewportWidth, viewportHeight) <= 768;
   
-  // 5. Orientation API (mobile-specific)
+  // Mobile API Detection
   const hasOrientationAPI = 'orientation' in window;
+  const hasDeviceMotion = 'DeviceMotionEvent' in window;
+  const hasDeviceOrientation = 'DeviceOrientationEvent' in window;
   
-  // 6. Device Memory (typically lower on mobile)
-  const deviceMemory = (navigator as any).deviceMemory;
-  const lowMemory = deviceMemory !== undefined && deviceMemory <= 4;
-  
-  // 7. Hardware Concurrency (mobile typically has fewer cores exposed)
-  const hardwareConcurrency = navigator.hardwareConcurrency;
-  const limitedCores = hardwareConcurrency !== undefined && hardwareConcurrency <= 8;
-  
-  // 8. Connection Type (mobile-specific)
+  // Network Type (mobile-specific)
   const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
   const hasCellularConnection = connection && (
     connection.effectiveType === '2g' || 
@@ -94,25 +96,30 @@ export const detectMobileAggressively = (): boolean => {
     connection.type === 'cellular'
   );
   
-  // Enhanced scoring system for mobile detection
+  // FASE 2: Enhanced scoring system with LOWER threshold
   let mobileScore = 0;
-  if (mobileUA) mobileScore += 4;           // User agent is strong indicator
-  if (hasTouchScreen) mobileScore += 3;     // Touch is very strong indicator  
-  if (isSmallScreen) mobileScore += 2;      // Small screen suggests mobile
-  if (hasOrientationAPI) mobileScore += 1;  // Orientation API
-  if (lowMemory) mobileScore += 1;          // Lower memory
-  if (limitedCores) mobileScore += 1;       // Fewer cores
-  if (hasCellularConnection) mobileScore += 2; // Cellular connection
   
-  // Threshold: 4+ points = mobile (more conservative than before)
-  const isMobile = mobileScore >= 4;
+  // PARTICIPANT ROUTE gets 3 points (CRITICAL for mobile detection)
+  if (isParticipantRoute) mobileScore += 3;
+  
+  if (mobileUA) mobileScore += 2;
+  if (hasTouchScreen) mobileScore += 2;
+  if (isSmallScreen) mobileScore += 1;
+  if (hasOrientationAPI) mobileScore += 1;
+  if (hasDeviceMotion) mobileScore += 1;
+  if (hasDeviceOrientation) mobileScore += 1;
+  if (hasCellularConnection) mobileScore += 2;
+  
+  // REDUCED threshold: 2+ points = mobile (was 4)
+  const isMobile = mobileScore >= 2;
   
   // FORCE OVERRIDE for debugging
   const forceDevice = localStorage.getItem('forceDeviceType');
   const finalResult = forceDevice === 'mobile' ? true : forceDevice === 'desktop' ? false : isMobile;
   
-  console.log('📱 ENHANCED Mobile Detection:', {
-    userAgent: navigator.userAgent,
+  console.log('📱 ENHANCED Mobile Detection (LOWERED THRESHOLD):', {
+    userAgent: navigator.userAgent.substring(0, 100),
+    isParticipantRoute,
     mobileUA,
     hasTouchScreen,
     touchPoints: navigator.maxTouchPoints,
@@ -120,13 +127,12 @@ export const detectMobileAggressively = (): boolean => {
     screenSize: `${screenWidth}x${screenHeight}`,
     viewportSize: `${viewportWidth}x${viewportHeight}`,
     hasOrientationAPI,
-    lowMemory,
-    deviceMemory,
-    limitedCores,
-    hardwareConcurrency,
+    hasDeviceMotion,
+    hasDeviceOrientation,
     hasCellularConnection,
     connectionType: connection?.effectiveType,
     mobileScore,
+    threshold: 2,
     detectedMobile: isMobile,
     forceDevice,
     FINAL_RESULT: finalResult ? 'MOBILE' : 'DESKTOP'
@@ -150,6 +156,69 @@ const cacheDeviceDetection = (isMobile: boolean): void => {
   }
 };
 
+// FASE 3: Mobile camera validation function
+export const validateMobileCameraCapabilities = async (): Promise<boolean> => {
+  console.log('🧪 VALIDATING: Mobile camera capabilities...');
+  
+  try {
+    const supportedConstraints = navigator.mediaDevices.getSupportedConstraints();
+    console.log('📱 CAMERA VALIDATION: Supported constraints:', {
+      facingMode: supportedConstraints.facingMode,
+      width: supportedConstraints.width,
+      height: supportedConstraints.height
+    });
+    
+    // If facingMode is supported, likely mobile
+    if (supportedConstraints.facingMode) {
+      console.log('✅ CAMERA VALIDATION: facingMode supported - MOBILE CONFIRMED');
+      
+      // Test environment camera
+      try {
+        const testStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } }
+        });
+        
+        const settings = testStream.getVideoTracks()[0]?.getSettings();
+        console.log('📱 CAMERA VALIDATION: Environment camera test:', settings);
+        
+        // Clean up test stream
+        testStream.getTracks().forEach(track => track.stop());
+        
+        if (settings?.facingMode) {
+          console.log('✅ CAMERA VALIDATION: Mobile camera CONFIRMED via facingMode test');
+          sessionStorage.setItem('mobileValidated', 'true');
+          return true;
+        }
+      } catch (error) {
+        console.log('⚠️ CAMERA VALIDATION: Environment camera test failed, trying user camera');
+        
+        // Try user camera as fallback
+        try {
+          const userStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'user' } }
+          });
+          
+          const userSettings = userStream.getVideoTracks()[0]?.getSettings();
+          userStream.getTracks().forEach(track => track.stop());
+          
+          if (userSettings?.facingMode) {
+            console.log('✅ CAMERA VALIDATION: Mobile confirmed via user camera');
+            sessionStorage.setItem('mobileValidated', 'true');
+            return true;
+          }
+        } catch (userError) {
+          console.log('❌ CAMERA VALIDATION: Both camera tests failed');
+        }
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('❌ CAMERA VALIDATION: Failed to validate mobile capabilities:', error);
+    return false;
+  }
+};
+
 // Backward compatibility
 export const detectMobile = detectMobileAggressively;
 
@@ -158,7 +227,15 @@ export const checkMediaDevicesSupport = (): boolean => {
 };
 
 export const getCameraPreference = (): 'user' | 'environment' => {
-  // For mobile, default to 'environment' (rear camera)
+  // FASE 1: Check URL parameter first
+  const urlParams = new URLSearchParams(window.location.search);
+  const cameraParam = urlParams.get('camera');
+  if (cameraParam === 'environment' || cameraParam === 'user') {
+    console.log(`📱 CAMERA PREFERENCE: Using URL parameter: ${cameraParam}`);
+    return cameraParam as 'user' | 'environment';
+  }
+  
+  // For mobile or forced mobile, default to 'environment' (rear camera)
   const isMobile = detectMobileAggressively();
   const saved = localStorage.getItem('cameraPreference');
   
@@ -179,25 +256,27 @@ export const setCameraPreference = (preference: 'user' | 'environment'): void =>
 export const validateParticipantAccess = (): { isValid: boolean; reason: string } => {
   const isMobile = detectMobileAggressively();
   const hasQRAccess = sessionStorage.getItem('accessedViaQR') === 'true';
+  const hasForcedMobile = sessionStorage.getItem('forcedMobile') === 'true';
   const isParticipantRoute = window.location.pathname.includes('/participant/');
   
-  if (!isMobile && isParticipantRoute) {
+  // PARTICIPANT ROUTE should ALWAYS be mobile
+  if (isParticipantRoute && !isMobile && !hasForcedMobile) {
     return {
       isValid: false,
-      reason: 'Desktop device detected on mobile-only participant page'
+      reason: 'Participant route requires mobile device - force mobile if needed'
     };
   }
   
-  if (!isMobile && !hasQRAccess) {
+  if (!isMobile && !hasQRAccess && !hasForcedMobile) {
     return {
       isValid: false,
-      reason: 'No QR code access detected for non-mobile device'
+      reason: 'No mobile access detected and no force override'
     };
   }
   
   return {
     isValid: true,
-    reason: 'Valid mobile access detected'
+    reason: 'Valid mobile access detected or forced'
   };
 };
 
@@ -218,3 +297,4 @@ export const forceDeviceType = (type: 'mobile' | 'desktop' | 'auto'): void => {
 (window as any).forceDeviceType = forceDeviceType;
 (window as any).clearDeviceCache = clearDeviceCache;
 (window as any).validateParticipantAccess = validateParticipantAccess;
+(window as any).validateMobileCameraCapabilities = validateMobileCameraCapabilities;
