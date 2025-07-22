@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useToast } from "@/components/ui/use-toast";
-import LivePageContent from '@/components/live/LivePageContent';
+import LivePageContainer from '@/components/live/LivePageContainer';
 import ConnectionHealthMonitor from '@/components/live/ConnectionHealthMonitor';
 import { useLivePageState } from '@/hooks/live/useLivePageState';
 import { useParticipantManagement } from '@/hooks/live/useParticipantManagement';
@@ -175,7 +175,7 @@ const LivePage: React.FC = () => {
 
   return (
     <div className="relative">
-      <LivePageContent
+      <LivePageContainer
         state={state}
         participantManagement={participantManagement}
         transmissionOpen={state.transmissionOpen}
@@ -186,6 +186,7 @@ const LivePage: React.FC = () => {
         onRemoveImage={removeBackgroundImage}
         onGenerateQRCode={() => handleGenerateQRCode(state)}
         onQRCodeToTransmission={() => handleQRCodeToTransmission(state.setQrCodeVisible)}
+        closeFinalAction={closeFinalAction}
       />
       
       {/* Health Monitor */}
