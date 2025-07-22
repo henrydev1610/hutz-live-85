@@ -1,277 +1,279 @@
-
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from "sonner";
-import LivePageHeader from '@/components/live/LivePageHeader';
-import LivePageContent from '@/components/live/LivePageContent';
-import FinalActionDialog from '@/components/live/FinalActionDialog';
-import { 
-  clearConnectionCache, 
-  forceRefreshConnections, 
-  getEnvironmentInfo, 
-  validateURLConsistency,
-  createRoomIfNeeded 
-} from '@/utils/connectionUtils';
-import { clearDeviceCache } from '@/utils/media/deviceDetection';
+import { LivePageContent } from './LivePageContent';
+import { FinalActionDialog } from './FinalActionDialog';
+import { signalingResolver } from '@/utils/signaling/SignalingResolver';
+import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+
+import {
+  useParticipantMedia,
+  ParticipantMediaState,
+} from '@/hooks/participant/useParticipantMedia';
+import {
+  useHostControls,
+  HostControlActions,
+} from '@/hooks/host/useHostControls';
+import {
+  useParticipantConnection,
+  ParticipantConnectionState,
+} from '@/hooks/participant/useParticipantConnection';
+import {
+  useBroadcast,
+  BroadcastState,
+} from '@/hooks/host/useBroadcast';
+import { generateRandomId } from '@/utils';
 
 interface LivePageContainerProps {
-  state: any;
-  participantManagement: any;
-  transmissionOpen: boolean;
-  sessionId: string | null;
-  onStartTransmission: () => void;
-  onFinishTransmission: () => void;
-  onFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onRemoveImage: () => void;
-  onGenerateQRCode: () => void;
-  onQRCodeToTransmission: () => void;
-  closeFinalAction: () => void;
+  sessionId: string;
 }
 
-const LivePageContainer: React.FC<LivePageContainerProps> = ({
-  state,
-  participantManagement,
-  transmissionOpen,
+export const LivePageContainer: React.FC<LivePageContainerProps> = ({
   sessionId,
-  onStartTransmission,
-  onFinishTransmission,
-  onFileSelect,
-  onRemoveImage,
-  onGenerateQRCode,
-  onQRCodeToTransmission,
-  closeFinalAction
 }) => {
-  const [roomStatus, setRoomStatus] = useState<'unknown' | 'creating' | 'ready' | 'error'>('unknown');
+  const navigate = useNavigate();
 
-  // FASE 2: Enhanced cache management with URL sync validation
-  useEffect(() => {
-    console.log('🏠 LIVE CONTAINER: Inicializando com gestão de cache aprimorada e sincronização de URLs');
-    
-    // FASE 5: Verificação inicial de consistência de URL
-    const isConsistent = validateURLConsistency();
-    if (!isConsistent) {
-      console.warn('⚠️ LIVE CONTAINER: Inconsistência de URL detectada na inicialização');
-      forceRefreshConnections();
-    }
-    
-    // Limpar cache periodicamente
-    const cacheInterval = setInterval(() => {
-      console.log('🧹 LIVE CONTAINER: Limpeza periódica de cache com validação de URL');
-      clearConnectionCache();
-      clearDeviceCache();
-      
-      const stillConsistent = validateURLConsistency();
-      if (!stillConsistent) {
-        console.warn('⚠️ LIVE CONTAINER: Deriva de URL detectada, forçando atualização');
-        forceRefreshConnections();
-      }
-    }, 60000); // A cada minuto
-    
-    return () => {
-      clearInterval(cacheInterval);
-    };
-  }, []);
+  // Media State (Host and Participant)
+  const {
+    hasMediaPermissions,
+    isMediaReady,
+    stream: mediaStream,
+    error: mediaError,
+    startMedia,
+    stopMedia,
+    retryMedia,
+  } = useParticipantMedia();
 
-  // FASE 1: Gerenciamento de sala quando sessionId muda
+  // Connection State (Host and Participant)
+  const participantId = generateRandomId();
+  const {
+    isConnected,
+    isConnecting,
+    connectionStatus,
+    error: connectionError,
+    connectToSession,
+    disconnectFromSession,
+    isMobile,
+  } = useParticipantConnection(sessionId, participantId);
+
+  // Host Controls (Host Only)
+  const {
+    participantStreams,
+    selectedParticipantId,
+    transmissionActive,
+    startBroadcast,
+    stopBroadcast,
+    selectParticipant,
+    removeParticipant,
+  } = useHostControls(sessionId, mediaStream);
+
+  // Broadcast State (Host Only)
+  const {
+    isTransmissionActive,
+    startTransmission,
+    stopTransmission,
+    qrCodeURL,
+    participantCount,
+  } = useBroadcast(sessionId, isConnected);
+
+  // State for Final Action Dialog
+  const [isDialogOpen, setDialogOpen] = useState(false);
+  const [dialogType, setDialogType] = useState<'end' | 'leave' | null>(null);
+
+  const [signalingDiagnostics, setSignalingDiagnostics] = useState({
+    resolved: false,
+    type: 'unknown' as 'node' | 'supabase' | 'unknown',
+    conflictDetected: false
+  });
+
+  // Initialize signaling with conflict resolution
   useEffect(() => {
-    const setupRoom = async () => {
-      if (!sessionId) {
-        setRoomStatus('unknown');
-        return;
-      }
-      
-      console.log(`🏠 SALA: Nova sessão detectada (${sessionId}), configurando sala`);
-      setRoomStatus('creating');
-      
+    const initializeSignaling = async () => {
       try {
-        // FASE 1: Garantir que a sala exista quando a transmissão inicia
-        const roomCreated = await createRoomIfNeeded(sessionId);
+        console.log('🔧 LIVE CONTAINER: Initializing optimal signaling...');
         
-        if (roomCreated) {
-          console.log(`✅ SALA ${sessionId}: Criada/Verificada com sucesso`);
-          setRoomStatus('ready');
+        // Use resolver to determine and connect to optimal signaling
+        await signalingResolver.connectWithOptimalSignaling();
+        
+        const config = signalingResolver.getCurrentConfig();
+        if (config) {
+          setSignalingDiagnostics({
+            resolved: true,
+            type: config.type,
+            conflictDetected: false // Will be updated by diagnostics component
+          });
           
-          // FASE 5: Mostrar status ao usuário
-          toast.success(`Sala ${sessionId} pronta para conexões móveis`);
-        } else {
-          console.error(`❌ SALA ${sessionId}: Falha ao criar/verificar`);
-          setRoomStatus('error');
-          
-          toast.error(`Falha ao preparar sala ${sessionId}. Tente gerar um novo QR code.`);
+          console.log(`✅ LIVE CONTAINER: Using ${config.type} signaling for session ${sessionId}`);
+          toast.success(`Conectado via ${config.type === 'node' ? 'Node.js' : 'Supabase'} signaling`);
         }
+        
       } catch (error) {
-        console.error(`❌ SALA ${sessionId}: Erro durante setup:`, error);
-        setRoomStatus('error');
+        console.error('❌ LIVE CONTAINER: Failed to initialize signaling:', error);
+        toast.error('Falha ao inicializar signaling');
+        
+        setSignalingDiagnostics({
+          resolved: false,
+          type: 'unknown',
+          conflictDetected: true
+        });
       }
     };
-    
-    setupRoom();
+
+    initializeSignaling();
   }, [sessionId]);
 
-  // FASE 1: Gerenciador de QR Code aprimorado
-  const handleEnhancedQRCode = async () => {
-    // Chamar a função original
-    onGenerateQRCode();
-    
-    // FASE 5: Aguardar até que sessionId esteja disponível
-    const checkInterval = setInterval(() => {
-      if (state.sessionId) {
-        clearInterval(checkInterval);
-        
-        // Validar sala após criação do QR
-        console.log(`🔍 VALIDAÇÃO: Verificando sala ${state.sessionId} após geração do QR`);
-        createRoomIfNeeded(state.sessionId)
-          .then(success => {
-            if (success) {
-              console.log(`✅ SALA ${state.sessionId}: Validada após geração do QR`);
-              setRoomStatus('ready');
-            } else {
-              console.warn(`⚠️ SALA ${state.sessionId}: Não validada após geração do QR`);
-            }
-          })
-          .catch(err => {
-            console.error(`❌ VALIDAÇÃO ${state.sessionId}: Erro:`, err);
-          });
+  // Initialize connection and media
+  useEffect(() => {
+    if (isMediaReady && mediaStream) {
+      console.log('🔗 LIVE CONTAINER: Media is ready, connecting to session...');
+      connectToSession(mediaStream);
+    } else if (isMediaReady && !mediaStream) {
+      console.warn('⚠️ LIVE CONTAINER: Media is ready but stream is null');
+    }
+  }, [isMediaReady, mediaStream, connectToSession]);
+
+  // Handle connection status changes
+  useEffect(() => {
+    if (connectionStatus === 'connected') {
+      console.log('✅ LIVE CONTAINER: Connected to session, starting transmission...');
+      startTransmission();
+    } else if (connectionStatus === 'disconnected') {
+      console.log('🔌 LIVE CONTAINER: Disconnected from session, stopping transmission...');
+      stopTransmission();
+    }
+  }, [connectionStatus, startTransmission, stopTransmission]);
+
+  // Handle broadcast state changes
+  useEffect(() => {
+    if (transmissionActive) {
+      console.log('📢 LIVE CONTAINER: Starting broadcast...');
+      startBroadcast();
+    } else {
+      console.log('🔇 LIVE CONTAINER: Stopping broadcast...');
+      stopBroadcast();
+    }
+  }, [transmissionActive, startBroadcast, stopBroadcast]);
+
+  // Final Action Handlers
+  const handleEndSession = () => {
+    console.log('🚪 LIVE CONTAINER: Ending session...');
+    stopTransmission();
+    disconnectFromSession();
+    navigate('/sessions');
+  };
+
+  const handleLeaveSession = () => {
+    console.log('🚶 LIVE CONTAINER: Leaving session...');
+    stopMedia();
+    disconnectFromSession();
+    navigate('/sessions');
+  };
+
+  const handleOpenDialog = (type: 'end' | 'leave') => {
+    setDialogType(type);
+    setDialogOpen(true);
+  };
+
+  const handleCloseDialog = () => {
+    setDialogOpen(false);
+    setDialogType(null);
+  };
+
+  const handleFinalAction = () => {
+    if (dialogType === 'end') {
+      handleEndSession();
+    } else if (dialogType === 'leave') {
+      handleLeaveSession();
+    }
+    handleCloseDialog();
+  };
+
+  const handleRetryMedia = async (): Promise<void> => {
+    try {
+      console.log('🔄 LIVE CONTAINER: Retrying media initialization...');
+      
+      // Check if signaling is properly resolved
+      if (!signalingDiagnostics.resolved) {
+        console.log('🔧 LIVE CONTAINER: Re-resolving signaling before retry...');
+        await signalingResolver.connectWithOptimalSignaling();
       }
-    }, 500);
-    
-    // Limpar interval após 10 segundos para evitar vazamentos
-    setTimeout(() => clearInterval(checkInterval), 10000);
+      
+      if (!hasMediaPermissions) {
+        console.warn('⚠️ LIVE CONTAINER: No media permissions, requesting...');
+        await startMedia();
+      }
+  
+      if (!isMediaReady) {
+        console.warn('⚠️ LIVE CONTAINER: Media not ready, retrying...');
+        await retryMedia();
+      }
+      
+    } catch (error) {
+      console.error('❌ LIVE CONTAINER: Media retry failed:', error);
+      toast.error('Falha ao reinicializar mídia');
+    }
+  };
+
+  // Handle signaling type switching
+  const handleSwitchSignaling = async (type: 'node' | 'supabase') => {
+    try {
+      console.log(`🔄 LIVE CONTAINER: Switching to ${type} signaling...`);
+      toast.info(`Mudando para signaling ${type}...`);
+      
+      await unifiedWebSocketService.switchSignalingType(type);
+      
+      setSignalingDiagnostics(prev => ({
+        ...prev,
+        type,
+        resolved: true
+      }));
+      
+      toast.success(`Conectado via ${type === 'node' ? 'Node.js' : 'Supabase'} signaling`);
+      
+    } catch (error) {
+      console.error(`❌ LIVE CONTAINER: Failed to switch to ${type} signaling:`, error);
+      toast.error(`Falha ao mudar para signaling ${type}`);
+    }
   };
 
   return (
-    <div className="min-h-screen container mx-auto py-8 px-4 relative">
-      <LivePageHeader />
-      
-      <LivePageContent
-        state={state}
-        participantManagement={participantManagement}
-        transmissionOpen={transmissionOpen}
-        sessionId={sessionId}
-        onStartTransmission={onStartTransmission}
-        onFinishTransmission={onFinishTransmission}
-        onFileSelect={onFileSelect}
-        onRemoveImage={onRemoveImage}
-        onGenerateQRCode={handleEnhancedQRCode} // FASE 1: Usar handler aprimorado
-        onQRCodeToTransmission={onQRCodeToTransmission}
-      />
-      
-      <FinalActionDialog
-        finalActionOpen={state.finalActionOpen}
-        setFinalActionOpen={state.setFinalActionOpen}
-        finalActionTimeLeft={state.finalActionTimeLeft}
-        onCloseFinalAction={closeFinalAction}
-      />
-      
-      {/* FASE 5: Status da sala */}
-      {sessionId && (
-        <div className="fixed top-4 right-4 z-50 p-2 rounded-md text-sm shadow-md bg-opacity-90 animate-pulse"
-             style={{ 
-               backgroundColor: roomStatus === 'ready' 
-                               ? 'rgba(34, 197, 94, 0.2)' 
-                               : roomStatus === 'creating' 
-                               ? 'rgba(234, 179, 8, 0.2)' 
-                               : roomStatus === 'error'
-                               ? 'rgba(239, 68, 68, 0.2)'
-                               : 'rgba(59, 130, 246, 0.2)',
-               borderColor: roomStatus === 'ready' 
-                          ? 'rgba(34, 197, 94, 0.5)' 
-                          : roomStatus === 'creating' 
-                          ? 'rgba(234, 179, 8, 0.5)' 
-                          : roomStatus === 'error'
-                          ? 'rgba(239, 68, 68, 0.5)'
-                          : 'rgba(59, 130, 246, 0.5)',
-               borderWidth: '1px'
-             }}>
-          {roomStatus === 'ready' && (
-            <span className="text-green-500">✅ Sala {sessionId.substring(0, 8)}... pronta</span>
-          )}
-          {roomStatus === 'creating' && (
-            <span className="text-yellow-500">⏳ Preparando sala {sessionId?.substring(0, 8)}...</span>
-          )}
-          {roomStatus === 'error' && (
-            <span className="text-red-500">❌ Erro na sala {sessionId?.substring(0, 8)}...</span>
-          )}
-          {roomStatus === 'unknown' && (
-            <span className="text-blue-500">ℹ️ Status da sala desconhecido</span>
-          )}
+    <div className="container mx-auto p-4">
+      {/* Signaling Status Indicator */}
+      {signalingDiagnostics.resolved && (
+        <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-blue-800">
+              🔗 Conectado via {signalingDiagnostics.type === 'node' ? 'Node.js Server' : 'Supabase Edge Function'}
+            </span>
+            {signalingDiagnostics.conflictDetected && (
+              <span className="text-xs text-yellow-600">
+                ⚠️ Múltiplos sistemas detectados
+              </span>
+            )}
+          </div>
         </div>
       )}
-      
-      {/* FASE 5: Debug Controls com info de consistência */}
-      <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50">
-        <button
-          onClick={() => {
-            clearConnectionCache();
-            clearDeviceCache();
-            console.log('🧹 Limpeza manual de cache acionada');
-            const envInfo = getEnvironmentInfo();
-            console.log('🌐 Ambiente após limpeza:', envInfo);
-            toast.success('Cache limpo');
-          }}
-          className="bg-red-500 text-white p-2 rounded text-xs"
-          title="Limpar Cache"
-        >
-          🧹 Limpar Cache
-        </button>
-        
-        <button
-          onClick={() => {
-            forceRefreshConnections();
-            console.log('🔄 Atualização manual de conexões');
-            const isConsistent = validateURLConsistency();
-            console.log('🔍 Consistência de URL após atualização:', isConsistent ? '✅' : '❌');
-            toast.success('Conexões atualizadas');
-          }}
-          className="bg-blue-500 text-white p-2 rounded text-xs"
-          title="Atualizar Conexões"
-        >
-          🔄 Atualizar Conexões
-        </button>
-        
-        {/* FASE 3: Validação de sala */}
-        {sessionId && (
-          <button
-            onClick={async () => {
-              toast.info(`Verificando sala ${sessionId}...`);
-              
-              try {
-                const roomExists = await createRoomIfNeeded(sessionId);
-                
-                if (roomExists) {
-                  setRoomStatus('ready');
-                  toast.success(`Sala ${sessionId} verificada/criada com sucesso`);
-                } else {
-                  setRoomStatus('error');
-                  toast.error(`Falha ao verificar/criar sala ${sessionId}`);
-                }
-              } catch (error) {
-                setRoomStatus('error');
-                toast.error(`Erro ao verificar sala: ${error instanceof Error ? error.message : String(error)}`);
-              }
-            }}
-            className="bg-green-500 text-white p-2 rounded text-xs"
-            title="Verificar Sala"
-          >
-            🔍 Verificar Sala
-          </button>
-        )}
-        
-        {/* FASE 5: Debug URL */}
-        <button
-          onClick={() => {
-            const envInfo = getEnvironmentInfo();
-            const urlSyncStatus = validateURLConsistency() ? '✅ SINCRONIZADO' : '❌ NÃO_SINCRONIZADO';
-            console.log(`🌐 Status Rápido: URLs ${urlSyncStatus}`);
-            toast.info(`URLs: ${urlSyncStatus}\nBackend: ${envInfo.apiBaseUrl}\nWebSocket: ${envInfo.wsUrl}`);
-          }}
-          className="bg-purple-500 text-white p-2 rounded text-xs"
-          title="Debug URL"
-        >
-          🌐 Debug URL
-        </button>
-      </div>
+
+      <LivePageContent
+        selectedParticipantId={selectedParticipantId}
+        participantStreams={participantStreams}
+        onParticipantSelect={selectParticipant}
+        onParticipantRemove={removeParticipant}
+        onRetryMedia={handleRetryMedia}
+        transmissionActive={transmissionActive}
+        selectedStream={mediaStream}
+        sessionId={sessionId}
+        qrCodeURL={qrCodeURL}
+        participantCount={participantCount}
+        isTransmissionActive={isTransmissionActive}
+      />
+
+      <FinalActionDialog
+        isOpen={isDialogOpen}
+        onClose={handleCloseDialog}
+        onConfirm={handleFinalAction}
+        type={dialogType}
+      />
     </div>
   );
 };
-
-export default LivePageContainer;
