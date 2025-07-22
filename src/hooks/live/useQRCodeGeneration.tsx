@@ -3,54 +3,27 @@ import { useState } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import QRCode from 'qrcode';
 import { generateSessionId } from '@/utils/sessionUtils';
+import { getBackendBaseURL } from '@/utils/connectionUtils';
 
-// FASE 1 & 2: URL SYNC CRITICO - Forçar produção URLs
-const RENDER_PRODUCTION_URL = 'https://hutz-live-85.onrender.com';
-const RENDER_BACKEND_URL = 'https://server-hutz-live.onrender.com';
-
-const getProductionURL = (): string => {
-  const currentHost = window.location.host;
-  
-  // CRÍTICO: Sempre usar Render em produção, mesmo no Lovable
-  if (currentHost.includes('lovableproject.com') || 
-      currentHost.includes('localhost') || 
-      currentHost.includes('127.0.0.1')) {
-    console.log('🌐 QR URL OVERRIDE: Development detected, forcing production URL');
-    console.log(`📍 Override: ${currentHost} → ${RENDER_PRODUCTION_URL}`);
-    return RENDER_PRODUCTION_URL;
-  }
-  
-  // Se já está no Render, usar a URL atual
-  if (currentHost.includes('hutz-live-85.onrender.com')) {
-    const productionUrl = `https://${currentHost}`;
-    console.log(`✅ QR URL: Using current Render URL: ${productionUrl}`);
-    return productionUrl;
-  }
-  
-  // Fallback para produção
-  console.log(`🔄 QR URL FALLBACK: Unknown host ${currentHost}, using production`);
-  return RENDER_PRODUCTION_URL;
+// FASE 2: URL SYNC CRÍTICO - Usar APENAS server-hutz-live.onrender.com
+const getProductionBackendURL = (): string => {
+  // CRÍTICO: Sempre usar server-hutz-live para backend
+  const backendUrl = 'https://server-hutz-live.onrender.com';
+  console.log(`🌐 QR BACKEND: Forced production backend URL: ${backendUrl}`);
+  return backendUrl;
 };
 
-const getBackendURL = (): string => {
-  const frontendUrl = getProductionURL();
-  
-  // Se estamos forçando produção, usar backend de produção
-  if (frontendUrl === RENDER_PRODUCTION_URL) {
-    console.log(`🔗 BACKEND SYNC: Frontend ${frontendUrl} → Backend ${RENDER_BACKEND_URL}`);
-    return RENDER_BACKEND_URL;
-  }
-  
-  // Para outros casos, usar a mesma base
-  const backendUrl = frontendUrl.replace('hutz-live-85', 'server-hutz-live');
-  console.log(`🔗 BACKEND MAPPING: ${frontendUrl} → ${backendUrl}`);
-  return backendUrl;
+const getProductionFrontendURL = (): string => {
+  // CRÍTICO: Sempre usar hutz-live-85 para frontend
+  const frontendUrl = 'https://hutz-live-85.onrender.com';
+  console.log(`🌐 QR FRONTEND: Forced production frontend URL: ${frontendUrl}`);
+  return frontendUrl;
 };
 
 export const useQRCodeGeneration = () => {
   const { toast } = useToast();
-  const [productionUrl] = useState(getProductionURL());
-  const [backendUrl] = useState(getBackendURL());
+  const [productionBackendUrl] = useState(getProductionBackendURL());
+  const [productionFrontendUrl] = useState(getProductionFrontendURL());
 
   const generateQRCode = async (url: string, setQrCodeSvg: (svg: string) => void) => {
     try {
@@ -74,13 +47,17 @@ export const useQRCodeGeneration = () => {
     }
   };
 
+  // FASE 1: Room creation ANTES de gerar QR Code
   const handleGenerateQRCode = async (state: any) => {
     try {
-      console.log("🎯 QR GENERATION: Starting with URL sync...");
-      console.log("📍 Frontend URL:", productionUrl);
-      console.log("📡 Backend URL:", backendUrl);
+      console.log("🏠 ROOM CREATION: Starting room creation BEFORE QR generation");
+      console.log("📍 Backend URL:", productionBackendUrl);
+      console.log("📱 Frontend URL:", productionFrontendUrl);
       
-      const response = await fetch(`${backendUrl}/api/rooms`, {
+      // FASE 1: Criar sala ANTES de gerar QR Code
+      console.log("🚀 ROOM CREATION: Creating room on server");
+      
+      const response = await fetch(`${productionBackendUrl}/api/rooms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -91,43 +68,92 @@ export const useQRCodeGeneration = () => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("❌ QR API Error:", response.status, response.statusText, errorText);
+        console.error("❌ ROOM API Error:", response.status, response.statusText, errorText);
         throw new Error(`API Error: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log("✅ QR API Success:", data);
+      console.log("✅ ROOM CREATED:", data);
       
-      // FASE 2: URL VALIDATION - Verificar se URL retornada é consistente
+      // FASE 2: Validação da URL retornada para garantir consistência
       const returnedUrl = data.joinURL;
+      
+      // CRÍTICO: Validar se URL contém o domínio correto
       if (returnedUrl && !returnedUrl.includes('hutz-live-85.onrender.com')) {
-        console.warn(`⚠️ QR URL INCONSISTENCY: Expected hutz-live-85.onrender.com, got ${returnedUrl}`);
+        console.warn(`⚠️ URL INCONSISTENCY: Expected hutz-live-85.onrender.com, got ${returnedUrl}`);
+        
+        // FASE 1: Corrigir URL se necessário (CRITICAL FIX)
+        console.log("🔄 URL CORRECTION: Fixing inconsistent URL");
+        
+        // Extrair roomId da URL retornada
+        const roomIdMatch = returnedUrl.match(/\/participant\/([^/?]+)/);
+        const roomId = roomIdMatch ? roomIdMatch[1] : data.roomId;
+        
+        // Construir URL correta com domínio de produção
+        const correctedUrl = `${productionFrontendUrl}/participant/${roomId}?mobile=true&qr=true&camera=environment`;
+        
+        console.log(`🔧 URL CORRECTED: ${returnedUrl} → ${correctedUrl}`);
+        
+        // Usar URL corrigida
+        state.setSessionId(roomId);
+        state.setQrCodeURL(correctedUrl);
+        
+        // Gerar QR code com URL corrigida
+        const qrDataUrl = await QRCode.toDataURL(correctedUrl, {
+          width: 256,
+          margin: 1,
+          color: {
+            dark: '#000000',
+            light: '#ffffff'
+          }
+        });
+        state.setQrCodeSvg(qrDataUrl);
+        
+      } else {
+        // URL está correta, usar valores retornados pela API
+        state.setSessionId(data.roomId);
+        state.setQrCodeURL(data.joinURL);
+        state.setQrCodeSvg(data.qrDataUrl);
       }
       
-      state.setSessionId(data.roomId);
-      state.setQrCodeURL(data.joinURL);
-      state.setQrCodeSvg(data.qrDataUrl);
       state.setParticipantList([]);
       
-      toast({
-        title: "QR Code gerado",
-        description: "QR Code gerado com produção URL sincronizada.",
-      });
+      // FASE 3: Validação adicional da sala criada
+      console.log(`🔍 ROOM VALIDATION: Validating room ${data.roomId} exists`);
+      try {
+        const validationResponse = await fetch(`${productionBackendUrl}/api/rooms/${data.roomId}`, {
+          method: 'GET',
+          mode: 'cors',
+          credentials: 'omit'
+        });
+        
+        if (validationResponse.ok) {
+          console.log("✅ ROOM VALIDATED: Room exists and is ready");
+          toast({
+            title: "Sala criada e QR Code gerado",
+            description: "Sala validada e pronta para conexão.",
+          });
+        } else {
+          console.warn("⚠️ ROOM VALIDATION: Room may not be ready yet");
+        }
+      } catch (validationError) {
+        console.warn("⚠️ ROOM VALIDATION: Failed to validate room", validationError);
+      }
       
     } catch (error) {
       console.error('❌ QR BACKEND ERROR:', error);
       
       try {
-        console.log("🔄 QR FALLBACK: Generating with forced production URL...");
+        console.log("🔄 FALLBACK: Room creation failed, generating emergency QR code");
         const fallbackSessionId = generateSessionId();
         
-        // CRÍTICO: NUNCA usar window.location.origin - sempre forçar produção
-        const fallbackUrl = `${productionUrl}/participant/${fallbackSessionId}?mobile=true&qr=true&camera=environment`;
-        console.log(`🎯 QR FALLBACK URL: ${fallbackUrl}`);
+        // FASE 2: NUNCA usar window.location.origin - sempre forçar produção
+        const fallbackUrl = `${productionFrontendUrl}/participant/${fallbackSessionId}?mobile=true&qr=true&camera=environment`;
+        console.log(`🎯 FALLBACK URL: ${fallbackUrl}`);
         
-        // FASE 5: URL VALIDATION
-        if (!fallbackUrl.includes('hutz-live-85.onrender.com') && !fallbackUrl.includes('localhost')) {
-          console.error('❌ QR FALLBACK URL ERROR: Invalid production URL generated');
+        // FASE 5: Validar consistência da URL fallback
+        if (!fallbackUrl.includes('hutz-live-85.onrender.com')) {
+          console.error('❌ CRITICAL URL ERROR: Invalid production URL generated');
         }
         
         const qrDataUrl = await QRCode.toDataURL(fallbackUrl, {
@@ -145,13 +171,33 @@ export const useQRCodeGeneration = () => {
         state.setParticipantList([]);
         
         toast({
-          title: "QR Code gerado (fallback)",
-          description: "Gerado com URL de produção forçada.",
+          title: "QR Code de emergência gerado",
+          description: "Tentativa de conexão direta (sem criação de sala).",
           variant: "default"
         });
         
+        // FASE 3: Tentar criar sala em segundo plano
+        fetch(`${productionBackendUrl}/api/rooms`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Room-Id': fallbackSessionId, // Solicitando ID específico
+          },
+          body: JSON.stringify({ roomId: fallbackSessionId }),
+          mode: 'cors',
+          credentials: 'omit'
+        }).then(response => {
+          if (response.ok) {
+            console.log("✅ BACKGROUND ROOM CREATION: Success");
+          } else {
+            console.warn("⚠️ BACKGROUND ROOM CREATION: Failed");
+          }
+        }).catch(err => {
+          console.error("❌ BACKGROUND ROOM CREATION:", err);
+        });
+        
       } catch (fallbackError) {
-        console.error('❌ QR FALLBACK FAILED:', fallbackError);
+        console.error('❌ FALLBACK FAILED:', fallbackError);
         toast({
           title: "Erro ao gerar QR Code",
           description: `Falha total na geração: ${error.message}`,
@@ -173,7 +219,7 @@ export const useQRCodeGeneration = () => {
     generateQRCode,
     handleGenerateQRCode,
     handleQRCodeToTransmission,
-    productionUrl,
-    backendUrl
+    productionBackendUrl,
+    productionFrontendUrl
   };
 };

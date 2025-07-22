@@ -1,8 +1,16 @@
-import React, { useEffect } from 'react';
+
+import React, { useEffect, useState } from 'react';
+import { toast } from "sonner";
 import LivePageHeader from '@/components/live/LivePageHeader';
 import LivePageContent from '@/components/live/LivePageContent';
 import FinalActionDialog from '@/components/live/FinalActionDialog';
-import { clearConnectionCache, forceRefreshConnections, getEnvironmentInfo, validateURLConsistency } from '@/utils/connectionUtils';
+import { 
+  clearConnectionCache, 
+  forceRefreshConnections, 
+  getEnvironmentInfo, 
+  validateURLConsistency,
+  createRoomIfNeeded 
+} from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
 interface LivePageContainerProps {
@@ -32,51 +40,103 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
   onQRCodeToTransmission,
   closeFinalAction
 }) => {
-  // FASE 5: Enhanced cache management with URL sync validation
+  const [roomStatus, setRoomStatus] = useState<'unknown' | 'creating' | 'ready' | 'error'>('unknown');
+
+  // FASE 2: Enhanced cache management with URL sync validation
   useEffect(() => {
-    console.log('🏠 LIVE CONTAINER: Initializing with ENHANCED cache management and URL sync');
+    console.log('🏠 LIVE CONTAINER: Inicializando com gestão de cache aprimorada e sincronização de URLs');
     
-    // FASE 5: Initial URL consistency check
+    // FASE 5: Verificação inicial de consistência de URL
     const isConsistent = validateURLConsistency();
     if (!isConsistent) {
-      console.warn('⚠️ LIVE CONTAINER: URL inconsistency detected at startup');
+      console.warn('⚠️ LIVE CONTAINER: Inconsistência de URL detectada na inicialização');
       forceRefreshConnections();
     }
     
-    // Clear cache periodically to prevent stale data
+    // Limpar cache periodicamente
     const cacheInterval = setInterval(() => {
-      console.log('🧹 LIVE CONTAINER: Periodic cache cleanup with URL validation');
+      console.log('🧹 LIVE CONTAINER: Limpeza periódica de cache com validação de URL');
       clearConnectionCache();
       clearDeviceCache();
       
-      // FASE 5: Periodic URL consistency check
       const stillConsistent = validateURLConsistency();
       if (!stillConsistent) {
-        console.warn('⚠️ LIVE CONTAINER: URL drift detected, forcing refresh');
+        console.warn('⚠️ LIVE CONTAINER: Deriva de URL detectada, forçando atualização');
         forceRefreshConnections();
       }
-    }, 60000); // Every minute
+    }, 60000); // A cada minuto
     
     return () => {
       clearInterval(cacheInterval);
     };
   }, []);
 
-  // FASE 2: Session-specific cache clearing with environment validation
+  // FASE 1: Gerenciamento de sala quando sessionId muda
   useEffect(() => {
-    if (sessionId) {
-      console.log('🆕 LIVE CONTAINER: New session detected, clearing cache and validating environment');
-      clearConnectionCache();
-      clearDeviceCache();
-      forceRefreshConnections();
-      
-      // FASE 5: Environment consistency check
-      const envInfo = getEnvironmentInfo();
-      if (!envInfo.urlMapping.isURLSynced) {
-        console.error('❌ LIVE CONTAINER: CRITICAL - URLs not properly synced for mobile streaming');
+    const setupRoom = async () => {
+      if (!sessionId) {
+        setRoomStatus('unknown');
+        return;
       }
-    }
+      
+      console.log(`🏠 SALA: Nova sessão detectada (${sessionId}), configurando sala`);
+      setRoomStatus('creating');
+      
+      try {
+        // FASE 1: Garantir que a sala exista quando a transmissão inicia
+        const roomCreated = await createRoomIfNeeded(sessionId);
+        
+        if (roomCreated) {
+          console.log(`✅ SALA ${sessionId}: Criada/Verificada com sucesso`);
+          setRoomStatus('ready');
+          
+          // FASE 5: Mostrar status ao usuário
+          toast.success(`Sala ${sessionId} pronta para conexões móveis`);
+        } else {
+          console.error(`❌ SALA ${sessionId}: Falha ao criar/verificar`);
+          setRoomStatus('error');
+          
+          toast.error(`Falha ao preparar sala ${sessionId}. Tente gerar um novo QR code.`);
+        }
+      } catch (error) {
+        console.error(`❌ SALA ${sessionId}: Erro durante setup:`, error);
+        setRoomStatus('error');
+      }
+    };
+    
+    setupRoom();
   }, [sessionId]);
+
+  // FASE 1: Gerenciador de QR Code aprimorado
+  const handleEnhancedQRCode = async () => {
+    // Chamar a função original
+    onGenerateQRCode();
+    
+    // FASE 5: Aguardar até que sessionId esteja disponível
+    const checkInterval = setInterval(() => {
+      if (state.sessionId) {
+        clearInterval(checkInterval);
+        
+        // Validar sala após criação do QR
+        console.log(`🔍 VALIDAÇÃO: Verificando sala ${state.sessionId} após geração do QR`);
+        createRoomIfNeeded(state.sessionId)
+          .then(success => {
+            if (success) {
+              console.log(`✅ SALA ${state.sessionId}: Validada após geração do QR`);
+              setRoomStatus('ready');
+            } else {
+              console.warn(`⚠️ SALA ${state.sessionId}: Não validada após geração do QR`);
+            }
+          })
+          .catch(err => {
+            console.error(`❌ VALIDAÇÃO ${state.sessionId}: Erro:`, err);
+          });
+      }
+    }, 500);
+    
+    // Limpar interval após 10 segundos para evitar vazamentos
+    setTimeout(() => clearInterval(checkInterval), 10000);
+  };
 
   return (
     <div className="min-h-screen container mx-auto py-8 px-4 relative">
@@ -91,7 +151,7 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
         onFinishTransmission={onFinishTransmission}
         onFileSelect={onFileSelect}
         onRemoveImage={onRemoveImage}
-        onGenerateQRCode={onGenerateQRCode}
+        onGenerateQRCode={handleEnhancedQRCode} // FASE 1: Usar handler aprimorado
         onQRCodeToTransmission={onQRCodeToTransmission}
       />
       
@@ -102,48 +162,112 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
         onCloseFinalAction={closeFinalAction}
       />
       
-      {/* FASE 5: Enhanced Debug Controls with mobile info */}
+      {/* FASE 5: Status da sala */}
+      {sessionId && (
+        <div className="fixed top-4 right-4 z-50 p-2 rounded-md text-sm shadow-md bg-opacity-90 animate-pulse"
+             style={{ 
+               backgroundColor: roomStatus === 'ready' 
+                               ? 'rgba(34, 197, 94, 0.2)' 
+                               : roomStatus === 'creating' 
+                               ? 'rgba(234, 179, 8, 0.2)' 
+                               : roomStatus === 'error'
+                               ? 'rgba(239, 68, 68, 0.2)'
+                               : 'rgba(59, 130, 246, 0.2)',
+               borderColor: roomStatus === 'ready' 
+                          ? 'rgba(34, 197, 94, 0.5)' 
+                          : roomStatus === 'creating' 
+                          ? 'rgba(234, 179, 8, 0.5)' 
+                          : roomStatus === 'error'
+                          ? 'rgba(239, 68, 68, 0.5)'
+                          : 'rgba(59, 130, 246, 0.5)',
+               borderWidth: '1px'
+             }}>
+          {roomStatus === 'ready' && (
+            <span className="text-green-500">✅ Sala {sessionId.substring(0, 8)}... pronta</span>
+          )}
+          {roomStatus === 'creating' && (
+            <span className="text-yellow-500">⏳ Preparando sala {sessionId?.substring(0, 8)}...</span>
+          )}
+          {roomStatus === 'error' && (
+            <span className="text-red-500">❌ Erro na sala {sessionId?.substring(0, 8)}...</span>
+          )}
+          {roomStatus === 'unknown' && (
+            <span className="text-blue-500">ℹ️ Status da sala desconhecido</span>
+          )}
+        </div>
+      )}
+      
+      {/* FASE 5: Debug Controls com info de consistência */}
       <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50">
         <button
           onClick={() => {
             clearConnectionCache();
             clearDeviceCache();
-            console.log('🧹 Manual cache clear triggered with URL sync');
+            console.log('🧹 Limpeza manual de cache acionada');
             const envInfo = getEnvironmentInfo();
-            console.log('🌐 Environment after cache clear:', envInfo);
+            console.log('🌐 Ambiente após limpeza:', envInfo);
+            toast.success('Cache limpo');
           }}
           className="bg-red-500 text-white p-2 rounded text-xs"
-          title="Clear All Cache + URL Check"
+          title="Limpar Cache"
         >
-          🧹 Clear Cache
+          🧹 Limpar Cache
         </button>
         
         <button
           onClick={() => {
             forceRefreshConnections();
-            console.log('🔄 Manual connection refresh with URL validation');
+            console.log('🔄 Atualização manual de conexões');
             const isConsistent = validateURLConsistency();
-            console.log('🔍 URL consistency after refresh:', isConsistent ? '✅' : '❌');
+            console.log('🔍 Consistência de URL após atualização:', isConsistent ? '✅' : '❌');
+            toast.success('Conexões atualizadas');
           }}
           className="bg-blue-500 text-white p-2 rounded text-xs"
-          title="Refresh Connections + URL Sync"
+          title="Atualizar Conexões"
         >
-          🔄 Refresh
+          🔄 Atualizar Conexões
         </button>
         
-        {/* FASE 5: Mobile URL Debug Button */}
+        {/* FASE 3: Validação de sala */}
+        {sessionId && (
+          <button
+            onClick={async () => {
+              toast.info(`Verificando sala ${sessionId}...`);
+              
+              try {
+                const roomExists = await createRoomIfNeeded(sessionId);
+                
+                if (roomExists) {
+                  setRoomStatus('ready');
+                  toast.success(`Sala ${sessionId} verificada/criada com sucesso`);
+                } else {
+                  setRoomStatus('error');
+                  toast.error(`Falha ao verificar/criar sala ${sessionId}`);
+                }
+              } catch (error) {
+                setRoomStatus('error');
+                toast.error(`Erro ao verificar sala: ${error instanceof Error ? error.message : String(error)}`);
+              }
+            }}
+            className="bg-green-500 text-white p-2 rounded text-xs"
+            title="Verificar Sala"
+          >
+            🔍 Verificar Sala
+          </button>
+        )}
+        
+        {/* FASE 5: Debug URL */}
         <button
           onClick={() => {
             const envInfo = getEnvironmentInfo();
-            const urlSyncStatus = envInfo.urlMapping.isURLSynced ? '✅ SYNCED' : '❌ NOT_SYNCED';
-            const mobileStatus = envInfo.mobileInfo.accessedViaQR ? '📱 QR' : '🖥️ Direct';
-            console.log(`🌐 Quick Status: URLs ${urlSyncStatus}, Access ${mobileStatus}`);
-            alert(`URLs: ${urlSyncStatus}\nAccess: ${mobileStatus}\nBackend: ${envInfo.urlMapping.backend}`);
+            const urlSyncStatus = validateURLConsistency() ? '✅ SINCRONIZADO' : '❌ NÃO_SINCRONIZADO';
+            console.log(`🌐 Status Rápido: URLs ${urlSyncStatus}`);
+            toast.info(`URLs: ${urlSyncStatus}\nBackend: ${envInfo.apiBaseUrl}\nWebSocket: ${envInfo.wsUrl}`);
           }}
-          className="bg-green-500 text-white p-2 rounded text-xs"
-          title="URL + Mobile Status"
+          className="bg-purple-500 text-white p-2 rounded text-xs"
+          title="Debug URL"
         >
-          📱 Status
+          🌐 Debug URL
         </button>
       </div>
     </div>
