@@ -1,274 +1,275 @@
-
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import { toast } from "sonner";
-import LivePageHeader from '@/components/live/LivePageHeader';
-import LivePageContent from '@/components/live/LivePageContent';
-import FinalActionDialog from '@/components/live/FinalActionDialog';
-import { 
-  clearConnectionCache, 
-  forceRefreshConnections, 
-  getEnvironmentInfo, 
-  validateURLConsistency,
-  createRoomIfNeeded 
-} from '@/utils/connectionUtils';
-import { clearDeviceCache } from '@/utils/media/deviceDetection';
+import { Participant } from './ParticipantGrid';
+import ParticipantGrid from './ParticipantGrid';
+import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
+import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
+import { useParticipantManagement } from '@/hooks/live/useParticipantManagement';
+import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
+import { useForceVideoDisplay } from '@/hooks/live/useForceVideoDisplay';
+import { clearConnectionCache, clearDeviceCache } from '@/utils/connectionUtils';
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { StreamRecoveryPanel } from '@/components/debug/StreamRecoveryPanel';
 
 interface LivePageContainerProps {
-  state: any;
-  participantManagement: any;
-  transmissionOpen: boolean;
   sessionId: string | null;
-  onStartTransmission: () => void;
-  onFinishTransmission: () => void;
-  onFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onRemoveImage: () => void;
-  onGenerateQRCode: () => void;
-  onQRCodeToTransmission: () => void;
-  closeFinalAction: () => void;
 }
 
-const LivePageContainer: React.FC<LivePageContainerProps> = ({
-  state,
-  participantManagement,
-  transmissionOpen,
-  sessionId,
-  onStartTransmission,
-  onFinishTransmission,
-  onFileSelect,
-  onRemoveImage,
-  onGenerateQRCode,
-  onQRCodeToTransmission,
-  closeFinalAction
-}) => {
-  const [roomStatus, setRoomStatus] = useState<'unknown' | 'creating' | 'ready' | 'error'>('unknown');
+const LivePageContainer: React.FC<LivePageContainerProps> = ({ sessionId }) => {
+  const [participantList, setParticipantList] = useState<Participant[]>([]);
+  const [participantStreams, setParticipantStreams] = useState<{[id: string]: MediaStream}>({});
+  const [isTransmitting, setIsTransmitting] = useState(false);
+  const transmissionWindowRef = useRef<Window | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [newParticipantName, setNewParticipantName] = useState('');
+  const [isMobile, setIsMobile] = useState(false);
 
-  // FASE 2: Enhanced cache management with URL sync validation
+  const {
+    hasVideo,
+    hasAudio,
+    hasScreenShare,
+    isVideoEnabled,
+    isAudioEnabled,
+    localVideoRef,
+    localStreamRef,
+    initializeMedia,
+    retryMediaInitialization,
+    switchCamera,
+    toggleVideo,
+    toggleAudio,
+    startScreenShare,
+    stopScreenShare
+  } = useParticipantMedia();
+
+  const {
+    handleParticipantSelect,
+    handleParticipantRemove,
+    handleParticipantJoin,
+    handleParticipantStream,
+    testConnection,
+    transferStreamToTransmission,
+    forceReconnectParticipant,
+    getStreamHealth,
+    areCallbacksSet,
+    getDebugInfo
+  } = useParticipantManagement({
+    participantList,
+    setParticipantList,
+    participantStreams,
+    setParticipantStreams,
+    sessionId,
+    transmissionWindowRef,
+    updateTransmissionParticipants
+  });
+
+  const {
+    openTransmissionWindow,
+    closeTransmissionWindow,
+    updateTransmissionParticipants
+  } = useTransmissionWindow({
+    participantList,
+    participantStreams,
+    transmissionWindowRef,
+    isTransmitting
+  });
+
+  useForceVideoDisplay({ participantList, participantStreams });
+
   useEffect(() => {
-    console.log('🏠 LIVE CONTAINER: Inicializando com gestão de cache aprimorada e sincronização de URLs');
-    
-    // FASE 5: Verificação inicial de consistência de URL
-    const isConsistent = validateURLConsistency();
-    if (!isConsistent) {
-      console.warn('⚠️ LIVE CONTAINER: Inconsistência de URL detectada na inicialização');
-      forceRefreshConnections();
-    }
-    
-    // Limpar cache periodicamente
-    const cacheInterval = setInterval(() => {
-      console.log('🧹 LIVE CONTAINER: Limpeza periódica de cache com validação de URL');
-      clearConnectionCache();
-      clearDeviceCache();
-      
-      const stillConsistent = validateURLConsistency();
-      if (!stillConsistent) {
-        console.warn('⚠️ LIVE CONTAINER: Deriva de URL detectada, forçando atualização');
-        forceRefreshConnections();
-      }
-    }, 60000); // A cada minuto
-    
+    const checkMobile = () => {
+      setIsMobile(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
     return () => {
-      clearInterval(cacheInterval);
+      window.removeEventListener('resize', checkMobile);
     };
   }, []);
 
-  // FASE 1: Gerenciamento de sala quando sessionId muda
   useEffect(() => {
-    const setupRoom = async () => {
-      if (!sessionId) {
-        setRoomStatus('unknown');
-        return;
-      }
-      
-      console.log(`🏠 SALA: Nova sessão detectada (${sessionId}), configurando sala`);
-      setRoomStatus('creating');
-      
-      try {
-        // FASE 1: Garantir que a sala exista quando a transmissão inicia
-        const roomCreated = await createRoomIfNeeded(sessionId);
-        
-        if (roomCreated) {
-          console.log(`✅ SALA ${sessionId}: Criada/Verificada com sucesso`);
-          setRoomStatus('ready');
-          
-          // FASE 5: Mostrar status ao usuário
-          toast.success(`Sala ${sessionId} pronta para conexões móveis`);
-        } else {
-          console.error(`❌ SALA ${sessionId}: Falha ao criar/verificar`);
-          setRoomStatus('error');
-          
-          toast.error(`Falha ao preparar sala ${sessionId}. Tente gerar um novo QR code.`);
-        }
-      } catch (error) {
-        console.error(`❌ SALA ${sessionId}: Erro durante setup:`, error);
-        setRoomStatus('error');
-      }
-    };
-    
-    setupRoom();
-  }, [sessionId]);
+    if (sessionId) {
+      console.log('🏠 LIVE: Initializing media for session:', sessionId);
+      initializeMedia();
+    }
 
-  // FASE 1: Gerenciador de QR Code aprimorado
-  const handleEnhancedQRCode = async () => {
-    // Chamar a função original
-    onGenerateQRCode();
-    
-    // FASE 5: Aguardar até que sessionId esteja disponível
-    const checkInterval = setInterval(() => {
-      if (state.sessionId) {
-        clearInterval(checkInterval);
-        
-        // Validar sala após criação do QR
-        console.log(`🔍 VALIDAÇÃO: Verificando sala ${state.sessionId} após geração do QR`);
-        createRoomIfNeeded(state.sessionId)
-          .then(success => {
-            if (success) {
-              console.log(`✅ SALA ${state.sessionId}: Validada após geração do QR`);
-              setRoomStatus('ready');
-            } else {
-              console.warn(`⚠️ SALA ${state.sessionId}: Não validada após geração do QR`);
-            }
-          })
-          .catch(err => {
-            console.error(`❌ VALIDAÇÃO ${state.sessionId}: Erro:`, err);
-          });
+    return () => {
+      console.log('🏠 LIVE: Cleaning up media');
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
       }
-    }, 500);
+      closeTransmissionWindow();
+    };
+  }, [sessionId, initializeMedia, closeTransmissionWindow]);
+
+  const handleStartTransmission = () => {
+    setIsTransmitting(true);
+    openTransmissionWindow();
+  };
+
+  const handleStopTransmission = () => {
+    setIsTransmitting(false);
+    closeTransmissionWindow();
+  };
+
+  const handleAddParticipant = () => {
+    if (newParticipantName.trim() !== '') {
+      const newParticipant: Participant = {
+        id: Date.now().toString(),
+        name: newParticipantName,
+        joinedAt: Date.now(),
+        lastActive: Date.now(),
+        active: true,
+        selected: false,
+        hasVideo: false,
+        isMobile: isMobile
+      };
+      setParticipantList(prev => [...prev, newParticipant]);
+      setNewParticipantName('');
+      setIsDialogOpen(false);
+    }
+  };
+
+  // Recovery actions for StreamRecoveryPanel
+  const handleForceStreamCapture = async () => {
+    console.log('🔥 FORCE STREAM CAPTURE: Triggering mobile stream capture...');
     
-    // Limpar interval após 10 segundos para evitar vazamentos
-    setTimeout(() => clearInterval(checkInterval), 10000);
+    // Send force capture signal to mobile devices
+    if (sessionId) {
+      const channel = new BroadcastChannel(`live-session-${sessionId}`);
+      channel.postMessage({
+        type: 'force-stream-capture',
+        timestamp: Date.now()
+      });
+      channel.close();
+    }
+    
+    // Also trigger test connection
+    testConnection();
+  };
+
+  const handleDiagnosticReset = () => {
+    console.log('🧹 DIAGNOSTIC RESET: Clearing all diagnostic data...');
+    
+    // Reset stream tracker
+    (window as any).streamTracker?.exportDebugReport && 
+    console.log('Previous state:', (window as any).streamTracker.exportDebugReport());
+    
+    // Clear caches
+    clearConnectionCache();
+    clearDeviceCache();
+    
+    // Force refresh
+    window.location.reload();
   };
 
   return (
-    <div className="min-h-screen container mx-auto py-8 px-4 relative">
-      <LivePageHeader />
-      
-      <LivePageContent
-        state={state}
-        participantManagement={participantManagement}
-        transmissionOpen={transmissionOpen}
-        sessionId={sessionId}
-        onStartTransmission={onStartTransmission}
-        onFinishTransmission={onFinishTransmission}
-        onFileSelect={onFileSelect}
-        onRemoveImage={onRemoveImage}
-        onGenerateQRCode={handleEnhancedQRCode} // FASE 1: Usar handler aprimorado
-        onQRCodeToTransmission={onQRCodeToTransmission}
-      />
-      
-      <FinalActionDialog
-        finalActionOpen={state.finalActionOpen}
-        setFinalActionOpen={state.setFinalActionOpen}
-        finalActionTimeLeft={state.finalActionTimeLeft}
-        onCloseFinalAction={closeFinalAction}
-      />
-      
-      {/* FASE 5: Status da sala */}
-      {sessionId && (
-        <div className="fixed top-4 right-4 z-50 p-2 rounded-md text-sm shadow-md bg-opacity-90 animate-pulse"
-             style={{ 
-               backgroundColor: roomStatus === 'ready' 
-                               ? 'rgba(34, 197, 94, 0.2)' 
-                               : roomStatus === 'creating' 
-                               ? 'rgba(234, 179, 8, 0.2)' 
-                               : roomStatus === 'error'
-                               ? 'rgba(239, 68, 68, 0.2)'
-                               : 'rgba(59, 130, 246, 0.2)',
-               borderColor: roomStatus === 'ready' 
-                          ? 'rgba(34, 197, 94, 0.5)' 
-                          : roomStatus === 'creating' 
-                          ? 'rgba(234, 179, 8, 0.5)' 
-                          : roomStatus === 'error'
-                          ? 'rgba(239, 68, 68, 0.5)'
-                          : 'rgba(59, 130, 246, 0.5)',
-               borderWidth: '1px'
-             }}>
-          {roomStatus === 'ready' && (
-            <span className="text-green-500">✅ Sala {sessionId.substring(0, 8)}... pronta</span>
-          )}
-          {roomStatus === 'creating' && (
-            <span className="text-yellow-500">⏳ Preparando sala {sessionId?.substring(0, 8)}...</span>
-          )}
-          {roomStatus === 'error' && (
-            <span className="text-red-500">❌ Erro na sala {sessionId?.substring(0, 8)}...</span>
-          )}
-          {roomStatus === 'unknown' && (
-            <span className="text-blue-500">ℹ️ Status da sala desconhecido</span>
-          )}
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800">
+      <header className="bg-black/50 py-4 shadow-md sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-white">Sessão ao vivo: {sessionId}</h1>
+          <div className="space-x-2">
+            <Button variant="outline" onClick={testConnection}>
+              Testar Conexão
+            </Button>
+            <Button onClick={handleStartTransmission} disabled={isTransmitting}>
+              Iniciar Transmissão
+            </Button>
+            <Button variant="destructive" onClick={handleStopTransmission} disabled={!isTransmitting}>
+              Parar Transmissão
+            </Button>
+          </div>
         </div>
-      )}
+      </header>
+
+      <main className="py-6">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 px-4">
+          <div className="md:col-span-1">
+            <ParticipantVideoPreview
+              localVideoRef={localVideoRef}
+              hasVideo={hasVideo}
+              hasAudio={hasAudio}
+              hasScreenShare={hasScreenShare}
+              isVideoEnabled={isVideoEnabled}
+              isAudioEnabled={isAudioEnabled}
+              localStream={localStreamRef.current}
+              onRetryMedia={retryMediaInitialization}
+            />
+            
+            <div className="flex flex-wrap justify-center gap-2 mt-4">
+              <Button onClick={() => switchCamera('user')} disabled={!hasVideo || isMobile === false}>
+                Mudar para Frontal
+              </Button>
+              <Button onClick={() => switchCamera('environment')} disabled={!hasVideo || isMobile === false}>
+                Mudar para Traseira
+              </Button>
+            </div>
+            
+            <div className="flex flex-wrap justify-center gap-2 mt-4">
+              <Button onClick={toggleVideo} disabled={!hasVideo}>
+                {isVideoEnabled ? 'Desligar Câmera' : 'Ligar Câmera'}
+              </Button>
+              <Button onClick={toggleAudio} disabled={!hasAudio}>
+                {isAudioEnabled ? 'Desligar Microfone' : 'Ligar Microfone'}
+              </Button>
+              <Button onClick={hasScreenShare ? stopScreenShare : startScreenShare}>
+                {hasScreenShare ? 'Parar Tela' : 'Compartilhar Tela'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="md:col-span-2">
+            <ParticipantGrid
+              participantList={participantList}
+              participantStreams={participantStreams}
+              onParticipantSelect={handleParticipantSelect}
+              onParticipantRemove={handleParticipantRemove}
+            />
+          </div>
+        </div>
+      </main>
+
+      <footer className="bg-black/50 py-4 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 text-white text-center">
+          <p>&copy; 2024 Live Session. Todos os direitos reservados.</p>
+        </div>
+      </footer>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogTrigger asChild>
+          <Button variant="outline">Adicionar Participante</Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Adicionar Participante</DialogTitle>
+            <DialogDescription>
+              Adicione um novo participante à lista.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="name" className="text-right">
+                Nome
+              </Label>
+              <Input id="name" value={newParticipantName} onChange={(e) => setNewParticipantName(e.target.value)} className="col-span-3" />
+            </div>
+          </div>
+          <Button type="submit" onClick={handleAddParticipant}>Salvar</Button>
+        </DialogContent>
+      </Dialog>
       
-      {/* FASE 5: Debug Controls com info de consistência */}
-      <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50">
-        <button
-          onClick={() => {
-            clearConnectionCache();
-            clearDeviceCache();
-            console.log('🧹 Limpeza manual de cache acionada');
-            const envInfo = getEnvironmentInfo();
-            console.log('🌐 Ambiente após limpeza:', envInfo);
-            toast.success('Cache limpo');
-          }}
-          className="bg-red-500 text-white p-2 rounded text-xs"
-          title="Limpar Cache"
-        >
-          🧹 Limpar Cache
-        </button>
-        
-        <button
-          onClick={() => {
-            forceRefreshConnections();
-            console.log('🔄 Atualização manual de conexões');
-            const isConsistent = validateURLConsistency();
-            console.log('🔍 Consistência de URL após atualização:', isConsistent ? '✅' : '❌');
-            toast.success('Conexões atualizadas');
-          }}
-          className="bg-blue-500 text-white p-2 rounded text-xs"
-          title="Atualizar Conexões"
-        >
-          🔄 Atualizar Conexões
-        </button>
-        
-        {/* FASE 3: Validação de sala */}
-        {sessionId && (
-          <button
-            onClick={async () => {
-              toast.info(`Verificando sala ${sessionId}...`);
-              
-              try {
-                const roomExists = await createRoomIfNeeded(sessionId);
-                
-                if (roomExists) {
-                  setRoomStatus('ready');
-                  toast.success(`Sala ${sessionId} verificada/criada com sucesso`);
-                } else {
-                  setRoomStatus('error');
-                  toast.error(`Falha ao verificar/criar sala ${sessionId}`);
-                }
-              } catch (error) {
-                setRoomStatus('error');
-                toast.error(`Erro ao verificar sala: ${error instanceof Error ? error.message : String(error)}`);
-              }
-            }}
-            className="bg-green-500 text-white p-2 rounded text-xs"
-            title="Verificar Sala"
-          >
-            🔍 Verificar Sala
-          </button>
-        )}
-        
-        {/* FASE 5: Debug URL */}
-        <button
-          onClick={() => {
-            const envInfo = getEnvironmentInfo();
-            const urlSyncStatus = validateURLConsistency() ? '✅ SINCRONIZADO' : '❌ NÃO_SINCRONIZADO';
-            console.log(`🌐 Status Rápido: URLs ${urlSyncStatus}`);
-            toast.info(`URLs: ${urlSyncStatus}\nBackend: ${envInfo.apiBaseUrl}\nWebSocket: ${envInfo.wsUrl}`);
-          }}
-          className="bg-purple-500 text-white p-2 rounded text-xs"
-          title="Debug URL"
-        >
-          🌐 Debug URL
-        </button>
+      {/* Add Stream Recovery Panel */}
+      <div className="max-w-4xl mx-auto px-4">
+        <StreamRecoveryPanel
+          onForceReconnect={forceReconnectParticipant}
+          onForceStreamCapture={handleForceStreamCapture}
+          onDiagnosticReset={handleDiagnosticReset}
+        />
       </div>
     </div>
   );
