@@ -1,6 +1,6 @@
 import React from 'react';
 import LiveControlTabs from './LiveControlTabs';
-import UnifiedVideoContainer from './UnifiedVideoContainer';
+import SimplifiedParticipantGrid from './SimplifiedParticipantGrid';
 import ConnectionDiagnostics from './ConnectionDiagnostics';
 import { SignalingDiagnostics } from './SignalingDiagnostics';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -24,6 +24,7 @@ interface LivePageContentProps {
   qrCodeURL: string;
   participantCount: number;
   isTransmissionActive: boolean;
+  participantList?: any[];
 }
 
 export const LivePageContent: React.FC<LivePageContentProps> = ({
@@ -37,7 +38,8 @@ export const LivePageContent: React.FC<LivePageContentProps> = ({
   sessionId,
   qrCodeURL,
   participantCount,
-  isTransmissionActive
+  isTransmissionActive,
+  participantList = []
 }) => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
@@ -86,21 +88,30 @@ export const LivePageContent: React.FC<LivePageContentProps> = ({
         </Tabs>
       </div>
 
-      {/* Right Column - Stream Preview */}
+      {/* Right Column - Simplified Stream Preview */}
       <div className="space-y-4">
-        <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-          <div className="text-center">
-            <div className="text-lg font-semibold mb-2">Preview da Transmissão</div>
-            <div className="text-sm text-muted-foreground">
-              {isTransmissionActive ? 'Transmissão ativa' : 'Transmissão parada'}
-            </div>
-            {selectedStream && (
-              <div className="mt-2 text-xs text-green-600">
-                Stream detectado: {selectedStream.id}
-              </div>
-            )}
+        <div className="aspect-video bg-muted rounded-lg relative overflow-hidden">
+          <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded z-30">
+            Preview da Transmissão
+          </div>
+          
+          <SimplifiedParticipantGrid
+            participantList={participantList}
+            participantCount={participantCount}
+            participantStreams={participantStreams}
+            sessionId={sessionId}
+          />
+          
+          <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded z-30">
+            {isTransmissionActive ? '🔴 AO VIVO' : '⏸️ PARADO'}
           </div>
         </div>
+        
+        {selectedStream && (
+          <div className="text-center text-sm text-muted-foreground">
+            Stream Host: {selectedStream.id.substring(0, 8)}...
+          </div>
+        )}
       </div>
     </div>
   );
