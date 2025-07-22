@@ -113,9 +113,22 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
 
         // Etapa 3: Conectar WebRTC com timeouts otimizados
         console.log(`🔗 PARTICIPANT CONNECTION: Initializing WebRTC (attempt ${retryCount})`);
-        const webrtcStartTime = Date.now();
         
-        const { webrtc } = await initParticipantWebRTC(sessionId, participantId, stream || undefined);
+        // CRITICAL FIX: Ensure stream is passed correctly to WebRTC
+        if (stream) {
+          console.log(`🎥 CRITICAL: Stream being passed to WebRTC:`, {
+            streamId: stream.id,
+            active: stream.active,
+            videoTracks: stream.getVideoTracks().length,
+            audioTracks: stream.getAudioTracks().length,
+            readyState: stream.getTracks().map(t => t.readyState)
+          });
+        } else {
+          console.warn(`⚠️ CRITICAL: No stream being passed to WebRTC - this will cause handshake failure`);
+        }
+        
+        const webrtcStartTime = Date.now();
+        const { webrtc } = await initParticipantWebRTC(sessionId, participantId, stream);
         
         const webrtcTime = Date.now() - webrtcStartTime;
         console.log(`✅ PARTICIPANT CONNECTION: WebRTC initialized in ${webrtcTime}ms`);

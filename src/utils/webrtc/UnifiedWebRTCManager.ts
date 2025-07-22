@@ -386,17 +386,31 @@ export class UnifiedWebRTCManager {
     this.isHost = false;
 
     try {
-      // IMPORTANT: Only use stream provided by useParticipantMedia - no local media creation
+      // CRITICAL FIX: Validate stream before proceeding
       if (stream) {
         this.localStream = stream;
-        console.log(`📹 UNIFIED: Using provided stream from useParticipantMedia:`, {
+        console.log(`📹 CRITICAL SUCCESS: Valid stream provided to WebRTC:`, {
+          streamId: stream.id,
+          active: stream.active,
           tracks: stream.getTracks().length,
           videoTracks: stream.getVideoTracks().length,
           audioTracks: stream.getAudioTracks().length,
-          videoSettings: stream.getVideoTracks()[0]?.getSettings()
+          videoSettings: stream.getVideoTracks()[0]?.getSettings(),
+          videoConstraints: stream.getVideoTracks()[0]?.getConstraints?.()
         });
+        
+        // Validate stream tracks are active
+        const inactiveTracks = stream.getTracks().filter(track => track.readyState !== 'live');
+        if (inactiveTracks.length > 0) {
+          console.warn(`⚠️ CRITICAL: Found inactive tracks in stream:`, inactiveTracks.map(t => ({
+            kind: t.kind,
+            readyState: t.readyState,
+            enabled: t.enabled
+          })));
+        }
       } else {
-        console.warn(`⚠️ UNIFIED: No stream provided - participant must initialize media first`);
+        console.error(`❌ CRITICAL ERROR: No stream provided to WebRTC - this will cause handshake failure`);
+        throw new Error('Stream is required for participant WebRTC initialization');
       }
 
       this.updateConnectionState('websocket', 'connecting');
@@ -417,9 +431,13 @@ export class UnifiedWebRTCManager {
       this.updateConnectionState('websocket', 'connected');
       console.log(`✅ UNIFIED PARTICIPANT: Connected to signaling server`);
       
-      // Notify stream if available
+      // CRITICAL: Ensure stream is available before notifying
       if (this.localStream) {
+        console.log(`📡 CRITICAL: About to notify stream with validated data`);
         await this.notifyLocalStream();
+      } else {
+        console.error(`❌ CRITICAL ERROR: Stream lost during initialization`);
+        throw new Error('Stream was lost during WebRTC initialization');
       }
       
     } catch (error) {
@@ -431,10 +449,14 @@ export class UnifiedWebRTCManager {
   }
 
   private async notifyLocalStream() {
-    if (!this.localStream || !this.participantId) return;
+    if (!this.localStream || !this.participantId) {
+      console.error(`❌ CRITICAL: Cannot notify stream - missing localStream or participantId`);
+      return;
+    }
 
     // Wait for mobile devices to stabilize
     if (this.isMobile) {
+      console.log(`📱 MOBILE: Waiting 1.5s for stream stabilization`);
       await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
@@ -444,11 +466,19 @@ export class UnifiedWebRTCManager {
       hasVideo: this.localStream.getVideoTracks().length > 0,
       hasAudio: this.localStream.getAudioTracks().length > 0,
       isMobile: this.isMobile,
-      connectionType: 'unified'
+      connectionType: 'unified',
+      videoSettings: this.localStream.getVideoTracks()[0]?.getSettings(),
+      trackDetails: this.localStream.getTracks().map(track => ({
+        kind: track.kind,
+        enabled: track.enabled,
+        readyState: track.readyState,
+        id: track.id
+      }))
     };
     
+    console.log(`📡 CRITICAL STREAM NOTIFICATION:`, streamInfo);
     unifiedWebSocketService.notifyStreamStarted(this.participantId, streamInfo);
-    console.log(`📡 UNIFIED: Stream notification sent`);
+    console.log(`📡 UNIFIED: Stream notification sent with enhanced details`);
   }
 
   private removeParticipantConnection(participantId: string) {
