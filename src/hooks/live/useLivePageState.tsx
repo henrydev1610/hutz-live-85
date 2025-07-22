@@ -26,10 +26,6 @@ export const useLivePageState = () => {
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   
-  // FASE 3: Status da sala para tracking
-  const [roomStatus, setRoomStatus] = useState<'unknown' | 'creating' | 'ready' | 'error'>('unknown');
-  const [roomCreatedAt, setRoomCreatedAt] = useState<number | null>(null);
-  
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
     y: 20, 
@@ -74,9 +70,6 @@ export const useLivePageState = () => {
     qrDescriptionPosition, setQrDescriptionPosition,
     participantStreams, setParticipantStreams,
     localStream, setLocalMediaStream,
-    fileInputRef,
-    // FASE 3: Novos estados para tracking da sala
-    roomStatus, setRoomStatus,
-    roomCreatedAt, setRoomCreatedAt
+    fileInputRef
   };
 };

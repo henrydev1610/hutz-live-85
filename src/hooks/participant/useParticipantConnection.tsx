@@ -4,12 +4,7 @@ import { toast } from "sonner";
 import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { 
-  getEnvironmentInfo, 
-  validateURLConsistency, 
-  validateRoom,
-  createRoomIfNeeded 
-} from '@/utils/connectionUtils';
+import { getEnvironmentInfo, validateURLConsistency } from '@/utils/connectionUtils';
 
 export const useParticipantConnection = (sessionId: string | undefined, participantId: string) => {
   const [isConnected, setIsConnected] = useState(false);
@@ -24,30 +19,31 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       return;
     }
 
-    console.log(`🚀 ENHANCED CONNECTION: Starting for participant ${participantId} in room ${sessionId}`);
-    console.log(`📱 DEVICE TYPE: ${isMobile ? 'Mobile' : 'Desktop'}`);
-    console.log(`🎥 STREAM STATUS: ${stream ? 'Available' : 'Not available'}`);
+    console.log(`🔗 PARTICIPANT CONNECTION: Starting enhanced connection process for ${participantId}`);
+    console.log(`📱 PARTICIPANT CONNECTION: Mobile device: ${isMobile}`);
+    console.log(`🎥 PARTICIPANT CONNECTION: Has stream: ${!!stream}`);
     
-    // FASE 5: Validação de ambiente e URLs
+    // FASE 4: Debug and environment validation
     const envInfo = getEnvironmentInfo();
-    validateURLConsistency();
+    const urlConsistent = validateURLConsistency();
     
     console.log(`🌍 CONNECTION ENVIRONMENT:`, envInfo);
+    console.log(`🔍 URL CONSISTENCY: ${urlConsistent ? 'VALID' : 'INVALID'}`);
+    
+    if (!urlConsistent) {
+      console.warn('⚠️ URL inconsistency detected - this may cause connection issues');
+    }
     
     setIsConnecting(true);
     setConnectionStatus('connecting');
     setError(null);
 
-    // FASE 3: Configuração de retry melhorada
-    const maxRetries = isMobile ? 8 : 5;
+    // FASE 2: Enhanced retry configuration based on mobile/network
+    const maxRetries = isMobile ? 10 : 7;
     const connectionMetrics = {
       startTime: Date.now(),
       attempts: 0,
-      roomValidationSuccess: false,
-      roomCreationSuccess: false,
-      wsConnectSuccess: false,
-      roomJoinSuccess: false,
-      webrtcInitSuccess: false
+      networkQuality: envInfo.urlMapping ? 'detected' : 'unknown'
     };
     
     let retryCount = 0;
@@ -57,113 +53,76 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       retryCount++;
       
       try {
-        console.log(`🔄 Connection attempt ${retryCount}/${maxRetries}`);
+        console.log(`🔄 ENHANCED Connection attempt ${retryCount}/${maxRetries} for participant ${participantId}`);
+        console.log(`📊 CONNECTION METRICS:`, {
+          attempt: retryCount,
+          elapsedTime: Date.now() - connectionMetrics.startTime,
+          mobile: isMobile,
+          environment: envInfo.isLovable ? 'lovable' : envInfo.isLocalhost ? 'local' : 'production'
+        });
         
-        // FASE 3: Validar sala ANTES de conectar
-        console.log(`🔍 ROOM VALIDATION: Checking if room ${sessionId} exists before connecting`);
-        const roomExists = await validateRoom(sessionId);
-        connectionMetrics.roomValidationSuccess = roomExists;
-        
-        if (!roomExists) {
-          console.log(`⚠️ ROOM VALIDATION: Room ${sessionId} not found, attempting to create`);
-          const roomCreated = await createRoomIfNeeded(sessionId);
-          connectionMetrics.roomCreationSuccess = roomCreated;
-          
-          if (!roomCreated) {
-            toast.warning(`Sala ${sessionId} não encontrada e não foi possível criar. Tentando conectar mesmo assim.`);
-          } else {
-            toast.success(`Sala ${sessionId} criada com sucesso.`);
-          }
-        } else {
-          console.log(`✅ ROOM VALIDATION: Room ${sessionId} exists`);
-        }
-        
-        // Setup enhanced callbacks
+        // Setup enhanced callbacks primeiro
         unifiedWebSocketService.setCallbacks({
           onConnected: () => {
-            console.log('🔗 WebSocket conectado com sucesso');
-            connectionMetrics.wsConnectSuccess = true;
+            console.log('🔗 PARTICIPANT CONNECTION: WebSocket connected successfully');
             setConnectionStatus('connected');
           },
           onDisconnected: () => {
-            console.log('🔌 WebSocket desconectado');
+            console.log('🔗 PARTICIPANT CONNECTION: WebSocket disconnected');
             setConnectionStatus('disconnected');
             setIsConnected(false);
           },
           onConnectionFailed: (error) => {
-            console.error('❌ WebSocket connection failed:', error);
+            console.error('🔗 PARTICIPANT CONNECTION: WebSocket connection failed:', error);
             setConnectionStatus('failed');
             setError('Falha na conexão WebSocket');
           }
         });
 
-        // FASE 1: Conectar WebSocket com timeouts otimizados
-        console.log(`🔗 Conectando WebSocket (tentativa ${retryCount})`);
+        // Etapa 1: Conectar WebSocket com timeouts otimizados
+        console.log(`🔗 PARTICIPANT CONNECTION: Connecting WebSocket (attempt ${retryCount})`);
         const wsStartTime = Date.now();
         
         await unifiedWebSocketService.connect();
         
         const wsConnectTime = Date.now() - wsStartTime;
-        console.log(`✅ WebSocket conectado em ${wsConnectTime}ms`);
-        connectionMetrics.wsConnectSuccess = true;
+        console.log(`✅ PARTICIPANT CONNECTION: WebSocket connected in ${wsConnectTime}ms`);
         
         if (!unifiedWebSocketService.isReady()) {
           throw new Error('WebSocket connection failed - not ready');
         }
 
-        // FASE 3: Estabilização progressiva
-        const stabilizationDelay = isMobile ? 1500 : 1000;
-        console.log(`⏱️ Aguardando ${stabilizationDelay}ms para estabilização`);
+        // FASE 2: Progressive stabilization delays
+        const stabilizationDelay = isMobile ? 2000 : 1000;
+        console.log(`⏱️ STABILIZATION: Waiting ${stabilizationDelay}ms for connection to stabilize`);
         await new Promise(resolve => setTimeout(resolve, stabilizationDelay));
 
-        // FASE 1: Join room com retry e health check
-        console.log(`🏠 Entrando na sala ${sessionId} (tentativa ${retryCount})`);
+        // Etapa 2: Join room com retry e health check
+        console.log(`🔗 PARTICIPANT CONNECTION: Joining room (attempt ${retryCount})`);
         const joinStartTime = Date.now();
         
         await unifiedWebSocketService.joinRoom(sessionId, participantId);
         
         const joinTime = Date.now() - joinStartTime;
-        console.log(`✅ Entrou na sala em ${joinTime}ms`);
-        connectionMetrics.roomJoinSuccess = true;
+        console.log(`✅ PARTICIPANT CONNECTION: Joined room in ${joinTime}ms`);
 
-        // FASE 3: Estabilização adicional para mobile
-        const webrtcDelay = isMobile ? 2000 : 1000;
-        console.log(`⏱️ Aguardando ${webrtcDelay}ms antes de iniciar WebRTC`);
+        // FASE 2: Additional stabilization for mobile
+        const webrtcDelay = isMobile ? 3000 : 1500;
+        console.log(`⏱️ WEBRTC PREP: Waiting ${webrtcDelay}ms before WebRTC initialization`);
         await new Promise(resolve => setTimeout(resolve, webrtcDelay));
 
-        // FASE 4: Validar stream antes de iniciar WebRTC
-        if (stream) {
-          const videoTracks = stream.getVideoTracks();
-          console.log(`🎥 STREAM VALIDATION: ${videoTracks.length} video tracks, active: ${stream.active}`);
-          
-          if (videoTracks.length > 0) {
-            const videoSettings = videoTracks[0].getSettings();
-            console.log('📊 VIDEO SETTINGS:', {
-              width: videoSettings.width,
-              height: videoSettings.height,
-              frameRate: videoSettings.frameRate,
-              facingMode: videoSettings.facingMode
-            });
-          } else {
-            console.warn('⚠️ STREAM VALIDATION: No video tracks found');
-          }
-        } else {
-          console.warn('⚠️ STREAM VALIDATION: No stream available');
-        }
-
-        // FASE 1: Inicializar WebRTC com stream validado
-        console.log(`🔗 Inicializando WebRTC`);
+        // Etapa 3: Conectar WebRTC com timeouts otimizados
+        console.log(`🔗 PARTICIPANT CONNECTION: Initializing WebRTC (attempt ${retryCount})`);
         const webrtcStartTime = Date.now();
         
         const { webrtc } = await initParticipantWebRTC(sessionId, participantId, stream || undefined);
         
         const webrtcTime = Date.now() - webrtcStartTime;
-        console.log(`✅ WebRTC inicializado em ${webrtcTime}ms`);
-        connectionMetrics.webrtcInitSuccess = true;
+        console.log(`✅ PARTICIPANT CONNECTION: WebRTC initialized in ${webrtcTime}ms`);
         
-        // FASE 4: Enhanced callbacks
+        // Setup WebRTC callbacks with enhanced logging
         webrtc.setOnStreamCallback((pId: string, incomingStream: MediaStream) => {
-          console.log(`🎥 Stream recebido de ${pId}:`, {
+          console.log(`🎥 PARTICIPANT CONNECTION: Stream received from ${pId}:`, {
             streamId: incomingStream.id,
             active: incomingStream.active,
             tracks: incomingStream.getTracks().map(t => ({
@@ -176,13 +135,13 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         });
         
         webrtc.setOnParticipantJoinCallback((pId: string) => {
-          console.log(`👤 Participante entrou: ${pId}`);
+          console.log(`👤 PARTICIPANT CONNECTION: Participant joined: ${pId}`);
         });
         
-        // FASE 4: Log de stream local
+        // Verificar se o stream local foi enviado corretamente
         if (stream) {
-          console.log(`🎥 STREAM LOCAL DETAILS:`, {
-            id: stream.id,
+          console.log(`🎥 PARTICIPANT CONNECTION: Local stream details:`, {
+            streamId: stream.id,
             active: stream.active,
             videoTracks: stream.getVideoTracks().length,
             audioTracks: stream.getAudioTracks().length,
@@ -190,60 +149,62 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
               kind: t.kind,
               enabled: t.enabled,
               readyState: t.readyState,
-              muted: t.muted,
-              label: t.label
+              muted: t.muted
             }))
           });
         }
         
-        // FASE 5: Relatório completo de métricas
         const totalConnectionTime = Date.now() - connectionMetrics.startTime;
-        console.log(`🎉 CONEXÃO BEM-SUCEDIDA em ${totalConnectionTime}ms com métricas:`, connectionMetrics);
+        console.log(`🎉 CONNECTION SUCCESS: Total connection time: ${totalConnectionTime}ms`);
         
         setIsConnected(true);
         setConnectionStatus('connected');
         
-        // FASE 5: Feedback aprimorado
+        // FASE 4: Enhanced success feedback
         if (stream) {
           const hasVideo = stream.getVideoTracks().length > 0;
           const hasAudio = stream.getAudioTracks().length > 0;
           
           if (hasVideo && hasAudio) {
-            toast.success(`Conectado com vídeo e áudio! (${Math.round(totalConnectionTime/1000)}s)`);
+            toast.success(`📱 Conectado com vídeo e áudio! (${Math.round(totalConnectionTime/1000)}s)`);
           } else if (hasVideo) {
-            toast.success(`Conectado apenas com vídeo! (${Math.round(totalConnectionTime/1000)}s)`);
+            toast.success(`📱 Conectado com vídeo! (${Math.round(totalConnectionTime/1000)}s)`);
           } else if (hasAudio) {
-            toast.success(`Conectado apenas com áudio! (${Math.round(totalConnectionTime/1000)}s)`);
+            toast.success(`📱 Conectado com áudio! (${Math.round(totalConnectionTime/1000)}s)`);
           } else {
-            toast.success(`Conectado sem mídia! (${Math.round(totalConnectionTime/1000)}s)`);
+            toast.success(`📱 Conectado (modo degradado)! (${Math.round(totalConnectionTime/1000)}s)`);
           }
         } else {
-          toast.success(`Conectado sem mídia! (${Math.round(totalConnectionTime/1000)}s)`);
+          toast.success(`📱 Conectado (sem mídia)! (${Math.round(totalConnectionTime/1000)}s)`);
         }
         
       } catch (error) {
-        console.error(`❌ Tentativa ${retryCount} falhou:`, error);
+        console.error(`❌ Connection attempt ${retryCount} failed:`, error);
         
         if (retryCount < maxRetries) {
-          // FASE 3: Limpeza e retry
+          // FASE 3: Enhanced cleanup and retry logic
           try {
-            console.log(`🧹 Limpando antes da tentativa ${retryCount + 1}`);
+            console.log(`🧹 CLEANUP: Cleaning up before retry attempt ${retryCount + 1}`);
             unifiedWebSocketService.disconnect();
             
+            // Additional cleanup for mobile
             if (isMobile) {
               await new Promise(resolve => setTimeout(resolve, 1000));
             }
           } catch (cleanupError) {
-            console.warn('⚠️ Erro durante limpeza:', cleanupError);
+            console.warn('⚠️ Error during cleanup:', cleanupError);
           }
           
-          // FASE 3: Backoff exponencial
+          // FASE 3: Exponential backoff with network awareness
           const baseDelay = isMobile ? 3000 : 2000;
-          const delay = Math.min(baseDelay * Math.pow(1.5, retryCount - 1), 15000);
+          const maxDelay = isMobile ? 60000 : 45000;
+          const networkMultiplier = envInfo.isLocalhost ? 1 : 1.5; // Slower for remote connections
+          const delay = Math.min(baseDelay * Math.pow(2, retryCount - 1) * networkMultiplier, maxDelay);
           
-          console.log(`🔄 Nova tentativa ${retryCount + 1}/${maxRetries} em ${Math.round(delay/1000)}s`);
+          console.log(`🔄 ENHANCED RETRY: Attempt ${retryCount + 1}/${maxRetries} in ${Math.round(delay/1000)}s`);
+          console.log(`📊 RETRY METRICS: Base: ${baseDelay}ms, Network: ${networkMultiplier}x, Final: ${delay}ms`);
           
-          toast.warning(`Tentativa ${retryCount}/${maxRetries} falhou. Nova tentativa em ${Math.round(delay/1000)}s...`);
+          toast.warning(`Tentativa ${retryCount}/${maxRetries} falhou. Reagendando em ${Math.round(delay/1000)}s...`);
           
           await new Promise(resolve => setTimeout(resolve, delay));
           return attemptConnection();
@@ -257,51 +218,36 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       await attemptConnection();
     } catch (error) {
       const totalTime = Date.now() - connectionMetrics.startTime;
-      console.error(`❌ Todas as tentativas falharam após ${Math.round(totalTime/1000)}s:`, error);
+      console.error(`❌ All connection attempts failed after ${Math.round(totalTime/1000)}s:`, error);
       
       setConnectionStatus('failed');
       
-      // FASE 5: Relatório detalhado de erro
+      // FASE 4: Enhanced error reporting
       let errorMessage = `Erro na conexão após ${maxRetries} tentativas (${Math.round(totalTime/1000)}s)`;
-      
       if (error instanceof Error) {
-        if (error.message.includes('Not in room')) {
-          errorMessage = 'Erro: Sala não encontrada ou não está pronta para conexão';
-          
-          // FASE 3: Tentar criar sala em último caso
-          toast.warning('Tentando criar sala como último recurso...');
-          
-          try {
-            const created = await createRoomIfNeeded(sessionId);
-            if (created) {
-              toast.success('Sala criada com sucesso! Tente conectar novamente.');
-              errorMessage += ' (Sala criada, tente novamente)';
-            }
-          } catch (e) {
-            console.error('Falha ao criar sala de emergência:', e);
-          }
-        } else if (error.message.includes('timeout')) {
+        if (error.message.includes('timeout')) {
           errorMessage = `Timeout na conexão: ${error.message}`;
         } else if (error.message.includes('WebSocket')) {
           errorMessage = 'Falha na conexão WebSocket';
         } else if (error.message.includes('WebRTC')) {
           errorMessage = 'Falha na conexão de vídeo';
+        } else if (error.message.includes('circuit')) {
+          errorMessage = 'Conexão bloqueada por instabilidade';
         } else {
           errorMessage = error.message;
         }
       }
       
       setError(errorMessage);
-      toast.error(`${errorMessage}`);
+      toast.error(`📱 ${errorMessage}`);
       
-      // FASE 5: Diagnóstico final
-      console.log(`📊 DIAGNÓSTICO FINAL:`, {
-        totalTentativas: connectionMetrics.attempts,
-        tempoTotal: totalTime,
-        ambiente: envInfo,
-        mobile: isMobile,
-        métricas: connectionMetrics,
-        erro: error instanceof Error ? error.message : String(error)
+      // Log final diagnostics
+      console.log(`📊 FINAL CONNECTION METRICS:`, {
+        totalAttempts: connectionMetrics.attempts,
+        totalTime: totalTime,
+        environment: envInfo,
+        urlConsistent,
+        mobile: isMobile
       });
     } finally {
       setIsConnecting(false);
@@ -309,7 +255,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
   }, [sessionId, participantId, isMobile]);
 
   const disconnectFromSession = useCallback(() => {
-    console.log(`🔌 Desconectando da sessão ${sessionId}`);
+    console.log(`🔗 PARTICIPANT CONNECTION: Disconnecting`);
     
     try {
       cleanupWebRTC();
@@ -318,10 +264,10 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       setConnectionStatus('disconnected');
       toast.success('Desconectado da sessão');
     } catch (error) {
-      console.error(`❌ Erro ao desconectar:`, error);
+      console.error(`❌ PARTICIPANT CONNECTION: Error disconnecting:`, error);
       toast.error('Erro ao desconectar');
     }
-  }, [sessionId]);
+  }, []);
 
   return {
     isConnected,

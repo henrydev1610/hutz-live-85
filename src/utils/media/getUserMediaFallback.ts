@@ -1,39 +1,32 @@
-
 import { detectMobileAggressively, getCameraPreference } from './deviceDetection';
 
 export const getUserMediaWithFallback = async (): Promise<MediaStream | null> => {
   const isMobile = detectMobileAggressively();
   
-  console.log(`🎬 CAPTURA DE MÍDIA: Iniciando captura ${isMobile ? 'MOBILE' : 'DESKTOP'} com prioridade MOBILE`);
+  console.log(`🎬 MEDIA FALLBACK: Starting ${isMobile ? 'MOBILE' : 'DESKTOP'} capture with MOBILE-FIRST prioritization`);
   
-  // FASE 4: Mobile first - prioridade absoluta
+  // FASE 3: MOBILE-FIRST LOGIC - Priorizar câmera móvel
   if (isMobile) {
     return await getMobileStreamWithEnhancedDetection();
   }
   
-  // Lógica desktop
+  // Desktop logic (unchanged but with mobile fallback)
   return await getDesktopStreamWithMobileFallback();
 };
 
 const getMobileStreamWithEnhancedDetection = async (): Promise<MediaStream | null> => {
-  console.log('📱 MOBILE CAPTURE: Aquisição de câmera mobile com priorização de traseira');
+  console.log('📱 MOBILE CAPTURE: ENHANCED mobile camera acquisition with rear camera priority');
   
-  // FASE 4: Detecção de parâmetros de URL para override da câmera
+  // FASE 3: URL Parameter Detection for Camera Override
   const urlParams = new URLSearchParams(window.location.search);
-  const forcedCamera = urlParams.get('camera'); // 'environment' ou 'user'
-  const preferredFacing = forcedCamera === 'user' ? 'user' : 'environment'; // Default para traseira
+  const forcedCamera = urlParams.get('camera'); // 'environment' or 'user'
+  const preferredFacing = forcedCamera === 'environment' ? 'environment' : 'environment'; // Default to rear
   
-  console.log(`📱 MOBILE CAPTURE: Preferência de câmera da URL: ${forcedCamera || 'auto'}, usando: ${preferredFacing}`);
+  console.log(`📱 MOBILE CAPTURE: Camera preference from URL: ${forcedCamera || 'auto'}, using: ${preferredFacing}`);
   
-  // FASE 4: CRITICAL - Validar e guardar acesso via QR
-  if (urlParams.has('qr') || urlParams.has('mobile')) {
-    sessionStorage.setItem('accessedViaQR', 'true');
-    console.log('✅ MOBILE CAPTURE: Acesso via QR detectado e armazenado');
-  }
-  
-  // Fase 1: Tentar câmera traseira EXACT primeiro (PRIORIDADE MÁXIMA para mobile)
+  // Phase 1: Try EXACT rear camera first (HIGHEST PRIORITY for mobile)
   try {
-    console.log('📱 MOBILE CAPTURE: Fase 1 - Câmera traseira EXACT');
+    console.log('📱 MOBILE CAPTURE: Phase 1 - EXACT rear camera (environment)');
     const constraints = {
       video: {
         facingMode: { exact: preferredFacing },
@@ -44,44 +37,33 @@ const getMobileStreamWithEnhancedDetection = async (): Promise<MediaStream | nul
     };
     
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    console.log('✅ MOBILE CAPTURE: Câmera traseira EXACT obtida com sucesso');
+    console.log('✅ MOBILE CAPTURE: EXACT rear camera obtained successfully');
     
-    // FASE 4: Validação aprimorada
+    // FASE 5: Enhanced validation
     const videoTrack = stream.getVideoTracks()[0];
     if (videoTrack) {
       const settings = videoTrack.getSettings();
-      console.log('📱 MOBILE CAPTURE: Configurações da câmera verificadas:', {
+      console.log('📱 MOBILE CAPTURE: Camera settings verified:', {
         facingMode: settings.facingMode,
         width: settings.width,
         height: settings.height,
-        deviceId: settings.deviceId?.substring(0, 20),
-        label: videoTrack.label
+        deviceId: settings.deviceId?.substring(0, 20)
       });
       
-      // FASE 4: Detecção aprimorada de câmera traseira
-      const isCameraRear = settings.facingMode === 'environment' || 
-                          videoTrack.label.toLowerCase().includes('back') || 
-                          videoTrack.label.toLowerCase().includes('traseira') ||
-                          videoTrack.label.toLowerCase().includes('rear');
-      
-      console.log(`📱 MOBILE CAPTURE: Câmera traseira detectada: ${isCameraRear ? 'SIM' : 'NÃO'}`);
-      
-      if (preferredFacing === 'environment' && !isCameraRear) {
-        console.warn('⚠️ MOBILE CAPTURE: Câmera pode não ser traseira, tentando alternativa');
-        // Continuar para próxima fase se não temos certeza que é traseira
-      } else {
+      if (settings.facingMode === preferredFacing) {
+        console.log('✅ MOBILE CAPTURE: CONFIRMED rear camera active');
         return stream;
       }
     }
     
     return stream;
   } catch (error) {
-    console.log('⚠️ MOBILE CAPTURE: Fase 1 falhou, tentando câmera traseira IDEAL');
+    console.log('⚠️ MOBILE CAPTURE: Phase 1 failed, trying ideal rear camera');
   }
   
-  // Fase 2: Tentar câmera traseira IDEAL
+  // Phase 2: Try IDEAL rear camera
   try {
-    console.log('📱 MOBILE CAPTURE: Fase 2 - Câmera traseira IDEAL');
+    console.log('📱 MOBILE CAPTURE: Phase 2 - IDEAL rear camera');
     const constraints = {
       video: {
         facingMode: { ideal: preferredFacing },
@@ -92,22 +74,15 @@ const getMobileStreamWithEnhancedDetection = async (): Promise<MediaStream | nul
     };
     
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    console.log('✅ MOBILE CAPTURE: Câmera traseira IDEAL obtida');
-    
-    // FASE 4: Validação rápida da stream
-    const videoTrack = stream.getVideoTracks()[0];
-    if (videoTrack) {
-      console.log('✅ MOBILE CAPTURE: Video track obtido:', videoTrack.label);
-    }
-    
+    console.log('✅ MOBILE CAPTURE: IDEAL rear camera obtained');
     return stream;
   } catch (error) {
-    console.log('⚠️ MOBILE CAPTURE: Fase 2 falhou, tentando qualquer câmera com áudio');
+    console.log('⚠️ MOBILE CAPTURE: Phase 2 failed, trying any camera with audio');
   }
   
-  // Fase 3: Tentar QUALQUER câmera com áudio (fallback mobile)
+  // Phase 3: Try ANY camera with audio (mobile fallback)
   try {
-    console.log('📱 MOBILE CAPTURE: Fase 3 - QUALQUER câmera com áudio');
+    console.log('📱 MOBILE CAPTURE: Phase 3 - ANY mobile camera with audio');
     const constraints = {
       video: {
         width: { ideal: 640, max: 1280 },
@@ -117,42 +92,46 @@ const getMobileStreamWithEnhancedDetection = async (): Promise<MediaStream | nul
     };
     
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    console.log('✅ MOBILE CAPTURE: QUALQUER câmera com áudio obtida');
+    console.log('✅ MOBILE CAPTURE: ANY camera with audio obtained');
     return stream;
   } catch (error) {
-    console.log('⚠️ MOBILE CAPTURE: Fase 3 falhou, tentando apenas vídeo');
+    console.log('⚠️ MOBILE CAPTURE: Phase 3 failed, trying video only');
   }
   
-  // Fase 4: Tentar apenas vídeo (último recurso para mobile)
+  // Phase 4: Try video only (last resort for mobile)
   try {
-    console.log('📱 MOBILE CAPTURE: Fase 4 - Apenas vídeo (último recurso mobile)');
+    console.log('📱 MOBILE CAPTURE: Phase 4 - Video only (mobile last resort)');
     const constraints = {
-      video: true
+      video: {
+        facingMode: { ideal: preferredFacing },
+        width: { ideal: 480, max: 640 },
+        height: { ideal: 360, max: 480 }
+      }
     };
     
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    console.log('✅ MOBILE CAPTURE: Stream apenas vídeo obtida');
+    console.log('✅ MOBILE CAPTURE: Video-only mobile stream obtained');
     return stream;
   } catch (error) {
-    console.error('❌ MOBILE CAPTURE: Todas as fases mobile falharam:', error);
+    console.error('❌ MOBILE CAPTURE: All mobile phases failed:', error);
     return null;
   }
 };
 
 const getDesktopStreamWithMobileFallback = async (): Promise<MediaStream | null> => {
-  console.log('🖥️ DESKTOP CAPTURE: Iniciando com capacidade de fallback mobile');
+  console.log('🖥️ DESKTOP CAPTURE: Starting with mobile fallback capability');
   
   const desktopConstraints = [
-    // Alta qualidade desktop
+    // High quality desktop
     {
       video: {
-        width: { ideal: 1280, max: 1920 },
-        height: { ideal: 720, max: 1080 },
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 },
         frameRate: { ideal: 30, max: 30 }
       },
       audio: true
     },
-    // Qualidade média
+    // Medium quality
     {
       video: {
         width: { ideal: 1280, max: 1280 },
@@ -160,15 +139,16 @@ const getDesktopStreamWithMobileFallback = async (): Promise<MediaStream | null>
       },
       audio: true
     },
-    // FASE 4: Constraints tipo mobile para fallback desktop
+    // FASE 3: Mobile-like constraints for desktop fallback
     {
       video: {
+        facingMode: { ideal: 'environment' },
         width: { ideal: 640, max: 800 },
         height: { ideal: 480, max: 600 }
       },
       audio: true
     },
-    // Qualidade básica
+    // Basic quality
     {
       video: {
         width: { ideal: 640, max: 640 },
@@ -176,7 +156,7 @@ const getDesktopStreamWithMobileFallback = async (): Promise<MediaStream | null>
       },
       audio: true
     },
-    // Fallback apenas vídeo
+    // Video only fallback
     {
       video: true
     }
@@ -184,129 +164,59 @@ const getDesktopStreamWithMobileFallback = async (): Promise<MediaStream | null>
   
   for (let i = 0; i < desktopConstraints.length; i++) {
     try {
-      console.log(`🖥️ DESKTOP CAPTURE: Tentando conjunto de constraints ${i + 1}`);
+      console.log(`🖥️ DESKTOP CAPTURE: Trying constraint set ${i + 1}`);
       const stream = await navigator.mediaDevices.getUserMedia(desktopConstraints[i]);
-      console.log(`✅ DESKTOP CAPTURE: Sucesso com conjunto ${i + 1}`);
-      
-      // FASE 4: Validação do stream desktop
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) {
-        const settings = videoTrack.getSettings();
-        console.log('🖥️ DESKTOP CAPTURE: Configurações da câmera:', {
-          width: settings.width,
-          height: settings.height,
-          frameRate: settings.frameRate,
-          deviceId: settings.deviceId?.substring(0, 20),
-          label: videoTrack.label
-        });
-      }
-      
+      console.log(`✅ DESKTOP CAPTURE: Success with constraint set ${i + 1}`);
       return stream;
     } catch (error) {
-      console.log(`⚠️ DESKTOP CAPTURE: Conjunto ${i + 1} falhou:`, error);
+      console.log(`⚠️ DESKTOP CAPTURE: Constraint set ${i + 1} failed:`, error);
     }
   }
   
-  console.error('❌ DESKTOP CAPTURE: Todos os conjuntos falharam');
+  console.error('❌ DESKTOP CAPTURE: All constraint sets failed');
   return null;
 };
 
-// FASE 5: Diagnóstico aprimorado para mobile
+// FASE 5: Enhanced camera info for debugging
 export const getCameraInfo = async (): Promise<void> => {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const videoDevices = devices.filter(device => device.kind === 'videoinput');
     
-    console.log('📹 CAMERA INFO: Câmeras disponíveis com detecção mobile:', videoDevices.map(device => ({
+    console.log('📹 CAMERA INFO: Available cameras with mobile detection:', videoDevices.map(device => ({
       deviceId: device.deviceId?.substring(0, 20),
-      label: device.label || 'Câmera desconhecida',
+      label: device.label || 'Unknown Camera',
       groupId: device.groupId?.substring(0, 20),
-      isCamera: device.kind === 'videoinput',
-      isMobileCapable: device.label.toLowerCase().includes('back') || 
-                     device.label.toLowerCase().includes('traseira') || 
-                     device.label.toLowerCase().includes('rear') || 
-                     device.label.toLowerCase().includes('environment')
+      isMobileCapable: device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('rear') || device.label.toLowerCase().includes('environment')
     })));
     
-    // FASE 5: Testar todas as câmeras
+    // Test mobile capabilities
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.has('debug')) {
-      await testAllCameras();
+      await testMobileCameraCapabilities();
     }
   } catch (error) {
-    console.error('❌ CAMERA INFO: Falha ao enumerar dispositivos:', error);
+    console.error('❌ CAMERA INFO: Failed to enumerate devices:', error);
   }
 };
 
-// FASE 5: Teste completo de todas as câmeras
-const testAllCameras = async () => {
-  try {
-    console.log('🧪 TESTE COMPLETO: Testando todas as câmeras...');
-    
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videoDevices = devices.filter(device => device.kind === 'videoinput');
-    
-    for (const device of videoDevices) {
-      try {
-        console.log(`🧪 TESTANDO CÂMERA: ${device.label || 'Câmera sem label'} (${device.deviceId.substring(0, 20)})`);
-        
-        const testStream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: device.deviceId } },
-          audio: false
-        });
-        
-        const videoTrack = testStream.getVideoTracks()[0];
-        const settings = videoTrack.getSettings();
-        
-        console.log(`✅ CÂMERA FUNCIONAL: ${device.label}`, {
-          width: settings.width,
-          height: settings.height,
-          frameRate: settings.frameRate,
-          facingMode: settings.facingMode
-        });
-        
-        // Limpar stream de teste
-        testStream.getTracks().forEach(track => track.stop());
-      } catch (error) {
-        console.log(`❌ CÂMERA FALHOU: ${device.label}:`, error.name);
-      }
+const testMobileCameraCapabilities = async () => {
+  console.log('🧪 TESTING: Mobile camera capabilities...');
+  
+  const facingModes = ['environment', 'user'];
+  for (const facingMode of facingModes) {
+    try {
+      const testStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facingMode } }
+      });
+      
+      const settings = testStream.getVideoTracks()[0]?.getSettings();
+      console.log(`✅ CAMERA TEST: ${facingMode} camera available:`, settings);
+      
+      // Clean up test stream
+      testStream.getTracks().forEach(track => track.stop());
+    } catch (error) {
+      console.log(`❌ CAMERA TEST: ${facingMode} camera not available:`, error.name);
     }
-    
-    // Testar especificamente câmeras traseira e frontal
-    await testSpecificCamera('environment');
-    await testSpecificCamera('user');
-    
-  } catch (error) {
-    console.error('❌ TESTE DE CÂMERAS FALHOU:', error);
   }
 };
-
-// FASE 5: Teste de câmera específica
-const testSpecificCamera = async (facingMode: 'user' | 'environment') => {
-  try {
-    console.log(`🧪 TESTANDO CÂMERA ${facingMode.toUpperCase()}`);
-    
-    const testStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: facingMode } }
-    });
-    
-    const videoTrack = testStream.getVideoTracks()[0];
-    const settings = videoTrack.getSettings();
-    
-    console.log(`✅ CÂMERA ${facingMode.toUpperCase()} FUNCIONAL:`, {
-      label: videoTrack.label,
-      settings
-    });
-    
-    // Limpar stream
-    testStream.getTracks().forEach(track => track.stop());
-    return true;
-  } catch (error) {
-    console.log(`❌ CÂMERA ${facingMode.toUpperCase()} FALHOU:`, error);
-    return false;
-  }
-};
-
-// Expor funções de diagnóstico
-(window as any).testAllCameras = testAllCameras;
-(window as any).getCameraInfo = getCameraInfo;

@@ -1,4 +1,3 @@
-
 /**
  * Utility functions for dynamic connection URL detection with cache busting
  */
@@ -19,35 +18,78 @@ export const clearConnectionCache = (): void => {
  * FASE 1 & 2: CRITICAL URL SYNC - Get the backend base URL with production enforcement
  */
 export const getBackendBaseURL = (): string => {
-  // FASE 2: CRITICAL - Sempre forçar URL do backend de produção
-  const productionBackendUrl = 'https://server-hutz-live.onrender.com';
-  console.log(`🔧 BACKEND URL CRITICAL OVERRIDE: Using forced production backend: ${productionBackendUrl}`);
-  return productionBackendUrl;
-};
+  // FASE 1: URL SYNC CRITICO - Verificar env primeiro
+  const envApiUrl = import.meta.env.VITE_API_URL;
+  
+  if (envApiUrl) {
+    console.log(`🔧 BACKEND URL SYNC: Using environment API URL: ${envApiUrl}`);
+    return envApiUrl;
+  }
 
-export const getFrontendBaseURL = (): string => {
-  // FASE 2: CRITICAL - Sempre forçar URL do frontend de produção
-  const productionFrontendUrl = 'https://hutz-live-85.onrender.com';
-  console.log(`🔧 FRONTEND URL CRITICAL OVERRIDE: Using forced production frontend: ${productionFrontendUrl}`);
-  return productionFrontendUrl;
+  const { protocol, host } = window.location;
+  
+  // FASE 1: CRITICAL FIX - ALWAYS map to server-hutz-live for backend
+  if (host.includes('hutz-live-85.onrender.com') || host.includes('lovableproject.com')) {
+    const backendUrl = 'https://server-hutz-live.onrender.com';
+    console.log(`🌐 BACKEND URL SYNC: Production mapping - Frontend ${host} → Backend server-hutz-live.onrender.com`);
+    console.log(`📋 URL MAPPING CRITICAL: ${host} → server-hutz-live.onrender.com`);
+    return backendUrl;
+  }
+  
+  // Local development environment
+  if (host.includes('localhost') || host.startsWith('127.0.0.1') || host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.')) {
+    const localPort = '3001';
+    const backendUrl = `${protocol}//${host.split(':')[0]}:${localPort}`;
+    console.log(`🏠 BACKEND URL SYNC: Local development detected: ${backendUrl}`);
+    return backendUrl;
+  }
+  
+  // Production environment fallback
+  const backendUrl = `${protocol}//${host}`;
+  console.log(`🌐 BACKEND URL SYNC: Production fallback: ${backendUrl}`);
+  return backendUrl;
 };
 
 export const getWebSocketURL = (): string => {
-  // FASE 2: CRITICAL - Forçar WebSocket para produção
-  const backendUrl = getBackendBaseURL();
-  const wsUrl = backendUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+  // Check for cached URL first (with version check)
+  const cachedData = localStorage.getItem('connectionCache');
+  if (cachedData) {
+    try {
+      const { url, version, timestamp } = JSON.parse(cachedData);
+      const isExpired = Date.now() - timestamp > 30000; // 30 seconds cache
+      
+      if (!isExpired && version === CONNECTION_VERSION) {
+        console.log(`🔧 CONNECTION: Using cached WebSocket URL: ${url}`);
+        return url;
+      } else {
+        console.log('🧹 CONNECTION: Cache expired or version mismatch, clearing');
+        localStorage.removeItem('connectionCache');
+      }
+    } catch (error) {
+      console.warn('⚠️ CONNECTION: Invalid cache data, clearing');
+      localStorage.removeItem('connectionCache');
+    }
+  }
+
+  // FASE 1: CRITICAL - Use the EXACT same backend URL mapping
+  const backendBaseUrl = getBackendBaseURL();
+  const baseUrl = new URL(backendBaseUrl);
   
-  console.log(`🔗 WEBSOCKET URL: Forced production WebSocket URL: ${wsUrl}`);
+  // Convert HTTP(S) to WebSocket protocol
+  const wsProtocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${wsProtocol}//${baseUrl.host}`;
   
-  // Cache for performance
+  console.log(`🔗 CONNECTION: WebSocket URL SYNCHRONIZED with backend: ${wsUrl}`);
+  console.log(`📋 CONNECTION: Backend base: ${backendBaseUrl} → WebSocket: ${wsUrl}`);
+  console.log(`🎯 URL VERIFICATION: Backend host: ${baseUrl.host}, Protocol: ${wsProtocol}`);
+  
   cacheConnectionURL(wsUrl);
   return wsUrl;
 };
 
 export const getApiBaseURL = (): string => {
-  // FASE 2: CRITICAL - Forçar API para produção
   const backendUrl = getBackendBaseURL();
-  console.log(`📡 API URL: Forced production API URL: ${backendUrl}`);
+  console.log(`📡 API: Using SYNCHRONIZED backend URL: ${backendUrl}`);
   return backendUrl;
 };
 
@@ -72,11 +114,6 @@ export const getEnvironmentInfo = () => {
   const isRender = host.includes('hutz-live-85.onrender.com');
   const isSecure = protocol === 'https:';
   
-  // FASE 2: Force production URLs for consistency
-  const productionBackendUrl = getBackendBaseURL();
-  const productionFrontendUrl = getFrontendBaseURL();
-  const productionWsUrl = getWebSocketURL();
-  
   const envInfo = {
     isLocalhost,
     isLovable,
@@ -85,16 +122,15 @@ export const getEnvironmentInfo = () => {
     protocol,
     host,
     wsProtocol: isSecure ? 'wss:' : 'ws:',
-    apiBaseUrl: productionBackendUrl,
-    wsUrl: productionWsUrl,
+    apiBaseUrl: getApiBaseURL(),
+    wsUrl: getWebSocketURL(),
     version: CONNECTION_VERSION,
     // FASE 5: Enhanced debug for URL sync
     urlMapping: {
-      currentEnvironment: isLocalhost ? 'local' : isLovable ? 'lovable' : isRender ? 'render' : 'unknown',
-      frontend: productionFrontendUrl,
-      backend: productionBackendUrl,
-      websocket: productionWsUrl,
-      isURLSynced: true // Now always true since we force production URLs
+      frontend: `${protocol}//${host}`,
+      backend: getBackendBaseURL(),
+      websocket: getWebSocketURL(),
+      isURLSynced: getBackendBaseURL().includes('server-hutz-live.onrender.com')
     },
     // FASE 5: Mobile detection info
     mobileInfo: {
@@ -106,7 +142,7 @@ export const getEnvironmentInfo = () => {
     }
   };
 
-  console.log('🌍 ENVIRONMENT INFO:', envInfo);
+  console.log('🌍 ENVIRONMENT INFO ENHANCED:', envInfo);
   return envInfo;
 };
 
@@ -114,130 +150,67 @@ export const getEnvironmentInfo = () => {
 export const forceRefreshConnections = (): void => {
   console.log('🔄 CONNECTION: Forcing connection refresh with URL sync');
   clearConnectionCache();
-  
-  // FASE 2: Trigger re-detection with production enforcement
+  // Trigger re-detection with backend sync
   const newWsUrl = getWebSocketURL();
   const newApiUrl = getApiBaseURL();
   console.log('🔄 CONNECTION: New URLs - WebSocket:', newWsUrl, 'API:', newApiUrl);
 };
 
-// FASE 3: Room validation - Check if room exists before joining
-export const validateRoom = async (roomId: string): Promise<boolean> => {
-  try {
-    console.log(`🔍 ROOM VALIDATION: Checking if room ${roomId} exists`);
-    
-    const backendUrl = getBackendBaseURL();
-    const response = await fetch(`${backendUrl}/api/rooms/${roomId}`, {
-      method: 'GET',
-      mode: 'cors',
-      credentials: 'omit'
-    });
-    
-    if (response.ok) {
-      console.log(`✅ ROOM VALIDATION: Room ${roomId} exists`);
-      return true;
-    } else {
-      console.warn(`⚠️ ROOM VALIDATION: Room ${roomId} does not exist or error occurred`);
-      return false;
-    }
-  } catch (error) {
-    console.error(`❌ ROOM VALIDATION: Error checking room ${roomId}:`, error);
-    return false;
-  }
-};
-
-// FASE 3: Room creation - Create room if it doesn't exist
-export const createRoomIfNeeded = async (roomId: string): Promise<boolean> => {
-  try {
-    const exists = await validateRoom(roomId);
-    
-    if (exists) {
-      console.log(`✅ ROOM EXISTS: Room ${roomId} already exists`);
-      return true;
-    }
-    
-    console.log(`🏠 ROOM CREATION: Creating room ${roomId}`);
-    
-    const backendUrl = getBackendBaseURL();
-    const response = await fetch(`${backendUrl}/api/rooms`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Room-Id': roomId,
-      },
-      body: JSON.stringify({ roomId }),
-      mode: 'cors',
-      credentials: 'omit'
-    });
-    
-    if (response.ok) {
-      console.log(`✅ ROOM CREATION: Room ${roomId} created successfully`);
-      return true;
-    } else {
-      console.error(`❌ ROOM CREATION: Failed to create room ${roomId}`);
-      return false;
-    }
-  } catch (error) {
-    console.error(`❌ ROOM CREATION: Error creating room ${roomId}:`, error);
-    return false;
-  }
-};
-
-// FASE 5: URL consistency validation
+// FASE 2: Enhanced URL consistency validation
 export const validateURLConsistency = (): boolean => {
-  // With our forced URL approach, consistency should always be true
   const backendUrl = getBackendBaseURL();
-  const frontendUrl = getFrontendBaseURL();
   const wsUrl = getWebSocketURL();
+  const apiUrl = getApiBaseURL();
   
-  console.log('🔍 URL CONSISTENCY CHECK:', {
+  const backendHost = new URL(backendUrl).host;
+  const wsHost = new URL(wsUrl).host;
+  const apiHost = new URL(apiUrl).host;
+  
+  const isConsistent = backendHost === wsHost && wsHost === apiHost;
+  
+  // FASE 5: Enhanced consistency check with mobile context
+  const currentHost = window.location.host;
+  const expectedBackendHost = 'server-hutz-live.onrender.com';
+  const isProperMapping = backendHost === expectedBackendHost;
+  
+  console.log('🔍 URL CONSISTENCY CHECK ENHANCED:', {
+    currentFrontendHost: currentHost,
     backend: backendUrl,
-    frontend: frontendUrl,
     websocket: wsUrl,
-    allForced: true,
-    backendHost: new URL(backendUrl).host,
-    frontendHost: new URL(frontendUrl).host,
-    wsHost: new URL(wsUrl).host,
+    api: apiUrl,
+    allHostsMatch: isConsistent,
+    backendHost,
+    wsHost,
+    apiHost,
+    expectedBackendHost,
+    isProperMapping,
+    hasMobileAccess: sessionStorage.getItem('accessedViaQR') === 'true',
+    urlSyncStatus: isProperMapping ? '✅ SYNCED' : '⚠️ NOT_SYNCED'
   });
   
-  return true; // Now always true as we force correct URLs
+  return isConsistent && isProperMapping;
 };
 
-// FASE 5: Network quality detection
+// FASE 5: Mobile network optimization
 export const detectSlowNetwork = (): boolean => {
-  try {
-    // Check connection type if available
-    const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+  // @ts-ignore - NetworkInformation API
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  
+  if (connection) {
+    const slowConnections = ['slow-2g', '2g', '3g'];
+    const isSlowConnection = slowConnections.includes(connection.effectiveType);
+    const isLowDownlink = connection.downlink < 1.5; // Less than 1.5 Mbps
     
-    if (connection) {
-      const effectiveType = connection.effectiveType;
-      const downlink = connection.downlink;
-      
-      // Consider slow if effective type is 2g or 3g, or downlink is very low
-      const isSlowConnection = effectiveType === '2g' || effectiveType === 'slow-2g' || downlink < 1;
-      
-      console.log('📶 NETWORK DETECTION:', {
-        effectiveType,
-        downlink,
-        isSlowConnection
-      });
-      
-      return isSlowConnection;
-    }
+    console.log(`📶 NETWORK DETECTION: Type: ${connection.effectiveType}, Downlink: ${connection.downlink}Mbps, Slow: ${isSlowConnection || isLowDownlink}`);
     
-    // Fallback: assume fast network if no connection info available
-    console.log('📶 NETWORK DETECTION: No connection info available, assuming fast network');
-    return false;
-  } catch (error) {
-    console.warn('⚠️ NETWORK DETECTION: Error detecting network quality:', error);
-    return false; // Default to fast network on error
+    return isSlowConnection || isLowDownlink;
   }
+  
+  return false; // Assume fast if can't detect
 };
 
 // Make available globally for debugging
 (window as any).forceRefreshConnections = forceRefreshConnections;
 (window as any).clearConnectionCache = clearConnectionCache;
 (window as any).validateURLConsistency = validateURLConsistency;
-(window as any).validateRoom = validateRoom;
-(window as any).createRoomIfNeeded = createRoomIfNeeded;
 (window as any).detectSlowNetwork = detectSlowNetwork;
