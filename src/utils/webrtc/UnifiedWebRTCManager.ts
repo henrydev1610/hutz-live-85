@@ -80,6 +80,10 @@ export class UnifiedWebRTCManager {
     // Link signaling handler with connection handler
     this.signalingHandler.setConnectionHandler(this.connectionHandler);
     
+    // CRITICAL FIX: Fornecer connectionHandler ao callbacksManager
+    this.callbacksManager.setConnectionHandler(this.connectionHandler);
+    console.log('🔄 CRITICAL FIX: ConnectionHandler fornecido ao WebRTCCallbacks');
+    
     // Setup stream callback chain
     this.connectionHandler.setStreamCallback((participantId, stream) => {
       console.log(`🎥 UNIFIED: Stream received from ${participantId}`);
@@ -295,6 +299,10 @@ export class UnifiedWebRTCManager {
           this.participantManager.addParticipant(participantId, data);
           this.callbacksManager.triggerParticipantJoinCallback(participantId);
           this.connectionHandler.startHeartbeat(participantId);
+          
+          // FASE 1: HOST envia oferta ao novo participante
+          console.log(`📞 UNIFIED HOST: Iniciando oferta para novo participante: ${participantId}`);
+          this.connectionHandler.initiateCallWithRetry(participantId);
         },
         (data) => {
           console.log(`👤 UNIFIED HOST: Participant disconnected:`, data);

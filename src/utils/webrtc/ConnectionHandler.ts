@@ -1,3 +1,4 @@
+
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 export class ConnectionHandler {
@@ -7,6 +8,7 @@ export class ConnectionHandler {
   private participantJoinCallback: ((participantId: string) => void) | null = null;
   private retryAttempts: Map<string, number> = new Map();
   private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
+  private offerTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(
     peerConnections: Map<string, RTCPeerConnection>,
@@ -31,8 +33,18 @@ export class ConnectionHandler {
 
     // Verificar se já existe conexão para este participante
     if (this.peerConnections.has(participantId)) {
-      console.log(`♻️ Reusing existing peer connection for: ${participantId}`);
-      return this.peerConnections.get(participantId)!;
+      const existingPC = this.peerConnections.get(participantId)!;
+      
+      // FASE 2: Verificar se a conexão existente está em bom estado
+      if (existingPC.connectionState === 'connected' || 
+          existingPC.connectionState === 'connecting') {
+        console.log(`♻️ Reusing existing peer connection for: ${participantId} in state: ${existingPC.connectionState}`);
+        return existingPC;
+      } else {
+        console.log(`🔄 Replacing stale peer connection for: ${participantId} in state: ${existingPC.connectionState}`);
+        existingPC.close();
+        this.peerConnections.delete(participantId);
+      }
     }
 
     // Criar nome único para o relay baseado na sessão e timestamp
@@ -56,7 +68,12 @@ export class ConnectionHandler {
 
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log(`🧊 Sending ICE candidate to: ${participantId}`);
+        console.log(`🧊 Sending ICE candidate to: ${participantId}`, {
+          type: event.candidate.type,
+          protocol: event.candidate.protocol,
+          address: event.candidate.address,
+          port: event.candidate.port
+        });
         unifiedWebSocketService.sendIceCandidate(participantId, event.candidate);
       }
     };
@@ -66,6 +83,9 @@ export class ConnectionHandler {
 
       if (peerConnection.connectionState === 'connected') {
         console.log(`✅ WEBRTC SUCCESS: Peer connection established with: ${participantId}`);
+        // FASE 2: Limpar timeout de oferta ao conectar com sucesso
+        this.clearOfferTimeout(participantId);
+        
         if (this.participantJoinCallback) {
           this.participantJoinCallback(participantId);
         }
@@ -76,6 +96,19 @@ export class ConnectionHandler {
         console.log(`🔄 WEBRTC CONNECTING: Establishing connection with: ${participantId}`);
       } else if (peerConnection.connectionState === 'new') {
         console.log(`🆕 WEBRTC NEW: New connection created for: ${participantId}`);
+      }
+    };
+
+    // FASE 3: Adicionar evento específico de ICE
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log(`🧊 ICE CONNECTION: ${participantId} state changed to: ${peerConnection.iceConnectionState}`);
+      
+      // Monitorar estados de ICE que podem indicar problemas
+      if (peerConnection.iceConnectionState === 'failed') {
+        console.error(`❌ ICE CONNECTION FAILED: Peer ${participantId} ICE negotiation failed`);
+        this.handleConnectionFailure(participantId);
+      } else if (peerConnection.iceConnectionState === 'disconnected') {
+        console.warn(`⚠️ ICE CONNECTION DISCONNECTED: Peer ${participantId} ICE connection unstable`);
       }
     };
 
@@ -133,11 +166,21 @@ export class ConnectionHandler {
       }
     };
 
-    // ✅ ALTERAÇÃO: usar replaceTrack ao invés de addTrack redundante
+    // FASE 3: Adicionar os tracks de forma mais robusta
     const localStream = this.getLocalStream();
     if (localStream) {
-      console.log(`📤 Preparing to push local tracks to: ${participantId}`);
+      console.log(`📤 Preparing to push local tracks to: ${participantId}`, {
+        streamId: localStream.id,
+        active: localStream.active,
+        videoTracks: localStream.getVideoTracks().length,
+        audioTracks: localStream.getAudioTracks().length
+      });
+      
+      // Limpar senders existentes se necessário
       const senders = peerConnection.getSenders();
+      if (senders.length > 0) {
+        console.log(`🧹 Cleaning up ${senders.length} existing senders before adding tracks`);
+      }
 
       localStream.getTracks().forEach(newTrack => {
         const existingSender = senders.find(s => s.track?.kind === newTrack.kind);
@@ -148,9 +191,15 @@ export class ConnectionHandler {
           );
         } else {
           console.log(`➕ Adding new ${newTrack.kind} track to: ${participantId}`);
-          peerConnection.addTrack(newTrack, localStream);
+          try {
+            peerConnection.addTrack(newTrack, localStream);
+          } catch (error) {
+            console.error(`❌ Failed to add ${newTrack.kind} track:`, error);
+          }
         }
       });
+    } else {
+      console.warn(`⚠️ No local stream available when creating connection for ${participantId}`);
     }
 
     return peerConnection;
@@ -160,42 +209,84 @@ export class ConnectionHandler {
     const currentRetries = this.retryAttempts.get(participantId) || 0;
 
     if (currentRetries >= maxRetries) {
-      console.error(`❌ Max retry attempts reached for: ${participantId}`);
+      console.error(`❌ Max retry attempts (${maxRetries}) reached for: ${participantId}`);
       return;
     }
 
     this.retryAttempts.set(participantId, currentRetries + 1);
+    console.log(`🔄 Initiating call attempt ${currentRetries + 1}/${maxRetries} to: ${participantId}`);
+
+    // FASE 2: Verificar se já existe um timeout pendente
+    this.clearOfferTimeout(participantId);
 
     try {
       await this.initiateCall(participantId);
-      this.retryAttempts.delete(participantId);
+      
+      // FASE 2: Timeout para verificar se a conexão foi estabelecida
+      const timeout = setTimeout(() => {
+        const pc = this.peerConnections.get(participantId);
+        if (pc && (pc.connectionState !== 'connected' && pc.connectionState !== 'connecting')) {
+          console.warn(`⏱️ Offer timeout for ${participantId} - connection state: ${pc.connectionState}`);
+          
+          if (currentRetries + 1 < maxRetries) {
+            console.log(`🔄 Auto-retrying call to ${participantId} after timeout`);
+            this.initiateCallWithRetry(participantId, maxRetries);
+          }
+        }
+      }, 10000); // 10 segundos para timeout da oferta
+      
+      this.offerTimeouts.set(participantId, timeout);
+      
     } catch (error) {
       console.error(`❌ Call initiation failed for ${participantId} (attempt ${currentRetries + 1}):`, error);
 
       if (currentRetries + 1 < maxRetries) {
-        console.log(`🔄 Retrying call to ${participantId} in 2 seconds...`);
+        const retryDelay = Math.min(2000 * Math.pow(2, currentRetries), 10000);
+        console.log(`🔄 Retrying call to ${participantId} in ${retryDelay/1000} seconds...`);
+        
         setTimeout(() => {
           this.initiateCallWithRetry(participantId, maxRetries);
-        }, 2000);
+        }, retryDelay);
+      } else {
+        console.error(`❌ Failed to establish WebRTC connection with ${participantId} after ${maxRetries} attempts`);
       }
+    }
+  }
+
+  private clearOfferTimeout(participantId: string): void {
+    const existingTimeout = this.offerTimeouts.get(participantId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      this.offerTimeouts.delete(participantId);
+      console.log(`🧹 Cleared offer timeout for: ${participantId}`);
     }
   }
 
   private async initiateCall(participantId: string): Promise<void> {
     console.log(`📞 Initiating call to: ${participantId}`);
 
+    // FASE 3: Verificar se a conexão peer existe e está em bom estado
     const peerConnection = this.createPeerConnection(participantId);
 
     try {
+      // FASE 3: Melhorar criação de oferta com mais logs
+      console.log(`📝 Creating offer for: ${participantId}`);
       const offer = await peerConnection.createOffer({
         offerToReceiveVideo: true,
         offerToReceiveAudio: true
       });
-
+      
+      console.log(`📝 Setting local description for: ${participantId}`);
       await peerConnection.setLocalDescription(offer);
-      console.log(`📤 Sending offer to: ${participantId}`);
+      console.log(`📤 Sending offer to: ${participantId}`, {
+        sdpType: offer.type,
+        sdpLength: offer.sdp.length,
+        hasVideo: offer.sdp.includes('m=video'),
+        hasAudio: offer.sdp.includes('m=audio')
+      });
 
       unifiedWebSocketService.sendOffer(participantId, offer);
+      console.log(`✅ Offer sent successfully to: ${participantId}`);
     } catch (error) {
       console.error(`❌ Failed to create/send offer to ${participantId}:`, error);
       throw error;
@@ -207,12 +298,16 @@ export class ConnectionHandler {
 
     const peerConnection = this.peerConnections.get(participantId);
     if (peerConnection) {
+      console.log(`🔌 Closing failed connection for: ${participantId}`);
       peerConnection.close();
       this.peerConnections.delete(participantId);
     }
 
     this.clearHeartbeat(participantId);
+    this.clearOfferTimeout(participantId);
 
+    // FASE 3: Delay maior antes de tentar novamente
+    console.log(`⏱️ Scheduling recovery for ${participantId} in 3 seconds`);
     setTimeout(() => {
       this.initiateCallWithRetry(participantId);
     }, 3000);

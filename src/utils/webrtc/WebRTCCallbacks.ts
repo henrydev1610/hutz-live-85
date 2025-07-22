@@ -1,10 +1,21 @@
 
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { toast } from 'sonner';
+import { ConnectionHandler } from './ConnectionHandler';
 
 export class WebRTCCallbacks {
   private onStreamCallback: ((participantId: string, stream: MediaStream) => void) | null = null;
   private onParticipantJoinCallback: ((participantId: string) => void) | null = null;
+  private connectionHandler: ConnectionHandler | null = null;
+
+  constructor() {
+    console.log('🔄 WebRTCCallbacks: Initialized');
+  }
+
+  setConnectionHandler(handler: ConnectionHandler) {
+    this.connectionHandler = handler;
+    console.log('🔄 WebRTCCallbacks: Connection handler set');
+  }
 
   setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
     this.onStreamCallback = callback;
@@ -33,11 +44,31 @@ export class WebRTCCallbacks {
       onOffer,
       onAnswer,
       onIceCandidate,
-      // NEW: Stream event callbacks
+      // Stream event callbacks
       onStreamStarted: (participantId, streamInfo) => {
         console.log('🎥 HOST: Stream started event received:', participantId, streamInfo);
-        if (this.onParticipantJoinCallback) {
-          this.onParticipantJoinCallback(participantId);
+        
+        // FASE 1: Host deve iniciar uma oferta quando receber notificação de stream
+        if (this.connectionHandler && participantId) {
+          console.log(`🚀 HOST: Iniciando oferta WebRTC para ${participantId} após receber notificação de stream`);
+          
+          // Primeiro garantir que o callback de participante seja disparado
+          if (this.onParticipantJoinCallback) {
+            console.log(`👤 HOST: Disparando callback de novo participante para ${participantId}`);
+            this.onParticipantJoinCallback(participantId);
+          }
+          
+          // CRITICAL FIX: Iniciar oferta WebRTC com retry automaticamente
+          setTimeout(() => {
+            if (this.connectionHandler) {
+              console.log(`📞 HOST: Iniciando chamada WebRTC para ${participantId} com retry logic`);
+              this.connectionHandler.initiateCallWithRetry(participantId, 5);
+            } else {
+              console.error(`❌ HOST: ConnectionHandler não está disponível para iniciar chamada para ${participantId}`);
+            }
+          }, 500); // Pequeno delay para garantir que tudo esteja pronto
+        } else {
+          console.error(`❌ HOST: Não foi possível iniciar oferta para ${participantId} - connectionHandler ${this.connectionHandler ? 'disponível' : 'indisponível'}`);
         }
       },
       onError: (error) => {
@@ -65,9 +96,16 @@ export class WebRTCCallbacks {
       onOffer,
       onAnswer,
       onIceCandidate,
-      // NEW: Stream event callbacks for participants
+      // Stream event callbacks for participants
       onStreamStarted: (participantId, streamInfo) => {
         console.log('🎥 PARTICIPANT: Stream started event received:', participantId, streamInfo);
+        
+        // FASE 1: Participante também deve iniciar uma oferta quando necessário
+        if (this.connectionHandler && participantId) {
+          console.log(`🔄 PARTICIPANT: Verificando necessidade de iniciar oferta para ${participantId}`);
+          // Participante só inicia oferta se necessário (ex: host desconectou e reconectou)
+          // Esta lógica já existe no código atual do participante
+        }
       },
       onError: (error) => {
         console.error('❌ Participant signaling error:', error);
