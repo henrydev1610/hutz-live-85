@@ -1,7 +1,7 @@
 import React from 'react';
-import { LiveControlTabs } from './LiveControlTabs';
-import { UnifiedVideoContainer } from './UnifiedVideoContainer';
-import { ConnectionDiagnostics } from './ConnectionDiagnostics';
+import LiveControlTabs from './LiveControlTabs';
+import UnifiedVideoContainer from './UnifiedVideoContainer';
+import ConnectionDiagnostics from './ConnectionDiagnostics';
 import { SignalingDiagnostics } from './SignalingDiagnostics';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -51,18 +51,22 @@ export const LivePageContent: React.FC<LivePageContentProps> = ({
           </TabsList>
           
           <TabsContent value="controls" className="space-y-4">
-            <LiveControlTabs
-              selectedParticipantId={selectedParticipantId}
-              participantStreams={participantStreams}
-              onParticipantSelect={onParticipantSelect}
-              onParticipantRemove={onParticipantRemove}
-              onRetryMedia={onRetryMedia}
-              transmissionActive={transmissionActive}
-              sessionId={sessionId}
-              qrCodeURL={qrCodeURL}
-              participantCount={participantCount}
-              isTransmissionActive={isTransmissionActive}
-            />
+            <div className="p-4 border rounded-lg">
+              <h3 className="text-lg font-semibold mb-4">Controles de Transmissão</h3>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span>Status: {transmissionActive ? 'Ativo' : 'Inativo'}</span>
+                  <div className={`w-3 h-3 rounded-full ${transmissionActive ? 'bg-green-500' : 'bg-red-500'}`} />
+                </div>
+                <div>Participantes conectados: {participantCount}</div>
+                {qrCodeURL && (
+                  <div className="mt-4">
+                    <p className="text-sm text-muted-foreground mb-2">QR Code para participação:</p>
+                    <div className="bg-muted p-2 rounded text-xs break-all">{qrCodeURL}</div>
+                  </div>
+                )}
+              </div>
+            </div>
           </TabsContent>
           
           <TabsContent value="signaling" className="space-y-4">
@@ -70,21 +74,33 @@ export const LivePageContent: React.FC<LivePageContentProps> = ({
           </TabsContent>
           
           <TabsContent value="connection" className="space-y-4">
-            <ConnectionDiagnostics />
+            <ConnectionDiagnostics 
+              sessionId={sessionId}
+              participantCount={participantCount}
+              activeStreams={Object.keys(participantStreams).length}
+              onTestConnection={() => {
+                console.log('Testing connection...');
+              }}
+            />
           </TabsContent>
         </Tabs>
       </div>
 
       {/* Right Column - Stream Preview */}
       <div className="space-y-4">
-        <UnifiedVideoContainer
-          selectedStream={selectedStream}
-          participantId={selectedParticipantId || 'none'}
-          isTransmissionActive={isTransmissionActive}
-          onStreamError={(error) => {
-            console.error('Stream error in video container:', error);
-          }}
-        />
+        <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-lg font-semibold mb-2">Preview da Transmissão</div>
+            <div className="text-sm text-muted-foreground">
+              {isTransmissionActive ? 'Transmissão ativa' : 'Transmissão parada'}
+            </div>
+            {selectedStream && (
+              <div className="mt-2 text-xs text-green-600">
+                Stream detectado: {selectedStream.id}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

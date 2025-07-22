@@ -4,35 +4,40 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 
 interface FinalActionDialogProps {
-  finalActionOpen: boolean;
-  setFinalActionOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  finalActionTimeLeft: number;
-  onCloseFinalAction: () => void;
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  type: 'end' | 'leave' | null;
 }
 
 const FinalActionDialog: React.FC<FinalActionDialogProps> = ({
-  finalActionOpen,
-  setFinalActionOpen,
-  finalActionTimeLeft,
-  onCloseFinalAction
+  isOpen,
+  onClose,
+  onConfirm,
+  type
 }) => {
+  if (!type) return null;
+  
   return (
-    <Dialog open={finalActionOpen} onOpenChange={setFinalActionOpen}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Ação final enviada!</DialogTitle>
+          <DialogTitle>
+            {type === 'end' ? 'Encerrar Sessão' : 'Sair da Sessão'}
+          </DialogTitle>
           <DialogDescription>
-            O conteúdo foi exibido para os participantes.
+            {type === 'end' 
+              ? 'Tem certeza que deseja encerrar a sessão? Todos os participantes serão desconectados.'
+              : 'Tem certeza que deseja sair da sessão?'
+            }
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center space-x-2">
-          <div className="grid flex-1 gap-2">
-            <p className="text-sm text-muted-foreground">
-              Esta tela será fechada automaticamente em {finalActionTimeLeft} segundos.
-            </p>
-          </div>
-          <Button variant="outline" onClick={onCloseFinalAction}>
-            Fechar agora
+          <Button variant="outline" onClick={onClose} className="flex-1">
+            Cancelar
+          </Button>
+          <Button onClick={onConfirm} variant="destructive" className="flex-1">
+            {type === 'end' ? 'Encerrar' : 'Sair'}
           </Button>
         </div>
       </DialogContent>

@@ -47,10 +47,15 @@ export const SignalingDiagnostics: React.FC = () => {
       console.log(`🔍 DIAGNOSTIC: Testing Node.js server at ${nodeUrl}`);
       
       // Test HTTP endpoint first
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
       const httpResponse = await fetch(`${nodeUrl}/health`, {
         method: 'GET',
-        timeout: 5000
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
       
       if (httpResponse.ok) {
         console.log('✅ DIAGNOSTIC: Node.js HTTP server is responsive');

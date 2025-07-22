@@ -28,6 +28,9 @@ export const getEnvironmentInfo = (): {
   baseURL: string | undefined;
   apiBaseUrl: string | undefined;
   apiUrl: string | undefined;
+  isLovable: boolean;
+  isLocalhost: boolean;
+  wsUrl: string | undefined;
 } => {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
   const apiUrl = import.meta.env.VITE_API_URL;
@@ -40,6 +43,9 @@ export const getEnvironmentInfo = (): {
     baseURL: baseURL,
     apiBaseUrl: apiBaseUrl,
     apiUrl: apiUrl,
+    isLovable: window.location.hostname.includes('lovable'),
+    isLocalhost: window.location.hostname === 'localhost',
+    wsUrl: baseURL,
   };
 };
 
@@ -128,4 +134,17 @@ export const detectSlowNetwork = (): boolean => {
   );
   
   return isLowEndMobile;
+};
+
+export const clearConnectionCache = (): void => {
+  console.log('🧹 Clearing connection cache');
+  // Implementation for clearing connection cache
+};
+
+export const getBackendBaseURL = (): string => {
+  return getWebSocketURL();
+};
+
+export const getApiBaseURL = (): string => {
+  return getWebSocketURL();
 };

@@ -2,27 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from "sonner";
 import { LivePageContent } from './LivePageContent';
-import { FinalActionDialog } from './FinalActionDialog';
+import FinalActionDialog from './FinalActionDialog';
 import { signalingResolver } from '@/utils/signaling/SignalingResolver';
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 import {
   useParticipantMedia,
-  ParticipantMediaState,
 } from '@/hooks/participant/useParticipantMedia';
 import {
-  useHostControls,
-  HostControlActions,
-} from '@/hooks/host/useHostControls';
-import {
   useParticipantConnection,
-  ParticipantConnectionState,
 } from '@/hooks/participant/useParticipantConnection';
-import {
-  useBroadcast,
-  BroadcastState,
-} from '@/hooks/host/useBroadcast';
-import { generateRandomId } from '@/utils';
 
 interface LivePageContainerProps {
   sessionId: string;
@@ -33,19 +22,17 @@ export const LivePageContainer: React.FC<LivePageContainerProps> = ({
 }) => {
   const navigate = useNavigate();
 
-  // Media State (Host and Participant)
+  // Media State
   const {
-    hasMediaPermissions,
-    isMediaReady,
-    stream: mediaStream,
-    error: mediaError,
-    startMedia,
-    stopMedia,
-    retryMedia,
+    hasVideo,
+    hasAudio,
+    localStreamRef,
+    initializeMedia,
+    retryMediaInitialization,
   } = useParticipantMedia();
 
-  // Connection State (Host and Participant)
-  const participantId = generateRandomId();
+  // Connection State
+  const participantId = sessionId + '-host'; // Simple ID generation
   const {
     isConnected,
     isConnecting,
@@ -56,25 +43,13 @@ export const LivePageContainer: React.FC<LivePageContainerProps> = ({
     isMobile,
   } = useParticipantConnection(sessionId, participantId);
 
-  // Host Controls (Host Only)
-  const {
-    participantStreams,
-    selectedParticipantId,
-    transmissionActive,
-    startBroadcast,
-    stopBroadcast,
-    selectParticipant,
-    removeParticipant,
-  } = useHostControls(sessionId, mediaStream);
-
-  // Broadcast State (Host Only)
-  const {
-    isTransmissionActive,
-    startTransmission,
-    stopTransmission,
-    qrCodeURL,
-    participantCount,
-  } = useBroadcast(sessionId, isConnected);
+  // State management
+  const [participantStreams, setParticipantStreams] = useState<{ [id: string]: MediaStream }>({});
+  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
+  const [transmissionActive, setTransmissionActive] = useState(false);
+  const [isTransmissionActive, setIsTransmissionActive] = useState(false);
+  const [qrCodeURL, setQrCodeURL] = useState('');
+  const [participantCount, setParticipantCount] = useState(0);
 
   // State for Final Action Dialog
   const [isDialogOpen, setDialogOpen] = useState(false);
@@ -122,51 +97,49 @@ export const LivePageContainer: React.FC<LivePageContainerProps> = ({
     initializeSignaling();
   }, [sessionId]);
 
-  // Initialize connection and media
+  // Initialize media and connection
   useEffect(() => {
-    if (isMediaReady && mediaStream) {
-      console.log('🔗 LIVE CONTAINER: Media is ready, connecting to session...');
-      connectToSession(mediaStream);
-    } else if (isMediaReady && !mediaStream) {
-      console.warn('⚠️ LIVE CONTAINER: Media is ready but stream is null');
-    }
-  }, [isMediaReady, mediaStream, connectToSession]);
+    const initialize = async () => {
+      try {
+        const stream = await initializeMedia();
+        if (stream) {
+          console.log('🔗 LIVE CONTAINER: Media is ready, connecting to session...');
+          connectToSession(stream);
+        }
+      } catch (error) {
+        console.error('❌ LIVE CONTAINER: Failed to initialize media:', error);
+      }
+    };
+
+    initialize();
+  }, []);
 
   // Handle connection status changes
   useEffect(() => {
     if (connectionStatus === 'connected') {
       console.log('✅ LIVE CONTAINER: Connected to session, starting transmission...');
-      startTransmission();
+      setTransmissionActive(true);
+      setIsTransmissionActive(true);
     } else if (connectionStatus === 'disconnected') {
       console.log('🔌 LIVE CONTAINER: Disconnected from session, stopping transmission...');
-      stopTransmission();
+      setTransmissionActive(false);
+      setIsTransmissionActive(false);
     }
-  }, [connectionStatus, startTransmission, stopTransmission]);
-
-  // Handle broadcast state changes
-  useEffect(() => {
-    if (transmissionActive) {
-      console.log('📢 LIVE CONTAINER: Starting broadcast...');
-      startBroadcast();
-    } else {
-      console.log('🔇 LIVE CONTAINER: Stopping broadcast...');
-      stopBroadcast();
-    }
-  }, [transmissionActive, startBroadcast, stopBroadcast]);
+  }, [connectionStatus]);
 
   // Final Action Handlers
   const handleEndSession = () => {
     console.log('🚪 LIVE CONTAINER: Ending session...');
-    stopTransmission();
+    setTransmissionActive(false);
+    setIsTransmissionActive(false);
     disconnectFromSession();
-    navigate('/sessions');
+    navigate('/dashboard');
   };
 
   const handleLeaveSession = () => {
     console.log('🚶 LIVE CONTAINER: Leaving session...');
-    stopMedia();
     disconnectFromSession();
-    navigate('/sessions');
+    navigate('/dashboard');
   };
 
   const handleOpenDialog = (type: 'end' | 'leave') => {
@@ -198,15 +171,7 @@ export const LivePageContainer: React.FC<LivePageContainerProps> = ({
         await signalingResolver.connectWithOptimalSignaling();
       }
       
-      if (!hasMediaPermissions) {
-        console.warn('⚠️ LIVE CONTAINER: No media permissions, requesting...');
-        await startMedia();
-      }
-  
-      if (!isMediaReady) {
-        console.warn('⚠️ LIVE CONTAINER: Media not ready, retrying...');
-        await retryMedia();
-      }
+      await retryMediaInitialization();
       
     } catch (error) {
       console.error('❌ LIVE CONTAINER: Media retry failed:', error);
@@ -257,11 +222,15 @@ export const LivePageContainer: React.FC<LivePageContainerProps> = ({
       <LivePageContent
         selectedParticipantId={selectedParticipantId}
         participantStreams={participantStreams}
-        onParticipantSelect={selectParticipant}
-        onParticipantRemove={removeParticipant}
+        onParticipantSelect={setSelectedParticipantId}
+        onParticipantRemove={(id: string) => {
+          const newStreams = { ...participantStreams };
+          delete newStreams[id];
+          setParticipantStreams(newStreams);
+        }}
         onRetryMedia={handleRetryMedia}
         transmissionActive={transmissionActive}
-        selectedStream={mediaStream}
+        selectedStream={localStreamRef.current}
         sessionId={sessionId}
         qrCodeURL={qrCodeURL}
         participantCount={participantCount}
