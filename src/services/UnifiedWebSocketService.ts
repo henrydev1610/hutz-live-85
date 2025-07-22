@@ -426,6 +426,11 @@ class UnifiedWebSocketService {
       console.error('❌ SIGNALING: Cannot send offer - not connected');
       return;
     }
+    
+    if (!this.currentRoomId) {
+      console.error('❌ SIGNALING: Cannot send offer - not joined to any room');
+      return;
+    }
 
     console.log('📞 SIGNALING: Sending offer to:', targetUserId);
     this.socket!.emit('offer', { targetUserId, offer });
@@ -434,6 +439,11 @@ class UnifiedWebSocketService {
   sendAnswer(targetUserId: string, answer: RTCSessionDescriptionInit): void {
     if (!this.isConnected()) {
       console.error('❌ SIGNALING: Cannot send answer - not connected');
+      return;
+    }
+    
+    if (!this.currentRoomId) {
+      console.error('❌ SIGNALING: Cannot send answer - not joined to any room');
       return;
     }
 
@@ -446,6 +456,11 @@ class UnifiedWebSocketService {
       console.error('❌ SIGNALING: Cannot send ICE candidate - not connected');
       return;
     }
+    
+    if (!this.currentRoomId) {
+      console.error('❌ SIGNALING: Cannot send ICE candidate - not joined to any room');
+      return;
+    }
 
     console.log('🧊 SIGNALING: Sending ICE candidate to:', targetUserId);
     this.socket!.emit('ice-candidate', { targetUserId, candidate });
@@ -454,6 +469,11 @@ class UnifiedWebSocketService {
   notifyStreamStarted(participantId: string, streamInfo: any): void {
     if (!this.isConnected()) {
       console.error('❌ SIGNALING: Cannot notify stream started - not connected');
+      return;
+    }
+    
+    if (!this.currentRoomId) {
+      console.error('❌ SIGNALING: Cannot notify stream started - not joined to any room');
       return;
     }
 
