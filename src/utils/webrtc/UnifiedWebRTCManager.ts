@@ -61,7 +61,8 @@ export class UnifiedWebRTCManager {
     this.initializeComponents();
     this.setupHealthMonitoring();
     
-    // Evitar relay duplicado - limpar estado inicial
+    // Evitar relay duplicado - limpar estado inicial e verificar conexões existentes
+    this.cleanupExistingConnections();
     this.cleanup();
   }
 
@@ -91,6 +92,24 @@ export class UnifiedWebRTCManager {
       this.updateConnectionMetrics(participantId, { joined: true });
       this.callbacksManager.triggerParticipantJoinCallback(participantId);
     });
+  }
+
+  private cleanupExistingConnections(): void {
+    console.log('🧹 RELAY-SAFE: Checking for existing WebRTC connections');
+    
+    // Fechar qualquer conexão peer pendente ou ativa
+    this.peerConnections.forEach((pc, participantId) => {
+      const uniqueId = (pc as any).__uniqueId;
+      console.log(`🔌 RELAY-SAFE: Closing existing connection for ${participantId} (ID: ${uniqueId})`);
+      try {
+        pc.close();
+      } catch (error) {
+        console.warn(`⚠️ Error closing connection for ${participantId}:`, error);
+      }
+    });
+    this.peerConnections.clear();
+    
+    console.log('✅ RELAY-SAFE: Existing connections cleaned up');
   }
 
   private setupHealthMonitoring() {
@@ -458,7 +477,7 @@ export class UnifiedWebRTCManager {
   }
 
   cleanup() {
-    console.log(`🧹 UNIFIED: Cleaning up WebRTC manager`);
+    console.log('🧹 UNIFIED: Starting comprehensive cleanup');
     
     // Clear health monitoring
     if (this.healthCheckInterval) {
@@ -471,10 +490,15 @@ export class UnifiedWebRTCManager {
     this.retryTimeouts.clear();
     this.retryAttempts.clear();
     
-    // Close peer connections
+    // Enhanced cleanup with unique ID logging
     this.peerConnections.forEach((pc, participantId) => {
-      console.log(`Closing peer connection for ${participantId}`);
-      pc.close();
+      const uniqueId = (pc as any).__uniqueId;
+      console.log(`🔌 RELAY-SAFE: Closing peer connection for ${participantId} (ID: ${uniqueId})`);
+      try {
+        pc.close();
+      } catch (error) {
+        console.warn(`⚠️ Error closing connection for ${participantId}:`, error);
+      }
     });
     this.peerConnections.clear();
     
@@ -486,7 +510,7 @@ export class UnifiedWebRTCManager {
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => {
         track.stop();
-        console.log(`Stopped ${track.kind} track`);
+        console.log(`🛑 Stopped track: ${track.kind}`);
       });
       this.localStream = null;
     }
@@ -505,6 +529,6 @@ export class UnifiedWebRTCManager {
     };
     this.connectionMetrics.clear();
     
-    console.log(`✅ UNIFIED: Cleanup completed`);
+    console.log('✅ UNIFIED: Cleanup completed');
   }
 }

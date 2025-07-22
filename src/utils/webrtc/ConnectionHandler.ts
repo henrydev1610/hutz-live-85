@@ -29,6 +29,15 @@ export class ConnectionHandler {
   createPeerConnection(participantId: string): RTCPeerConnection {
     console.log(`🔗 Creating peer connection for: ${participantId}`);
 
+    // Verificar se já existe conexão para este participante
+    if (this.peerConnections.has(participantId)) {
+      console.log(`♻️ Reusing existing peer connection for: ${participantId}`);
+      return this.peerConnections.get(participantId)!;
+    }
+
+    // Criar nome único para o relay baseado na sessão e timestamp
+    const uniqueId = `relay-${participantId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
     const config = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -37,7 +46,12 @@ export class ConnectionHandler {
       ]
     };
 
+    console.log(`🔧 Creating WebRTC connection with unique ID: ${uniqueId}`);
     const peerConnection = new RTCPeerConnection(config);
+    
+    // Adicionar propriedade única para debug
+    (peerConnection as any).__uniqueId = uniqueId;
+    
     this.peerConnections.set(participantId, peerConnection);
 
     peerConnection.onicecandidate = (event) => {
