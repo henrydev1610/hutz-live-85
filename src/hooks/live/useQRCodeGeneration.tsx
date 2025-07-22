@@ -3,11 +3,54 @@ import { useState } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import QRCode from 'qrcode';
 import { generateSessionId } from '@/utils/sessionUtils';
-import { getApiBaseURL } from '@/utils/connectionUtils';
+
+// FASE 1 & 2: URL SYNC CRITICO - Forçar produção URLs
+const RENDER_PRODUCTION_URL = 'https://hutz-live-85.onrender.com';
+const RENDER_BACKEND_URL = 'https://server-hutz-live.onrender.com';
+
+const getProductionURL = (): string => {
+  const currentHost = window.location.host;
+  
+  // CRÍTICO: Sempre usar Render em produção, mesmo no Lovable
+  if (currentHost.includes('lovableproject.com') || 
+      currentHost.includes('localhost') || 
+      currentHost.includes('127.0.0.1')) {
+    console.log('🌐 QR URL OVERRIDE: Development detected, forcing production URL');
+    console.log(`📍 Override: ${currentHost} → ${RENDER_PRODUCTION_URL}`);
+    return RENDER_PRODUCTION_URL;
+  }
+  
+  // Se já está no Render, usar a URL atual
+  if (currentHost.includes('hutz-live-85.onrender.com')) {
+    const productionUrl = `https://${currentHost}`;
+    console.log(`✅ QR URL: Using current Render URL: ${productionUrl}`);
+    return productionUrl;
+  }
+  
+  // Fallback para produção
+  console.log(`🔄 QR URL FALLBACK: Unknown host ${currentHost}, using production`);
+  return RENDER_PRODUCTION_URL;
+};
+
+const getBackendURL = (): string => {
+  const frontendUrl = getProductionURL();
+  
+  // Se estamos forçando produção, usar backend de produção
+  if (frontendUrl === RENDER_PRODUCTION_URL) {
+    console.log(`🔗 BACKEND SYNC: Frontend ${frontendUrl} → Backend ${RENDER_BACKEND_URL}`);
+    return RENDER_BACKEND_URL;
+  }
+  
+  // Para outros casos, usar a mesma base
+  const backendUrl = frontendUrl.replace('hutz-live-85', 'server-hutz-live');
+  console.log(`🔗 BACKEND MAPPING: ${frontendUrl} → ${backendUrl}`);
+  return backendUrl;
+};
 
 export const useQRCodeGeneration = () => {
   const { toast } = useToast();
-  const [apiBaseUrl] = useState(getApiBaseURL());
+  const [productionUrl] = useState(getProductionURL());
+  const [backendUrl] = useState(getBackendURL());
 
   const generateQRCode = async (url: string, setQrCodeSvg: (svg: string) => void) => {
     try {
@@ -33,10 +76,11 @@ export const useQRCodeGeneration = () => {
 
   const handleGenerateQRCode = async (state: any) => {
     try {
-      console.log("Generating QR Code via backend API...");
-      console.log("API Base URL:", apiBaseUrl);
+      console.log("🎯 QR GENERATION: Starting with URL sync...");
+      console.log("📍 Frontend URL:", productionUrl);
+      console.log("📡 Backend URL:", backendUrl);
       
-      const response = await fetch(`${apiBaseUrl}/api/rooms`, {
+      const response = await fetch(`${backendUrl}/api/rooms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -47,12 +91,18 @@ export const useQRCodeGeneration = () => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("API Response Error:", response.status, response.statusText, errorText);
+        console.error("❌ QR API Error:", response.status, response.statusText, errorText);
         throw new Error(`API Error: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log("QR Code data received:", data);
+      console.log("✅ QR API Success:", data);
+      
+      // FASE 2: URL VALIDATION - Verificar se URL retornada é consistente
+      const returnedUrl = data.joinURL;
+      if (returnedUrl && !returnedUrl.includes('hutz-live-85.onrender.com')) {
+        console.warn(`⚠️ QR URL INCONSISTENCY: Expected hutz-live-85.onrender.com, got ${returnedUrl}`);
+      }
       
       state.setSessionId(data.roomId);
       state.setQrCodeURL(data.joinURL);
@@ -61,18 +111,24 @@ export const useQRCodeGeneration = () => {
       
       toast({
         title: "QR Code gerado",
-        description: "QR Code gerado com sucesso via backend. Compartilhe com os participantes.",
+        description: "QR Code gerado com produção URL sincronizada.",
       });
       
     } catch (error) {
-      console.error('Error generating QR code:', error);
+      console.error('❌ QR BACKEND ERROR:', error);
       
       try {
-        console.log("Backend failed, generating QR Code locally as fallback...");
+        console.log("🔄 QR FALLBACK: Generating with forced production URL...");
         const fallbackSessionId = generateSessionId();
-        const frontendUrl = window.location.origin;
-        const fallbackUrl = `${frontendUrl}/participant/${fallbackSessionId}?mobile=true&qr=true`;
-        console.log(`🔗 QR FALLBACK: Generated URL: ${fallbackUrl}`);
+        
+        // CRÍTICO: NUNCA usar window.location.origin - sempre forçar produção
+        const fallbackUrl = `${productionUrl}/participant/${fallbackSessionId}?mobile=true&qr=true&camera=environment`;
+        console.log(`🎯 QR FALLBACK URL: ${fallbackUrl}`);
+        
+        // FASE 5: URL VALIDATION
+        if (!fallbackUrl.includes('hutz-live-85.onrender.com') && !fallbackUrl.includes('localhost')) {
+          console.error('❌ QR FALLBACK URL ERROR: Invalid production URL generated');
+        }
         
         const qrDataUrl = await QRCode.toDataURL(fallbackUrl, {
           width: 256,
@@ -89,16 +145,16 @@ export const useQRCodeGeneration = () => {
         state.setParticipantList([]);
         
         toast({
-          title: "QR Code gerado localmente",
-          description: "Gerado localmente devido a problema de conectividade com o servidor.",
+          title: "QR Code gerado (fallback)",
+          description: "Gerado com URL de produção forçada.",
           variant: "default"
         });
         
       } catch (fallbackError) {
-        console.error('Fallback QR generation also failed:', fallbackError);
+        console.error('❌ QR FALLBACK FAILED:', fallbackError);
         toast({
           title: "Erro ao gerar QR Code",
-          description: `Não foi possível gerar o QR Code: ${error.message}`,
+          description: `Falha total na geração: ${error.message}`,
           variant: "destructive"
         });
       }
@@ -109,13 +165,15 @@ export const useQRCodeGeneration = () => {
     setQrCodeVisible(true);
     toast({
       title: "QR Code incluído",
-      description: "O QR Code foi incluído na tela de transmissão e pode ser redimensionado."
+      description: "QR Code incluído na transmissão com URL de produção."
     });
   };
 
   return {
     generateQRCode,
     handleGenerateQRCode,
-    handleQRCodeToTransmission
+    handleQRCodeToTransmission,
+    productionUrl,
+    backendUrl
   };
 };

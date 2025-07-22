@@ -1,4 +1,3 @@
-
 /**
  * Utility functions for dynamic connection URL detection with cache busting
  */
@@ -16,10 +15,10 @@ export const clearConnectionCache = (): void => {
 };
 
 /**
- * Get the backend base URL - CRITICAL: Must match server .env exactly
+ * FASE 1 & 2: CRITICAL URL SYNC - Get the backend base URL with production enforcement
  */
 export const getBackendBaseURL = (): string => {
-  // FASE 1: URL SYNC - Use exact URL from server .env
+  // FASE 1: URL SYNC CRITICO - Verificar env primeiro
   const envApiUrl = import.meta.env.VITE_API_URL;
   
   if (envApiUrl) {
@@ -29,19 +28,11 @@ export const getBackendBaseURL = (): string => {
 
   const { protocol, host } = window.location;
   
-  // CRITICAL FIX: Use server-hutz-live.onrender.com (from server .env)
-  // NOT hutz-live-85.onrender.com (frontend URL)
-  if (host.includes('hutz-live-85.onrender.com')) {
+  // FASE 1: CRITICAL FIX - ALWAYS map to server-hutz-live for backend
+  if (host.includes('hutz-live-85.onrender.com') || host.includes('lovableproject.com')) {
     const backendUrl = 'https://server-hutz-live.onrender.com';
-    console.log(`🌐 BACKEND URL SYNC: Render deployment - using server URL: ${backendUrl}`);
-    console.log(`📋 URL MAPPING: Frontend ${host} → Backend server-hutz-live.onrender.com`);
-    return backendUrl;
-  }
-  
-  // Lovable environment detection
-  if (host.includes('lovableproject.com')) {
-    const backendUrl = `${protocol}//${host}`;
-    console.log(`🌐 BACKEND URL SYNC: Lovable environment detected: ${backendUrl}`);
+    console.log(`🌐 BACKEND URL SYNC: Production mapping - Frontend ${host} → Backend server-hutz-live.onrender.com`);
+    console.log(`📋 URL MAPPING CRITICAL: ${host} → server-hutz-live.onrender.com`);
     return backendUrl;
   }
   
@@ -55,7 +46,7 @@ export const getBackendBaseURL = (): string => {
   
   // Production environment fallback
   const backendUrl = `${protocol}//${host}`;
-  console.log(`🌐 BACKEND URL SYNC: Production environment detected: ${backendUrl}`);
+  console.log(`🌐 BACKEND URL SYNC: Production fallback: ${backendUrl}`);
   return backendUrl;
 };
 
@@ -80,7 +71,7 @@ export const getWebSocketURL = (): string => {
     }
   }
 
-  // CRITICAL: Use the exact same backend URL from server .env
+  // FASE 1: CRITICAL - Use the EXACT same backend URL mapping
   const backendBaseUrl = getBackendBaseURL();
   const baseUrl = new URL(backendBaseUrl);
   
@@ -88,7 +79,7 @@ export const getWebSocketURL = (): string => {
   const wsProtocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${wsProtocol}//${baseUrl.host}`;
   
-  console.log(`🔗 CONNECTION: WebSocket URL synchronized with backend: ${wsUrl}`);
+  console.log(`🔗 CONNECTION: WebSocket URL SYNCHRONIZED with backend: ${wsUrl}`);
   console.log(`📋 CONNECTION: Backend base: ${backendBaseUrl} → WebSocket: ${wsUrl}`);
   console.log(`🎯 URL VERIFICATION: Backend host: ${baseUrl.host}, Protocol: ${wsProtocol}`);
   
@@ -98,7 +89,7 @@ export const getWebSocketURL = (): string => {
 
 export const getApiBaseURL = (): string => {
   const backendUrl = getBackendBaseURL();
-  console.log(`📡 API: Using synchronized backend URL: ${backendUrl}`);
+  console.log(`📡 API: Using SYNCHRONIZED backend URL: ${backendUrl}`);
   return backendUrl;
 };
 
@@ -134,15 +125,24 @@ export const getEnvironmentInfo = () => {
     apiBaseUrl: getApiBaseURL(),
     wsUrl: getWebSocketURL(),
     version: CONNECTION_VERSION,
-    // FASE 4: Debug enhancement
+    // FASE 5: Enhanced debug for URL sync
     urlMapping: {
       frontend: `${protocol}//${host}`,
       backend: getBackendBaseURL(),
-      websocket: getWebSocketURL()
+      websocket: getWebSocketURL(),
+      isURLSynced: getBackendBaseURL().includes('server-hutz-live.onrender.com')
+    },
+    // FASE 5: Mobile detection info
+    mobileInfo: {
+      isMobileUA: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
+      hasTouch: 'ontouchstart' in window,
+      touchPoints: navigator.maxTouchPoints,
+      screenSize: `${window.innerWidth}x${window.innerHeight}`,
+      accessedViaQR: sessionStorage.getItem('accessedViaQR') === 'true'
     }
   };
 
-  console.log('🌍 ENVIRONMENT INFO:', envInfo);
+  console.log('🌍 ENVIRONMENT INFO ENHANCED:', envInfo);
   return envInfo;
 };
 
@@ -156,7 +156,7 @@ export const forceRefreshConnections = (): void => {
   console.log('🔄 CONNECTION: New URLs - WebSocket:', newWsUrl, 'API:', newApiUrl);
 };
 
-// Validate URL consistency (debugging function)
+// FASE 2: Enhanced URL consistency validation
 export const validateURLConsistency = (): boolean => {
   const backendUrl = getBackendBaseURL();
   const wsUrl = getWebSocketURL();
@@ -168,7 +168,13 @@ export const validateURLConsistency = (): boolean => {
   
   const isConsistent = backendHost === wsHost && wsHost === apiHost;
   
-  console.log('🔍 URL CONSISTENCY CHECK:', {
+  // FASE 5: Enhanced consistency check with mobile context
+  const currentHost = window.location.host;
+  const expectedBackendHost = 'server-hutz-live.onrender.com';
+  const isProperMapping = backendHost === expectedBackendHost;
+  
+  console.log('🔍 URL CONSISTENCY CHECK ENHANCED:', {
+    currentFrontendHost: currentHost,
     backend: backendUrl,
     websocket: wsUrl,
     api: apiUrl,
@@ -176,10 +182,13 @@ export const validateURLConsistency = (): boolean => {
     backendHost,
     wsHost,
     apiHost,
-    expectedBackendHost: 'server-hutz-live.onrender.com'
+    expectedBackendHost,
+    isProperMapping,
+    hasMobileAccess: sessionStorage.getItem('accessedViaQR') === 'true',
+    urlSyncStatus: isProperMapping ? '✅ SYNCED' : '⚠️ NOT_SYNCED'
   });
   
-  return isConsistent;
+  return isConsistent && isProperMapping;
 };
 
 // FASE 5: Mobile network optimization

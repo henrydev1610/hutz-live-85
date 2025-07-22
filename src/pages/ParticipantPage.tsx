@@ -15,20 +15,21 @@ import { clearConnectionCache, validateURLConsistency } from '@/utils/connection
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
 const ParticipantPage = () => {
-  console.log('🎯 PARTICIPANT PAGE: Starting render with mobile-only validation');
+  console.log('🎯 PARTICIPANT PAGE: Starting MOBILE-FIRST render with camera validation');
   
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   
-  // CRITICAL: Mobile-only guard - blocks desktop access
+  // FASE 3: CRITICAL - Mobile-only guard with STRICT enforcement
   const { isMobile, isValidated, isBlocked } = useMobileOnlyGuard({
     redirectTo: '/',
     allowDesktop: false,
-    showToast: true
+    showToast: true,
+    enforceQRAccess: true
   });
   
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
-  console.log('🎯 PARTICIPANT PAGE: Mobile guard:', { isMobile, isValidated, isBlocked });
+  console.log('🎯 PARTICIPANT PAGE: Mobile guard STRICT:', { isMobile, isValidated, isBlocked });
   
   const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
@@ -36,19 +37,38 @@ const ParticipantPage = () => {
   const connection = useParticipantConnection(sessionId, participantId);
   const media = useParticipantMedia();
 
-  // URL consistency validation on mount
+  // FASE 5: URL consistency validation with enhanced logging
   useEffect(() => {
-    console.log('🔍 PARTICIPANT PAGE: Validating URL consistency');
+    console.log('🔍 PARTICIPANT PAGE: Enhanced URL consistency validation');
     clearConnectionCache();
     clearDeviceCache();
     
     const isConsistent = validateURLConsistency();
     if (!isConsistent) {
-      console.warn('⚠️ PARTICIPANT PAGE: URL inconsistency detected');
+      console.warn('⚠️ PARTICIPANT PAGE: URL inconsistency detected - could affect camera');
     }
     
-    // Mark as accessed via QR for mobile detection
-    sessionStorage.setItem('accessedViaQR', 'true');
+    // FASE 3: Mark as QR access and validate mobile
+    const urlParams = new URLSearchParams(window.location.search);
+    const hasQRMarkers = urlParams.has('qr') || urlParams.has('mobile') || urlParams.get('camera') === 'environment';
+    
+    if (hasQRMarkers) {
+      sessionStorage.setItem('accessedViaQR', 'true');
+      sessionStorage.setItem('mobileValidated', 'true');
+      console.log('✅ PARTICIPANT PAGE: QR access markers detected and stored');
+    }
+    
+    // FASE 5: Environment logging
+    console.log('🌐 PARTICIPANT PAGE: Environment check:', {
+      currentURL: window.location.href,
+      expectedDomain: 'hutz-live-85.onrender.com',
+      isDomainCorrect: window.location.href.includes('hutz-live-85.onrender.com'),
+      qrParams: {
+        hasQR: urlParams.has('qr'),
+        hasMobile: urlParams.has('mobile'),
+        cameraMode: urlParams.get('camera')
+      }
+    });
   }, []);
 
   // Monitor signaling service status
@@ -64,17 +84,17 @@ const ParticipantPage = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-initialize media and connect ONLY for validated mobile devices
+  // FASE 3: MOBILE-FIRST auto-initialization with camera prioritization
   useEffect(() => {
     if (!isValidated || isBlocked || !sessionId) {
-      console.log('🚫 PARTICIPANT PAGE: Skipping auto-connect - not validated or blocked');
+      console.log('🚫 PARTICIPANT PAGE: Skipping auto-connect - mobile validation failed');
       return;
     }
     
-    console.log('🚀 PARTICIPANT PAGE: Auto-initializing for MOBILE session:', sessionId);
+    console.log('🚀 PARTICIPANT PAGE: MOBILE-FIRST auto-initializing for session:', sessionId);
     
-    autoConnectToSession().catch(error => {
-      console.error('❌ PARTICIPANT: Failed to auto-connect:', error);
+    autoConnectToMobileSession().catch(error => {
+      console.error('❌ PARTICIPANT: Failed to auto-connect mobile session:', error);
     });
     
     return () => {
@@ -86,67 +106,78 @@ const ParticipantPage = () => {
     };
   }, [sessionId, isValidated, isBlocked]);
 
-  const autoConnectToSession = async () => {
+  const autoConnectToMobileSession = async () => {
     try {
-      console.log('📱 PARTICIPANT: Starting mobile auto-connection with rear camera priority');
+      console.log('📱 PARTICIPANT: Starting MOBILE-FIRST auto-connection with rear camera enforcement');
+      
+      // FASE 3: Force mobile camera with rear priority
       const stream = await media.initializeMedia();
       
-      // Log stream details for debugging
       if (stream) {
         const videoTracks = stream.getVideoTracks();
         if (videoTracks.length > 0) {
           const settings = videoTracks[0].getSettings();
-          console.log('📱 PARTICIPANT: Stream settings:', {
+          console.log('📱 PARTICIPANT: Mobile camera stream verified:', {
             facingMode: settings.facingMode,
             width: settings.width,
             height: settings.height,
-            deviceId: settings.deviceId
+            deviceId: settings.deviceId?.substring(0, 20),
+            isMobileCamera: settings.facingMode === 'environment' || settings.facingMode === 'user'
           });
+          
+          // FASE 5: Validate we got mobile camera
+          if (!settings.facingMode) {
+            console.warn('⚠️ PARTICIPANT: Camera may not be mobile - no facingMode detected');
+          } else {
+            console.log('✅ PARTICIPANT: MOBILE CAMERA CONFIRMED with facingMode:', settings.facingMode);
+          }
         }
+      } else {
+        console.warn('⚠️ PARTICIPANT: No stream obtained - entering degraded mode');
       }
       
-      // Connect sempre, mesmo que stream seja null (modo degradado)
+      // Connect sempre, mesmo em modo degradado
       await connection.connectToSession(stream);
+      
     } catch (error) {
-      console.error('❌ PARTICIPANT: Auto-connection failed:', error);
+      console.error('❌ PARTICIPANT: Mobile auto-connection failed:', error);
     }
   };
 
   const handleConnect = async () => {
     if (isBlocked) {
-      console.log('🚫 PARTICIPANT: Connection blocked - not a mobile device');
+      console.log('🚫 PARTICIPANT: Connection blocked - mobile validation failed');
       return;
     }
     
     try {
       let stream = media.localStreamRef.current;
       if (!stream) {
-        console.log('📱 PARTICIPANT: Initializing mobile stream for manual connection');
+        console.log('📱 PARTICIPANT: Initializing mobile camera for manual connection');
         stream = await media.initializeMedia();
       }
-      // Conectar sempre, mesmo que stream seja null (modo degradado)
+      
       await connection.connectToSession(stream);
     } catch (error) {
-      console.error('❌ PARTICIPANT: Manual connection failed:', error);
+      console.error('❌ PARTICIPANT: Manual mobile connection failed:', error);
     }
   };
 
   const handleRetryMedia = async () => {
     if (isBlocked) {
-      console.log('🚫 PARTICIPANT: Media retry blocked - not a mobile device');
+      console.log('🚫 PARTICIPANT: Media retry blocked - mobile validation failed');
       return;
     }
     
     try {
-      console.log('🔄 PARTICIPANT: Retrying mobile media with rear camera priority');
+      console.log('🔄 PARTICIPANT: Retrying MOBILE camera with enhanced detection');
       const stream = await media.retryMediaInitialization();
       if (stream && connection.isConnected) {
-        // Se já conectado, pode tentar reconectar com nova mídia
         await connection.disconnectFromSession();
         await connection.connectToSession(stream);
       }
     } catch (error) {
-      console.error('❌ PARTICIPANT: Media retry failed:', error);
+      console.error('❌ PARTICIPANT: Mobile media retry failed:', error);
     }
   };
 
@@ -156,21 +187,29 @@ const ParticipantPage = () => {
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4 flex items-center justify-center">
         <div className="text-center text-white">
           <div className="animate-spin w-8 h-8 border-2 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p>🔒 Validando acesso móvel...</p>
+          <p>🔒 Validando acesso móvel e câmera...</p>
+          <p className="text-sm opacity-75 mt-2">Verificando compatibilidade da câmera</p>
         </div>
       </div>
     );
   }
 
-  // Show blocked screen for desktop users (shouldn't reach here due to redirect, but safety net)
+  // Show blocked screen for desktop users
   if (isBlocked) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-900 via-purple-900 to-indigo-900 p-4 flex items-center justify-center">
         <div className="text-center text-white max-w-md">
-          <div className="text-6xl mb-4">🚫</div>
-          <h1 className="text-2xl font-bold mb-4">Acesso Negado</h1>
-          <p className="text-lg mb-6">Esta página é exclusiva para dispositivos móveis.</p>
-          <p className="text-sm opacity-75">Escaneie o QR Code com seu celular para participar.</p>
+          <div className="text-6xl mb-4">📱🚫</div>
+          <h1 className="text-2xl font-bold mb-4">Acesso Exclusivo Móvel</h1>
+          <p className="text-lg mb-6">Esta página requer câmera móvel para funcionar corretamente.</p>
+          <p className="text-sm opacity-75 mb-4">
+            Escaneie o QR Code com seu <strong>celular</strong> para acessar a câmera.
+          </p>
+          <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-3">
+            <p className="text-yellow-200 text-xs">
+              💡 A câmera do PC não é compatível com esta funcionalidade
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -235,14 +274,24 @@ const ParticipantPage = () => {
         {/* Instructions */}
         <ParticipantInstructions />
         
-        {/* Mobile Debug Info */}
+        {/* FASE 5: Enhanced Mobile Debug Info */}
         {isMobile && (
           <div className="mt-4 p-3 bg-green-500/20 rounded-lg border border-green-500/30">
             <p className="text-green-300 text-sm">
               ✅ Dispositivo móvel validado | Câmera traseira priorizada
             </p>
+            <p className="text-green-200 text-xs mt-1">
+              📱 Modo: {media.localStreamRef.current?.getVideoTracks()[0]?.getSettings()?.facingMode || 'Detectando...'}
+            </p>
           </div>
         )}
+        
+        {/* FASE 5: URL Debug Info */}
+        <div className="mt-2 p-2 bg-blue-500/10 rounded border border-blue-500/20">
+          <p className="text-blue-300 text-xs">
+            🌐 URL: {window.location.href.includes('hutz-live-85.onrender.com') ? '✅ Produção' : '⚠️ Desenvolvimento'}
+          </p>
+        </div>
       </div>
     </div>
   );
