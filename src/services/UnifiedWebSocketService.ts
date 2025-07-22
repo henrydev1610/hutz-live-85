@@ -1,6 +1,5 @@
 import { io, Socket } from 'socket.io-client';
 import { getWebSocketURL, detectSlowNetwork } from '@/utils/connectionUtils';
-import { signalingResolver } from '@/utils/signaling/SignalingResolver';
 
 export interface UnifiedSignalingCallbacks {
   onConnected?: () => void;
@@ -24,8 +23,6 @@ interface ConnectionMetrics {
   status: 'disconnected' | 'connecting' | 'connected' | 'failed';
   consecutiveFailures: number;
   networkQuality: 'fast' | 'slow' | 'unknown';
-  activeSignalingType: 'node' | 'supabase' | 'unknown';
-  lastSignalingUrl: string;
 }
 
 class UnifiedWebSocketService {
@@ -41,36 +38,36 @@ class UnifiedWebSocketService {
     errorCount: 0,
     status: 'disconnected',
     consecutiveFailures: 0,
-    networkQuality: 'unknown',
-    activeSignalingType: 'unknown',
-    lastSignalingUrl: ''
+    networkQuality: 'unknown'
   };
   
-  // Enhanced reconnection settings with resolver integration
-  private maxReconnectAttempts = 15;
-  private reconnectDelay = 2000;
-  private maxReconnectDelay = 60000;
-  private backoffMultiplier = 2;
+  // FASE 2 & 3: Enhanced reconnection settings
+  private maxReconnectAttempts = 15; // Increased from 10
+  private reconnectDelay = 2000; // Increased from 1000
+  private maxReconnectDelay = 60000; // Increased from 30000
+  private backoffMultiplier = 2; // More aggressive backoff
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
-  // Circuit breaker pattern
+  // FASE 3: Circuit breaker pattern
   private circuitBreakerThreshold = 5;
-  private circuitBreakerTimeout = 30000;
+  private circuitBreakerTimeout = 30000; // 30s before allowing retry
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
 
   constructor() {
-    console.log('🔧 UNIFIED WebSocket Service initialized with SignalingResolver integration');
+    console.log('🔧 UNIFIED WebSocket Service initialized with enhanced stability');
     this.detectNetworkQuality();
   }
 
+  // FASE 5: Network quality detection
   private detectNetworkQuality(): void {
     const isSlowNetwork = detectSlowNetwork();
     this.metrics.networkQuality = isSlowNetwork ? 'slow' : 'fast';
     console.log(`📶 NETWORK QUALITY: ${this.metrics.networkQuality}`);
     
+    // Adjust settings based on network quality
     if (isSlowNetwork) {
       this.maxReconnectAttempts = 20;
       this.reconnectDelay = 3000;
@@ -84,6 +81,7 @@ class UnifiedWebSocketService {
   }
 
   async connect(serverUrl?: string): Promise<void> {
+    // FASE 3: Circuit breaker check
     if (this.isCircuitOpen) {
       console.log('🚫 CIRCUIT BREAKER: Connection blocked due to repeated failures');
       throw new Error('Circuit breaker open - too many connection failures');
@@ -102,27 +100,7 @@ class UnifiedWebSocketService {
     console.log(`🔄 CONNECTION ATTEMPT ${this.metrics.attemptCount}/${this.maxReconnectAttempts} (Network: ${this.metrics.networkQuality})`);
 
     try {
-      // Use SignalingResolver to determine optimal connection if no URL specified
-      let finalUrl = serverUrl;
-      
-      if (!finalUrl) {
-        console.log('🎯 RESOLVER: Determining optimal signaling configuration...');
-        const optimalConfig = await signalingResolver.resolveOptimalSignaling();
-        finalUrl = optimalConfig.url;
-        this.metrics.activeSignalingType = optimalConfig.type;
-        console.log(`🎯 RESOLVER: Selected ${optimalConfig.type} signaling at ${finalUrl}`);
-      } else {
-        // Determine signaling type from URL
-        if (finalUrl.includes('supabase.co')) {
-          this.metrics.activeSignalingType = 'supabase';
-        } else {
-          this.metrics.activeSignalingType = 'node';
-        }
-      }
-
-      this.metrics.lastSignalingUrl = finalUrl;
-      
-      await this._doConnect(finalUrl);
+      await this._doConnect(serverUrl);
       this.metrics.lastSuccess = Date.now();
       this.metrics.status = 'connected';
       this.metrics.errorCount = 0;
@@ -132,13 +110,14 @@ class UnifiedWebSocketService {
       this.startHeartbeat();
       this.callbacks.onConnected?.();
       
-      console.log(`✅ CONNECTION: Successfully connected to ${this.metrics.activeSignalingType} signaling`);
+      console.log('✅ CONNECTION: Successfully connected to WebSocket');
     } catch (error) {
       console.error('❌ CONNECTION: Failed to connect:', error);
       this.metrics.status = 'failed';
       this.metrics.errorCount++;
       this.metrics.consecutiveFailures++;
       
+      // FASE 3: Circuit breaker logic
       if (this.metrics.consecutiveFailures >= this.circuitBreakerThreshold) {
         this.openCircuitBreaker();
       }
@@ -153,71 +132,69 @@ class UnifiedWebSocketService {
     }
   }
 
-  private async _doConnect(serverUrl: string): Promise<void> {
-    console.log(`🔗 CONNECTION: Attempting to connect to ${serverUrl} (${this.metrics.activeSignalingType} signaling)`);
+  private async _doConnect(serverUrl?: string): Promise<void> {
+    const url = serverUrl || getWebSocketURL();
+    console.log(`🔗 CONNECTION: Attempting to connect to ${url}`);
     console.log(`📊 CONNECTION METRICS:`, {
       attempt: this.metrics.attemptCount,
       consecutiveFailures: this.metrics.consecutiveFailures,
       networkQuality: this.metrics.networkQuality,
-      signalingType: this.metrics.activeSignalingType,
       circuitOpen: this.isCircuitOpen
     });
 
     return new Promise((resolve, reject) => {
+      // FASE 2: Progressive timeouts based on network and device
       const isMobile = this.isMobileDevice();
       const isSlowNetwork = this.metrics.networkQuality === 'slow';
       
       let connectionTimeout;
       if (isMobile && isSlowNetwork) {
-        connectionTimeout = 45000;
+        connectionTimeout = 45000; // 45s for mobile + slow network
       } else if (isMobile || isSlowNetwork) {
-        connectionTimeout = 30000;
+        connectionTimeout = 30000; // 30s for mobile OR slow network
       } else {
-        connectionTimeout = 20000;
+        connectionTimeout = 20000; // 20s for desktop + fast network
       }
       
-      console.log(`⏱️ CONNECTION TIMEOUT: ${connectionTimeout}ms (Mobile: ${isMobile}, Slow: ${isSlowNetwork}, Type: ${this.metrics.activeSignalingType})`);
+      console.log(`⏱️ CONNECTION TIMEOUT: ${connectionTimeout}ms (Mobile: ${isMobile}, Slow: ${isSlowNetwork})`);
 
       const timeout = setTimeout(() => {
         this.disconnect();
-        reject(new Error(`Connection timeout after ${connectionTimeout}ms (${this.metrics.activeSignalingType} signaling)`));
+        reject(new Error(`Connection timeout after ${connectionTimeout}ms`));
       }, connectionTimeout);
 
-      // Configure socket based on signaling type
-      const socketConfig = {
+      this.socket = io(url, {
         transports: ['websocket', 'polling'],
-        timeout: Math.min(connectionTimeout - 5000, 25000),
-        reconnection: false,
+        timeout: Math.min(connectionTimeout - 5000, 25000), // Socket timeout slightly less than connection timeout
+        reconnection: false, // We handle reconnection ourselves
         forceNew: true,
         upgrade: true,
         rememberUpgrade: true,
-        extraHeaders: {
-          'User-Agent': isMobile ? 'MobileWebRTCClient/1.0' : 'DesktopWebRTCClient/1.0',
-          'X-Network-Quality': this.metrics.networkQuality,
-          'X-Signaling-Type': this.metrics.activeSignalingType,
-          'X-Connection-Attempt': this.metrics.attemptCount.toString()
+        extraHeaders: isMobile ? {
+          'User-Agent': 'MobileWebRTCClient/1.0',
+          'X-Network-Quality': this.metrics.networkQuality
+        } : {
+          'X-Network-Quality': this.metrics.networkQuality
         }
-      };
-
-      this.socket = io(serverUrl, socketConfig);
+      });
 
       this.socket.on('connect', () => {
         clearTimeout(timeout);
-        console.log(`✅ CONNECTION: ${this.metrics.activeSignalingType} signaling connected successfully`);
-        console.log(`📈 CONNECTION SUCCESS: Attempt ${this.metrics.attemptCount}, Type: ${this.metrics.activeSignalingType}, Network: ${this.metrics.networkQuality}`);
+        console.log('✅ CONNECTION: WebSocket connected successfully');
+        console.log(`📈 CONNECTION SUCCESS: Attempt ${this.metrics.attemptCount}, Network: ${this.metrics.networkQuality}`);
         this.setupEventListeners();
         resolve();
       });
 
       this.socket.on('connect_error', (error) => {
         clearTimeout(timeout);
-        console.error(`❌ CONNECTION: ${this.metrics.activeSignalingType} signaling error:`, error);
-        console.error(`📉 CONNECTION FAILED: Attempt ${this.metrics.attemptCount}, Type: ${this.metrics.activeSignalingType}, Error: ${error.message}`);
+        console.error('❌ CONNECTION: Connection error:', error);
+        console.error(`📉 CONNECTION FAILED: Attempt ${this.metrics.attemptCount}, Error: ${error.message}`);
         reject(error);
       });
 
       this.socket.on('disconnect', (reason) => {
-        console.log(`🔄 CONNECTION: ${this.metrics.activeSignalingType} signaling disconnected:`, reason);
+        console.log('🔄 CONNECTION: Disconnected:', reason);
         this.metrics.status = 'disconnected';
         this.stopHeartbeat();
         this.callbacks.onDisconnected?.();
@@ -228,58 +205,16 @@ class UnifiedWebSocketService {
       });
 
       this.socket.on('error', (error) => {
-        console.error(`❌ CONNECTION: ${this.metrics.activeSignalingType} signaling socket error:`, error);
+        console.error('❌ CONNECTION: Socket error:', error);
         this.metrics.errorCount++;
         this.callbacks.onError?.(error);
       });
     });
   }
 
-  private setupEventListeners(): void {
-    if (!this.socket) return;
-
-    this.socket.on('user-connected', (userId: string) => {
-      console.log(`👤 USER CONNECTED (${this.metrics.activeSignalingType}):`, userId);
-      this.callbacks.onUserConnected?.(userId);
-    });
-
-    this.socket.on('user-disconnected', (userId: string) => {
-      console.log(`👤 USER DISCONNECTED (${this.metrics.activeSignalingType}):`, userId);
-      this.callbacks.onUserDisconnected?.(userId);
-    });
-
-    this.socket.on('participants-update', (participants: any[]) => {
-      console.log(`📊 PARTICIPANTS UPDATE (${this.metrics.activeSignalingType}):`, participants);
-      this.callbacks.onParticipantsUpdate?.(participants);
-    });
-
-    this.socket.on('offer', (fromUserId: string, offer: RTCSessionDescriptionInit) => {
-      console.log(`📞 OFFER received via ${this.metrics.activeSignalingType} from:`, fromUserId);
-      this.callbacks.onOffer?.(fromUserId, offer);
-    });
-
-    this.socket.on('answer', (fromUserId: string, answer: RTCSessionDescriptionInit) => {
-      console.log(`✅ ANSWER received via ${this.metrics.activeSignalingType} from:`, fromUserId);
-      this.callbacks.onAnswer?.(fromUserId, answer);
-    });
-
-    this.socket.on('ice-candidate', (fromUserId: string, candidate: RTCIceCandidate) => {
-      console.log(`🧊 ICE CANDIDATE received via ${this.metrics.activeSignalingType} from:`, fromUserId);
-      this.callbacks.onIceCandidate?.(fromUserId, candidate);
-    });
-
-    this.socket.on('stream-started', (participantId: string, streamInfo: any) => {
-      console.log(`🎥 STREAM STARTED via ${this.metrics.activeSignalingType}:`, participantId, streamInfo);
-      this.callbacks.onStreamStarted?.(participantId, streamInfo);
-    });
-
-    this.socket.on('pong', () => {
-      console.log(`💓 HEARTBEAT: Pong received from ${this.metrics.activeSignalingType}`);
-    });
-  }
-
+  // FASE 3: Circuit breaker implementation
   private openCircuitBreaker(): void {
-    console.log(`🚫 CIRCUIT BREAKER: Opening circuit after ${this.metrics.consecutiveFailures} consecutive failures on ${this.metrics.activeSignalingType}`);
+    console.log(`🚫 CIRCUIT BREAKER: Opening circuit after ${this.metrics.consecutiveFailures} consecutive failures`);
     this.isCircuitOpen = true;
     
     this.circuitBreakerTimer = setTimeout(() => {
@@ -295,11 +230,56 @@ class UnifiedWebSocketService {
       this.circuitBreakerTimer = null;
     }
     this.isCircuitOpen = false;
-    console.log(`✅ CIRCUIT BREAKER: Reset for ${this.metrics.activeSignalingType}`);
+    console.log('✅ CIRCUIT BREAKER: Reset');
+  }
+
+  private setupEventListeners(): void {
+    if (!this.socket) return;
+
+    this.socket.on('user-connected', (userId: string) => {
+      console.log('👤 USER CONNECTED:', userId);
+      this.callbacks.onUserConnected?.(userId);
+    });
+
+    this.socket.on('user-disconnected', (userId: string) => {
+      console.log('👤 USER DISCONNECTED:', userId);
+      this.callbacks.onUserDisconnected?.(userId);
+    });
+
+    this.socket.on('participants-update', (participants: any[]) => {
+      console.log('📊 PARTICIPANTS UPDATE:', participants);
+      this.callbacks.onParticipantsUpdate?.(participants);
+    });
+
+    this.socket.on('offer', (fromUserId: string, offer: RTCSessionDescriptionInit) => {
+      console.log('📞 OFFER received from:', fromUserId);
+      this.callbacks.onOffer?.(fromUserId, offer);
+    });
+
+    this.socket.on('answer', (fromUserId: string, answer: RTCSessionDescriptionInit) => {
+      console.log('✅ ANSWER received from:', fromUserId);
+      this.callbacks.onAnswer?.(fromUserId, answer);
+    });
+
+    this.socket.on('ice-candidate', (fromUserId: string, candidate: RTCIceCandidate) => {
+      console.log('🧊 ICE CANDIDATE received from:', fromUserId);
+      this.callbacks.onIceCandidate?.(fromUserId, candidate);
+    });
+
+    this.socket.on('stream-started', (participantId: string, streamInfo: any) => {
+      console.log('🎥 STREAM STARTED:', participantId, streamInfo);
+      this.callbacks.onStreamStarted?.(participantId, streamInfo);
+    });
+
+    // Heartbeat response
+    this.socket.on('pong', () => {
+      console.log('💓 HEARTBEAT: Pong received');
+    });
   }
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
+    // FASE 2: Adaptive heartbeat based on network quality
     const heartbeatInterval = this.metrics.networkQuality === 'slow' ? 45000 : 30000;
     
     this.heartbeatInterval = setInterval(() => {
@@ -308,7 +288,7 @@ class UnifiedWebSocketService {
       }
     }, heartbeatInterval);
     
-    console.log(`💓 HEARTBEAT: Started with ${heartbeatInterval}ms interval for ${this.metrics.activeSignalingType}`);
+    console.log(`💓 HEARTBEAT: Started with ${heartbeatInterval}ms interval`);
   }
 
   private stopHeartbeat(): void {
@@ -323,14 +303,16 @@ class UnifiedWebSocketService {
       clearTimeout(this.reconnectTimer);
     }
 
+    // FASE 3: Enhanced exponential backoff with jitter
     const baseDelay = this.reconnectDelay * Math.pow(this.backoffMultiplier, this.metrics.attemptCount - 1);
-    const jitter = Math.random() * 1000;
+    const jitter = Math.random() * 1000; // Add up to 1s jitter
     const delay = Math.min(baseDelay + jitter, this.maxReconnectDelay);
 
-    console.log(`🔄 CONNECTION: Scheduling reconnect to ${this.metrics.activeSignalingType} in ${Math.round(delay)}ms (attempt ${this.metrics.attemptCount}/${this.maxReconnectAttempts})`);
+    console.log(`🔄 CONNECTION: Scheduling reconnect in ${Math.round(delay)}ms (attempt ${this.metrics.attemptCount}/${this.maxReconnectAttempts})`);
+    console.log(`📊 RETRY METRICS: Base delay: ${baseDelay}ms, Jitter: ${Math.round(jitter)}ms, Final: ${Math.round(delay)}ms`);
 
     this.reconnectTimer = setTimeout(() => {
-      console.log(`🔄 CONNECTION: Attempting reconnect to ${this.metrics.activeSignalingType}...`);
+      console.log('🔄 CONNECTION: Attempting reconnect...');
       this.connect();
     }, delay);
   }
@@ -340,7 +322,7 @@ class UnifiedWebSocketService {
   }
 
   async joinRoom(roomId: string, userId: string): Promise<void> {
-    console.log(`🚪 WEBSOCKET: Joining room ${roomId} as ${userId} via ${this.metrics.activeSignalingType}`);
+    console.log(`🚪 WEBSOCKET: Joining room ${roomId} as ${userId}`);
     
     if (!this.isConnected()) {
       console.log('🔗 CONNECTION: Not connected, connecting first...');
@@ -348,26 +330,27 @@ class UnifiedWebSocketService {
     }
 
     if (!this.isConnected()) {
-      throw new Error(`Failed to establish ${this.metrics.activeSignalingType} connection`);
+      throw new Error('Failed to establish connection');
     }
 
     this.currentRoomId = roomId;
     this.currentUserId = userId;
 
     return new Promise((resolve, reject) => {
+      // FASE 2: Progressive join timeout based on network
       const baseTimeout = this.metrics.networkQuality === 'slow' ? 30000 : 20000;
       const isMobile = this.isMobileDevice();
       const joinTimeout = isMobile ? baseTimeout + 10000 : baseTimeout;
       
-      console.log(`⏱️ JOIN TIMEOUT: ${joinTimeout}ms (Network: ${this.metrics.networkQuality}, Mobile: ${isMobile}, Signaling: ${this.metrics.activeSignalingType})`);
+      console.log(`⏱️ JOIN TIMEOUT: ${joinTimeout}ms (Network: ${this.metrics.networkQuality}, Mobile: ${isMobile})`);
 
       const timeout = setTimeout(() => {
-        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId} via ${this.metrics.activeSignalingType} after ${joinTimeout}ms`);
-        reject(new Error(`Join room timeout after ${joinTimeout}ms (${this.metrics.activeSignalingType} signaling)`));
+        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId} after ${joinTimeout}ms`);
+        reject(new Error(`Join room timeout after ${joinTimeout}ms`));
       }, joinTimeout);
 
       const handleJoinSuccess = (data: any) => {
-        console.log(`✅ WEBSOCKET: Successfully joined room ${roomId} via ${this.metrics.activeSignalingType}:`, data);
+        console.log(`✅ WEBSOCKET: Successfully joined room ${roomId}:`, data);
         clearTimeout(timeout);
         this.socket?.off('room_joined', handleJoinSuccess);
         this.socket?.off('join-room-response', handleJoinResponse);
@@ -376,7 +359,7 @@ class UnifiedWebSocketService {
       };
 
       const handleJoinResponse = (response: any) => {
-        console.log(`📡 WEBSOCKET: Join room response via ${this.metrics.activeSignalingType}:`, response);
+        console.log(`📡 WEBSOCKET: Join room response:`, response);
         if (response?.success) {
           clearTimeout(timeout);
           this.socket?.off('room_joined', handleJoinSuccess);
@@ -384,17 +367,17 @@ class UnifiedWebSocketService {
           this.socket?.off('error', handleJoinError);
           resolve();
         } else {
-          reject(new Error(response?.error || `Failed to join room via ${this.metrics.activeSignalingType}`));
+          reject(new Error(response?.error || 'Failed to join room'));
         }
       };
 
       const handleJoinError = (error: any) => {
-        console.error(`❌ WEBSOCKET: Failed to join room ${roomId} via ${this.metrics.activeSignalingType}:`, error);
+        console.error(`❌ WEBSOCKET: Failed to join room ${roomId}:`, error);
         clearTimeout(timeout);
         this.socket?.off('room_joined', handleJoinSuccess);
         this.socket?.off('join-room-response', handleJoinResponse);
         this.socket?.off('error', handleJoinError);
-        reject(new Error(`Failed to join room via ${this.metrics.activeSignalingType}: ${error.message || error}`));
+        reject(new Error(`Failed to join room: ${error.message || error}`));
       };
 
       this.socket?.once('room_joined', handleJoinSuccess);
@@ -402,7 +385,7 @@ class UnifiedWebSocketService {
       this.socket?.once('error', handleJoinError);
 
       const sendJoinRequest = (attempt = 1) => {
-        console.log(`📡 WEBSOCKET: Sending join request via ${this.metrics.activeSignalingType} (attempt ${attempt})`);
+        console.log(`📡 WEBSOCKET: Sending join request (attempt ${attempt})`);
         
         try {
           this.socket?.emit('join_room', { 
@@ -410,8 +393,7 @@ class UnifiedWebSocketService {
             userId,
             timestamp: Date.now(),
             attempt,
-            networkQuality: this.metrics.networkQuality,
-            signalingType: this.metrics.activeSignalingType
+            networkQuality: this.metrics.networkQuality
           });
           
           this.socket?.emit('join-room', { 
@@ -419,8 +401,7 @@ class UnifiedWebSocketService {
             userId,
             timestamp: Date.now(),
             attempt,
-            networkQuality: this.metrics.networkQuality,
-            signalingType: this.metrics.activeSignalingType
+            networkQuality: this.metrics.networkQuality
           });
           
           if (attempt < 3) {
@@ -431,7 +412,7 @@ class UnifiedWebSocketService {
             }, 5000 * attempt);
           }
         } catch (error) {
-          console.error(`❌ WEBSOCKET: Error sending join request via ${this.metrics.activeSignalingType}:`, error);
+          console.error(`❌ WEBSOCKET: Error sending join request:`, error);
           handleJoinError(error);
         }
       };
@@ -442,41 +423,41 @@ class UnifiedWebSocketService {
 
   sendOffer(targetUserId: string, offer: RTCSessionDescriptionInit): void {
     if (!this.isConnected()) {
-      console.error(`❌ SIGNALING: Cannot send offer via ${this.metrics.activeSignalingType} - not connected`);
+      console.error('❌ SIGNALING: Cannot send offer - not connected');
       return;
     }
 
-    console.log(`📞 SIGNALING: Sending offer via ${this.metrics.activeSignalingType} to:`, targetUserId);
+    console.log('📞 SIGNALING: Sending offer to:', targetUserId);
     this.socket!.emit('offer', { targetUserId, offer });
   }
 
   sendAnswer(targetUserId: string, answer: RTCSessionDescriptionInit): void {
     if (!this.isConnected()) {
-      console.error(`❌ SIGNALING: Cannot send answer via ${this.metrics.activeSignalingType} - not connected`);
+      console.error('❌ SIGNALING: Cannot send answer - not connected');
       return;
     }
 
-    console.log(`✅ SIGNALING: Sending answer via ${this.metrics.activeSignalingType} to:`, targetUserId);
+    console.log('✅ SIGNALING: Sending answer to:', targetUserId);
     this.socket!.emit('answer', { targetUserId, answer });
   }
 
   sendIceCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
     if (!this.isConnected()) {
-      console.error(`❌ SIGNALING: Cannot send ICE candidate via ${this.metrics.activeSignalingType} - not connected`);
+      console.error('❌ SIGNALING: Cannot send ICE candidate - not connected');
       return;
     }
 
-    console.log(`🧊 SIGNALING: Sending ICE candidate via ${this.metrics.activeSignalingType} to:`, targetUserId);
+    console.log('🧊 SIGNALING: Sending ICE candidate to:', targetUserId);
     this.socket!.emit('ice-candidate', { targetUserId, candidate });
   }
 
   notifyStreamStarted(participantId: string, streamInfo: any): void {
     if (!this.isConnected()) {
-      console.error(`❌ SIGNALING: Cannot notify stream started via ${this.metrics.activeSignalingType} - not connected`);
+      console.error('❌ SIGNALING: Cannot notify stream started - not connected');
       return;
     }
 
-    console.log(`🎥 SIGNALING: Notifying stream started via ${this.metrics.activeSignalingType}:`, participantId);
+    console.log('🎥 SIGNALING: Notifying stream started:', participantId);
     this.socket!.emit('stream-started', { participantId, streamInfo });
   }
 
@@ -501,13 +482,14 @@ class UnifiedWebSocketService {
     return { ...this.metrics };
   }
 
+  // FASE 3: Enhanced health check with circuit breaker awareness
   async healthCheck(): Promise<boolean> {
     if (!this.isConnected() || this.isCircuitOpen) {
       return false;
     }
 
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve(false), 8000);
+      const timeout = setTimeout(() => resolve(false), 8000); // Increased timeout
       
       this.socket!.emit('ping', (response: any) => {
         clearTimeout(timeout);
@@ -517,27 +499,15 @@ class UnifiedWebSocketService {
   }
 
   async forceReconnect(): Promise<void> {
-    console.log(`🔄 CONNECTION: Forcing reconnect to ${this.metrics.activeSignalingType}...`);
+    console.log('🔄 CONNECTION: Forcing reconnect...');
     this.disconnect();
     this.resetCircuitBreaker();
     this.shouldReconnect = true;
     await this.connect();
   }
 
-  async switchSignalingType(type: 'node' | 'supabase'): Promise<void> {
-    console.log(`🔄 SWITCHING: From ${this.metrics.activeSignalingType} to ${type} signaling`);
-    
-    try {
-      await signalingResolver.switchSignaling(type);
-      console.log(`✅ SWITCHING: Successfully switched to ${type} signaling`);
-    } catch (error) {
-      console.error(`❌ SWITCHING: Failed to switch to ${type} signaling:`, error);
-      throw error;
-    }
-  }
-
   disconnect(): void {
-    console.log(`🔌 CONNECTION: Disconnecting from ${this.metrics.activeSignalingType}...`);
+    console.log('🔌 CONNECTION: Disconnecting...');
     this.shouldReconnect = false;
     this.stopHeartbeat();
     
@@ -564,4 +534,5 @@ class UnifiedWebSocketService {
   }
 }
 
+// Export singleton instance
 export default new UnifiedWebSocketService();

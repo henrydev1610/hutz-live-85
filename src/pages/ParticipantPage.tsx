@@ -43,8 +43,7 @@ const ParticipantPage = () => {
     clearConnectionCache();
     clearDeviceCache();
     
-    validateURLConsistency();
-    const isConsistent = true; // validateURLConsistency returns void
+    const isConsistent = validateURLConsistency();
     if (!isConsistent) {
       console.warn('⚠️ PARTICIPANT PAGE: URL inconsistency detected - could affect camera');
     }
