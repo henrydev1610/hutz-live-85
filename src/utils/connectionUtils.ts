@@ -203,9 +203,41 @@ export const validateURLConsistency = (): boolean => {
   return true; // Now always true as we force correct URLs
 };
 
+// FASE 5: Network quality detection
+export const detectSlowNetwork = (): boolean => {
+  try {
+    // Check connection type if available
+    const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+    
+    if (connection) {
+      const effectiveType = connection.effectiveType;
+      const downlink = connection.downlink;
+      
+      // Consider slow if effective type is 2g or 3g, or downlink is very low
+      const isSlowConnection = effectiveType === '2g' || effectiveType === 'slow-2g' || downlink < 1;
+      
+      console.log('📶 NETWORK DETECTION:', {
+        effectiveType,
+        downlink,
+        isSlowConnection
+      });
+      
+      return isSlowConnection;
+    }
+    
+    // Fallback: assume fast network if no connection info available
+    console.log('📶 NETWORK DETECTION: No connection info available, assuming fast network');
+    return false;
+  } catch (error) {
+    console.warn('⚠️ NETWORK DETECTION: Error detecting network quality:', error);
+    return false; // Default to fast network on error
+  }
+};
+
 // Make available globally for debugging
 (window as any).forceRefreshConnections = forceRefreshConnections;
 (window as any).clearConnectionCache = clearConnectionCache;
 (window as any).validateURLConsistency = validateURLConsistency;
 (window as any).validateRoom = validateRoom;
 (window as any).createRoomIfNeeded = createRoomIfNeeded;
+(window as any).detectSlowNetwork = detectSlowNetwork;
