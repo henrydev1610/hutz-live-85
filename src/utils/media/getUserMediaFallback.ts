@@ -1,31 +1,76 @@
 
 import { detectMobileAggressively, getCameraPreference, validateMobileCameraCapabilities } from './deviceDetection';
 
+// FASE 3: Check if we're on participant route
+const isParticipantRoute = (): boolean => {
+  return window.location.pathname.includes('/participant/');
+};
+
+// FASE 4: Log permission type being requested
+const logPermissionRequest = (constraints: MediaStreamConstraints, attempt: number): void => {
+  const videoConstraints = constraints.video;
+  let permissionType = 'UNKNOWN';
+  
+  if (typeof videoConstraints === 'object' && videoConstraints !== null) {
+    if ('facingMode' in videoConstraints) {
+      const facingMode = videoConstraints.facingMode;
+      if (typeof facingMode === 'object' && facingMode !== null) {
+        if ('exact' in facingMode) {
+          permissionType = `MOBILE (exact: ${facingMode.exact})`;
+        } else if ('ideal' in facingMode) {
+          permissionType = `MOBILE (ideal: ${facingMode.ideal})`;
+        }
+      } else if (typeof facingMode === 'string') {
+        permissionType = `MOBILE (${facingMode})`;
+      }
+    } else {
+      permissionType = 'DESKTOP (no facingMode)';
+    }
+  } else if (videoConstraints === true) {
+    permissionType = 'BASIC (could be desktop or mobile)';
+  }
+  
+  console.log(`🔐 FASE 4: PERMISSION REQUEST ${attempt} - Type: ${permissionType}`, constraints);
+  
+  // FASE 4: Alert if desktop permission is being requested on participant route
+  if (isParticipantRoute() && permissionType.includes('DESKTOP')) {
+    console.error('❌ FASE 4: CRITICAL - Desktop permission requested on participant route!');
+    console.error('❌ FASE 4: This will show desktop webcam dialog instead of mobile camera!');
+  }
+};
+
 export const getUserMediaWithFallback = async (): Promise<MediaStream | null> => {
   const isMobile = detectMobileAggressively();
+  const isParticipant = isParticipantRoute();
   
-  console.log(`🎬 MEDIA FALLBACK: Starting ${isMobile ? 'MOBILE FORCED' : 'DESKTOP'} capture with MOBILE-FIRST prioritization`);
+  console.log(`🎬 FASE 3: MEDIA FALLBACK Starting - Mobile: ${isMobile}, Participant: ${isParticipant}`);
+  
+  // FASE 3: If participant route, ALWAYS force mobile behavior
+  if (isParticipant) {
+    console.log('📱 FASE 3: PARTICIPANT ROUTE - FORCING MOBILE CAMERA ACQUISITION');
+    return await getMobileStreamWithForceValidation(true);
+  }
   
   // FASE 3: If forced mobile, validate camera capabilities first
   if (isMobile) {
-    console.log('📱 MOBILE FORCED: Validating camera capabilities before stream acquisition');
+    console.log('📱 FASE 3: MOBILE FORCED - Validating camera capabilities before stream acquisition');
     const hasValidCamera = await validateMobileCameraCapabilities();
     
     if (hasValidCamera) {
-      console.log('✅ MOBILE FORCED: Camera capabilities validated - proceeding with mobile stream');
+      console.log('✅ FASE 3: MOBILE FORCED - Camera capabilities validated - proceeding with mobile stream');
     } else {
-      console.log('⚠️ MOBILE FORCED: Camera validation inconclusive - proceeding anyway');
+      console.log('⚠️ FASE 3: MOBILE FORCED - Camera validation inconclusive - proceeding anyway');
     }
     
-    return await getMobileStreamWithForceValidation();
+    return await getMobileStreamWithForceValidation(false);
   }
   
   // Desktop logic with mobile fallback
   return await getDesktopStreamWithMobileFallback();
 };
 
-const getMobileStreamWithForceValidation = async (): Promise<MediaStream | null> => {
-  console.log('📱 MOBILE CAPTURE: FORCED mobile camera acquisition with validation');
+const getMobileStreamWithForceValidation = async (isParticipantRoute: boolean): Promise<MediaStream | null> => {
+  console.log(`📱 FASE 3: MOBILE CAPTURE - ${isParticipantRoute ? 'PARTICIPANT ROUTE' : 'FORCED'} mobile camera acquisition`);
   
   // FASE 1: URL Parameter Detection for Camera Override
   const urlParams = new URLSearchParams(window.location.search);
@@ -33,11 +78,11 @@ const getMobileStreamWithForceValidation = async (): Promise<MediaStream | null>
   const preferredFacing = forcedCamera === 'environment' ? 'environment' : 
                          forcedCamera === 'user' ? 'user' : 'environment'; // Default to rear for mobile
   
-  console.log(`📱 MOBILE CAPTURE: Using camera preference: ${preferredFacing} (from URL: ${forcedCamera || 'auto'})`);
+  console.log(`📱 FASE 3: Using camera preference: ${preferredFacing} (from URL: ${forcedCamera || 'auto'})`);
   
-  // FASE 4: Robust fallback with facingMode prioritization
+  // FASE 3: ENHANCED mobile constraints with PARTICIPANT ROUTE priority
   const mobileConstraints: MediaStreamConstraints[] = [
-    // Priority 1: EXACT preferred camera with audio
+    // Priority 1: EXACT preferred camera with audio (MOBILE SPECIFIC)
     {
       video: {
         facingMode: { exact: preferredFacing },
@@ -46,7 +91,7 @@ const getMobileStreamWithForceValidation = async (): Promise<MediaStream | null>
       },
       audio: true
     },
-    // Priority 2: IDEAL preferred camera with audio
+    // Priority 2: IDEAL preferred camera with audio (MOBILE SPECIFIC)
     {
       video: {
         facingMode: { ideal: preferredFacing },
@@ -55,7 +100,7 @@ const getMobileStreamWithForceValidation = async (): Promise<MediaStream | null>
       },
       audio: true
     },
-    // Priority 3: EXACT opposite camera with audio
+    // Priority 3: EXACT opposite camera with audio (MOBILE SPECIFIC)
     {
       video: {
         facingMode: { exact: preferredFacing === 'user' ? 'environment' : 'user' },
@@ -64,7 +109,7 @@ const getMobileStreamWithForceValidation = async (): Promise<MediaStream | null>
       },
       audio: true
     },
-    // Priority 4: IDEAL opposite camera with audio
+    // Priority 4: IDEAL opposite camera with audio (MOBILE SPECIFIC)
     {
       video: {
         facingMode: { ideal: preferredFacing === 'user' ? 'environment' : 'user' },
@@ -73,36 +118,39 @@ const getMobileStreamWithForceValidation = async (): Promise<MediaStream | null>
       },
       audio: true
     },
-    // Priority 5: ANY video with audio (no facingMode)
-    {
+    // Priority 5: ANY video with audio BUT NO FACINGMODE (RISKY - could be desktop)
+    ...(isParticipantRoute ? [] : [{
       video: {
         width: { ideal: 640, max: 1280 },
         height: { ideal: 480, max: 720 }
       },
       audio: true
-    },
-    // Priority 6: Simple video with audio
-    {
+    }]),
+    // Priority 6: Simple video with audio (RISKY - could be desktop)
+    ...(isParticipantRoute ? [] : [{
       video: true,
       audio: true
-    },
-    // Priority 7: Video only with facingMode
+    }]),
+    // Priority 7: Video only with facingMode (MOBILE SPECIFIC)
     {
       video: {
         facingMode: { ideal: preferredFacing }
       },
       audio: false
     },
-    // Priority 8: Video only (basic)
-    {
+    // Priority 8: Video only basic (LAST RESORT)
+    ...(isParticipantRoute ? [] : [{
       video: true,
       audio: false
-    }
+    }])
   ];
   
   for (let i = 0; i < mobileConstraints.length; i++) {
     try {
-      console.log(`📱 MOBILE CAPTURE: Attempt ${i + 1}/${mobileConstraints.length} with constraints:`, mobileConstraints[i]);
+      // FASE 4: Log permission request details
+      logPermissionRequest(mobileConstraints[i], i + 1);
+      
+      console.log(`📱 FASE 3: Mobile attempt ${i + 1}/${mobileConstraints.length} with constraints:`, mobileConstraints[i]);
       
       const stream = await navigator.mediaDevices.getUserMedia(mobileConstraints[i]);
       
@@ -110,16 +158,16 @@ const getMobileStreamWithForceValidation = async (): Promise<MediaStream | null>
         const videoTrack = stream.getVideoTracks()[0];
         const settings = videoTrack?.getSettings();
         
-        console.log('✅ MOBILE CAPTURE: Stream acquired successfully:', {
+        console.log('✅ FASE 3: Mobile stream acquired successfully:', {
           streamId: stream.id,
           videoTracks: stream.getVideoTracks().length,
           audioTracks: stream.getAudioTracks().length,
           cameraSettings: settings
         });
         
-        // FASE 3: Validate we got a mobile camera
+        // FASE 4: Validate we got a mobile camera
         if (settings?.facingMode) {
-          console.log(`🎉 MOBILE CAPTURE: CONFIRMED mobile camera with facingMode: ${settings.facingMode}`);
+          console.log(`🎉 FASE 3: CONFIRMED mobile camera with facingMode: ${settings.facingMode}`);
           
           // Mark as mobile validated retroactively
           sessionStorage.setItem('mobileValidated', 'true');
@@ -127,36 +175,48 @@ const getMobileStreamWithForceValidation = async (): Promise<MediaStream | null>
           
           return stream;
         } else {
-          console.warn('⚠️ MOBILE CAPTURE: Got camera but no facingMode - might be desktop camera accessed via mobile browser');
+          console.warn('⚠️ FASE 3: Got camera but no facingMode - might be desktop camera accessed via mobile browser');
           
-          // Still return the stream but note it might not be true mobile
-          if (i >= 4) { // If we're in the basic constraints, accept it
-            console.log('📱 MOBILE CAPTURE: Accepting non-facingMode camera as mobile fallback');
+          // FASE 3: If participant route, be strict about mobile cameras
+          if (isParticipantRoute && i < 4) {
+            console.log('📱 FASE 3: PARTICIPANT ROUTE - Rejecting non-facingMode camera, trying next constraint');
+            stream.getTracks().forEach(track => track.stop());
+            continue;
+          }
+          
+          // For non-participant or last attempts, accept it
+          if (i >= 4 || !isParticipantRoute) {
+            console.log('📱 FASE 3: Accepting camera as mobile fallback');
             return stream;
           }
           
-          // Clean up and try next constraint if still in facingMode attempts
-          console.log('📱 MOBILE CAPTURE: Trying next constraint for better mobile detection');
+          // Clean up and try next constraint
           stream.getTracks().forEach(track => track.stop());
         }
       }
     } catch (error) {
-      console.error(`❌ MOBILE CAPTURE: Attempt ${i + 1} failed:`, error);
+      console.error(`❌ FASE 3: Mobile attempt ${i + 1} failed:`, error);
       
       // If it's a permission error, stop trying
       if (error instanceof Error && error.name === 'NotAllowedError') {
-        console.error('❌ MOBILE CAPTURE: Permission denied - cannot continue');
+        console.error('❌ FASE 3: Permission denied - cannot continue');
+        
+        // FASE 4: Log permission denial details
+        if (isParticipantRoute) {
+          console.error('❌ FASE 4: CRITICAL - Mobile camera permission denied on participant route!');
+        }
+        
         break;
       }
     }
   }
   
-  console.error('❌ MOBILE CAPTURE: All mobile attempts failed');
+  console.error('❌ FASE 3: All mobile attempts failed');
   return null;
 };
 
 const getDesktopStreamWithMobileFallback = async (): Promise<MediaStream | null> => {
-  console.log('🖥️ DESKTOP CAPTURE: Starting with mobile fallback capability');
+  console.log('🖥️ FASE 3: DESKTOP CAPTURE with mobile fallback capability');
   
   const desktopConstraints = [
     // High quality desktop
@@ -193,16 +253,19 @@ const getDesktopStreamWithMobileFallback = async (): Promise<MediaStream | null>
   
   for (let i = 0; i < desktopConstraints.length; i++) {
     try {
-      console.log(`🖥️ DESKTOP CAPTURE: Trying constraint set ${i + 1}`);
+      // FASE 4: Log permission request for desktop
+      logPermissionRequest(desktopConstraints[i], i + 1);
+      
+      console.log(`🖥️ FASE 3: Desktop constraint set ${i + 1}`);
       const stream = await navigator.mediaDevices.getUserMedia(desktopConstraints[i]);
-      console.log(`✅ DESKTOP CAPTURE: Success with constraint set ${i + 1}`);
+      console.log(`✅ FASE 3: Desktop success with constraint set ${i + 1}`);
       return stream;
     } catch (error) {
-      console.log(`⚠️ DESKTOP CAPTURE: Constraint set ${i + 1} failed:`, error);
+      console.log(`⚠️ FASE 3: Desktop constraint set ${i + 1} failed:`, error);
     }
   }
   
-  console.error('❌ DESKTOP CAPTURE: All constraint sets failed');
+  console.error('❌ FASE 3: All desktop constraint sets failed');
   return null;
 };
 
@@ -234,22 +297,24 @@ export const getCameraInfo = async (): Promise<void> => {
 };
 
 const testMobileCameraCapabilities = async () => {
-  console.log('🧪 TESTING: Mobile camera capabilities...');
+  console.log('🧪 FASE 4: TESTING mobile camera capabilities...');
   
   const facingModes = ['environment', 'user'];
   for (const facingMode of facingModes) {
     try {
-      const testStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: facingMode } }
-      });
+      // FASE 4: Log test permission request
+      const testConstraints = { video: { facingMode: { ideal: facingMode } } };
+      logPermissionRequest(testConstraints, 0);
+      
+      const testStream = await navigator.mediaDevices.getUserMedia(testConstraints);
       
       const settings = testStream.getVideoTracks()[0]?.getSettings();
-      console.log(`✅ CAMERA TEST: ${facingMode} camera available:`, settings);
+      console.log(`✅ FASE 4: ${facingMode} camera available:`, settings);
       
       // Clean up test stream
       testStream.getTracks().forEach(track => track.stop());
     } catch (error) {
-      console.log(`❌ CAMERA TEST: ${facingMode} camera not available:`, error.name);
+      console.log(`❌ FASE 4: ${facingMode} camera not available:`, error.name);
     }
   }
 };

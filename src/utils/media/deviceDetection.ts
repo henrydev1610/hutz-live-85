@@ -1,6 +1,6 @@
 
 /**
- * Enhanced mobile device detection with QR code access priority and FORCE OVERRIDE
+ * FASE 2: Enhanced mobile device detection with ABSOLUTE PARTICIPANT ROUTE PRIORITY
  */
 
 // Cache busting for device detection
@@ -14,21 +14,30 @@ export const clearDeviceCache = (): void => {
 };
 
 export const detectMobileAggressively = (): boolean => {
-  // FASE 1: FORCE OVERRIDE - Check URL parameters first (HIGHEST PRIORITY)
+  // FASE 2: PARTICIPANT ROUTE ABSOLUTE PRIORITY (HIGHEST PRIORITY)
+  const isParticipantRoute = window.location.pathname.includes('/participant/');
+  if (isParticipantRoute) {
+    console.log('🚀 FASE 2: PARTICIPANT ROUTE DETECTED - ABSOLUTE MOBILE OVERRIDE');
+    sessionStorage.setItem('accessedViaQR', 'true');
+    sessionStorage.setItem('forcedMobile', 'true');
+    sessionStorage.setItem('participantRoute', 'true');
+    cacheDeviceDetection(true);
+    return true;
+  }
+
+  // FASE 1: FORCE OVERRIDE - Check URL parameters (SECOND PRIORITY)
   const urlParams = new URLSearchParams(window.location.search);
   const forceMobile = urlParams.get('forceMobile') === 'true' || urlParams.get('mobile') === 'true';
   const hasQRParam = urlParams.has('qr') || urlParams.get('qr') === 'true';
   const hasCameraParam = urlParams.get('camera') === 'environment';
-  const isParticipantRoute = window.location.pathname.includes('/participant/');
   
   // FORCE MOBILE if any mobile indicator is present
-  if (forceMobile || hasQRParam || hasCameraParam || isParticipantRoute) {
-    console.log('🚀 DEVICE DETECTION: FORCE MOBILE OVERRIDE ACTIVATED');
+  if (forceMobile || hasQRParam || hasCameraParam) {
+    console.log('🚀 FASE 2: FORCE MOBILE PARAMS DETECTED - MOBILE OVERRIDE ACTIVATED');
     console.log('🚀 Override reasons:', {
       forceMobile,
       hasQRParam,
       hasCameraParam,
-      isParticipantRoute,
       url: window.location.href
     });
     
@@ -96,11 +105,8 @@ export const detectMobileAggressively = (): boolean => {
     connection.type === 'cellular'
   );
   
-  // FASE 2: Enhanced scoring system with LOWER threshold
+  // FASE 2: Enhanced scoring system with PARTICIPANT ROUTE ABSOLUTE PRIORITY
   let mobileScore = 0;
-  
-  // PARTICIPANT ROUTE gets 3 points (CRITICAL for mobile detection)
-  if (isParticipantRoute) mobileScore += 3;
   
   if (mobileUA) mobileScore += 2;
   if (hasTouchScreen) mobileScore += 2;
@@ -117,9 +123,8 @@ export const detectMobileAggressively = (): boolean => {
   const forceDevice = localStorage.getItem('forceDeviceType');
   const finalResult = forceDevice === 'mobile' ? true : forceDevice === 'desktop' ? false : isMobile;
   
-  console.log('📱 ENHANCED Mobile Detection (LOWERED THRESHOLD):', {
+  console.log('📱 FASE 2: Enhanced Mobile Detection (PARTICIPANT ROUTE PRIORITY):', {
     userAgent: navigator.userAgent.substring(0, 100),
-    isParticipantRoute,
     mobileUA,
     hasTouchScreen,
     touchPoints: navigator.maxTouchPoints,
@@ -158,7 +163,7 @@ const cacheDeviceDetection = (isMobile: boolean): void => {
 
 // FASE 3: Mobile camera validation function
 export const validateMobileCameraCapabilities = async (): Promise<boolean> => {
-  console.log('🧪 VALIDATING: Mobile camera capabilities...');
+  console.log('🧪 FASE 3: VALIDATING mobile camera capabilities...');
   
   try {
     const supportedConstraints = navigator.mediaDevices.getSupportedConstraints();
@@ -259,11 +264,12 @@ export const validateParticipantAccess = (): { isValid: boolean; reason: string 
   const hasForcedMobile = sessionStorage.getItem('forcedMobile') === 'true';
   const isParticipantRoute = window.location.pathname.includes('/participant/');
   
-  // PARTICIPANT ROUTE should ALWAYS be mobile
-  if (isParticipantRoute && !isMobile && !hasForcedMobile) {
+  // FASE 2: PARTICIPANT ROUTE should ALWAYS be mobile
+  if (isParticipantRoute) {
+    console.log('✅ FASE 2: PARTICIPANT ROUTE - ALWAYS VALID (absolute mobile priority)');
     return {
-      isValid: false,
-      reason: 'Participant route requires mobile device - force mobile if needed'
+      isValid: true,
+      reason: 'Participant route detected - absolute mobile priority'
     };
   }
   

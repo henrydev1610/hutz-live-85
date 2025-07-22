@@ -4,9 +4,12 @@ import { useToast } from "@/components/ui/use-toast";
 import QRCode from 'qrcode';
 import { generateSessionId } from '@/utils/sessionUtils';
 
-// FASE 1 & 2: URL SYNC CRITICO - Forçar produção URLs
+// FASE 1: URL SYNC CRITICO - Forçar produção URLs com PARÂMETROS MOBILE OBRIGATÓRIOS
 const RENDER_PRODUCTION_URL = 'https://hutz-live-85.onrender.com';
 const RENDER_BACKEND_URL = 'https://server-hutz-live.onrender.com';
+
+// FASE 1: PARÂMETROS MOBILE OBRIGATÓRIOS para todas as URLs participant
+const FORCED_MOBILE_PARAMS = '?forceMobile=true&camera=environment&qr=1&mobile=true';
 
 const getProductionURL = (): string => {
   const currentHost = window.location.host;
@@ -15,7 +18,7 @@ const getProductionURL = (): string => {
   if (currentHost.includes('lovableproject.com') || 
       currentHost.includes('localhost') || 
       currentHost.includes('127.0.0.1')) {
-    console.log('🌐 QR URL OVERRIDE: Development detected, forcing production URL');
+    console.log('🌐 QR URL OVERRIDE: Development detected, forcing production URL with MOBILE params');
     console.log(`📍 Override: ${currentHost} → ${RENDER_PRODUCTION_URL}`);
     return RENDER_PRODUCTION_URL;
   }
@@ -76,9 +79,10 @@ export const useQRCodeGeneration = () => {
 
   const handleGenerateQRCode = async (state: any) => {
     try {
-      console.log("🎯 QR GENERATION: Starting with URL sync...");
+      console.log("🎯 QR GENERATION FASE 1: Starting with FORCED MOBILE PARAMS...");
       console.log("📍 Frontend URL:", productionUrl);
       console.log("📡 Backend URL:", backendUrl);
+      console.log("📱 FORCED MOBILE PARAMS:", FORCED_MOBILE_PARAMS);
       
       const response = await fetch(`${backendUrl}/api/rooms`, {
         method: 'POST',
@@ -98,36 +102,52 @@ export const useQRCodeGeneration = () => {
       const data = await response.json();
       console.log("✅ QR API Success:", data);
       
-      // FASE 2: URL VALIDATION - Verificar se URL retornada é consistente
-      const returnedUrl = data.joinURL;
-      if (returnedUrl && !returnedUrl.includes('hutz-live-85.onrender.com')) {
-        console.warn(`⚠️ QR URL INCONSISTENCY: Expected hutz-live-85.onrender.com, got ${returnedUrl}`);
+      // FASE 1: FORÇAR PARÂMETROS MOBILE na URL retornada
+      let finalUrl = data.joinURL;
+      if (finalUrl && !finalUrl.includes('forceMobile=true')) {
+        // Se a URL não tem os parâmetros mobile, adicionar
+        const hasExistingParams = finalUrl.includes('?');
+        if (hasExistingParams) {
+          finalUrl = finalUrl + '&forceMobile=true&camera=environment&qr=1&mobile=true';
+        } else {
+          finalUrl = finalUrl + FORCED_MOBILE_PARAMS;
+        }
+        console.log('📱 QR FASE 1: FORCED mobile params added to API URL:', finalUrl);
+      }
+      
+      // FASE 1: URL VALIDATION - Verificar se URL final tem parâmetros mobile
+      if (!finalUrl.includes('forceMobile=true') || !finalUrl.includes('camera=environment')) {
+        console.error('❌ QR FASE 1: CRITICAL - URL missing forced mobile params!');
+      } else {
+        console.log('✅ QR FASE 1: URL validated with mobile params');
       }
       
       state.setSessionId(data.roomId);
-      state.setQrCodeURL(data.joinURL);
+      state.setQrCodeURL(finalUrl);
       state.setQrCodeSvg(data.qrDataUrl);
       state.setParticipantList([]);
       
       toast({
         title: "QR Code gerado",
-        description: "QR Code gerado com produção URL sincronizada.",
+        description: "QR Code gerado com parâmetros mobile FORÇADOS.",
       });
       
     } catch (error) {
       console.error('❌ QR BACKEND ERROR:', error);
       
       try {
-        console.log("🔄 QR FALLBACK: Generating with forced production URL...");
+        console.log("🔄 QR FALLBACK FASE 1: Generating with FORCED mobile params...");
         const fallbackSessionId = generateSessionId();
         
-        // CRÍTICO: NUNCA usar window.location.origin - sempre forçar produção
-        const fallbackUrl = `${productionUrl}/participant/${fallbackSessionId}?mobile=true&qr=true&camera=environment`;
-        console.log(`🎯 QR FALLBACK URL: ${fallbackUrl}`);
+        // FASE 1: CRÍTICO - SEMPRE incluir parâmetros mobile no fallback
+        const fallbackUrl = `${productionUrl}/participant/${fallbackSessionId}${FORCED_MOBILE_PARAMS}`;
+        console.log(`🎯 QR FALLBACK URL with MOBILE PARAMS: ${fallbackUrl}`);
         
-        // FASE 5: URL VALIDATION
-        if (!fallbackUrl.includes('hutz-live-85.onrender.com') && !fallbackUrl.includes('localhost')) {
-          console.error('❌ QR FALLBACK URL ERROR: Invalid production URL generated');
+        // FASE 1: URL VALIDATION CRÍTICA
+        if (!fallbackUrl.includes('forceMobile=true') || !fallbackUrl.includes('camera=environment')) {
+          console.error('❌ QR FALLBACK FASE 1: CRITICAL - Fallback URL missing mobile params!');
+        } else {
+          console.log('✅ QR FALLBACK FASE 1: URL validated with mobile params');
         }
         
         const qrDataUrl = await QRCode.toDataURL(fallbackUrl, {
@@ -146,7 +166,7 @@ export const useQRCodeGeneration = () => {
         
         toast({
           title: "QR Code gerado (fallback)",
-          description: "Gerado com URL de produção forçada.",
+          description: "Gerado com parâmetros mobile FORÇADOS.",
           variant: "default"
         });
         
@@ -165,7 +185,7 @@ export const useQRCodeGeneration = () => {
     setQrCodeVisible(true);
     toast({
       title: "QR Code incluído",
-      description: "QR Code incluído na transmissão com URL de produção."
+      description: "QR Code incluído na transmissão com parâmetros mobile FORÇADOS."
     });
   };
 
