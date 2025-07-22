@@ -131,21 +131,36 @@ export class UnifiedWebRTCManager {
       this.handleWebSocketFailure();
     }
 
-    // Check WebRTC peer connections
+    // Check WebRTC peer connections - CRITICAL FIX for status accuracy
     let hasActiveConnections = false;
+    let hasFailedConnections = false;
+    let hasConnectingConnections = false;
+    
     this.peerConnections.forEach((pc, participantId) => {
+      console.log(`🔍 WEBRTC STATUS: ${participantId} connection state: ${pc.connectionState}`);
+      
       if (pc.connectionState === 'connected') {
         hasActiveConnections = true;
       } else if (pc.connectionState === 'failed') {
+        hasFailedConnections = true;
         console.log(`🔄 Peer connection failed for ${participantId}, attempting recovery`);
         this.handlePeerConnectionFailure(participantId);
+      } else if (pc.connectionState === 'connecting' || pc.connectionState === 'new') {
+        hasConnectingConnections = true;
       }
     });
 
+    // CRITICAL FIX: Update WebRTC status based on actual connection states
     if (hasActiveConnections) {
       this.updateConnectionState('webrtc', 'connected');
-    } else if (this.peerConnections.size > 0) {
+    } else if (hasConnectingConnections) {
+      this.updateConnectionState('webrtc', 'connecting');
+    } else if (hasFailedConnections) {
       this.updateConnectionState('webrtc', 'failed');
+    } else {
+      // No peer connections = waiting for participants (not failed)
+      console.log(`📊 WEBRTC STATUS: No peer connections - waiting for participants`);
+      this.updateConnectionState('webrtc', 'disconnected');
     }
   }
 
@@ -154,10 +169,18 @@ export class UnifiedWebRTCManager {
     
     this.connectionState[component] = state;
     
-    // Calculate overall state
-    if (this.connectionState.websocket === 'connected' && 
-        (this.connectionState.webrtc === 'connected' || this.peerConnections.size === 0)) {
-      this.connectionState.overall = 'connected';
+    // Calculate overall state - CRITICAL FIX for accurate status
+    if (this.connectionState.websocket === 'connected') {
+      if (this.connectionState.webrtc === 'connected') {
+        this.connectionState.overall = 'connected';
+      } else if (this.connectionState.webrtc === 'connecting') {
+        this.connectionState.overall = 'connecting';
+      } else if (this.connectionState.webrtc === 'failed') {
+        this.connectionState.overall = 'failed';
+      } else {
+        // WebSocket connected but no WebRTC connections = ready state
+        this.connectionState.overall = 'connected';
+      }
     } else if (this.connectionState.websocket === 'connecting' || this.connectionState.webrtc === 'connecting') {
       this.connectionState.overall = 'connecting';
     } else if (this.connectionState.websocket === 'failed' || this.connectionState.webrtc === 'failed') {

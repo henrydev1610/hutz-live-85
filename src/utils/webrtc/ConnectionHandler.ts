@@ -62,16 +62,20 @@ export class ConnectionHandler {
     };
 
     peerConnection.onconnectionstatechange = () => {
-      console.log(`🔗 Connection state for ${participantId}:`, peerConnection.connectionState);
+      console.log(`🔗 WEBRTC CONNECTION: ${participantId} state changed to: ${peerConnection.connectionState}`);
 
       if (peerConnection.connectionState === 'connected') {
-        console.log(`✅ Peer connection established with: ${participantId}`);
+        console.log(`✅ WEBRTC SUCCESS: Peer connection established with: ${participantId}`);
         if (this.participantJoinCallback) {
           this.participantJoinCallback(participantId);
         }
       } else if (peerConnection.connectionState === 'failed') {
-        console.log(`❌ Peer connection failed with: ${participantId}`);
+        console.log(`❌ WEBRTC FAILED: Peer connection failed with: ${participantId}`);
         this.handleConnectionFailure(participantId);
+      } else if (peerConnection.connectionState === 'connecting') {
+        console.log(`🔄 WEBRTC CONNECTING: Establishing connection with: ${participantId}`);
+      } else if (peerConnection.connectionState === 'new') {
+        console.log(`🆕 WEBRTC NEW: New connection created for: ${participantId}`);
       }
     };
 
