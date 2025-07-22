@@ -2,6 +2,10 @@
 const connections = new Map(); // socketId -> { roomId, userId, socketRef }
 const rooms = new Map(); // roomId -> Set of socketIds
 
+// FASE 2: Connection timeout e health monitoring
+const CONNECTION_HEALTH_INTERVAL = 30000; // 30s
+const STALE_CONNECTION_TIMEOUT = 120000; // 2 minutes
+
 // Configuração dos servidores STUN/TURN
 const getICEServers = () => {
   const servers = [];
@@ -21,7 +25,7 @@ const getICEServers = () => {
     // Servidores STUN padrão
     servers.push(
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
+      { urls: 'stun1.l.google.com:19302' }
     );
   }
   
@@ -38,19 +42,79 @@ const getICEServers = () => {
   return servers;
 };
 
+// FASE 4: Enhanced connection logging
+const logConnectionMetrics = () => {
+  const roomsData = Array.from(rooms.entries()).map(([roomId, sockets]) => ({
+    roomId,
+    participants: sockets.size,
+    socketIds: Array.from(sockets)
+  }));
+  
+  console.log(`📊 SERVER METRICS: ${connections.size} connections, ${rooms.size} active rooms`);
+  console.log(`🏠 ROOMS DETAIL:`, roomsData);
+};
+
+// FASE 4: Connection health monitoring
+const cleanupStaleConnections = () => {
+  const now = Date.now();
+  const staleConnections = [];
+  
+  connections.forEach((conn, socketId) => {
+    if (conn.lastSeen && (now - conn.lastSeen) > STALE_CONNECTION_TIMEOUT) {
+      staleConnections.push({ socketId, conn });
+    }
+  });
+  
+  staleConnections.forEach(({ socketId, conn }) => {
+    console.log(`🧹 CLEANUP: Removing stale connection ${socketId} (last seen ${Math.round((now - conn.lastSeen) / 1000)}s ago)`);
+    
+    // Remove from room
+    const roomSockets = rooms.get(conn.roomId);
+    if (roomSockets) {
+      roomSockets.delete(socketId);
+      if (roomSockets.size === 0) {
+        rooms.delete(conn.roomId);
+        console.log(`🗑️ CLEANUP: Empty room ${conn.roomId} removed`);
+      }
+    }
+    
+    // Remove connection
+    connections.delete(socketId);
+  });
+  
+  if (staleConnections.length > 0) {
+    logConnectionMetrics();
+  }
+};
+
 const initializeSocketHandlers = (io) => {
+  // FASE 4: Setup health monitoring
+  setInterval(() => {
+    logConnectionMetrics();
+    cleanupStaleConnections();
+  }, CONNECTION_HEALTH_INTERVAL);
+
   io.on('connection', (socket) => {
-    console.log(`🔌 Client connected: ${socket.id}`);
+    console.log(`🔌 Client connected: ${socket.id} from ${socket.handshake.address}`);
+    console.log(`📡 CONNECTION HEADERS:`, {
+      userAgent: socket.handshake.headers['user-agent'],
+      networkQuality: socket.handshake.headers['x-network-quality'],
+      origin: socket.handshake.headers.origin
+    });
     
     // Suporte a múltiplos formatos de join-room
     const handleJoinRoom = (data) => {
       try {
-        const { roomId, userId } = data;
+        const { roomId, userId, networkQuality } = data;
         
         if (!roomId || !userId) {
+          console.error(`❌ JOIN: Missing required fields - roomId: ${roomId}, userId: ${userId}`);
           socket.emit('error', { message: 'roomId and userId are required' });
+          socket.emit('join-room-response', { success: false, error: 'Missing roomId or userId' });
           return;
         }
+        
+        console.log(`👤 JOIN REQUEST: User ${userId} joining room ${roomId} (Network: ${networkQuality || 'unknown'})`);
         
         // Verificar se já está em uma sala
         const existingConnection = connections.get(socket.id);
@@ -64,10 +128,15 @@ const initializeSocketHandlers = (io) => {
           }
         }
         
-        console.log(`👤 User ${userId} joining room ${roomId}`);
-        
-        // Armazenar conexão
-        connections.set(socket.id, { roomId, userId, socketRef: socket });
+        // Armazenar conexão com enhanced metadata
+        connections.set(socket.id, { 
+          roomId, 
+          userId, 
+          socketRef: socket,
+          joinedAt: Date.now(),
+          lastSeen: Date.now(),
+          networkQuality: networkQuality || 'unknown'
+        });
         
         // Adicionar à sala
         if (!rooms.has(roomId)) {
@@ -85,7 +154,8 @@ const initializeSocketHandlers = (io) => {
         socket.to(roomId).emit('user-connected', { 
           userId,
           socketId: socket.id,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          networkQuality: networkQuality || 'unknown'
         });
         
         // Enviar lista de participantes existentes
@@ -98,36 +168,37 @@ const initializeSocketHandlers = (io) => {
             if (conn && socketId !== socket.id) {
               participantsInRoom.push({
                 userId: conn.userId,
-                socketId: socketId
+                socketId: socketId,
+                networkQuality: conn.networkQuality
               });
             }
           });
         }
         
-        // Enviar confirmação de sucesso
-        socket.emit('room_joined', { 
+        // FASE 2: Enhanced success responses with multiple confirmations
+        const successData = { 
           success: true, 
           roomId, 
           userId, 
-          participants: participantsInRoom 
-        });
+          participants: participantsInRoom,
+          timestamp: Date.now(),
+          iceServers: getICEServers()
+        };
         
-        socket.emit('join-room-response', { 
-          success: true, 
-          roomId, 
-          userId, 
-          participants: participantsInRoom 
-        });
-        
+        // Enviar múltiplas confirmações para garantir recebimento
+        socket.emit('room_joined', successData);
+        socket.emit('join-room-response', successData);
         socket.emit('room-participants', { participants: participantsInRoom });
         socket.emit('participants-update', participantsInRoom);
         
-        console.log(`✅ User ${userId} joined room ${roomId} (${participantsInRoom.length + 1} total)`);
+        console.log(`✅ JOIN SUCCESS: User ${userId} joined room ${roomId} (${participantsInRoom.length + 1} total participants)`);
+        logConnectionMetrics();
         
       } catch (error) {
-        console.error('Error in join-room:', error);
-        socket.emit('error', { message: 'Failed to join room' });
-        socket.emit('join-room-response', { success: false, error: error.message });
+        console.error('❌ JOIN ERROR:', error);
+        const errorMessage = `Failed to join room: ${error.message}`;
+        socket.emit('error', { message: errorMessage });
+        socket.emit('join-room-response', { success: false, error: errorMessage });
       }
     };
 
@@ -135,7 +206,29 @@ const initializeSocketHandlers = (io) => {
     socket.on('join-room', handleJoinRoom);
     socket.on('join_room', handleJoinRoom);
     
-    // Evento: Oferta WebRTC
+    // FASE 4: Enhanced heartbeat with connection health tracking
+    socket.on('ping', (callback) => {
+      const connection = connections.get(socket.id);
+      if (connection) {
+        connection.lastSeen = Date.now();
+        console.log(`💓 HEARTBEAT: Updated last seen for ${connection.userId}`);
+      }
+      
+      // Respond with server health info
+      const response = {
+        timestamp: Date.now(),
+        serverHealth: 'ok',
+        connectionsCount: connections.size,
+        roomsCount: rooms.size
+      };
+      
+      if (callback && typeof callback === 'function') {
+        callback(response);
+      } else {
+        socket.emit('pong', response);
+      }
+    });
+    
     socket.on('offer', (data) => {
       try {
         const { roomId, targetSocketId, targetUserId, offer, fromUserId } = data;
@@ -146,11 +239,13 @@ const initializeSocketHandlers = (io) => {
           return;
         }
         
+        // Update last seen
+        connection.lastSeen = Date.now();
+        
         console.log(`📤 Offer from ${fromUserId || connection.userId} to ${targetUserId || targetSocketId}`);
         
         let finalTargetSocketId = targetSocketId;
         
-        // Se temos targetUserId, encontrar o socketId correspondente
         if (targetUserId && !targetSocketId) {
           const roomSockets = rooms.get(roomId);
           if (roomSockets) {
@@ -164,7 +259,6 @@ const initializeSocketHandlers = (io) => {
           }
         }
         
-        // Enviar oferta para socket específico
         if (finalTargetSocketId) {
           socket.to(finalTargetSocketId).emit('offer', {
             offer,
@@ -172,7 +266,6 @@ const initializeSocketHandlers = (io) => {
             fromUserId: connection.userId
           });
         } else {
-          // Enviar para toda a sala se não especificar destino
           socket.to(roomId).emit('offer', {
             offer,
             fromSocketId: socket.id,
@@ -186,7 +279,6 @@ const initializeSocketHandlers = (io) => {
       }
     });
     
-    // Evento: Resposta WebRTC
     socket.on('answer', (data) => {
       try {
         const { roomId, targetSocketId, targetUserId, answer, fromUserId } = data;
@@ -197,11 +289,12 @@ const initializeSocketHandlers = (io) => {
           return;
         }
         
+        connection.lastSeen = Date.now();
+        
         console.log(`📥 Answer from ${fromUserId || connection.userId} to ${targetUserId || targetSocketId}`);
         
         let finalTargetSocketId = targetSocketId;
         
-        // Se temos targetUserId, encontrar o socketId correspondente
         if (targetUserId && !targetSocketId) {
           const roomSockets = rooms.get(roomId);
           if (roomSockets) {
@@ -215,7 +308,6 @@ const initializeSocketHandlers = (io) => {
           }
         }
         
-        // Enviar resposta para socket específico
         if (finalTargetSocketId) {
           socket.to(finalTargetSocketId).emit('answer', {
             answer,
@@ -223,7 +315,6 @@ const initializeSocketHandlers = (io) => {
             fromUserId: connection.userId
           });
         } else {
-          // Enviar para toda a sala se não especificar destino
           socket.to(roomId).emit('answer', {
             answer,
             fromSocketId: socket.id,
@@ -237,7 +328,6 @@ const initializeSocketHandlers = (io) => {
       }
     });
     
-    // Evento: Candidato ICE (suporte a ambos formatos)
     socket.on('ice', (data) => {
       try {
         const { roomId, targetSocketId, candidate } = data;
@@ -248,7 +338,8 @@ const initializeSocketHandlers = (io) => {
           return;
         }
         
-        // Enviar candidato ICE
+        connection.lastSeen = Date.now();
+        
         if (targetSocketId) {
           socket.to(targetSocketId).emit('ice', {
             candidate,
@@ -256,7 +347,6 @@ const initializeSocketHandlers = (io) => {
             fromUserId: connection.userId
           });
         } else {
-          // Enviar para toda a sala se não especificar destino
           socket.to(roomId).emit('ice', {
             candidate,
             fromSocketId: socket.id,
@@ -270,7 +360,6 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
-    // Evento: Candidato ICE (formato UNIFIED)
     socket.on('ice-candidate', (data) => {
       try {
         const { roomId, targetUserId, candidate, fromUserId } = data;
@@ -281,9 +370,10 @@ const initializeSocketHandlers = (io) => {
           return;
         }
         
+        connection.lastSeen = Date.now();
+        
         console.log(`🧊 ICE candidate from ${fromUserId || connection.userId} to ${targetUserId}`);
         
-        // Encontrar socket do usuário alvo
         let targetSocketId = null;
         const roomSockets = rooms.get(roomId);
         if (roomSockets) {
@@ -296,7 +386,6 @@ const initializeSocketHandlers = (io) => {
           }
         }
         
-        // Enviar candidato ICE
         if (targetSocketId) {
           socket.to(targetSocketId).emit('ice-candidate', {
             candidate,
@@ -313,7 +402,6 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
-    // Evento: Stream iniciado
     socket.on('stream-started', (data) => {
       try {
         const { participantId, roomId, streamInfo } = data;
@@ -324,9 +412,10 @@ const initializeSocketHandlers = (io) => {
           return;
         }
         
+        connection.lastSeen = Date.now();
+        
         console.log(`📹 Stream started from ${participantId} in room ${roomId}`);
         
-        // Notificar outros participantes
         socket.to(roomId).emit('stream-started', {
           participantId,
           streamInfo,
@@ -340,10 +429,10 @@ const initializeSocketHandlers = (io) => {
       }
     });
     
-    // Evento: Heartbeat/Keep-alive
     socket.on('heartbeat', (data) => {
       const connection = connections.get(socket.id);
       if (connection) {
+        connection.lastSeen = Date.now();
         socket.to(connection.roomId).emit('user-heartbeat', {
           userId: connection.userId,
           socketId: socket.id,
@@ -352,7 +441,6 @@ const initializeSocketHandlers = (io) => {
       }
     });
     
-    // Evento: Desconexão
     socket.on('disconnect', () => {
       try {
         const connection = connections.get(socket.id);
@@ -362,29 +450,26 @@ const initializeSocketHandlers = (io) => {
           
           console.log(`🔌 User ${userId} disconnecting from room ${roomId}`);
           
-          // Remover da sala
           const roomSockets = rooms.get(roomId);
           if (roomSockets) {
             roomSockets.delete(socket.id);
             
-            // Remover sala se estiver vazia
             if (roomSockets.size === 0) {
               rooms.delete(roomId);
               console.log(`🗑️ Empty room ${roomId} removed`);
             }
           }
           
-          // Notificar outros participantes
           socket.to(roomId).emit('user-disconnected', {
             userId,
             socketId: socket.id,
             timestamp: Date.now()
           });
           
-          // Remover conexão
           connections.delete(socket.id);
           
           console.log(`❌ User ${userId} disconnected from room ${roomId}`);
+          logConnectionMetrics();
         }
         
       } catch (error) {
@@ -392,20 +477,16 @@ const initializeSocketHandlers = (io) => {
       }
     });
     
-    // Evento: Deixar sala manualmente
     socket.on('leave-room', () => {
       const connection = connections.get(socket.id);
       if (connection) {
         socket.leave(connection.roomId);
-        socket.emit('disconnect'); // Trigger disconnect logic
+        socket.emit('disconnect');
       }
     });
   });
   
-  // Log estatísticas periodicamente
-  setInterval(() => {
-    console.log(`📊 Stats: ${connections.size} connections, ${rooms.size} active rooms`);
-  }, 60000); // A cada minuto
+  console.log('🚀 Socket handlers initialized with enhanced stability and monitoring');
 };
 
 module.exports = {

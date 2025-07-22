@@ -16,30 +16,32 @@ export const clearConnectionCache = (): void => {
 };
 
 /**
- * Get the backend base URL - should match the server that generated the QR code
+ * Get the backend base URL - CRITICAL: Must match server .env exactly
  */
 export const getBackendBaseURL = (): string => {
-  // Use environment variable if defined
+  // FASE 1: URL SYNC - Use exact URL from server .env
   const envApiUrl = import.meta.env.VITE_API_URL;
   
   if (envApiUrl) {
-    console.log(`🔧 BACKEND: Using environment API URL: ${envApiUrl}`);
+    console.log(`🔧 BACKEND URL SYNC: Using environment API URL: ${envApiUrl}`);
     return envApiUrl;
   }
 
   const { protocol, host } = window.location;
   
-  // Check if we're on the Render deployment URL (from QR code)
+  // CRITICAL FIX: Use server-hutz-live.onrender.com (from server .env)
+  // NOT hutz-live-85.onrender.com (frontend URL)
   if (host.includes('hutz-live-85.onrender.com')) {
-    const backendUrl = `${protocol}//hutz-live-85.onrender.com`;
-    console.log(`🌐 BACKEND: Render deployment detected: ${backendUrl}`);
+    const backendUrl = 'https://server-hutz-live.onrender.com';
+    console.log(`🌐 BACKEND URL SYNC: Render deployment - using server URL: ${backendUrl}`);
+    console.log(`📋 URL MAPPING: Frontend ${host} → Backend server-hutz-live.onrender.com`);
     return backendUrl;
   }
   
   // Lovable environment detection
   if (host.includes('lovableproject.com')) {
     const backendUrl = `${protocol}//${host}`;
-    console.log(`🌐 BACKEND: Lovable environment detected: ${backendUrl}`);
+    console.log(`🌐 BACKEND URL SYNC: Lovable environment detected: ${backendUrl}`);
     return backendUrl;
   }
   
@@ -47,13 +49,13 @@ export const getBackendBaseURL = (): string => {
   if (host.includes('localhost') || host.startsWith('127.0.0.1') || host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.')) {
     const localPort = '3001';
     const backendUrl = `${protocol}//${host.split(':')[0]}:${localPort}`;
-    console.log(`🏠 BACKEND: Local development detected: ${backendUrl}`);
+    console.log(`🏠 BACKEND URL SYNC: Local development detected: ${backendUrl}`);
     return backendUrl;
   }
   
   // Production environment fallback
   const backendUrl = `${protocol}//${host}`;
-  console.log(`🌐 BACKEND: Production environment detected: ${backendUrl}`);
+  console.log(`🌐 BACKEND URL SYNC: Production environment detected: ${backendUrl}`);
   return backendUrl;
 };
 
@@ -78,7 +80,7 @@ export const getWebSocketURL = (): string => {
     }
   }
 
-  // CRITICAL: Use the same base URL as the backend that generated the QR code
+  // CRITICAL: Use the exact same backend URL from server .env
   const backendBaseUrl = getBackendBaseURL();
   const baseUrl = new URL(backendBaseUrl);
   
@@ -88,6 +90,7 @@ export const getWebSocketURL = (): string => {
   
   console.log(`🔗 CONNECTION: WebSocket URL synchronized with backend: ${wsUrl}`);
   console.log(`📋 CONNECTION: Backend base: ${backendBaseUrl} → WebSocket: ${wsUrl}`);
+  console.log(`🎯 URL VERIFICATION: Backend host: ${baseUrl.host}, Protocol: ${wsProtocol}`);
   
   cacheConnectionURL(wsUrl);
   return wsUrl;
@@ -120,7 +123,7 @@ export const getEnvironmentInfo = () => {
   const isRender = host.includes('hutz-live-85.onrender.com');
   const isSecure = protocol === 'https:';
   
-  return {
+  const envInfo = {
     isLocalhost,
     isLovable,
     isRender,
@@ -130,8 +133,17 @@ export const getEnvironmentInfo = () => {
     wsProtocol: isSecure ? 'wss:' : 'ws:',
     apiBaseUrl: getApiBaseURL(),
     wsUrl: getWebSocketURL(),
-    version: CONNECTION_VERSION
+    version: CONNECTION_VERSION,
+    // FASE 4: Debug enhancement
+    urlMapping: {
+      frontend: `${protocol}//${host}`,
+      backend: getBackendBaseURL(),
+      websocket: getWebSocketURL()
+    }
   };
+
+  console.log('🌍 ENVIRONMENT INFO:', envInfo);
+  return envInfo;
 };
 
 // Force refresh connections (for debugging)
@@ -163,13 +175,33 @@ export const validateURLConsistency = (): boolean => {
     allHostsMatch: isConsistent,
     backendHost,
     wsHost,
-    apiHost
+    apiHost,
+    expectedBackendHost: 'server-hutz-live.onrender.com'
   });
   
   return isConsistent;
+};
+
+// FASE 5: Mobile network optimization
+export const detectSlowNetwork = (): boolean => {
+  // @ts-ignore - NetworkInformation API
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  
+  if (connection) {
+    const slowConnections = ['slow-2g', '2g', '3g'];
+    const isSlowConnection = slowConnections.includes(connection.effectiveType);
+    const isLowDownlink = connection.downlink < 1.5; // Less than 1.5 Mbps
+    
+    console.log(`📶 NETWORK DETECTION: Type: ${connection.effectiveType}, Downlink: ${connection.downlink}Mbps, Slow: ${isSlowConnection || isLowDownlink}`);
+    
+    return isSlowConnection || isLowDownlink;
+  }
+  
+  return false; // Assume fast if can't detect
 };
 
 // Make available globally for debugging
 (window as any).forceRefreshConnections = forceRefreshConnections;
 (window as any).clearConnectionCache = clearConnectionCache;
 (window as any).validateURLConsistency = validateURLConsistency;
+(window as any).detectSlowNetwork = detectSlowNetwork;
