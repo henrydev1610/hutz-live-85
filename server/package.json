@@ -2,7 +2,7 @@
 {
   "name": "momento-live-backend",
   "version": "1.0.0",
-  "type": "commonjs",
+  "type": "module",
   "description": "Backend para aplicação Momento Live - Sistema de transmissão ao vivo com WebRTC",
   "main": "index.js",
   "scripts": {
