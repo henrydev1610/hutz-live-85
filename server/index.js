@@ -5,6 +5,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import roomsRouter from './routes/rooms.js';
+import { generateToken } from './routes/twilio.js';
 import { initializeSocketHandlers } from './signaling/socket.js';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
@@ -114,6 +115,7 @@ app.get('/', (req, res) => {
 });
 
 app.use('/api/rooms', roomsRouter);
+app.post('/api/twilio/token', generateToken);
 
 app.get('/status', (req, res) => {
   res.json({
