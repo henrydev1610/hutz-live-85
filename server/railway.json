@@ -2,11 +2,12 @@
 {
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "npm install",
-    "watchPatterns": ["server/**"]
+    "buildCommand": "npm ci",
+    "watchPatterns": ["server/**"],
+    "nixpacksConfigPath": "nixpacks.toml"
   },
   "deploy": {
-    "startCommand": "npm start",
+    "startCommand": "node index.js",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
@@ -14,7 +15,9 @@
   },
   "variables": {
     "NODE_ENV": "production",
-    "PORT": "$PORT"
+    "PORT": "$PORT",
+    "NPM_CONFIG_PRODUCTION": "false",
+    "NODE_OPTIONS": "--max-old-space-size=1024"
   },
   "domains": [
     {

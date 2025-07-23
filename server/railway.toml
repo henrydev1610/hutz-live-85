@@ -1,10 +1,11 @@
 
 [build]
 builder = "nixpacks"
-buildCommand = "npm install"
+buildCommand = "npm ci"
+nixpacksConfigPath = "nixpacks.toml"
 
 [deploy]
-startCommand = "npm start"
+startCommand = "node index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
@@ -13,7 +14,12 @@ restartPolicyMaxRetries = 3
 [variables]
 NODE_ENV = "production"
 PORT = { default = "8080" }
+NPM_CONFIG_PRODUCTION = "false"
+NODE_OPTIONS = "--max-old-space-size=1024"
 
 [networking]
 externalPort = 8080
 internalPort = 8080
+
+[nixpacks]
+configFile = "nixpacks.toml"
