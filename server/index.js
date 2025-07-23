@@ -28,6 +28,7 @@ const allowedOrigins = [
   "https://id-preview--f728da22-f48a-45b2-91e9-28492d654d7f.lovable.app",
   "https://server-hutz-live.onrender.com",
   "https://hutz-live-85.onrender.com",
+  "https://server-hutz-live-production.up.railway.app",
   /^https:\/\/.*\.lovableproject\.com$/,
   /^https:\/\/.*\.lovable\.app$/,
   /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,
