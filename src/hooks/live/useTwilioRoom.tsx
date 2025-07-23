@@ -21,15 +21,18 @@ export const useTwilioRoom = ({ roomName, participantName }: UseTwilioRoomProps)
 
   const getAccessToken = useCallback(async (): Promise<string> => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/twilio/token`, {
+      const response = await fetch('https://fuhvpzprzqdfcojueswo.supabase.co/functions/v1/twilio-token', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1aHZwenByenFkZmNvanVlc3dvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3NzYyMTcsImV4cCI6MjA2ODM1MjIxN30.EOxuKRd31gvZtp-WXNtR5luwiVyNMbn1X-bGIz9TVgk'}`
+        },
         body: JSON.stringify({ identity: participantName, roomName })
       });
       
       if (!response.ok) {
-        throw new Error(`Failed to get access token: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to get access token: ${response.status}`);
       }
       
       const data = await response.json();
