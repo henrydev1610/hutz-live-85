@@ -1,8 +1,10 @@
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { detectMobileAggressively } from '@/utils/media/deviceDetection';
-import { getUserMediaWithFallback } from '@/utils/media/getUserMediaFallback';
+import { forceMobileCamera } from '@/utils/media/mobileMediaDetector';
 import { setupVideoElement } from '@/utils/media/videoPlayback';
+import { webRTCDebugger } from '@/utils/webrtc/WebRTCDebugger';
 
 interface MobileStableCameraState {
   stream: MediaStream | null;
@@ -68,6 +70,23 @@ export const useMobileStableCameraManager = (config: Partial<MobileStableCameraC
       const hasValidDimensions = settings.width && settings.height && 
                                settings.width > 0 && settings.height > 0;
       
+      // Log validation details
+      webRTCDebugger.logEvent(
+        'stable-camera',
+        'mobile-participant',
+        false,
+        isMobile,
+        'STREAM',
+        'STREAM_VALIDATION',
+        {
+          isActive,
+          hasValidDimensions,
+          facingMode: settings.facingMode,
+          width: settings.width,
+          height: settings.height
+        }
+      );
+      
       return isActive && hasValidDimensions;
     }
     
@@ -78,8 +97,26 @@ export const useMobileStableCameraManager = (config: Partial<MobileStableCameraC
   const acquireMobileCamera = useCallback(async (retryCount = 0): Promise<MediaStream | null> => {
     console.log(`🎯 MOBILE STABLE: Camera acquisition attempt ${retryCount + 1}/${finalConfig.maxRetries}`);
     
+    webRTCDebugger.logEvent(
+      'stable-camera',
+      'mobile-participant',
+      false,
+      isMobile,
+      'STREAM',
+      'ACQUISITION_ATTEMPT',
+      { retryCount, maxRetries: finalConfig.maxRetries }
+    );
+    
     if (retryCount >= finalConfig.maxRetries) {
       console.error('❌ MOBILE STABLE: Max acquisition attempts reached');
+      webRTCDebugger.logCriticalFailure(
+        'stable-camera',
+        'mobile-participant',
+        false,
+        isMobile,
+        'STREAM',
+        new Error('Max acquisition attempts reached')
+      );
       return null;
     }
 
@@ -91,7 +128,8 @@ export const useMobileStableCameraManager = (config: Partial<MobileStableCameraC
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
-      const stream = await getUserMediaWithFallback();
+      // Use forced mobile camera acquisition
+      const stream = await forceMobileCamera('user');
       
       if (!validateStream(stream)) {
         console.warn(`⚠️ MOBILE STABLE: Invalid stream on attempt ${retryCount + 1}`);
@@ -99,10 +137,39 @@ export const useMobileStableCameraManager = (config: Partial<MobileStableCameraC
       }
 
       console.log(`✅ MOBILE STABLE: Valid camera stream acquired on attempt ${retryCount + 1}`);
+      
+      webRTCDebugger.logEvent(
+        'stable-camera',
+        'mobile-participant',
+        false,
+        isMobile,
+        'STREAM',
+        'ACQUISITION_SUCCESS',
+        { 
+          retryCount,
+          streamId: stream?.id,
+          videoTracks: stream?.getVideoTracks().length,
+          audioTracks: stream?.getAudioTracks().length
+        }
+      );
+      
       return stream;
       
     } catch (error) {
       console.error(`❌ MOBILE STABLE: Attempt ${retryCount + 1} failed:`, error);
+      
+      webRTCDebugger.logEvent(
+        'stable-camera',
+        'mobile-participant',
+        false,
+        isMobile,
+        'STREAM',
+        'ACQUISITION_FAILED',
+        { 
+          retryCount,
+          error: error instanceof Error ? error.message : String(error)
+        }
+      );
       
       if (retryCount < finalConfig.maxRetries - 1) {
         return acquireMobileCamera(retryCount + 1);
@@ -110,7 +177,7 @@ export const useMobileStableCameraManager = (config: Partial<MobileStableCameraC
       
       throw error;
     }
-  }, [finalConfig.maxRetries, finalConfig.retryDelay, validateStream]);
+  }, [finalConfig.maxRetries, finalConfig.retryDelay, validateStream, isMobile]);
 
   // Continuous stability monitoring
   const startStabilityMonitoring = useCallback(() => {
@@ -175,6 +242,16 @@ export const useMobileStableCameraManager = (config: Partial<MobileStableCameraC
   const initializeStableCamera = useCallback(async (): Promise<MediaStream | null> => {
     console.log('🚀 MOBILE STABLE: Initializing stable camera connection');
     
+    webRTCDebugger.logEvent(
+      'stable-camera',
+      'mobile-participant',
+      false,
+      isMobile,
+      'STREAM',
+      'INITIALIZATION_START',
+      { isMobile }
+    );
+    
     // Clean up previous stream
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
@@ -223,11 +300,34 @@ export const useMobileStableCameraManager = (config: Partial<MobileStableCameraC
       console.log('✅ MOBILE STABLE: Camera initialization completed successfully');
       toast.success('📱 Mobile camera connected and stable!');
       
+      webRTCDebugger.logEvent(
+        'stable-camera',
+        'mobile-participant',
+        false,
+        isMobile,
+        'STREAM',
+        'INITIALIZATION_SUCCESS',
+        { 
+          streamId: stream.id,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length
+        }
+      );
+      
       return stream;
       
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error('❌ MOBILE STABLE: Initialization failed:', errorMsg);
+      
+      webRTCDebugger.logCriticalFailure(
+        'stable-camera',
+        'mobile-participant',
+        false,
+        isMobile,
+        'STREAM',
+        error as Error
+      );
       
       setState(prev => ({
         ...prev,
@@ -240,7 +340,7 @@ export const useMobileStableCameraManager = (config: Partial<MobileStableCameraC
       toast.error(`📱 Mobile camera failed: ${errorMsg}`);
       throw error;
     }
-  }, [acquireMobileCamera, startStabilityMonitoring]);
+  }, [acquireMobileCamera, startStabilityMonitoring, isMobile]);
 
   // Force reconnection method
   const forceReconnect = useCallback(async (): Promise<void> => {
