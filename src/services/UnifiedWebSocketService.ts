@@ -50,9 +50,9 @@ class UnifiedWebSocketService {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
-  // FASE 3: Circuit breaker pattern
-  private circuitBreakerThreshold = 5;
-  private circuitBreakerTimeout = 30000; // 30s before allowing retry
+  // FASE 3: Circuit breaker pattern - mais tolerante para produção
+  private circuitBreakerThreshold = 8;
+  private circuitBreakerTimeout = 15000; // 15s before allowing retry
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
 
@@ -69,10 +69,14 @@ class UnifiedWebSocketService {
     
     // Adjust settings based on network quality
     if (isSlowNetwork) {
-      this.maxReconnectAttempts = 20;
-      this.reconnectDelay = 3000;
-      this.maxReconnectDelay = 90000;
+      this.maxReconnectAttempts = 25;
+      this.reconnectDelay = 2000;
+      this.maxReconnectDelay = 60000;
       console.log('🐌 SLOW NETWORK: Adjusted connection parameters for stability');
+    } else {
+      // Configurações otimizadas para Railway
+      this.maxReconnectAttempts = 15;
+      this.reconnectDelay = 1500;
     }
   }
 
@@ -149,11 +153,11 @@ class UnifiedWebSocketService {
       
       let connectionTimeout;
       if (isMobile && isSlowNetwork) {
-        connectionTimeout = 45000; // 45s for mobile + slow network
+        connectionTimeout = 60000; // 60s for mobile + slow network
       } else if (isMobile || isSlowNetwork) {
-        connectionTimeout = 30000; // 30s for mobile OR slow network
+        connectionTimeout = 45000; // 45s for mobile OR slow network
       } else {
-        connectionTimeout = 20000; // 20s for desktop + fast network
+        connectionTimeout = 35000; // 35s for desktop + fast network (Railway pode ser mais lento)
       }
       
       console.log(`⏱️ CONNECTION TIMEOUT: ${connectionTimeout}ms (Mobile: ${isMobile}, Slow: ${isSlowNetwork})`);
@@ -165,11 +169,12 @@ class UnifiedWebSocketService {
 
       this.socket = io(url, {
         transports: ['websocket', 'polling'],
-        timeout: Math.min(connectionTimeout - 5000, 25000), // Socket timeout slightly less than connection timeout
+        timeout: Math.min(connectionTimeout - 5000, 35000), // Timeout estendido para Railway
         reconnection: false, // We handle reconnection ourselves
         forceNew: true,
         upgrade: true,
         rememberUpgrade: true,
+        autoConnect: true,
         extraHeaders: isMobile ? {
           'User-Agent': 'MobileWebRTCClient/1.0',
           'X-Network-Quality': this.metrics.networkQuality
