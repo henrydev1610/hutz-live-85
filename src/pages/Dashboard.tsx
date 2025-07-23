@@ -18,7 +18,7 @@ const Dashboard = () => {
 
         <ModuleCard 
           title="Momento Live" 
-          description="Crie sessões de video streaming com QR Code, gerenciando participantes em tempo real para transmissões ao vivo."
+          description="Video streaming profissional com Twilio Video - QR Code, alta qualidade e estabilidade garantida para transmissões ao vivo."
           icon={<Video className="h-10 w-10" />} 
           path="/live" 
         />
@@ -28,13 +28,6 @@ const Dashboard = () => {
           description="Crie quizzes interativos para seus eventos, onde os participantes respondem em tempo real."
           icon={<BrainCircuit className="h-10 w-10" />} 
           path="/quiz" 
-        />
-
-        <ModuleCard 
-          title="Twilio Live Pro" 
-          description="Video conferência profissional com Twilio Video - alta qualidade e estabilidade garantida."
-          icon={<Video className="h-10 w-10" />} 
-          path="/twilio-live/professional-room" 
         />
       </div>
     </div>

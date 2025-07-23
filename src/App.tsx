@@ -11,8 +11,6 @@ import LightShowPage from './pages/LightShowPage';
 import QuizPage from './pages/QuizPage';
 import NotFound from './pages/NotFound';
 import ParticipantPage from './pages/ParticipantPage';
-import TwilioLivePage from './pages/TwilioLivePage';
-import TwilioParticipantPage from './pages/TwilioParticipantPage';
 
 function App() {
   return (
@@ -24,8 +22,6 @@ function App() {
         <Route path="/lightshow" element={<LightShowPage />} />
         <Route path="/quiz" element={<QuizPage />} />
         <Route path="/participant/:sessionId" element={<ParticipantPage />} />
-        <Route path="/twilio-live/:roomId" element={<TwilioLivePage />} />
-        <Route path="/twilio-participant/:roomId" element={<TwilioParticipantPage />} />
         <Route path="/404" element={<NotFound />} />
         <Route path="*" element={<Navigate to="/404" replace />} />
       </Routes>

@@ -1,12 +1,10 @@
 
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const roomsRouter = require('./routes/rooms');
 const twilioRouter = require('./routes/twilio');
-const { initializeSocketHandlers } = require('./signaling/socket');
 
 // Carregar variáveis de ambiente
 require('dotenv').config();
@@ -71,43 +69,7 @@ app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Configurar Socket.IO com os mesmos origins
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"],
-    credentials: true
-  },
-  transports: ['websocket', 'polling'],
-  pingTimeout: 60000,
-  pingInterval: 25000
-});
-
-// Configurar Redis adapter se REDIS_URL estiver definida
-if (process.env.REDIS_URL) {
-  try {
-    const { createAdapter } = require('@socket.io/redis-adapter');
-    const { createClient } = require('redis');
-    
-    const pubClient = createClient({ url: process.env.REDIS_URL });
-    const subClient = pubClient.duplicate();
-    
-    Promise.all([
-      pubClient.connect(),
-      subClient.connect()
-    ]).then(() => {
-      io.adapter(createAdapter(pubClient, subClient));
-      console.log('✅ Redis adapter configured successfully');
-    }).catch(err => {
-      console.error('❌ Redis adapter configuration failed:', err);
-    });
-  } catch (error) {
-    console.warn('⚠️ Redis dependencies not found, running without Redis adapter');
-  }
-}
-
-// Inicializar handlers do Socket.IO
-initializeSocketHandlers(io);
+// Servidor simplificado - apenas HTTP para Twilio
 
 // Middleware de log para debug
 app.use((req, res, next) => {
@@ -197,7 +159,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Accessible at:`);
   console.log(`   - Local: http://localhost:${PORT}`);
   console.log(`   - Network: http://192.168.18.17:${PORT}`);
-  console.log(`📡 Socket.IO server ready`);
+  console.log(`🎥 Twilio Video service ready`);
   console.log(`🌐 Allowed origins: ${JSON.stringify(allowedOrigins)}`);
   console.log(`💾 Redis: ${process.env.REDIS_URL ? 'Enabled' : 'Disabled'}`);
 });
@@ -219,4 +181,4 @@ process.on('SIGINT', () => {
   });
 });
 
-module.exports = { app, server, io };
+module.exports = { app, server };

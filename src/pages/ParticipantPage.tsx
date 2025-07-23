@@ -1,458 +1,130 @@
-
-import { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
-import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
-import { useMobileOnlyGuard } from '@/hooks/useMobileOnlyGuard';
-import ParticipantHeader from '@/components/participant/ParticipantHeader';
-import ParticipantErrorDisplay from '@/components/participant/ParticipantErrorDisplay';
-import ParticipantConnectionStatus from '@/components/participant/ParticipantConnectionStatus';
-import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
-import ParticipantControls from '@/components/participant/ParticipantControls';
-import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
-import StreamDebugPanel from '@/utils/debug/StreamDebugPanel';
-import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
-import { clearConnectionCache, validateURLConsistency } from '@/utils/connectionUtils';
-import { clearDeviceCache, validateMobileCameraCapabilities } from '@/utils/media/deviceDetection';
-import { streamLogger } from '@/utils/debug/StreamLogger';
+import { useTwilioRoom } from '@/hooks/live/useTwilioRoom';
+import { TwilioVideoContainer } from '@/components/live/TwilioVideoContainer';
+import { Button } from '@/components/ui/button';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { VideoIcon, MicIcon, MicOffIcon, VideoOffIcon, Users, Smartphone, Wifi } from 'lucide-react';
 import { toast } from 'sonner';
+import { useMobileOnlyGuard } from '@/hooks/useMobileOnlyGuard';
 
-const ParticipantPage = () => {
-  console.log('🎯 PARTICIPANT PAGE: Starting MOBILE-FORCED render with ENHANCED camera validation');
-  
+const ParticipantPage: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   
-  // Debug panel state
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [participantName, setParticipantName] = useState('');
+  const [hasJoined, setHasJoined] = useState(false);
   
-  // ENHANCED: Mobile-only guard with FORCE OVERRIDE support
+  // Verificação de dispositivo móvel
   const { isMobile, isValidated, isBlocked } = useMobileOnlyGuard({
     redirectTo: '/',
     allowDesktop: false,
     showToast: true,
     enforceQRAccess: true
   });
-  
-  console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
-  console.log('🎯 PARTICIPANT PAGE: Enhanced mobile guard:', { isMobile, isValidated, isBlocked });
-  
-  const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
-  const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
 
-  const connection = useParticipantConnection(sessionId, participantId);
-  const media = useParticipantMedia();
+  // Hook do Twilio - só inicializa se tiver sessionId
+  const roomName = sessionId || '';
+  const {
+    isConnected,
+    isConnecting,
+    participants,
+    localVideoTrack,
+    localAudioTrack,
+    connectionError,
+    connectToRoom,
+    disconnectFromRoom,
+    toggleVideo,
+    toggleAudio
+  } = useTwilioRoom({ 
+    roomName, 
+    participantName: participantName || `Participant-${Date.now()}` 
+  });
 
-  // Enhanced URL consistency validation with mobile override detection
+  // Auto-detectar nome do participante
   useEffect(() => {
-    console.log('🔍 PARTICIPANT PAGE: Enhanced URL validation with FORCE OVERRIDE detection');
-    
-    // Log page initialization
-    streamLogger.log(
-      'STREAM_START' as any,
-      participantId,
-      isMobile,
-      isMobile ? 'mobile' : 'desktop',
-      { timestamp: Date.now(), duration: 0 },
-      undefined,
-      'PAGE_INIT',
-      'Participant page initialized',
-      { sessionId, userAgent: navigator.userAgent }
-    );
-    
-    clearConnectionCache();
-    clearDeviceCache();
-    
-    const isConsistent = validateURLConsistency();
-    if (!isConsistent) {
-      console.warn('⚠️ PARTICIPANT PAGE: URL inconsistency detected - could affect camera');
-      streamLogger.log(
-        'VALIDATION' as any,
-        participantId,
-        isMobile,
-        isMobile ? 'mobile' : 'desktop',
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'URL_VALIDATION',
-        'URL inconsistency detected',
-        { currentUrl: window.location.href }
-      );
+    if (!participantName) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const nameFromUrl = urlParams.get('name');
+      if (nameFromUrl) {
+        setParticipantName(nameFromUrl);
+      } else {
+        setParticipantName(`Participante-${Date.now()}`);
+      }
     }
-    
-    // FASE 1: Enhanced parameter detection and storage
+  }, [participantName]);
+
+  // Auto-join se for acesso via QR
+  useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const forceMobile = urlParams.get('forceMobile') === 'true' || urlParams.get('mobile') === 'true';
-    const hasQRParam = urlParams.has('qr') || urlParams.get('qr') === 'true';
-    const hasCameraParam = urlParams.get('camera') === 'environment' || urlParams.get('camera') === 'user';
-    const isParticipantRoute = window.location.pathname.includes('/participant/');
+    const isQRAccess = urlParams.has('qr') || urlParams.get('mobile') === 'true';
     
-    // Store all mobile indicators
-    if (forceMobile || hasQRParam || hasCameraParam || isParticipantRoute) {
-      sessionStorage.setItem('accessedViaQR', 'true');
-      sessionStorage.setItem('forcedMobile', 'true');
-      sessionStorage.setItem('mobileValidated', 'true');
-      
-      console.log('✅ PARTICIPANT PAGE: Mobile FORCE OVERRIDE activated and stored');
-      console.log('✅ Override indicators:', {
-        forceMobile,
-        hasQRParam,
-        hasCameraParam,
-        isParticipantRoute,
-        cameraMode: urlParams.get('camera')
-      });
-      
-      streamLogger.log(
-        'VALIDATION' as any,
-        participantId,
-        true, // Force mobile
-        'mobile',
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'MOBILE_OVERRIDE',
-        'Mobile force override activated',
-        { forceMobile, hasQRParam, hasCameraParam, isParticipantRoute }
-      );
-      
-      toast.success('📱 Modo móvel forçado - câmera do celular será ativada');
+    if (isQRAccess && isValidated && !isBlocked && participantName && sessionId && !hasJoined) {
+      console.log('📱 PARTICIPANT: Auto-joining via QR access');
+      setHasJoined(true);
+      handleJoinRoom();
     }
-    
-    // Enhanced environment logging
-    console.log('🌐 PARTICIPANT PAGE: Enhanced environment check:', {
-      currentURL: window.location.href,
-      expectedDomain: 'hutz-live-85.onrender.com',
-      isDomainCorrect: window.location.href.includes('hutz-live-85.onrender.com'),
-      forceParameters: {
-        forceMobile,
-        hasQR: hasQRParam,
-        hasCameraParam,
-        cameraMode: urlParams.get('camera'),
-        isParticipantRoute
-      },
-      mobileOverrideActive: forceMobile || hasQRParam || hasCameraParam || isParticipantRoute
-    });
-    
-    // Check for debug mode
-    const debugMode = urlParams.get('debug') === 'true';
-    if (debugMode) {
-      setShowDebugPanel(true);
-      streamLogger.log(
-        'VALIDATION' as any,
-        participantId,
-        isMobile,
-        isMobile ? 'mobile' : 'desktop',
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'DEBUG_MODE',
-        'Debug mode activated'
-      );
-    }
-    
-  }, [participantId, isMobile]);
+  }, [isValidated, isBlocked, participantName, sessionId, hasJoined]);
 
-  // Monitor signaling service status
-  useEffect(() => {
-    const checkSignalingStatus = () => {
-      const status = unifiedWebSocketService.getConnectionStatus();
-      setSignalingStatus(status);
-    };
-
-    const interval = setInterval(checkSignalingStatus, 1000);
-    checkSignalingStatus();
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // ENHANCED: Auto-initialization with mobile camera validation
-  useEffect(() => {
-    if (!isValidated || isBlocked || !sessionId) {
-      console.log('🚫 PARTICIPANT PAGE: Skipping auto-connect - mobile validation failed');
+  const handleJoinRoom = async () => {
+    if (!participantName.trim()) {
+      toast.error('Por favor, digite seu nome');
       return;
     }
-    
-    console.log('🚀 PARTICIPANT PAGE: MOBILE-FORCED auto-initializing for session:', sessionId);
-    
-    streamLogger.log(
-      'STREAM_START' as any,
-      participantId,
-      isMobile,
-      isMobile ? 'mobile' : 'desktop',
-      { timestamp: Date.now(), duration: 0 },
-      undefined,
-      'AUTO_CONNECT',
-      'Auto-connecting to mobile session',
-      { sessionId }
-    );
-    
-    autoConnectToMobileSession().catch(error => {
-      console.error('❌ PARTICIPANT: Failed to auto-connect mobile session:', error);
-      streamLogger.logStreamError(participantId, isMobile, isMobile ? 'mobile' : 'desktop', error as Error, 0);
-      toast.error('Falha ao conectar câmera móvel automaticamente');
-    });
-    
-    return () => {
-      try {
-        media.cleanup();
-      } catch (error) {
-        console.error('❌ PARTICIPANT: Cleanup error:', error);
-        streamLogger.logStreamError(participantId, isMobile, isMobile ? 'mobile' : 'desktop', error as Error, 0);
-      }
-    };
-  }, [sessionId, isValidated, isBlocked, participantId, isMobile]);
 
-  const autoConnectToMobileSession = async () => {
-    const deviceType = isMobile ? 'mobile' : 'desktop';
+    if (!sessionId) {
+      toast.error('ID da sessão não encontrado');
+      return;
+    }
+
+    console.log('🚀 PARTICIPANT: Joining Twilio room:', roomName);
+    setHasJoined(true);
     
     try {
-      console.log('📱 PARTICIPANT: Starting MOBILE-FORCED auto-connection with camera validation');
-      
-      streamLogger.log(
-        'STREAM_START' as any,
-        participantId,
-        isMobile,
-        deviceType,
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'AUTO_CONNECT_MOBILE',
-        'Starting mobile auto-connection with validation'
-      );
-      
-      // FASE 3: Validate mobile camera capabilities first
-      const hasValidCamera = await validateMobileCameraCapabilities();
-      if (hasValidCamera) {
-        console.log('✅ PARTICIPANT: Mobile camera capabilities validated');
-        streamLogger.logValidation(participantId, isMobile, deviceType, true, {
-          reason: 'mobile_camera_capabilities_validated'
-        });
-        toast.success('📱 Câmera móvel validada - iniciando conexão');
-      } else {
-        console.log('⚠️ PARTICIPANT: Camera validation inconclusive - proceeding anyway');
-        streamLogger.logValidation(participantId, isMobile, deviceType, false, {
-          reason: 'camera_validation_inconclusive',
-          action: 'proceeding_anyway'
-        });
-        toast.warning('⚠️ Validação de câmera inconclusiva - tentando conectar');
-      }
-      
-      // Force mobile camera initialization
-      const stream = await media.initializeMedia();
-      
-      if (stream) {
-        const videoTracks = stream.getVideoTracks();
-        if (videoTracks.length > 0) {
-          const settings = videoTracks[0].getSettings();
-          console.log('📱 PARTICIPANT: Mobile camera stream verified:', {
-            facingMode: settings.facingMode,
-            width: settings.width,
-            height: settings.height,
-            deviceId: settings.deviceId?.substring(0, 20),
-            isMobileCamera: settings.facingMode === 'environment' || settings.facingMode === 'user',
-            isForced: sessionStorage.getItem('forcedMobile') === 'true'
-          });
-          
-          streamLogger.logValidation(participantId, isMobile, deviceType, true, {
-            reason: 'mobile_camera_stream_verified',
-            settings
-          });
-          
-          // Validate we got mobile camera
-          if (settings.facingMode) {
-            console.log('✅ PARTICIPANT: MOBILE CAMERA CONFIRMED with facingMode:', settings.facingMode);
-            toast.success(`📱 Câmera ${settings.facingMode === 'environment' ? 'traseira' : 'frontal'} ativada!`);
-            
-            // Store confirmed mobile camera
-            sessionStorage.setItem('confirmedMobileCamera', settings.facingMode);
-            
-            streamLogger.logValidation(participantId, isMobile, deviceType, true, {
-              reason: 'mobile_camera_confirmed',
-              facingMode: settings.facingMode
-            });
-          } else {
-            console.warn('⚠️ PARTICIPANT: Camera may not be mobile - no facingMode detected');
-            toast.warning('⚠️ Câmera ativada mas tipo não confirmado');
-            
-            streamLogger.logValidation(participantId, isMobile, deviceType, false, {
-              reason: 'no_facing_mode_detected',
-              warning: true
-            });
-          }
-        }
-      } else {
-        console.warn('⚠️ PARTICIPANT: No stream obtained - entering degraded mode');
-        streamLogger.log(
-          'STREAM_ERROR' as any,
-          participantId,
-          isMobile,
-          deviceType,
-          { timestamp: Date.now(), duration: 0, errorType: 'NO_STREAM_DEGRADED' },
-          undefined,
-          'AUTO_CONNECT_MOBILE',
-          'No stream obtained - entering degraded mode'
-        );
-        toast.error('❌ Falha ao obter stream da câmera - modo degradado');
-      }
-      
-      // Connect sempre, mesmo em modo degradado
-      await connection.connectToSession(stream);
-      
+      await connectToRoom();
+      toast.success(`Conectado à sala ${roomName}!`);
     } catch (error) {
-      console.error('❌ PARTICIPANT: Mobile auto-connection failed:', error);
-      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      toast.error(`❌ Falha na conexão móvel: ${errorMsg}`);
+      console.error('❌ PARTICIPANT: Failed to join room:', error);
+      toast.error('Falha ao entrar na sala');
+      setHasJoined(false);
     }
   };
 
-  const handleConnect = async () => {
-    if (isBlocked) {
-      console.log('🚫 PARTICIPANT: Connection blocked - mobile validation failed');
-      streamLogger.log(
-        'STREAM_ERROR' as any,
-        participantId,
-        isMobile,
-        isMobile ? 'mobile' : 'desktop',
-        { timestamp: Date.now(), duration: 0, errorType: 'CONNECTION_BLOCKED' },
-        undefined,
-        'CONNECT_MANUAL',
-        'Connection blocked - mobile validation failed'
-      );
-      toast.error('🚫 Conexão bloqueada - dispositivo não validado como móvel');
-      return;
-    }
-    
-    const deviceType = isMobile ? 'mobile' : 'desktop';
-    
-    try {
-      streamLogger.log(
-        'STREAM_START' as any,
-        participantId,
-        isMobile,
-        deviceType,
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'CONNECT_MANUAL',
-        'Manual connection initiated'
-      );
-      
-      let stream = media.localStreamRef.current;
-      if (!stream) {
-        console.log('📱 PARTICIPANT: Initializing mobile camera for manual connection');
-        toast.info('📱 Inicializando câmera móvel...');
-        stream = await media.initializeMedia();
-      }
-      
-      await connection.connectToSession(stream);
-      toast.success('✅ Conectado com sucesso!');
-      
-      streamLogger.log(
-        'STREAM_SUCCESS' as any,
-        participantId,
-        isMobile,
-        deviceType,
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'CONNECT_MANUAL',
-        'Manual connection successful'
-      );
-      
-    } catch (error) {
-      console.error('❌ PARTICIPANT: Manual mobile connection failed:', error);
-      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      toast.error(`❌ Falha na conexão manual: ${errorMsg}`);
-    }
+  const handleLeaveRoom = () => {
+    disconnectFromRoom();
+    navigate('/');
+    toast.info('Você saiu da sala');
   };
 
-  const handleRetryMedia = async () => {
-    if (isBlocked) {
-      console.log('🚫 PARTICIPANT: Media retry blocked - mobile validation failed');
-      streamLogger.log(
-        'STREAM_ERROR' as any,
-        participantId,
-        isMobile,
-        isMobile ? 'mobile' : 'desktop',
-        { timestamp: Date.now(), duration: 0, errorType: 'RETRY_BLOCKED' },
-        undefined,
-        'RETRY_MEDIA',
-        'Media retry blocked - mobile validation failed'
-      );
-      toast.error('🚫 Retry bloqueado - dispositivo não validado como móvel');
-      return;
-    }
-    
-    const deviceType = isMobile ? 'mobile' : 'desktop';
-    
-    try {
-      console.log('🔄 PARTICIPANT: Retrying MOBILE camera with enhanced detection');
-      streamLogger.log(
-        'STREAM_START' as any,
-        participantId,
-        isMobile,
-        deviceType,
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'RETRY_MEDIA',
-        'Retrying mobile camera with enhanced detection'
-      );
-      
-      toast.info('🔄 Tentando novamente câmera móvel...');
-      
-      const stream = await media.retryMediaInitialization();
-      if (stream && connection.isConnected) {
-        await connection.disconnectFromSession();
-        await connection.connectToSession(stream);
-        toast.success('✅ Câmera reconectada com sucesso!');
-        
-        streamLogger.log(
-          'STREAM_SUCCESS' as any,
-          participantId,
-          isMobile,
-          deviceType,
-          { timestamp: Date.now(), duration: 0 },
-          undefined,
-          'RETRY_MEDIA',
-          'Media retry successful'
-        );
-      }
-    } catch (error) {
-      console.error('❌ PARTICIPANT: Mobile media retry failed:', error);
-      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      toast.error(`❌ Falha ao tentar novamente: ${errorMsg}`);
-    }
-  };
-
-  // Show loading screen while validating mobile access
+  // Loading screen durante validação
   if (!isValidated) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4 flex items-center justify-center">
         <div className="text-center text-white">
           <div className="animate-spin w-8 h-8 border-2 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p>🔒 Validando acesso móvel FORÇADO...</p>
-          <p className="text-sm opacity-75 mt-2">Verificando parâmetros de força e câmera</p>
+          <p>🔒 Validando acesso móvel...</p>
+          <p className="text-sm opacity-75 mt-2">Verificando dispositivo</p>
         </div>
       </div>
     );
   }
 
-  // Show blocked screen for non-mobile users
+  // Tela de bloqueio para dispositivos não móveis
   if (isBlocked) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-900 via-purple-900 to-indigo-900 p-4 flex items-center justify-center">
         <div className="text-center text-white max-w-md">
           <div className="text-6xl mb-4">📱🚫</div>
           <h1 className="text-2xl font-bold mb-4">Acesso Exclusivo Móvel</h1>
-          <p className="text-lg mb-6">Esta página requer câmera móvel para funcionar corretamente.</p>
+          <p className="text-lg mb-6">Esta página requer um dispositivo móvel para funcionar.</p>
           <p className="text-sm opacity-75 mb-4">
-            Escaneie o QR Code com seu <strong>celular</strong> para acessar a câmera.
+            Escaneie o QR Code com seu <strong>celular</strong> para acessar.
           </p>
           <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-3 mb-4">
             <p className="text-yellow-200 text-xs">
               💡 A câmera do PC não é compatível com esta funcionalidade
-            </p>
-          </div>
-          <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-3">
-            <p className="text-blue-200 text-xs">
-              🔧 Para forçar acesso móvel, adicione ?forceMobile=true na URL
             </p>
           </div>
         </div>
@@ -460,107 +132,205 @@ const ParticipantPage = () => {
     );
   }
 
+  // Tela de entrada (nome do participante)
+  if (!hasJoined) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 p-6 flex items-center justify-center">
+        <Card className="w-full max-w-md bg-white/10 border-white/20 text-white">
+          <CardHeader className="text-center">
+            <div className="flex items-center justify-center mb-4">
+              <Smartphone className="w-12 h-12 text-blue-400" />
+            </div>
+            <CardTitle className="text-2xl">Momento Live</CardTitle>
+            <p className="text-blue-200">Sala: {roomName}</p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium mb-2">Seu nome:</label>
+              <Input
+                type="text"
+                value={participantName}
+                onChange={(e) => setParticipantName(e.target.value)}
+                placeholder="Digite seu nome"
+                className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
+                onKeyPress={(e) => e.key === 'Enter' && handleJoinRoom()}
+              />
+            </div>
+            
+            <div className="flex items-center gap-2 text-green-300 text-sm">
+              <Wifi className="w-4 h-4" />
+              <span>Dispositivo móvel detectado</span>
+            </div>
+            
+            <Button 
+              onClick={handleJoinRoom}
+              className="w-full"
+              size="lg"
+              disabled={!participantName.trim() || isConnecting}
+            >
+              {isConnecting ? (
+                <>
+                  <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                  Conectando...
+                </>
+              ) : (
+                <>
+                  <VideoIcon className="w-5 h-5 mr-2" />
+                  Entrar na Sala
+                </>
+              )}
+            </Button>
+
+            {connectionError && (
+              <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-3">
+                <p className="text-red-200 text-sm">❌ {connectionError}</p>
+                <Button 
+                  onClick={handleJoinRoom}
+                  variant="outline" 
+                  size="sm"
+                  className="mt-2 bg-red-500/10 border-red-500/20 text-red-200 hover:bg-red-500/20"
+                >
+                  Tentar Novamente
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Interface principal da sala
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 p-4">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <ParticipantHeader
-          sessionId={sessionId}
-          connectionStatus={connection.connectionStatus}
-          signalingStatus={signalingStatus}
-          onBack={() => navigate('/')}
-        />
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Momento Live</h1>
+              <p className="text-blue-200">Sala: {roomName}</p>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <Badge variant={isConnected ? "default" : "secondary"} className="text-sm">
+                {isConnected ? "🟢 Conectado" : "🔴 Desconectado"}
+              </Badge>
+              
+              <div className="flex items-center gap-2 text-white">
+                <Users className="w-4 h-4" />
+                <span>{participants.length + 1}</span>
+              </div>
+            </div>
+          </div>
 
-        {/* Error Display */}
-        <ParticipantErrorDisplay
-          error={connection.error}
-          isConnecting={connection.isConnecting}
-          onRetryConnect={handleConnect}
-        />
-
-        {/* Connection Status Details */}
-        <ParticipantConnectionStatus
-          signalingStatus={signalingStatus}
-          connectionStatus={connection.connectionStatus}
-          hasVideo={media.hasVideo}
-          hasAudio={media.hasAudio}
-          onRetryMedia={handleRetryMedia}
-        />
-
-        {/* Video Preview */}
-        <ParticipantVideoPreview
-          localVideoRef={media.localVideoRef}
-          hasVideo={media.hasVideo}
-          hasAudio={media.hasAudio}
-          hasScreenShare={media.hasScreenShare}
-          isVideoEnabled={media.isVideoEnabled}
-          isAudioEnabled={media.isAudioEnabled}
-          localStream={media.localStreamRef.current}
-          onRetryMedia={handleRetryMedia}
-        />
+          {/* Connection Error */}
+          {connectionError && (
+            <Card className="bg-red-500/10 border-red-500/20 text-red-200 mb-4">
+              <CardContent className="pt-4">
+                <p className="text-sm">❌ Erro de conexão: {connectionError}</p>
+                <Button 
+                  onClick={handleJoinRoom}
+                  variant="outline" 
+                  size="sm"
+                  className="mt-2 bg-red-500/10 border-red-500/20 text-red-200 hover:bg-red-500/20"
+                >
+                  Reconectar
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
         {/* Controls */}
-        <ParticipantControls
-          hasVideo={media.hasVideo}
-          hasAudio={media.hasAudio}
-          hasScreenShare={media.hasScreenShare}
-          isVideoEnabled={media.isVideoEnabled}
-          isAudioEnabled={media.isAudioEnabled}
-          isConnected={connection.isConnected}
-          isConnecting={connection.isConnecting}
-          connectionStatus={connection.connectionStatus}
-          onToggleVideo={media.toggleVideo}
-          onToggleAudio={media.toggleAudio}
-          onToggleScreenShare={media.toggleScreenShare}
-          onConnect={handleConnect}
-          onDisconnect={connection.disconnectFromSession}
-        />
+        <div className="mb-6">
+          <Card className="bg-white/10 border-white/20">
+            <CardContent className="pt-4">
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  onClick={toggleVideo}
+                  variant={localVideoTrack && localVideoTrack.isEnabled ? "default" : "secondary"}
+                  size="sm"
+                  disabled={!isConnected}
+                >
+                  {localVideoTrack && localVideoTrack.isEnabled ? (
+                    <VideoIcon className="w-4 h-4 mr-2" />
+                  ) : (
+                    <VideoOffIcon className="w-4 h-4 mr-2" />
+                  )}
+                  {localVideoTrack && localVideoTrack.isEnabled ? 'Vídeo' : 'Sem Vídeo'}
+                </Button>
 
-        {/* Instructions */}
-        <ParticipantInstructions />
-        
-        {/* Enhanced Mobile Debug Info */}
-        {isMobile && (
-          <div className="mt-4 p-3 bg-green-500/20 rounded-lg border border-green-500/30">
-            <p className="text-green-300 text-sm">
-              ✅ Dispositivo móvel FORÇADO | Câmera traseira priorizada
-            </p>
-            <p className="text-green-200 text-xs mt-1">
-              📱 Modo: {sessionStorage.getItem('confirmedMobileCamera') || 
-                        media.localStreamRef.current?.getVideoTracks()[0]?.getSettings()?.facingMode || 
-                        'Detectando...'}
-            </p>
-            <p className="text-green-100 text-xs mt-1">
-              🔧 Forçado: {sessionStorage.getItem('forcedMobile') === 'true' ? 'SIM' : 'NÃO'}
-            </p>
+                <Button
+                  onClick={toggleAudio}
+                  variant={localAudioTrack && localAudioTrack.isEnabled ? "default" : "secondary"}
+                  size="sm"
+                  disabled={!isConnected}
+                >
+                  {localAudioTrack && localAudioTrack.isEnabled ? (
+                    <MicIcon className="w-4 h-4 mr-2" />
+                  ) : (
+                    <MicOffIcon className="w-4 h-4 mr-2" />
+                  )}
+                  {localAudioTrack && localAudioTrack.isEnabled ? 'Áudio' : 'Mudo'}
+                </Button>
+
+                <Button
+                  onClick={handleLeaveRoom}
+                  variant="destructive"
+                  size="sm"
+                >
+                  Sair
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Video Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Local Video */}
+          <div className="relative">
+            <div className="absolute top-2 left-2 bg-blue-500 text-white px-2 py-1 rounded text-xs z-10">
+              Você ({participantName})
+            </div>
+            <TwilioVideoContainer
+              participant={{
+                sid: 'local',
+                identity: participantName,
+                videoTracks: localVideoTrack ? new Map([['local', localVideoTrack as any]]) : new Map(),
+                audioTracks: localAudioTrack ? new Map([['local', localAudioTrack as any]]) : new Map()
+              }}
+              isLocal={true}
+              className="h-64 md:h-80"
+            />
           </div>
-        )}
-        
-        {/* Enhanced URL Debug Info */}
-        <div className="mt-2 p-2 bg-blue-500/10 rounded border border-blue-500/20">
-          <p className="text-blue-300 text-xs">
-            🌐 URL: {window.location.href.includes('hutz-live-85.onrender.com') ? '✅ Produção' : '⚠️ Desenvolvimento'}
-          </p>
-          <p className="text-blue-200 text-xs mt-1">
-            🔧 Parâmetros: {new URLSearchParams(window.location.search).toString() || 'Nenhum'}
-          </p>
-          <p className="text-blue-100 text-xs mt-1">
-            🐛 Debug: 
-            <button 
-              onClick={() => setShowDebugPanel(!showDebugPanel)}
-              className="ml-1 text-blue-400 hover:text-blue-300 underline"
-            >
-              {showDebugPanel ? 'Fechar' : 'Abrir'} Painel
-            </button>
-          </p>
+
+          {/* Remote Participants */}
+          {participants.map((participant) => (
+            <div key={participant.sid} className="relative">
+              <div className="absolute top-2 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs z-10">
+                {participant.identity}
+              </div>
+              <TwilioVideoContainer
+                participant={participant}
+                isLocal={false}
+                className="h-64 md:h-80"
+              />
+            </div>
+          ))}
+
+          {/* Host if no participants */}
+          {participants.length === 0 && (
+            <div className="h-64 md:h-80 bg-gray-800/50 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center">
+              <div className="text-center text-gray-400">
+                <Users className="w-8 h-8 mx-auto mb-2" />
+                <p className="text-sm">Aguardando host...</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
-      
-      {/* Debug Panel */}
-      <StreamDebugPanel 
-        isOpen={showDebugPanel} 
-        onClose={() => setShowDebugPanel(false)} 
-      />
     </div>
   );
 };
