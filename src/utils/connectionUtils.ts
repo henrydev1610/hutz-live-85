@@ -151,7 +151,8 @@ export const getEnvironmentInfo = () => {
       backend: getBackendBaseURL(),
       websocket: getWebSocketURL(),
       platform: isRailway ? 'railway' : isRender ? 'render' : isLovable ? 'lovable' : isLocalhost ? 'local' : 'unknown',
-      isOptimized: isRailway || isLocalhost // Railway and local are optimized
+      isOptimized: isRailway || isLocalhost, // Railway and local are optimized
+      isURLSynced: validateURLConsistency()
     },
     // Mobile detection info
     mobileInfo: {
