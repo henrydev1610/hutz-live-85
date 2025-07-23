@@ -29,13 +29,6 @@ const Dashboard = () => {
           icon={<BrainCircuit className="h-10 w-10" />} 
           path="/quiz" 
         />
-
-        <ModuleCard 
-          title="Twilio Live (Beta)" 
-          description="Versão aprimorada com infraestrutura Twilio para maior estabilidade e qualidade de vídeo."
-          icon={<Video className="h-10 w-10" />} 
-          path="/twilio-live" 
-        />
       </div>
     </div>
   );

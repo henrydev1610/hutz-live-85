@@ -1,6 +1,5 @@
-
 /**
- * Utility functions for dynamic connection URL detection with Railway support
+ * Utility functions for dynamic connection URL detection with cache busting
  */
 
 // Cache busting version
@@ -16,51 +15,38 @@ export const clearConnectionCache = (): void => {
 };
 
 /**
- * RAILWAY MIGRATION: Enhanced URL detection with Railway support
+ * FASE 1 & 2: CRITICAL URL SYNC - Get the backend base URL with production enforcement
  */
 export const getBackendBaseURL = (): string => {
-  // PRIORITY 1: Environment variable (highest priority)
+  // FASE 1: URL SYNC CRITICO - Verificar env primeiro
   const envApiUrl = import.meta.env.VITE_API_URL;
   
   if (envApiUrl) {
-    console.log(`🔧 BACKEND URL: Using environment API URL: ${envApiUrl}`);
+    console.log(`🔧 BACKEND URL SYNC: Using environment API URL: ${envApiUrl}`);
     return envApiUrl;
   }
 
   const { protocol, host } = window.location;
   
-  // PRIORITY 2: Railway.app detection (NEW)
-  if (host.includes('railway.app')) {
-    const backendUrl = `https://${host.replace('frontend', 'backend')}`;
-    console.log(`🚄 RAILWAY: Frontend ${host} → Backend ${backendUrl}`);
-    return backendUrl;
-  }
-  
-  // PRIORITY 3: Specific Railway domain mapping
-  if (host.includes('your-frontend-domain.railway.app')) {
-    const backendUrl = 'https://your-backend-domain.railway.app';
-    console.log(`🚄 RAILWAY MAPPING: ${host} → your-backend-domain.railway.app`);
-    return backendUrl;
-  }
-  
-  // PRIORITY 4: Render.com (legacy support during migration)
+  // FASE 1: CRITICAL FIX - ALWAYS map to server-hutz-live for backend
   if (host.includes('hutz-live-85.onrender.com') || host.includes('lovableproject.com')) {
     const backendUrl = 'https://server-hutz-live.onrender.com';
-    console.log(`🌐 RENDER LEGACY: ${host} → server-hutz-live.onrender.com`);
+    console.log(`🌐 BACKEND URL SYNC: Production mapping - Frontend ${host} → Backend server-hutz-live.onrender.com`);
+    console.log(`📋 URL MAPPING CRITICAL: ${host} → server-hutz-live.onrender.com`);
     return backendUrl;
   }
   
-  // PRIORITY 5: Local development
+  // Local development environment
   if (host.includes('localhost') || host.startsWith('127.0.0.1') || host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.')) {
     const localPort = '3001';
     const backendUrl = `${protocol}//${host.split(':')[0]}:${localPort}`;
-    console.log(`🏠 LOCAL DEV: ${backendUrl}`);
+    console.log(`🏠 BACKEND URL SYNC: Local development detected: ${backendUrl}`);
     return backendUrl;
   }
   
-  // PRIORITY 6: Production fallback
+  // Production environment fallback
   const backendUrl = `${protocol}//${host}`;
-  console.log(`🌐 FALLBACK: ${backendUrl}`);
+  console.log(`🌐 BACKEND URL SYNC: Production fallback: ${backendUrl}`);
   return backendUrl;
 };
 
@@ -73,19 +59,19 @@ export const getWebSocketURL = (): string => {
       const isExpired = Date.now() - timestamp > 30000; // 30 seconds cache
       
       if (!isExpired && version === CONNECTION_VERSION) {
-        console.log(`🔧 WEBSOCKET: Using cached URL: ${url}`);
+        console.log(`🔧 CONNECTION: Using cached WebSocket URL: ${url}`);
         return url;
       } else {
-        console.log('🧹 WEBSOCKET: Cache expired or version mismatch, clearing');
+        console.log('🧹 CONNECTION: Cache expired or version mismatch, clearing');
         localStorage.removeItem('connectionCache');
       }
     } catch (error) {
-      console.warn('⚠️ WEBSOCKET: Invalid cache data, clearing');
+      console.warn('⚠️ CONNECTION: Invalid cache data, clearing');
       localStorage.removeItem('connectionCache');
     }
   }
 
-  // Get backend URL with Railway support
+  // FASE 1: CRITICAL - Use the EXACT same backend URL mapping
   const backendBaseUrl = getBackendBaseURL();
   const baseUrl = new URL(backendBaseUrl);
   
@@ -93,13 +79,9 @@ export const getWebSocketURL = (): string => {
   const wsProtocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${wsProtocol}//${baseUrl.host}`;
   
-  console.log(`🔗 WEBSOCKET: URL synchronized with backend: ${wsUrl}`);
-  console.log(`📋 WEBSOCKET: Backend base: ${backendBaseUrl} → WebSocket: ${wsUrl}`);
-  
-  // Railway-specific logging
-  if (baseUrl.host.includes('railway.app')) {
-    console.log(`🚄 RAILWAY WEBSOCKET: Optimized connection to ${wsUrl}`);
-  }
+  console.log(`🔗 CONNECTION: WebSocket URL SYNCHRONIZED with backend: ${wsUrl}`);
+  console.log(`📋 CONNECTION: Backend base: ${backendBaseUrl} → WebSocket: ${wsUrl}`);
+  console.log(`🎯 URL VERIFICATION: Backend host: ${baseUrl.host}, Protocol: ${wsProtocol}`);
   
   cacheConnectionURL(wsUrl);
   return wsUrl;
@@ -107,7 +89,7 @@ export const getWebSocketURL = (): string => {
 
 export const getApiBaseURL = (): string => {
   const backendUrl = getBackendBaseURL();
-  console.log(`📡 API: Using backend URL: ${backendUrl}`);
+  console.log(`📡 API: Using SYNCHRONIZED backend URL: ${backendUrl}`);
   return backendUrl;
 };
 
@@ -129,15 +111,13 @@ export const getEnvironmentInfo = () => {
   const { protocol, host } = window.location;
   const isLocalhost = host.includes('localhost') || host.startsWith('127.0.0.1') || host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.');
   const isLovable = host.includes('lovableproject.com');
-  const isRender = host.includes('hutz-live-85.onrender.com') || host.includes('onrender.com');
-  const isRailway = host.includes('railway.app');
+  const isRender = host.includes('hutz-live-85.onrender.com');
   const isSecure = protocol === 'https:';
   
   const envInfo = {
     isLocalhost,
     isLovable,
     isRender,
-    isRailway, // NEW: Railway detection
     isSecure,
     protocol,
     host,
@@ -145,16 +125,14 @@ export const getEnvironmentInfo = () => {
     apiBaseUrl: getApiBaseURL(),
     wsUrl: getWebSocketURL(),
     version: CONNECTION_VERSION,
-    // Enhanced URL mapping with Railway support
+    // FASE 5: Enhanced debug for URL sync
     urlMapping: {
       frontend: `${protocol}//${host}`,
       backend: getBackendBaseURL(),
       websocket: getWebSocketURL(),
-      platform: isRailway ? 'railway' : isRender ? 'render' : isLovable ? 'lovable' : isLocalhost ? 'local' : 'unknown',
-      isOptimized: isRailway || isLocalhost, // Railway and local are optimized
-      isURLSynced: validateURLConsistency()
+      isURLSynced: getBackendBaseURL().includes('server-hutz-live.onrender.com')
     },
-    // Mobile detection info
+    // FASE 5: Mobile detection info
     mobileInfo: {
       isMobileUA: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
       hasTouch: 'ontouchstart' in window,
@@ -164,28 +142,21 @@ export const getEnvironmentInfo = () => {
     }
   };
 
-  console.log('🌍 ENVIRONMENT INFO (Railway Enhanced):', envInfo);
+  console.log('🌍 ENVIRONMENT INFO ENHANCED:', envInfo);
   return envInfo;
 };
 
-// Force refresh connections with Railway awareness
+// Force refresh connections (for debugging)
 export const forceRefreshConnections = (): void => {
-  console.log('🔄 CONNECTION: Forcing refresh with Railway support');
+  console.log('🔄 CONNECTION: Forcing connection refresh with URL sync');
   clearConnectionCache();
-  
+  // Trigger re-detection with backend sync
   const newWsUrl = getWebSocketURL();
   const newApiUrl = getApiBaseURL();
-  const envInfo = getEnvironmentInfo();
-  
-  console.log('🔄 CONNECTION: New URLs:', { 
-    websocket: newWsUrl, 
-    api: newApiUrl,
-    platform: envInfo.urlMapping.platform,
-    optimized: envInfo.urlMapping.isOptimized
-  });
+  console.log('🔄 CONNECTION: New URLs - WebSocket:', newWsUrl, 'API:', newApiUrl);
 };
 
-// Enhanced URL consistency validation with Railway support
+// FASE 2: Enhanced URL consistency validation
 export const validateURLConsistency = (): boolean => {
   const backendUrl = getBackendBaseURL();
   const wsUrl = getWebSocketURL();
@@ -197,24 +168,21 @@ export const validateURLConsistency = (): boolean => {
   
   const isConsistent = backendHost === wsHost && wsHost === apiHost;
   
+  // FASE 5: Enhanced consistency check with mobile context
   const currentHost = window.location.host;
-  const isRailway = currentHost.includes('railway.app');
-  const isRender = currentHost.includes('onrender.com');
+  const expectedBackendHost = 'server-hutz-live.onrender.com';
+  const isProperMapping = backendHost === expectedBackendHost;
   
-  // Railway-specific validation
-  const isRailwayMapping = isRailway && backendHost.includes('railway.app');
-  const isRenderMapping = isRender && backendHost.includes('onrender.com');
-  const isProperMapping = isRailwayMapping || isRenderMapping || currentHost.includes('localhost');
-  
-  console.log('🔍 URL CONSISTENCY CHECK (Railway Enhanced):', {
+  console.log('🔍 URL CONSISTENCY CHECK ENHANCED:', {
     currentFrontendHost: currentHost,
     backend: backendUrl,
     websocket: wsUrl,
     api: apiUrl,
     allHostsMatch: isConsistent,
-    platform: isRailway ? 'railway' : isRender ? 'render' : 'other',
-    isRailwayMapping,
-    isRenderMapping,
+    backendHost,
+    wsHost,
+    apiHost,
+    expectedBackendHost,
     isProperMapping,
     hasMobileAccess: sessionStorage.getItem('accessedViaQR') === 'true',
     urlSyncStatus: isProperMapping ? '✅ SYNCED' : '⚠️ NOT_SYNCED'
@@ -223,7 +191,7 @@ export const validateURLConsistency = (): boolean => {
   return isConsistent && isProperMapping;
 };
 
-// Railway-optimized network detection
+// FASE 5: Mobile network optimization
 export const detectSlowNetwork = (): boolean => {
   // @ts-ignore - NetworkInformation API
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
@@ -233,7 +201,7 @@ export const detectSlowNetwork = (): boolean => {
     const isSlowConnection = slowConnections.includes(connection.effectiveType);
     const isLowDownlink = connection.downlink < 1.5; // Less than 1.5 Mbps
     
-    console.log(`📶 NETWORK DETECTION (Railway): Type: ${connection.effectiveType}, Downlink: ${connection.downlink}Mbps, Slow: ${isSlowConnection || isLowDownlink}`);
+    console.log(`📶 NETWORK DETECTION: Type: ${connection.effectiveType}, Downlink: ${connection.downlink}Mbps, Slow: ${isSlowConnection || isLowDownlink}`);
     
     return isSlowConnection || isLowDownlink;
   }
@@ -241,43 +209,8 @@ export const detectSlowNetwork = (): boolean => {
   return false; // Assume fast if can't detect
 };
 
-// Railway-specific connection test
-export const testRailwayConnection = async (): Promise<boolean> => {
-  const backendUrl = getBackendBaseURL();
-  
-  if (!backendUrl.includes('railway.app')) {
-    console.log('🚄 RAILWAY TEST: Not a Railway URL, skipping test');
-    return true;
-  }
-  
-  try {
-    console.log('🚄 RAILWAY TEST: Testing connection to', backendUrl);
-    
-    const response = await fetch(`${backendUrl}/health`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      signal: AbortSignal.timeout(10000) // 10s timeout
-    });
-    
-    if (response.ok) {
-      const health = await response.json();
-      console.log('🚄 RAILWAY TEST: Connection successful', health);
-      return true;
-    } else {
-      console.error('🚄 RAILWAY TEST: Health check failed', response.status);
-      return false;
-    }
-  } catch (error) {
-    console.error('🚄 RAILWAY TEST: Connection failed', error);
-    return false;
-  }
-};
-
 // Make available globally for debugging
 (window as any).forceRefreshConnections = forceRefreshConnections;
 (window as any).clearConnectionCache = clearConnectionCache;
 (window as any).validateURLConsistency = validateURLConsistency;
 (window as any).detectSlowNetwork = detectSlowNetwork;
-(window as any).testRailwayConnection = testRailwayConnection;

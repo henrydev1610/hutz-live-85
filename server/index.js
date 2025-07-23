@@ -1,49 +1,47 @@
-import express from 'express';
-import http from 'http';
-import { Server } from 'socket.io';
-import cors from 'cors';
-import helmet from 'helmet';
-import dotenv from 'dotenv';
-import roomsRouter from './routes/rooms.js';
-import { generateToken } from './routes/twilio.js';
-import { initializeSocketHandlers } from './signaling/socket.js';
-import { createAdapter } from '@socket.io/redis-adapter';
-import { createClient } from 'redis';
-import { dirname } from 'path';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+const helmet = require('helmet');
+const roomsRouter = require('./routes/rooms');
+const { initializeSocketHandlers } = require('./signaling/socket');
 
 // Carregar variáveis de ambiente
-dotenv.config();
+require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
 
-// Configurar CORS
+// Configurar CORS com múltiplos origins
 const allowedOrigins = [
   process.env.FRONTEND_URL || "http://localhost:5173",
-  "http://localhost:8080",
-  "http://172.26.204.230:8080",
-  "https://id-preview--f728da22-f48a-45b2-91e9-28492d654d7f.lovable.app",
-  "https://server-hutz-live.onrender.com",
-  "https://hutz-live-85.onrender.com",
-  "https://server-hutz-live-production.up.railway.app",
-  /^https:\/\/.*\.lovableproject\.com$/,
-  /^https:\/\/.*\.lovable\.app$/,
-  /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,
-  /^https:\/\/.*\.onrender\.com$/
+  "http://localhost:8080", // Lovable preview
+  "http://172.26.204.230:8080", // Rede local - IP da máquina detectado pelo Vite
+  "https://id-preview--f728da22-f48a-45b2-91e9-28492d654d7f.lovable.app", // Lovable staging
+  "https://server-hutz-live.onrender.com", // Backend do Render
+  "https://hutz-live-85.onrender.com", // Frontend do Render
+  /^https:\/\/.*\.lovableproject\.com$/, // Qualquer subdomínio lovableproject.com
+  /^https:\/\/.*\.lovable\.app$/, // Qualquer subdomínio lovable.app
+  /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/, // UUIDs do Lovable
+  /^https:\/\/.*\.onrender\.com$/ // Qualquer subdomínio onrender.com
 ];
 
 const corsOptions = {
-  origin(origin, callback) {
+  origin: function (origin, callback) {
+    // Permitir requisições sem origin (aplicações mobile, Postman, etc.)
     if (!origin) return callback(null, true);
-    const isAllowed = allowedOrigins.some(allowedOrigin =>
-      typeof allowedOrigin === 'string'
-        ? origin === allowedOrigin
-        : allowedOrigin.test(origin)
-    );
+    
+    // Verificar se o origin está na lista permitida
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      if (typeof allowedOrigin === 'string') {
+        return origin === allowedOrigin;
+      } else if (allowedOrigin instanceof RegExp) {
+        return allowedOrigin.test(origin);
+      }
+      return false;
+    });
+    
     if (isAllowed) {
       callback(null, true);
     } else {
@@ -54,16 +52,25 @@ const corsOptions = {
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200 // Para suportar browsers legados
 };
 
-app.use(helmet({ crossOriginEmbedderPolicy: false, contentSecurityPolicy: false }));
+// Middlewares de segurança
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false,
+}));
+
+// Aplicar CORS
 app.use(cors(corsOptions));
+
+// Middleware para tratar requisições OPTIONS explicitamente
 app.options('*', cors(corsOptions));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Socket.IO
+// Configurar Socket.IO com os mesmos origins
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
@@ -75,30 +82,39 @@ const io = new Server(server, {
   pingInterval: 25000
 });
 
-// Redis adapter (opcional)
+// Configurar Redis adapter se REDIS_URL estiver definida
 if (process.env.REDIS_URL) {
   try {
+    const { createAdapter } = require('@socket.io/redis-adapter');
+    const { createClient } = require('redis');
+    
     const pubClient = createClient({ url: process.env.REDIS_URL });
     const subClient = pubClient.duplicate();
-    await pubClient.connect();
-    await subClient.connect();
-    io.adapter(createAdapter(pubClient, subClient));
-    console.log('✅ Redis adapter configured successfully');
-  } catch (err) {
-    console.warn('❌ Redis adapter configuration failed:', err);
+    
+    Promise.all([
+      pubClient.connect(),
+      subClient.connect()
+    ]).then(() => {
+      io.adapter(createAdapter(pubClient, subClient));
+      console.log('✅ Redis adapter configured successfully');
+    }).catch(err => {
+      console.error('❌ Redis adapter configuration failed:', err);
+    });
+  } catch (error) {
+    console.warn('⚠️ Redis dependencies not found, running without Redis adapter');
   }
 }
 
-// Inicializar sinalização WebSocket
+// Inicializar handlers do Socket.IO
 initializeSocketHandlers(io);
 
-// Log de requisições
+// Middleware de log para debug
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - Origin: ${req.get('Origin') || 'no-origin'}`);
   next();
 });
 
-// Rotas
+// Rota raiz
 app.get('/', (req, res) => {
   res.json({
     name: 'Hutz Live Server',
@@ -114,9 +130,10 @@ app.get('/', (req, res) => {
   });
 });
 
+// Rotas da API
 app.use('/api/rooms', roomsRouter);
-app.post('/api/twilio/token', generateToken);
 
+// Status endpoint com configurações
 app.get('/status', (req, res) => {
   res.json({
     status: 'ok',
@@ -127,13 +144,14 @@ app.get('/status', (req, res) => {
     config: {
       port: PORT,
       frontendUrl: process.env.FRONTEND_URL,
-      allowedOrigins: allowedOrigins.filter(o => typeof o === 'string'),
+      allowedOrigins: allowedOrigins.filter(origin => typeof origin === 'string'),
       corsEnabled: true,
       redisEnabled: !!process.env.REDIS_URL
     }
   });
 });
 
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -143,6 +161,7 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Test API endpoint
 app.get('/api/test', (req, res) => {
   res.json({
     message: 'API está funcionando!',
@@ -152,10 +171,12 @@ app.get('/api/test', (req, res) => {
   });
 });
 
+// Middleware para rotas não encontradas
 app.use('*', (req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
+// Middleware de tratamento de erros
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
   res.status(500).json({ 
@@ -164,20 +185,23 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Porta e inicialização
+// Configurar porta
 const PORT = process.env.PORT || 3001;
 
+// Iniciar servidor - configurar para aceitar conexões de qualquer IP
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on 0.0.0.0:${PORT}`);
-  console.log(`🌐 Accessible at: http://localhost:${PORT}`);
+  console.log(`🌐 Accessible at:`);
+  console.log(`   - Local: http://localhost:${PORT}`);
+  console.log(`   - Network: http://192.168.18.17:${PORT}`);
   console.log(`📡 Socket.IO server ready`);
   console.log(`🌐 Allowed origins: ${JSON.stringify(allowedOrigins)}`);
   console.log(`💾 Redis: ${process.env.REDIS_URL ? 'Enabled' : 'Disabled'}`);
 });
 
-// Shutdown
+// Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('🛑 SIGTERM received, shutting down...');
+  console.log('🛑 SIGTERM received, shutting down gracefully');
   server.close(() => {
     console.log('✅ Server closed');
     process.exit(0);
@@ -185,9 +209,11 @@ process.on('SIGTERM', () => {
 });
 
 process.on('SIGINT', () => {
-  console.log('🛑 SIGINT received, shutting down...');
+  console.log('🛑 SIGINT received, shutting down gracefully');
   server.close(() => {
     console.log('✅ Server closed');
     process.exit(0);
   });
 });
+
+module.exports = { app, server, io };

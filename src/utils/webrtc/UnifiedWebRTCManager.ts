@@ -1,10 +1,8 @@
-
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { ConnectionHandler } from './ConnectionHandler';
 import { SignalingHandler } from './SignalingHandler';
 import { ParticipantManager } from './ParticipantManager';
 import { WebRTCCallbacks } from './WebRTCCallbacks';
-import { webRTCDebugger } from './WebRTCDebugger';
 import { MEDIA_CONSTRAINTS } from './WebRTCConfig';
 
 interface ConnectionState {
@@ -89,32 +87,12 @@ export class UnifiedWebRTCManager {
     // Setup stream callback chain
     this.connectionHandler.setStreamCallback((participantId, stream) => {
       console.log(`🎥 UNIFIED: Stream received from ${participantId}`);
-      
-      // CRITICAL: Log stream received
-      if (this.roomId && this.participantId) {
-        webRTCDebugger.logStreamReceived(this.roomId, this.participantId, this.isHost, this.isMobile, participantId, stream);
-      }
-      
       this.updateConnectionMetrics(participantId, { streamReceived: true });
       this.callbacksManager.triggerStreamCallback(participantId, stream);
     });
     
     this.connectionHandler.setParticipantJoinCallback((participantId) => {
       console.log(`👤 UNIFIED: Participant ${participantId} joined`);
-      
-      // CRITICAL: Log participant join
-      if (this.roomId && this.participantId) {
-        webRTCDebugger.logEvent(
-          this.roomId,
-          this.participantId,
-          this.isHost,
-          this.isMobile,
-          'WEBRTC',
-          'PARTICIPANT_JOINED',
-          { joinedParticipant: participantId }
-        );
-      }
-      
       this.updateConnectionMetrics(participantId, { joined: true });
       this.callbacksManager.triggerParticipantJoinCallback(participantId);
     });
@@ -164,18 +142,6 @@ export class UnifiedWebRTCManager {
     
     this.peerConnections.forEach((pc, participantId) => {
       console.log(`🔍 WEBRTC STATUS: ${participantId} connection state: ${pc.connectionState}`);
-      
-      // CRITICAL: Log connection state changes
-      if (this.roomId && this.participantId) {
-        webRTCDebugger.logConnectionStateChange(
-          this.roomId,
-          this.participantId,
-          this.isHost,
-          this.isMobile,
-          participantId,
-          pc.connectionState
-        );
-      }
       
       if (pc.connectionState === 'connected') {
         hasActiveConnections = true;
@@ -232,18 +198,6 @@ export class UnifiedWebRTCManager {
 
   private async handleWebSocketFailure() {
     console.log('🔄 WebSocket connection failed, attempting recovery...');
-    
-    // CRITICAL: Log WebSocket failure
-    if (this.roomId && this.participantId) {
-      webRTCDebugger.logCriticalFailure(
-        this.roomId,
-        this.participantId,
-        this.isHost,
-        this.isMobile,
-        'WEBSOCKET',
-        new Error('WebSocket connection failed')
-      );
-    }
     
     try {
       await this.reconnectWebSocket();
@@ -346,19 +300,6 @@ export class UnifiedWebRTCManager {
           this.callbacksManager.triggerParticipantJoinCallback(participantId);
           this.connectionHandler.startHeartbeat(participantId);
           
-          // CRITICAL: Log participant connection
-          if (this.roomId && this.participantId) {
-            webRTCDebugger.logEvent(
-              this.roomId,
-              this.participantId,
-              this.isHost,
-              this.isMobile,
-              'WEBSOCKET',
-              'PARTICIPANT_CONNECTED',
-              { connectedParticipant: participantId }
-            );
-          }
-          
           // FASE 1: HOST envia oferta ao novo participante
           console.log(`📞 UNIFIED HOST: Iniciando oferta para novo participante: ${participantId}`);
           this.connectionHandler.initiateCallWithRetry(participantId);
@@ -408,17 +349,6 @@ export class UnifiedWebRTCManager {
   async initializeAsHost(sessionId: string): Promise<void> {
     console.log(`🏠 UNIFIED: Initializing as host for session: ${sessionId}`);
     
-    // CRITICAL: Log host initialization
-    webRTCDebugger.logEvent(
-      sessionId,
-      `host-${Date.now()}`,
-      true,
-      this.isMobile,
-      'WEBSOCKET',
-      'HOST_INITIALIZATION_START',
-      { sessionId }
-    );
-    
     // Cleanup anterior para evitar relays duplicados
     this.cleanup();
     
@@ -445,31 +375,9 @@ export class UnifiedWebRTCManager {
       this.updateConnectionState('websocket', 'connected');
       console.log(`✅ UNIFIED HOST: Connected to signaling server`);
       
-      // CRITICAL: Log host success
-      webRTCDebugger.logEvent(
-        sessionId,
-        this.participantId,
-        true,
-        this.isMobile,
-        'WEBSOCKET',
-        'HOST_INITIALIZATION_SUCCESS',
-        { sessionId }
-      );
-      
     } catch (error) {
       console.error(`❌ UNIFIED HOST: Failed to initialize:`, error);
       this.updateConnectionState('websocket', 'failed');
-      
-      // CRITICAL: Log host failure
-      webRTCDebugger.logCriticalFailure(
-        sessionId,
-        this.participantId || 'host',
-        true,
-        this.isMobile,
-        'WEBSOCKET',
-        error as Error
-      );
-      
       this.cleanup(); // Limpar estado em caso de erro
       throw error;
     }
@@ -477,26 +385,6 @@ export class UnifiedWebRTCManager {
 
   async initializeAsParticipant(sessionId: string, participantId: string, stream?: MediaStream): Promise<void> {
     console.log(`👤 UNIFIED: Initializing as participant ${participantId} for session ${sessionId}`);
-    
-    // CRITICAL: Log participant initialization
-    webRTCDebugger.logEvent(
-      sessionId,
-      participantId,
-      false,
-      this.isMobile,
-      'WEBSOCKET',
-      'PARTICIPANT_INITIALIZATION_START',
-      { 
-        sessionId,
-        hasStream: !!stream,
-        streamDetails: stream ? {
-          streamId: stream.id,
-          active: stream.active,
-          videoTracks: stream.getVideoTracks().length,
-          audioTracks: stream.getAudioTracks().length
-        } : null
-      }
-    );
     
     // Cleanup anterior para evitar relays duplicados
     this.cleanup();
@@ -519,9 +407,6 @@ export class UnifiedWebRTCManager {
           videoConstraints: stream.getVideoTracks()[0]?.getConstraints?.()
         });
         
-        // CRITICAL: Log stream validation
-        webRTCDebugger.logStreamSent(sessionId, participantId, false, this.isMobile, 'host', stream);
-        
         // Validate stream tracks are active
         const inactiveTracks = stream.getTracks().filter(track => track.readyState !== 'live');
         if (inactiveTracks.length > 0) {
@@ -533,14 +418,6 @@ export class UnifiedWebRTCManager {
         }
       } else {
         console.error(`❌ CRITICAL ERROR: No stream provided to WebRTC - this will cause handshake failure`);
-        webRTCDebugger.logCriticalFailure(
-          sessionId,
-          participantId,
-          false,
-          this.isMobile,
-          'STREAM',
-          new Error('Stream is required for participant WebRTC initialization')
-        );
         throw new Error('Stream is required for participant WebRTC initialization');
       }
 
@@ -568,31 +445,12 @@ export class UnifiedWebRTCManager {
         await this.notifyLocalStream();
       } else {
         console.error(`❌ CRITICAL ERROR: Stream lost during initialization`);
-        webRTCDebugger.logCriticalFailure(
-          sessionId,
-          participantId,
-          false,
-          this.isMobile,
-          'STREAM',
-          new Error('Stream was lost during WebRTC initialization')
-        );
         throw new Error('Stream was lost during WebRTC initialization');
       }
       
     } catch (error) {
       console.error(`❌ UNIFIED PARTICIPANT: Failed to initialize:`, error);
       this.updateConnectionState('websocket', 'failed');
-      
-      // CRITICAL: Log participant failure
-      webRTCDebugger.logCriticalFailure(
-        sessionId,
-        participantId,
-        false,
-        this.isMobile,
-        'WEBSOCKET',
-        error as Error
-      );
-      
       this.cleanup(); // Limpar estado em caso de erro
       throw error;
     }
@@ -627,18 +485,6 @@ export class UnifiedWebRTCManager {
     };
     
     console.log(`📡 CRITICAL STREAM NOTIFICATION:`, streamInfo);
-    
-    // CRITICAL: Log stream notification
-    if (this.roomId && this.participantId) {
-      webRTCDebugger.logStreamNotification(
-        this.roomId,
-        this.participantId,
-        false,
-        this.isMobile,
-        streamInfo
-      );
-    }
-    
     unifiedWebSocketService.notifyStreamStarted(this.participantId, streamInfo);
     console.log(`📡 UNIFIED: Stream notification sent with enhanced details`);
   }

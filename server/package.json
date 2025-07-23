@@ -2,7 +2,6 @@
 {
   "name": "momento-live-backend",
   "version": "1.0.0",
-  "type": "module",
   "description": "Backend para aplicação Momento Live - Sistema de transmissão ao vivo com WebRTC",
   "main": "index.js",
   "scripts": {
@@ -39,7 +38,7 @@
     "supertest": "^6.3.3"
   },
   "engines": {
-    "node": ">=18.0.0",
+    "node": ">=16.0.0",
     "npm": ">=8.0.0"
   }
 }
