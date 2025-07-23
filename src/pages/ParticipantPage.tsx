@@ -10,9 +10,11 @@ import ParticipantConnectionStatus from '@/components/participant/ParticipantCon
 import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
+import StreamDebugPanel from '@/utils/debug/StreamDebugPanel';
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { clearConnectionCache, validateURLConsistency } from '@/utils/connectionUtils';
 import { clearDeviceCache, validateMobileCameraCapabilities } from '@/utils/media/deviceDetection';
+import { streamLogger } from '@/utils/debug/StreamLogger';
 import { toast } from 'sonner';
 
 const ParticipantPage = () => {
@@ -20,6 +22,9 @@ const ParticipantPage = () => {
   
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  
+  // Debug panel state
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
   
   // ENHANCED: Mobile-only guard with FORCE OVERRIDE support
   const { isMobile, isValidated, isBlocked } = useMobileOnlyGuard({
@@ -41,12 +46,37 @@ const ParticipantPage = () => {
   // Enhanced URL consistency validation with mobile override detection
   useEffect(() => {
     console.log('🔍 PARTICIPANT PAGE: Enhanced URL validation with FORCE OVERRIDE detection');
+    
+    // Log page initialization
+    streamLogger.log(
+      'STREAM_START' as any,
+      participantId,
+      isMobile,
+      isMobile ? 'mobile' : 'desktop',
+      { timestamp: Date.now(), duration: 0 },
+      undefined,
+      'PAGE_INIT',
+      'Participant page initialized',
+      { sessionId, userAgent: navigator.userAgent }
+    );
+    
     clearConnectionCache();
     clearDeviceCache();
     
     const isConsistent = validateURLConsistency();
     if (!isConsistent) {
       console.warn('⚠️ PARTICIPANT PAGE: URL inconsistency detected - could affect camera');
+      streamLogger.log(
+        'VALIDATION' as any,
+        participantId,
+        isMobile,
+        isMobile ? 'mobile' : 'desktop',
+        { timestamp: Date.now(), duration: 0 },
+        undefined,
+        'URL_VALIDATION',
+        'URL inconsistency detected',
+        { currentUrl: window.location.href }
+      );
     }
     
     // FASE 1: Enhanced parameter detection and storage
@@ -71,6 +101,18 @@ const ParticipantPage = () => {
         cameraMode: urlParams.get('camera')
       });
       
+      streamLogger.log(
+        'VALIDATION' as any,
+        participantId,
+        true, // Force mobile
+        'mobile',
+        { timestamp: Date.now(), duration: 0 },
+        undefined,
+        'MOBILE_OVERRIDE',
+        'Mobile force override activated',
+        { forceMobile, hasQRParam, hasCameraParam, isParticipantRoute }
+      );
+      
       toast.success('📱 Modo móvel forçado - câmera do celular será ativada');
     }
     
@@ -88,7 +130,24 @@ const ParticipantPage = () => {
       },
       mobileOverrideActive: forceMobile || hasQRParam || hasCameraParam || isParticipantRoute
     });
-  }, []);
+    
+    // Check for debug mode
+    const debugMode = urlParams.get('debug') === 'true';
+    if (debugMode) {
+      setShowDebugPanel(true);
+      streamLogger.log(
+        'VALIDATION' as any,
+        participantId,
+        isMobile,
+        isMobile ? 'mobile' : 'desktop',
+        { timestamp: Date.now(), duration: 0 },
+        undefined,
+        'DEBUG_MODE',
+        'Debug mode activated'
+      );
+    }
+    
+  }, [participantId, isMobile]);
 
   // Monitor signaling service status
   useEffect(() => {
@@ -112,8 +171,21 @@ const ParticipantPage = () => {
     
     console.log('🚀 PARTICIPANT PAGE: MOBILE-FORCED auto-initializing for session:', sessionId);
     
+    streamLogger.log(
+      'STREAM_START' as any,
+      participantId,
+      isMobile,
+      isMobile ? 'mobile' : 'desktop',
+      { timestamp: Date.now(), duration: 0 },
+      undefined,
+      'AUTO_CONNECT',
+      'Auto-connecting to mobile session',
+      { sessionId }
+    );
+    
     autoConnectToMobileSession().catch(error => {
       console.error('❌ PARTICIPANT: Failed to auto-connect mobile session:', error);
+      streamLogger.logStreamError(participantId, isMobile, isMobile ? 'mobile' : 'desktop', error as Error, 0);
       toast.error('Falha ao conectar câmera móvel automaticamente');
     });
     
@@ -122,21 +194,42 @@ const ParticipantPage = () => {
         media.cleanup();
       } catch (error) {
         console.error('❌ PARTICIPANT: Cleanup error:', error);
+        streamLogger.logStreamError(participantId, isMobile, isMobile ? 'mobile' : 'desktop', error as Error, 0);
       }
     };
-  }, [sessionId, isValidated, isBlocked]);
+  }, [sessionId, isValidated, isBlocked, participantId, isMobile]);
 
   const autoConnectToMobileSession = async () => {
+    const deviceType = isMobile ? 'mobile' : 'desktop';
+    
     try {
       console.log('📱 PARTICIPANT: Starting MOBILE-FORCED auto-connection with camera validation');
+      
+      streamLogger.log(
+        'STREAM_START' as any,
+        participantId,
+        isMobile,
+        deviceType,
+        { timestamp: Date.now(), duration: 0 },
+        undefined,
+        'AUTO_CONNECT_MOBILE',
+        'Starting mobile auto-connection with validation'
+      );
       
       // FASE 3: Validate mobile camera capabilities first
       const hasValidCamera = await validateMobileCameraCapabilities();
       if (hasValidCamera) {
         console.log('✅ PARTICIPANT: Mobile camera capabilities validated');
+        streamLogger.logValidation(participantId, isMobile, deviceType, true, {
+          reason: 'mobile_camera_capabilities_validated'
+        });
         toast.success('📱 Câmera móvel validada - iniciando conexão');
       } else {
         console.log('⚠️ PARTICIPANT: Camera validation inconclusive - proceeding anyway');
+        streamLogger.logValidation(participantId, isMobile, deviceType, false, {
+          reason: 'camera_validation_inconclusive',
+          action: 'proceeding_anyway'
+        });
         toast.warning('⚠️ Validação de câmera inconclusiva - tentando conectar');
       }
       
@@ -156,6 +249,11 @@ const ParticipantPage = () => {
             isForced: sessionStorage.getItem('forcedMobile') === 'true'
           });
           
+          streamLogger.logValidation(participantId, isMobile, deviceType, true, {
+            reason: 'mobile_camera_stream_verified',
+            settings
+          });
+          
           // Validate we got mobile camera
           if (settings.facingMode) {
             console.log('✅ PARTICIPANT: MOBILE CAMERA CONFIRMED with facingMode:', settings.facingMode);
@@ -163,13 +261,33 @@ const ParticipantPage = () => {
             
             // Store confirmed mobile camera
             sessionStorage.setItem('confirmedMobileCamera', settings.facingMode);
+            
+            streamLogger.logValidation(participantId, isMobile, deviceType, true, {
+              reason: 'mobile_camera_confirmed',
+              facingMode: settings.facingMode
+            });
           } else {
             console.warn('⚠️ PARTICIPANT: Camera may not be mobile - no facingMode detected');
             toast.warning('⚠️ Câmera ativada mas tipo não confirmado');
+            
+            streamLogger.logValidation(participantId, isMobile, deviceType, false, {
+              reason: 'no_facing_mode_detected',
+              warning: true
+            });
           }
         }
       } else {
         console.warn('⚠️ PARTICIPANT: No stream obtained - entering degraded mode');
+        streamLogger.log(
+          'STREAM_ERROR' as any,
+          participantId,
+          isMobile,
+          deviceType,
+          { timestamp: Date.now(), duration: 0, errorType: 'NO_STREAM_DEGRADED' },
+          undefined,
+          'AUTO_CONNECT_MOBILE',
+          'No stream obtained - entering degraded mode'
+        );
         toast.error('❌ Falha ao obter stream da câmera - modo degradado');
       }
       
@@ -178,6 +296,7 @@ const ParticipantPage = () => {
       
     } catch (error) {
       console.error('❌ PARTICIPANT: Mobile auto-connection failed:', error);
+      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
       const errorMsg = error instanceof Error ? error.message : String(error);
       toast.error(`❌ Falha na conexão móvel: ${errorMsg}`);
     }
@@ -186,11 +305,34 @@ const ParticipantPage = () => {
   const handleConnect = async () => {
     if (isBlocked) {
       console.log('🚫 PARTICIPANT: Connection blocked - mobile validation failed');
+      streamLogger.log(
+        'STREAM_ERROR' as any,
+        participantId,
+        isMobile,
+        isMobile ? 'mobile' : 'desktop',
+        { timestamp: Date.now(), duration: 0, errorType: 'CONNECTION_BLOCKED' },
+        undefined,
+        'CONNECT_MANUAL',
+        'Connection blocked - mobile validation failed'
+      );
       toast.error('🚫 Conexão bloqueada - dispositivo não validado como móvel');
       return;
     }
     
+    const deviceType = isMobile ? 'mobile' : 'desktop';
+    
     try {
+      streamLogger.log(
+        'STREAM_START' as any,
+        participantId,
+        isMobile,
+        deviceType,
+        { timestamp: Date.now(), duration: 0 },
+        undefined,
+        'CONNECT_MANUAL',
+        'Manual connection initiated'
+      );
+      
       let stream = media.localStreamRef.current;
       if (!stream) {
         console.log('📱 PARTICIPANT: Initializing mobile camera for manual connection');
@@ -200,8 +342,21 @@ const ParticipantPage = () => {
       
       await connection.connectToSession(stream);
       toast.success('✅ Conectado com sucesso!');
+      
+      streamLogger.log(
+        'STREAM_SUCCESS' as any,
+        participantId,
+        isMobile,
+        deviceType,
+        { timestamp: Date.now(), duration: 0 },
+        undefined,
+        'CONNECT_MANUAL',
+        'Manual connection successful'
+      );
+      
     } catch (error) {
       console.error('❌ PARTICIPANT: Manual mobile connection failed:', error);
+      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
       const errorMsg = error instanceof Error ? error.message : String(error);
       toast.error(`❌ Falha na conexão manual: ${errorMsg}`);
     }
@@ -210,12 +365,35 @@ const ParticipantPage = () => {
   const handleRetryMedia = async () => {
     if (isBlocked) {
       console.log('🚫 PARTICIPANT: Media retry blocked - mobile validation failed');
+      streamLogger.log(
+        'STREAM_ERROR' as any,
+        participantId,
+        isMobile,
+        isMobile ? 'mobile' : 'desktop',
+        { timestamp: Date.now(), duration: 0, errorType: 'RETRY_BLOCKED' },
+        undefined,
+        'RETRY_MEDIA',
+        'Media retry blocked - mobile validation failed'
+      );
       toast.error('🚫 Retry bloqueado - dispositivo não validado como móvel');
       return;
     }
     
+    const deviceType = isMobile ? 'mobile' : 'desktop';
+    
     try {
       console.log('🔄 PARTICIPANT: Retrying MOBILE camera with enhanced detection');
+      streamLogger.log(
+        'STREAM_START' as any,
+        participantId,
+        isMobile,
+        deviceType,
+        { timestamp: Date.now(), duration: 0 },
+        undefined,
+        'RETRY_MEDIA',
+        'Retrying mobile camera with enhanced detection'
+      );
+      
       toast.info('🔄 Tentando novamente câmera móvel...');
       
       const stream = await media.retryMediaInitialization();
@@ -223,9 +401,21 @@ const ParticipantPage = () => {
         await connection.disconnectFromSession();
         await connection.connectToSession(stream);
         toast.success('✅ Câmera reconectada com sucesso!');
+        
+        streamLogger.log(
+          'STREAM_SUCCESS' as any,
+          participantId,
+          isMobile,
+          deviceType,
+          { timestamp: Date.now(), duration: 0 },
+          undefined,
+          'RETRY_MEDIA',
+          'Media retry successful'
+        );
       }
     } catch (error) {
       console.error('❌ PARTICIPANT: Mobile media retry failed:', error);
+      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
       const errorMsg = error instanceof Error ? error.message : String(error);
       toast.error(`❌ Falha ao tentar novamente: ${errorMsg}`);
     }
@@ -354,8 +544,23 @@ const ParticipantPage = () => {
           <p className="text-blue-200 text-xs mt-1">
             🔧 Parâmetros: {new URLSearchParams(window.location.search).toString() || 'Nenhum'}
           </p>
+          <p className="text-blue-100 text-xs mt-1">
+            🐛 Debug: 
+            <button 
+              onClick={() => setShowDebugPanel(!showDebugPanel)}
+              className="ml-1 text-blue-400 hover:text-blue-300 underline"
+            >
+              {showDebugPanel ? 'Fechar' : 'Abrir'} Painel
+            </button>
+          </p>
         </div>
       </div>
+      
+      {/* Debug Panel */}
+      <StreamDebugPanel 
+        isOpen={showDebugPanel} 
+        onClose={() => setShowDebugPanel(false)} 
+      />
     </div>
   );
 };
