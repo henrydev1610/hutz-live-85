@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const roomsRouter = require('./routes/rooms');
+const twilioRouter = require('./routes/twilio');
 const { initializeSocketHandlers } = require('./signaling/socket');
 
 // Carregar variáveis de ambiente
@@ -122,16 +123,18 @@ app.get('/', (req, res) => {
     timestamp: Date.now(),
     version: process.env.npm_package_version || '1.0.0',
     environment: process.env.NODE_ENV || 'development',
-    endpoints: {
-      health: '/health',
-      rooms: '/api/rooms',
-      status: '/status'
-    }
+      endpoints: {
+        health: '/health',
+        rooms: '/api/rooms',
+        twilio: '/api/twilio',
+        status: '/status'
+      }
   });
 });
 
 // Rotas da API
 app.use('/api/rooms', roomsRouter);
+app.use('/api/twilio', twilioRouter);
 
 // Status endpoint com configurações
 app.get('/status', (req, res) => {

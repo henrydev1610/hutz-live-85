@@ -29,6 +29,13 @@ const Dashboard = () => {
           icon={<BrainCircuit className="h-10 w-10" />} 
           path="/quiz" 
         />
+
+        <ModuleCard 
+          title="Twilio Live Pro" 
+          description="Video conferência profissional com Twilio Video - alta qualidade e estabilidade garantida."
+          icon={<Video className="h-10 w-10" />} 
+          path="/twilio-live/professional-room" 
+        />
       </div>
     </div>
   );
