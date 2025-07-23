@@ -123,11 +123,11 @@ export const useParticipantMedia = () => {
         streamLogger.logDOMUpdate(participantId, isMobile, deviceType, localVideoRef.current);
       }
       
-      const deviceType = isMobile ? '📱 Mobile' : '🖥️ Desktop';
+      const deviceLabel = isMobile ? '📱 Mobile' : '🖥️ Desktop';
       const videoStatus = videoTracks.length > 0 ? '✅' : '❌';
       const audioStatus = audioTracks.length > 0 ? '✅' : '❌';
       
-      toast.success(`${deviceType} camera connected! Video: ${videoStatus}, Audio: ${audioStatus}`);
+      toast.success(`${deviceLabel} camera connected! Video: ${videoStatus}, Audio: ${audioStatus}`);
       
       return stream;
       

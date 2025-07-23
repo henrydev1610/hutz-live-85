@@ -195,7 +195,7 @@ const StreamDebugPanel: React.FC<StreamDebugPanelProps> = ({ isOpen, onClose }) 
                   {Object.entries(performanceAnalysis.errorsByType).map(([type, count]) => (
                     <div key={type} className="flex justify-between items-center">
                       <span className="text-sm">{type}</span>
-                      <Badge variant="destructive">{count}</Badge>
+                      <Badge variant="destructive">{String(count)}</Badge>
                     </div>
                   ))}
                 </div>
