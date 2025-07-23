@@ -6,13 +6,6 @@ export const generateSessionId = (): string => {
 };
 
 /**
- * Generates a random room code for Twilio rooms
- */
-export const generateRoomCode = (): string => {
-  return `room-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`;
-};
-
-/**
  * Checks if a session is active by verifying local storage and broadcast channels
  * Enhanced with multi-method checks for cross-browser compatibility
  */

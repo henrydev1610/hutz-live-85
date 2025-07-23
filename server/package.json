@@ -1,3 +1,4 @@
+
 {
   "name": "momento-live-backend",
   "version": "1.0.0",
@@ -20,21 +21,20 @@
   "author": "Momento Live Team",
   "license": "MIT",
   "dependencies": {
-    "@socket.io/redis-adapter": "^8.2.1",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "helmet": "^7.1.0",
-    "qrcode": "^1.5.3",
-    "redis": "^4.6.11",
     "socket.io": "^4.7.4",
-    "twilio": "^5.7.3",
-    "uuid": "^9.0.1"
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "dotenv": "^16.3.1",
+    "uuid": "^9.0.1",
+    "qrcode": "^1.5.3",
+    "@socket.io/redis-adapter": "^8.2.1",
+    "redis": "^4.6.11"
   },
   "devDependencies": {
-    "eslint": "^8.56.0",
-    "jest": "^29.7.0",
     "nodemon": "^3.0.2",
+    "jest": "^29.7.0",
+    "eslint": "^8.56.0",
     "supertest": "^6.3.3"
   },
   "engines": {
