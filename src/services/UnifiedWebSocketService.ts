@@ -236,44 +236,68 @@ class UnifiedWebSocketService {
   private setupEventListeners(): void {
     if (!this.socket) return;
 
-    this.socket.on('user-connected', (userId: string) => {
-      console.log('👤 USER CONNECTED:', userId);
-      this.callbacks.onUserConnected?.(userId);
+    // CRITICAL FIX: Adicionar listener para confirmação de entrada na sala
+    this.socket.on('welcome', (data: any) => {
+      console.log('🎉 WEBSOCKET: Welcome message received:', data);
+      if (data.roomId === this.currentRoomId) {
+        console.log(`✅ WEBSOCKET: Successfully confirmed entry in room ${data.roomId}`);
+      }
     });
 
-    this.socket.on('user-disconnected', (userId: string) => {
-      console.log('👤 USER DISCONNECTED:', userId);
-      this.callbacks.onUserDisconnected?.(userId);
+    this.socket.on('user-joined', (data: any) => {
+      console.log('👤 USER JOINED:', data);
+      this.callbacks.onUserConnected?.(data.peerId);
     });
 
-    this.socket.on('participants-update', (participants: any[]) => {
-      console.log('📊 PARTICIPANTS UPDATE:', participants);
-      this.callbacks.onParticipantsUpdate?.(participants);
+    this.socket.on('user-left', (data: any) => {
+      console.log('👤 USER LEFT:', data);
+      this.callbacks.onUserDisconnected?.(data.peerId);
     });
 
-    this.socket.on('offer', (fromUserId: string, offer: RTCSessionDescriptionInit) => {
-      console.log('📞 OFFER received from:', fromUserId);
-      this.callbacks.onOffer?.(fromUserId, offer);
+    this.socket.on('peer-list', (data: any) => {
+      console.log('👥 PEER LIST received:', data);
+      if (data.peers && Array.isArray(data.peers)) {
+        this.callbacks.onParticipantsUpdate?.(data.peers.map(peerId => ({ id: peerId })));
+      }
     });
 
-    this.socket.on('answer', (fromUserId: string, answer: RTCSessionDescriptionInit) => {
-      console.log('✅ ANSWER received from:', fromUserId);
-      this.callbacks.onAnswer?.(fromUserId, answer);
+    this.socket.on('offer', (message: any) => {
+      console.log('📞 OFFER received:', message);
+      if (message.senderId && message.description) {
+        this.callbacks.onOffer?.(message.senderId, message.description);
+      }
     });
 
-    this.socket.on('ice-candidate', (fromUserId: string, candidate: RTCIceCandidate) => {
-      console.log('🧊 ICE CANDIDATE received from:', fromUserId);
-      this.callbacks.onIceCandidate?.(fromUserId, candidate);
+    this.socket.on('answer', (message: any) => {
+      console.log('✅ ANSWER received:', message);
+      if (message.senderId && message.description) {
+        this.callbacks.onAnswer?.(message.senderId, message.description);
+      }
     });
 
-    this.socket.on('stream-started', (participantId: string, streamInfo: any) => {
-      console.log('🎥 STREAM STARTED:', participantId, streamInfo);
-      this.callbacks.onStreamStarted?.(participantId, streamInfo);
+    this.socket.on('candidate', (message: any) => {
+      console.log('🧊 ICE CANDIDATE received:', message);
+      if (message.senderId && message.candidate) {
+        this.callbacks.onIceCandidate?.(message.senderId, message.candidate);
+      }
+    });
+
+    this.socket.on('broadcast', (message: any) => {
+      console.log('📡 BROADCAST received:', message);
+      if (message.type === 'stream-started') {
+        this.callbacks.onStreamStarted?.(message.senderId, message.data);
+      }
     });
 
     // Heartbeat response
-    this.socket.on('pong', () => {
-      console.log('💓 HEARTBEAT: Pong received');
+    this.socket.on('heartbeat-ack', () => {
+      console.log('💓 HEARTBEAT: Ack received');
+    });
+
+    // CRITICAL FIX: Error handling específico
+    this.socket.on('error', (error: any) => {
+      console.error('❌ WEBSOCKET: Server error:', error);
+      this.callbacks.onError?.(error);
     });
   }
 
@@ -323,6 +347,18 @@ class UnifiedWebSocketService {
 
   async joinRoom(roomId: string, userId: string): Promise<void> {
     console.log(`🚪 WEBSOCKET: Joining room ${roomId} as ${userId}`);
+    
+    // CRITICAL FIX: Verificar se já estamos em uma sala
+    if (this.currentRoomId === roomId && this.currentUserId === userId && this.isConnected()) {
+      console.log(`✅ WEBSOCKET: Already in room ${roomId} as ${userId}`);
+      return;
+    }
+
+    // CRITICAL FIX: Limpar estado anterior antes de entrar em nova sala
+    if (this.currentRoomId && this.currentRoomId !== roomId) {
+      console.log(`🧹 WEBSOCKET: Leaving previous room ${this.currentRoomId} before joining ${roomId}`);
+      await this.leaveRoom();
+    }
     
     if (!this.isConnected()) {
       console.log('🔗 CONNECTION: Not connected, connecting first...');
@@ -421,6 +457,26 @@ class UnifiedWebSocketService {
     });
   }
 
+  async leaveRoom(): Promise<void> {
+    if (!this.currentRoomId || !this.currentUserId) {
+      console.log('🚪 WEBSOCKET: No room to leave');
+      return;
+    }
+
+    console.log(`🚪 WEBSOCKET: Leaving room ${this.currentRoomId}`);
+    
+    if (this.isConnected()) {
+      this.socket!.emit('leave-room', {
+        roomId: this.currentRoomId,
+        userId: this.currentUserId
+      });
+    }
+
+    this.currentRoomId = null;
+    this.currentUserId = null;
+    console.log('✅ WEBSOCKET: Room state cleared');
+  }
+
   sendOffer(targetUserId: string, offer: RTCSessionDescriptionInit): void {
     if (!this.isConnected()) {
       console.error('❌ SIGNALING: Cannot send offer - not connected');
@@ -433,7 +489,12 @@ class UnifiedWebSocketService {
     }
 
     console.log('📞 SIGNALING: Sending offer to:', targetUserId);
-    this.socket!.emit('offer', { targetUserId, offer });
+    this.socket!.emit('offer', { 
+      type: 'offer',
+      targetId: targetUserId,
+      description: offer,
+      timestamp: Date.now()
+    });
   }
 
   sendAnswer(targetUserId: string, answer: RTCSessionDescriptionInit): void {
@@ -448,7 +509,12 @@ class UnifiedWebSocketService {
     }
 
     console.log('✅ SIGNALING: Sending answer to:', targetUserId);
-    this.socket!.emit('answer', { targetUserId, answer });
+    this.socket!.emit('answer', { 
+      type: 'answer',
+      targetId: targetUserId,
+      description: answer,
+      timestamp: Date.now()
+    });
   }
 
   sendIceCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
@@ -463,7 +529,12 @@ class UnifiedWebSocketService {
     }
 
     console.log('🧊 SIGNALING: Sending ICE candidate to:', targetUserId);
-    this.socket!.emit('ice-candidate', { targetUserId, candidate });
+    this.socket!.emit('candidate', { 
+      type: 'candidate',
+      targetId: targetUserId,
+      candidate: candidate,
+      timestamp: Date.now()
+    });
   }
 
   notifyStreamStarted(participantId: string, streamInfo: any): void {
