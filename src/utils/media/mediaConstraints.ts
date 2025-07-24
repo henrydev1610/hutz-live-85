@@ -75,14 +75,15 @@ export const getMobileConstraints = (preferredFacing: 'user' | 'environment' = '
 ];
 
 export const getDesktopConstraints = (): MediaStreamConstraints[] => [
-  // 🖥️ OTIMIZADO: Tentativa 1 - DESKTOP webcam com configurações optimizadas
+  // 🖥️ CRITICAL FIX: Desktop constraints SEM facingMode (resolve conexão quadrante)
   {
     video: {
-      // ✅ OTIMIZADO: Configurações específicas para desktop sem facingMode
+      // ✅ DESKTOP: Configurações otimizadas para webcam sem mobile-specific constraints
       width: { ideal: 1280, min: 640, max: 1920 },
       height: { ideal: 720, min: 480, max: 1080 },
       frameRate: { ideal: 30, min: 15, max: 60 },
-      aspectRatio: { ideal: 16/9 }
+      aspectRatio: { ideal: 16/9 },
+      // ❌ REMOVIDO: facingMode (causa erro em desktop)
     },
     audio: {
       echoCancellation: true,

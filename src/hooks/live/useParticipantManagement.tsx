@@ -17,6 +17,9 @@ interface UseParticipantManagementProps {
   sessionId: string | null;
   transmissionWindowRef: React.MutableRefObject<Window | null>;
   updateTransmissionParticipants: () => void;
+  // FASE 2: Adicionar handlers do stream manager unificado
+  handleParticipantStream?: (participantId: string, stream: MediaStream) => Promise<void>;
+  updateVideoElementsImmediately?: (participantId: string, stream: MediaStream, transmissionWindowRef?: React.MutableRefObject<Window | null>) => Promise<void>;
 }
 
 export const useParticipantManagement = ({
@@ -26,17 +29,21 @@ export const useParticipantManagement = ({
   setParticipantStreams,
   sessionId,
   transmissionWindowRef,
-  updateTransmissionParticipants
+  updateTransmissionParticipants,
+  // FASE 2: Handlers opcionais do stream manager unificado
+  handleParticipantStream,
+  updateVideoElementsImmediately
 }: UseParticipantManagementProps) => {
-  const { updateVideoElementsImmediately } = useVideoElementManagement();
-  
-  // Use clean stream management with enhanced error handling
-  const { handleParticipantStream } = useCleanStreamManagement({
+  // FASE 2: Usar handlers do sistema unificado se fornecidos
+  const videoManagement = useVideoElementManagement();
+  const streamManagement = useCleanStreamManagement({
     setParticipantStreams,
     setParticipantList,
-    updateVideoElementsImmediately,
+    updateVideoElementsImmediately: updateVideoElementsImmediately || videoManagement.updateVideoElementsImmediately,
     transmissionWindowRef
   });
+  
+  const finalHandleParticipantStream = handleParticipantStream || streamManagement.handleParticipantStream;
 
   const { 
     handleParticipantJoin, 
@@ -72,7 +79,7 @@ export const useParticipantManagement = ({
         clearDeviceCache();
       }
       
-      await handleParticipantStream(participantId, stream);
+      await finalHandleParticipantStream(participantId, stream);
       
       // Immediate transmission update
       setTimeout(() => {
@@ -90,7 +97,7 @@ export const useParticipantManagement = ({
         clearDeviceCache();
         
         await new Promise(resolve => setTimeout(resolve, 500));
-        await handleParticipantStream(participantId, stream);
+        await finalHandleParticipantStream(participantId, stream);
       } catch (retryError) {
         console.error('❌ ENHANCED STREAM HANDLER: Retry failed:', retryError);
       }

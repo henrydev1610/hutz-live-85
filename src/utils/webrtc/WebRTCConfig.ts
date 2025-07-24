@@ -35,7 +35,8 @@ export const WEBRTC_CONFIG = {
   rtcpMuxPolicy: 'require'
 };
 
+// DEPRECATED: Use device-specific constraints from mediaConstraints.ts instead
 export const MEDIA_CONSTRAINTS = {
-  video: { facingMode: 'user' },
+  video: true, // ✅ DESKTOP FIX: Sem facingMode para compatibilidade
   audio: true
 };

@@ -8,9 +8,9 @@ import { useParticipantManagement } from '@/hooks/live/useParticipantManagement'
 import { useQRCodeGeneration } from '@/hooks/live/useQRCodeGeneration';
 import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
-import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
+import { useUnifiedStreamManager } from '@/hooks/live/useUnifiedStreamManager';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
-import { useOrderedWebRTCInitialization } from '@/hooks/live/useOrderedWebRTCInitialization';
+import { useCleanWebRTCInitialization } from '@/hooks/live/useCleanWebRTCInitialization';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
@@ -26,7 +26,7 @@ const LivePage: React.FC = () => {
     initializeAsHost, 
     state: initializationState, 
     reset: resetInitialization 
-  } = useOrderedWebRTCInitialization();
+  } = useCleanWebRTCInitialization();
   
   const { closeFinalAction } = useFinalAction({
     finalActionOpen: state.finalActionOpen,
@@ -98,6 +98,13 @@ const LivePage: React.FC = () => {
     }
   };
 
+  // FASE 2: Sistema unificado de gerenciamento de streams
+  const streamManager = useUnifiedStreamManager({
+    setParticipantStreams: state.setParticipantStreams,
+    setParticipantList: state.setParticipantList,
+    transmissionWindowRef
+  });
+
   const participantManagement = useParticipantManagement({
     participantList: state.participantList,
     setParticipantList: state.setParticipantList,
@@ -105,28 +112,14 @@ const LivePage: React.FC = () => {
     setParticipantStreams: state.setParticipantStreams,
     sessionId: state.sessionId,
     transmissionWindowRef,
-    updateTransmissionParticipants
+    updateTransmissionParticipants,
+    // FASE 2: Integrar stream manager unificado
+    handleParticipantStream: streamManager.handleParticipantStream,
+    updateVideoElementsImmediately: streamManager.updateVideoElementsImmediately
   });
 
   // Only run effects after initialization is ready
   const shouldRunEffects = initializationState.isReady && !initializationState.error;
-
-  // Use the effects hook only after initialization is ready
-  useLivePageEffects({
-    sessionId: shouldRunEffects ? state.sessionId : null,
-    localStream: state.localStream,
-    participantStreams: state.participantStreams,
-    participantList: state.participantList,
-    transmissionOpen: state.transmissionOpen,
-    transmissionWindowRef,
-    handleParticipantJoin: participantManagement.handleParticipantJoin,
-    handleParticipantStream: participantManagement.handleParticipantStream,
-    setParticipantList: state.setParticipantList,
-    updateTransmissionParticipants,
-    generateQRCode,
-    qrCodeURL: state.qrCodeURL,
-    setQrCodeSvg: state.setQrCodeSvg
-  });
 
   // Use the transmission message handler only after initialization is ready
   useTransmissionMessageHandler({
