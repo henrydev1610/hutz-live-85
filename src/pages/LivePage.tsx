@@ -25,7 +25,7 @@ const LivePage: React.FC = () => {
   const { 
     initializeAsHost, 
     state: initializationState, 
-    cleanup: cleanupInitialization 
+    reset: resetInitialization 
   } = useOrderedWebRTCInitialization();
   
   const { closeFinalAction } = useFinalAction({
@@ -52,7 +52,7 @@ const LivePage: React.FC = () => {
       console.log('🚀 LIVE PAGE: Starting ordered initialization for session:', state.sessionId);
       initializeAsHost(state.sessionId);
     }
-  }, [state.sessionId, initializeSession, initializationState.isInitializing]);
+  }, [state.sessionId, initializeAsHost, initializationState.isInitializing]);
 
   // ENHANCED: Transmission participants update with debugging and cache management
   const updateTransmissionParticipants = () => {
@@ -243,7 +243,7 @@ const LivePage: React.FC = () => {
             onClick={() => {
               if (state.sessionId) {
                 console.log('🔄 LIVE PAGE: Retrying initialization');
-                cleanupInitialization();
+                resetInitialization();
                 initializeAsHost(state.sessionId);
               }
             }}
