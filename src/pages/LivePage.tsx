@@ -8,9 +8,8 @@ import { useParticipantManagement } from '@/hooks/live/useParticipantManagement'
 import { useQRCodeGeneration } from '@/hooks/live/useQRCodeGeneration';
 import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
-import { useUnifiedStreamManager } from '@/hooks/live/useUnifiedStreamManager';
+import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
-import { useCleanWebRTCInitialization } from '@/hooks/live/useCleanWebRTCInitialization';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
@@ -20,13 +19,6 @@ const LivePage: React.FC = () => {
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
-  
-  // Initialize WebRTC in correct order
-  const { 
-    initializeAsHost, 
-    state: initializationState, 
-    reset: resetInitialization 
-  } = useCleanWebRTCInitialization();
   
   const { closeFinalAction } = useFinalAction({
     finalActionOpen: state.finalActionOpen,
@@ -46,13 +38,7 @@ const LivePage: React.FC = () => {
     console.log('🧹 LIVE PAGE: Initial cache clear');
     clearConnectionCache();
     clearDeviceCache();
-    
-    // Initialize session in correct order when sessionId is available
-    if (state.sessionId && !initializationState.isInitializing) {
-      console.log('🚀 LIVE PAGE: Starting ordered initialization for session:', state.sessionId);
-      initializeAsHost(state.sessionId);
-    }
-  }, [state.sessionId, initializeAsHost, initializationState.isInitializing]);
+  }, []);
 
   // ENHANCED: Transmission participants update with debugging and cache management
   const updateTransmissionParticipants = () => {
@@ -98,13 +84,6 @@ const LivePage: React.FC = () => {
     }
   };
 
-  // FASE 2: Sistema unificado de gerenciamento de streams
-  const streamManager = useUnifiedStreamManager({
-    setParticipantStreams: state.setParticipantStreams,
-    setParticipantList: state.setParticipantList,
-    transmissionWindowRef
-  });
-
   const participantManagement = useParticipantManagement({
     participantList: state.participantList,
     setParticipantList: state.setParticipantList,
@@ -112,18 +91,29 @@ const LivePage: React.FC = () => {
     setParticipantStreams: state.setParticipantStreams,
     sessionId: state.sessionId,
     transmissionWindowRef,
-    updateTransmissionParticipants,
-    // FASE 2: Integrar stream manager unificado
-    handleParticipantStream: streamManager.handleParticipantStream,
-    updateVideoElementsImmediately: streamManager.updateVideoElementsImmediately
+    updateTransmissionParticipants
   });
 
-  // Only run effects after initialization is ready
-  const shouldRunEffects = initializationState.isReady && !initializationState.error;
+  // Use the effects hook
+  useLivePageEffects({
+    sessionId: state.sessionId,
+    localStream: state.localStream,
+    participantStreams: state.participantStreams,
+    participantList: state.participantList,
+    transmissionOpen: state.transmissionOpen,
+    transmissionWindowRef,
+    handleParticipantJoin: participantManagement.handleParticipantJoin,
+    handleParticipantStream: participantManagement.handleParticipantStream,
+    setParticipantList: state.setParticipantList,
+    updateTransmissionParticipants,
+    generateQRCode,
+    qrCodeURL: state.qrCodeURL,
+    setQrCodeSvg: state.setQrCodeSvg
+  });
 
-  // Use the transmission message handler only after initialization is ready
+  // Use the transmission message handler
   useTransmissionMessageHandler({
-    sessionId: shouldRunEffects ? state.sessionId : null,
+    sessionId: state.sessionId,
     participantStreams: state.participantStreams,
     participantList: state.participantList,
     transmissionWindowRef,
@@ -219,33 +209,16 @@ const LivePage: React.FC = () => {
           onClick={() => {
             const envInfo = getEnvironmentInfo();
             console.log('🌍 Environment Info:', envInfo);
-            console.log('🔧 Initialization State:', initializationState);
             toast({
-              title: "System Status",
-              description: `${envInfo.isLovable ? 'Lovable' : envInfo.isLocalhost ? 'Local' : 'Production'} - ${initializationState.isReady ? 'Ready' : initializationState.error || 'Initializing'}`,
+              title: "Environment Info",
+              description: `${envInfo.isLovable ? 'Lovable' : envInfo.isLocalhost ? 'Local' : 'Production'} - ${envInfo.wsUrl}`,
             });
           }}
           className="bg-green-500 text-white p-2 rounded-full text-xs"
           title="Environment Info"
         >
-          🌍 Status
+          🌍 Env
         </button>
-        
-        {initializationState.error && (
-          <button
-            onClick={() => {
-              if (state.sessionId) {
-                console.log('🔄 LIVE PAGE: Retrying initialization');
-                resetInitialization();
-                initializeAsHost(state.sessionId);
-              }
-            }}
-            className="bg-red-500 text-white p-2 rounded-full text-xs"
-            title="Retry Initialization"
-          >
-            🔄 Retry
-          </button>
-        )}
       </div>
     </div>
   );

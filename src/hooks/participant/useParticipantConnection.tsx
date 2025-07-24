@@ -38,13 +38,12 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     setConnectionStatus('connecting');
     setError(null);
 
-    // 🚀 OTIMIZADO: Enhanced retry configuration for desktop/mobile
-    const maxRetries = isMobile ? 12 : 10; // Increased for desktop
+    // FASE 2: Enhanced retry configuration based on mobile/network
+    const maxRetries = isMobile ? 10 : 7;
     const connectionMetrics = {
       startTime: Date.now(),
       attempts: 0,
-      networkQuality: envInfo.urlMapping ? 'detected' : 'unknown',
-      deviceType: isMobile ? 'mobile' : 'desktop'
+      networkQuality: envInfo.urlMapping ? 'detected' : 'unknown'
     };
     
     let retryCount = 0;
@@ -93,9 +92,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
           throw new Error('WebSocket connection failed - not ready');
         }
 
-        // 🚀 OTIMIZADO: Progressive stabilization delays for desktop
-        const stabilizationDelay = isMobile ? 2000 : 1500; // Increased for desktop
-        console.log(`⏱️ STABILIZATION: Waiting ${stabilizationDelay}ms for connection to stabilize (${isMobile ? 'mobile' : 'desktop'})`);
+        // FASE 2: Progressive stabilization delays
+        const stabilizationDelay = isMobile ? 2000 : 1000;
+        console.log(`⏱️ STABILIZATION: Waiting ${stabilizationDelay}ms for connection to stabilize`);
         await new Promise(resolve => setTimeout(resolve, stabilizationDelay));
 
         // Etapa 2: Join room com retry e health check
@@ -107,9 +106,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         const joinTime = Date.now() - joinStartTime;
         console.log(`✅ PARTICIPANT CONNECTION: Joined room in ${joinTime}ms`);
 
-        // 🚀 OTIMIZADO: Additional stabilization for desktop networking
-        const webrtcDelay = isMobile ? 3000 : 2000; // Increased for desktop NAT traversal
-        console.log(`⏱️ WEBRTC PREP: Waiting ${webrtcDelay}ms before WebRTC initialization (${isMobile ? 'mobile' : 'desktop'})`);
+        // FASE 2: Additional stabilization for mobile
+        const webrtcDelay = isMobile ? 3000 : 1500;
+        console.log(`⏱️ WEBRTC PREP: Waiting ${webrtcDelay}ms before WebRTC initialization`);
         await new Promise(resolve => setTimeout(resolve, webrtcDelay));
 
         // Etapa 3: Conectar WebRTC com timeouts otimizados
@@ -209,12 +208,11 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
             console.warn('⚠️ Error during cleanup:', cleanupError);
           }
           
-           // 🚀 OTIMIZADO: Exponential backoff optimized for desktop NAT traversal
-          const baseDelay = isMobile ? 3000 : 4000; // Increased base delay for desktop
-          const maxDelay = isMobile ? 60000 : 90000; // Increased max delay for desktop
-          const networkMultiplier = envInfo.isLocalhost ? 1 : (isMobile ? 1.5 : 2); // Higher multiplier for desktop remote
-          const corporateNetworkMultiplier = envInfo.isLocalhost ? 1 : 1.2; // Additional delay for corporate networks
-          const delay = Math.min(baseDelay * Math.pow(2, retryCount - 1) * networkMultiplier * corporateNetworkMultiplier, maxDelay);
+          // FASE 3: Exponential backoff with network awareness
+          const baseDelay = isMobile ? 3000 : 2000;
+          const maxDelay = isMobile ? 60000 : 45000;
+          const networkMultiplier = envInfo.isLocalhost ? 1 : 1.5; // Slower for remote connections
+          const delay = Math.min(baseDelay * Math.pow(2, retryCount - 1) * networkMultiplier, maxDelay);
           
           console.log(`🔄 ENHANCED RETRY: Attempt ${retryCount + 1}/${maxRetries} in ${Math.round(delay/1000)}s`);
           console.log(`📊 RETRY METRICS: Base: ${baseDelay}ms, Network: ${networkMultiplier}x, Final: ${delay}ms`);

@@ -75,31 +75,14 @@ export const getMobileConstraints = (preferredFacing: 'user' | 'environment' = '
 ];
 
 export const getDesktopConstraints = (): MediaStreamConstraints[] => [
-  // 🖥️ CRITICAL FIX: Desktop constraints SEM facingMode (resolve conexão quadrante)
+  // 🖥️ Tentativa 1: DESKTOP - Webcam padrão SEM facingMode (IMPORTANTE!)
   {
     video: {
-      // ✅ DESKTOP: Configurações otimizadas para webcam sem mobile-specific constraints
-      width: { ideal: 1280, min: 640, max: 1920 },
-      height: { ideal: 720, min: 480, max: 1080 },
-      frameRate: { ideal: 30, min: 15, max: 60 },
-      aspectRatio: { ideal: 16/9 },
-      // ❌ REMOVIDO: facingMode (causa erro em desktop)
-    },
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      sampleRate: { ideal: 48000 },
-      channelCount: { ideal: 2 }
-    }
-  },
-  // 🖥️ OTIMIZADO: Tentativa 2 - DESKTOP qualidade média otimizada
-  {
-    video: {
-      width: { ideal: 640, min: 320, max: 1280 },
-      height: { ideal: 480, min: 240, max: 720 },
-      frameRate: { ideal: 24, min: 10, max: 30 },
-      aspectRatio: { ideal: 4/3 }
+      // ❌ NUNCA usar facingMode no desktop - causa conflito com mobile
+      width: { ideal: 1280, max: 1920 },
+      height: { ideal: 720, max: 1080 },
+      frameRate: { ideal: 30, max: 60 }
+      // ✅ SEM facingMode - usa webcam padrão do desktop
     },
     audio: {
       echoCancellation: true,
@@ -107,12 +90,25 @@ export const getDesktopConstraints = (): MediaStreamConstraints[] => [
       autoGainControl: true
     }
   },
-  // 🖥️ OTIMIZADO: Tentativa 3 - DESKTOP básico sem áudio
+  // 🖥️ Tentativa 2: DESKTOP - Qualidade média SEM facingMode
   {
     video: {
-      width: { ideal: 480, min: 320, max: 640 },
-      height: { ideal: 360, min: 240, max: 480 },
-      frameRate: { ideal: 15, min: 10, max: 24 }
+      width: { ideal: 640, max: 1280 },
+      height: { ideal: 480, max: 720 },
+      frameRate: { ideal: 24, max: 30 }
+      // ✅ SEM facingMode - webcam desktop padrão
+    },
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true
+    }
+  },
+  // 🖥️ Tentativa 3: DESKTOP - Básico sem áudio SEM facingMode
+  {
+    video: {
+      width: { ideal: 480, max: 640 },
+      height: { ideal: 360, max: 480 }
+      // ✅ SEM facingMode - webcam desktop
     },
     audio: false
   },

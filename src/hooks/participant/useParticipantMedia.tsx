@@ -1,3 +1,4 @@
+
 import { useCallback } from 'react';
 import { toast } from "sonner";
 import { detectMobileAggressively, checkMediaDevicesSupport, setCameraPreference } from '@/utils/media/deviceDetection';
@@ -122,11 +123,11 @@ export const useParticipantMedia = () => {
         streamLogger.logDOMUpdate(participantId, isMobile, deviceType, localVideoRef.current);
       }
       
-      const deviceLabel = isMobile ? '📱 Mobile' : '🖥️ Desktop';
+      const deviceType = isMobile ? '📱 Mobile' : '🖥️ Desktop';
       const videoStatus = videoTracks.length > 0 ? '✅' : '❌';
       const audioStatus = audioTracks.length > 0 ? '✅' : '❌';
       
-      toast.success(`${deviceLabel} camera connected! Video: ${videoStatus}, Audio: ${audioStatus}`);
+      toast.success(`${deviceType} camera connected! Video: ${videoStatus}, Audio: ${audioStatus}`);
       
       return stream;
       
