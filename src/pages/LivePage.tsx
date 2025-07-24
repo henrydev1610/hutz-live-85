@@ -10,6 +10,7 @@ import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
+import { useOrderedWebRTCInitialization } from '@/hooks/live/useOrderedWebRTCInitialization';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
@@ -19,6 +20,13 @@ const LivePage: React.FC = () => {
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
+  
+  // Initialize WebRTC in correct order
+  const { 
+    initializeAsHost, 
+    state: initializationState, 
+    cleanup: cleanupInitialization 
+  } = useOrderedWebRTCInitialization();
   
   const { closeFinalAction } = useFinalAction({
     finalActionOpen: state.finalActionOpen,
@@ -38,7 +46,13 @@ const LivePage: React.FC = () => {
     console.log('🧹 LIVE PAGE: Initial cache clear');
     clearConnectionCache();
     clearDeviceCache();
-  }, []);
+    
+    // Initialize session in correct order when sessionId is available
+    if (state.sessionId && !initializationState.isInitializing) {
+      console.log('🚀 LIVE PAGE: Starting ordered initialization for session:', state.sessionId);
+      initializeAsHost(state.sessionId);
+    }
+  }, [state.sessionId, initializeSession, initializationState.isInitializing]);
 
   // ENHANCED: Transmission participants update with debugging and cache management
   const updateTransmissionParticipants = () => {
@@ -94,9 +108,12 @@ const LivePage: React.FC = () => {
     updateTransmissionParticipants
   });
 
-  // Use the effects hook
+  // Only run effects after initialization is ready
+  const shouldRunEffects = initializationState.isReady && !initializationState.error;
+
+  // Use the effects hook only after initialization is ready
   useLivePageEffects({
-    sessionId: state.sessionId,
+    sessionId: shouldRunEffects ? state.sessionId : null,
     localStream: state.localStream,
     participantStreams: state.participantStreams,
     participantList: state.participantList,
@@ -111,9 +128,9 @@ const LivePage: React.FC = () => {
     setQrCodeSvg: state.setQrCodeSvg
   });
 
-  // Use the transmission message handler
+  // Use the transmission message handler only after initialization is ready
   useTransmissionMessageHandler({
-    sessionId: state.sessionId,
+    sessionId: shouldRunEffects ? state.sessionId : null,
     participantStreams: state.participantStreams,
     participantList: state.participantList,
     transmissionWindowRef,
@@ -209,16 +226,33 @@ const LivePage: React.FC = () => {
           onClick={() => {
             const envInfo = getEnvironmentInfo();
             console.log('🌍 Environment Info:', envInfo);
+            console.log('🔧 Initialization State:', initializationState);
             toast({
-              title: "Environment Info",
-              description: `${envInfo.isLovable ? 'Lovable' : envInfo.isLocalhost ? 'Local' : 'Production'} - ${envInfo.wsUrl}`,
+              title: "System Status",
+              description: `${envInfo.isLovable ? 'Lovable' : envInfo.isLocalhost ? 'Local' : 'Production'} - ${initializationState.isReady ? 'Ready' : initializationState.error || 'Initializing'}`,
             });
           }}
           className="bg-green-500 text-white p-2 rounded-full text-xs"
           title="Environment Info"
         >
-          🌍 Env
+          🌍 Status
         </button>
+        
+        {initializationState.error && (
+          <button
+            onClick={() => {
+              if (state.sessionId) {
+                console.log('🔄 LIVE PAGE: Retrying initialization');
+                cleanupInitialization();
+                initializeAsHost(state.sessionId);
+              }
+            }}
+            className="bg-red-500 text-white p-2 rounded-full text-xs"
+            title="Retry Initialization"
+          >
+            🔄 Retry
+          </button>
+        )}
       </div>
     </div>
   );
