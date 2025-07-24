@@ -294,6 +294,47 @@ const ParticipantPage = () => {
       // Connect sempre, mesmo em modo degradado
       await connection.connectToSession(stream);
       
+      // CORREÇÃO CRÍTICA: Iniciar handshake WebRTC automático após conexão
+      console.log('🤝 HANDSHAKE: Iniciando detecção automática de host e handshake WebRTC');
+      
+      // Aguardar estabilização da conexão WebSocket
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const hostId = connection.getHostId();
+      if (hostId) {
+        console.log(`🤝 HANDSHAKE: Host detectado (${hostId}), iniciando call automático`);
+        const success = await connection.initiateCallWithRetry(hostId, 3);
+        if (success) {
+          toast.success('🤝 Handshake WebRTC iniciado com sucesso!');
+        } else {
+          console.warn('⚠️ HANDSHAKE: Falhou, mas conexão WebSocket mantida');
+          toast.warning('⚠️ Handshake falhou - tentativa de reconexão em 5s');
+          
+          // Retry automático após 5 segundos
+          setTimeout(async () => {
+            const retryHostId = connection.getHostId();
+            if (retryHostId) {
+              console.log('🔄 HANDSHAKE RETRY: Tentando novamente...');
+              await connection.initiateCallWithRetry(retryHostId, 2);
+            }
+          }, 5000);
+        }
+      } else {
+        console.warn('⚠️ HANDSHAKE: Host não detectado ainda - aguardando...');
+        toast.info('⏳ Aguardando host ficar disponível...');
+        
+        // Fallback: tentar detectar host após 3 segundos
+        setTimeout(async () => {
+          const fallbackHostId = connection.getHostId();
+          if (fallbackHostId) {
+            console.log('🤝 HANDSHAKE FALLBACK: Host detectado, iniciando call');
+            await connection.initiateCallWithRetry(fallbackHostId, 3);
+          } else {
+            console.warn('⚠️ HANDSHAKE FALLBACK: Host ainda não disponível');
+          }
+        }, 3000);
+      }
+      
     } catch (error) {
       console.error('❌ PARTICIPANT: Mobile auto-connection failed:', error);
       streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);

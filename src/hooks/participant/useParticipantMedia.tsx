@@ -44,8 +44,8 @@ export const useParticipantMedia = () => {
 
   const initializeMedia = useCallback(async () => {
     const isMobile = detectMobileAggressively();
-    const deviceType = isMobile ? 'mobile' : 'desktop';
     const participantId = generateParticipantId();
+    const deviceType = isMobile ? 'mobile' : 'desktop';
     
     try {
       console.log(`🎬 MEDIA: Starting ${isMobile ? 'MOBILE' : 'DESKTOP'} camera initialization`);
@@ -123,11 +123,11 @@ export const useParticipantMedia = () => {
         streamLogger.logDOMUpdate(participantId, isMobile, deviceType, localVideoRef.current);
       }
       
-      const deviceType = isMobile ? '📱 Mobile' : '🖥️ Desktop';
+      const displayType = isMobile ? '📱 Mobile' : '🖥️ Desktop';
       const videoStatus = videoTracks.length > 0 ? '✅' : '❌';
       const audioStatus = audioTracks.length > 0 ? '✅' : '❌';
       
-      toast.success(`${deviceType} camera connected! Video: ${videoStatus}, Audio: ${audioStatus}`);
+      toast.success(`${displayType} camera connected! Video: ${videoStatus}, Audio: ${audioStatus}`);
       
       return stream;
       

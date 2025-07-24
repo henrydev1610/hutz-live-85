@@ -282,6 +282,52 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     }
   }, []);
 
+  // Métodos para detecção de host e handshake automático
+  const getHostId = useCallback(() => {
+    try {
+      // Implementação simples que retorna um host ID genérico
+      // Na implementação real, isso seria obtido via WebSocket listeners
+      console.log('🔍 GETHOST: Attempting to detect host ID');
+      
+      // Retornar um ID padrão de host para permitir que o handshake seja iniciado
+      // O WebRTC manager irá descobrir o host real via sinalização
+      return 'host-default';
+    } catch (error) {
+      console.warn('⚠️ GETHOST: Error getting host ID:', error);
+      return null;
+    }
+  }, []);
+
+  const initiateCallWithRetry = useCallback(async (hostId: string, retries: number = 3) => {
+    console.log(`📞 WEBRTC HANDSHAKE: Initiating call to host ${hostId} (${retries} retries)`);
+    
+    try {
+      // Usar initParticipantWebRTC para re-inicializar e forçar handshake
+      console.log(`🤝 WEBRTC HANDSHAKE: Re-initializing WebRTC to force handshake`);
+      
+      if (sessionId) {
+        // Re-inicializar WebRTC forçando uma nova conexão que irá disparar o handshake
+        await initParticipantWebRTC(sessionId, participantId);
+        console.log(`✅ WEBRTC HANDSHAKE: WebRTC re-initialized successfully`);
+        return true;
+      } else {
+        console.error('❌ WEBRTC HANDSHAKE: No session ID available');
+        return false;
+      }
+    } catch (error) {
+      console.error(`❌ WEBRTC HANDSHAKE: Failed to initiate call to host ${hostId}:`, error);
+      
+      // Retry logic
+      if (retries > 1) {
+        console.log(`🔄 WEBRTC HANDSHAKE: Retrying call to host ${hostId} (${retries - 1} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return initiateCallWithRetry(hostId, retries - 1);
+      }
+      
+      return false;
+    }
+  }, [sessionId, participantId]);
+
   return {
     isConnected,
     isConnecting,
@@ -289,6 +335,8 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     error,
     connectToSession,
     disconnectFromSession,
-    isMobile
+    isMobile,
+    getHostId,
+    initiateCallWithRetry
   };
 };

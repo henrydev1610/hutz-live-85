@@ -63,7 +63,6 @@ export class UnifiedWebRTCManager {
     
     // Evitar relay duplicado - limpar estado inicial e verificar conexões existentes
     this.cleanupExistingConnections();
-    this.cleanup();
   }
 
   private detectMobile() {
@@ -591,5 +590,43 @@ export class UnifiedWebRTCManager {
     this.connectionMetrics.clear();
     
     console.log('✅ UNIFIED: Cleanup completed');
+  }
+
+  // Método para conectar automaticamente ao host (CORREÇÃO HANDSHAKE)
+  async connectToHost(stream?: MediaStream): Promise<boolean> {
+    if (!this.isHost && this.roomId && this.participantId) {
+      console.log('🤝 CONNECT TO HOST: Iniciando conexão automática com host');
+      
+      // Aguardar detecção de host
+      const maxWaitTime = 10000; // 10 segundos
+      const startTime = Date.now();
+      
+      while (Date.now() - startTime < maxWaitTime) {
+        const participants = this.participantManager.getParticipants();
+        const host = participants.find(p => p.role === 'host' || p.isHost);
+        
+        if (host) {
+          const hostId = host.id || host.userId || host.socketId;
+          console.log(`🤝 CONNECT TO HOST: Host encontrado (${hostId}), iniciando call`);
+          
+          try {
+            await this.connectionHandler.initiateCallWithRetry(hostId, 3);
+            console.log(`✅ CONNECT TO HOST: Conexão com host ${hostId} estabelecida`);
+            return true;
+          } catch (error) {
+            console.error(`❌ CONNECT TO HOST: Falha ao conectar com host ${hostId}:`, error);
+            return false;
+          }
+        }
+        
+        // Aguardar 500ms antes de tentar novamente
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      console.warn('⚠️ CONNECT TO HOST: Timeout - host não encontrado em 10s');
+      return false;
+    }
+    
+    return false;
   }
 }
