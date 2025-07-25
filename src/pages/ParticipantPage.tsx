@@ -313,11 +313,11 @@ const ParticipantPage = () => {
             console.log('📹 CRITICAL: Setting stream in WebRTC manager before handshake');
             const { webrtc } = await initParticipantWebRTC(sessionId!, participantId!, stream);
             if (webrtc) {
-              webrtc.setLocalStream(stream);
-              const success = await webrtc.connectToHost(stream);
-              if (success) {
+              try {
+                webrtc.setLocalStream(stream);
+                await webrtc.connectToHost();
                 toast.success('🤝 Handshake WebRTC iniciado com sucesso!');
-              } else {
+              } catch (error) {
                 console.warn('⚠️ HANDSHAKE: Falhou via connectToHost, tentando call direto');
                 await connection.initiateCallWithRetry(hostId, 3);
               }
@@ -344,7 +344,7 @@ const ParticipantPage = () => {
                 const { webrtc } = await initParticipantWebRTC(sessionId!, participantId!, stream);
                 if (webrtc) {
                   webrtc.setLocalStream(stream);
-                  await webrtc.connectToHost(stream);
+                  await webrtc.connectToHost();
                 }
               } else {
                 await connection.initiateCallWithRetry(fallbackHostId, 3);

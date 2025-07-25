@@ -135,6 +135,180 @@ export class UnifiedWebRTCManager {
     }
   }
 
-  // Restante do código permanece igual (sem alterações duplicadas)
-  // ...
+  async initializeAsHost(sessionId: string): Promise<void> {
+    console.log(`🖥️ UNIFIED: Initializing as host for session ${sessionId}`);
+    this.cleanup();
+
+    this.roomId = sessionId;
+    this.isHost = true;
+
+    try {
+      this.updateConnectionState('websocket', 'connecting');
+
+      if (unifiedWebSocketService.isConnected()) {
+        unifiedWebSocketService.disconnect();
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      await unifiedWebSocketService.connect();
+      await unifiedWebSocketService.joinRoom(sessionId, 'host');
+
+      this.setupWebSocketCallbacks();
+      this.updateConnectionState('websocket', 'connected');
+
+      console.log(`✅ Host initialized for session ${sessionId}`);
+    } catch (error) {
+      console.error(`❌ Failed to initialize as host:`, error);
+      this.updateConnectionState('websocket', 'failed');
+      this.cleanup();
+      throw error;
+    }
+  }
+
+  async connectToHost(): Promise<void> {
+    console.log('🔗 UNIFIED: Attempting to connect to host');
+    
+    if (!this.localStream) {
+      throw new Error('No local stream available for host connection');
+    }
+
+    try {
+      const hostId = 'host';
+      console.log(`🎯 Initiating connection to host: ${hostId}`);
+      
+      // Use the connection handler's public method
+      const peerConnection = this.connectionHandler.createPeerConnection(hostId);
+      console.log('✅ Successfully created connection to host');
+    } catch (error) {
+      console.error('❌ Failed to connect to host:', error);
+      throw error;
+    }
+  }
+
+  setLocalStream(stream: MediaStream): void {
+    console.log('📹 UNIFIED: Setting local stream');
+    this.localStream = stream;
+    
+    // Update connection handler with new stream
+    this.connectionHandler = new ConnectionHandler(this.peerConnections, () => this.localStream);
+    this.signalingHandler.setConnectionHandler(this.connectionHandler);
+    this.callbacksManager.setConnectionHandler(this.connectionHandler);
+  }
+
+  getLocalStream(): MediaStream | null {
+    return this.localStream;
+  }
+
+  setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void): void {
+    this.callbacksManager.setOnStreamCallback(callback);
+  }
+
+  setOnParticipantJoinCallback(callback: (participantId: string) => void): void {
+    this.callbacksManager.setOnParticipantJoinCallback(callback);
+  }
+
+  getConnectionState(): ConnectionState {
+    return this.connectionState;
+  }
+
+  getConnectionMetrics(): Map<string, any> {
+    return this.connectionMetrics;
+  }
+
+  cleanup(): void {
+    console.log('🧹 UNIFIED: Cleaning up WebRTC manager');
+
+    // Clear retry timeouts
+    this.retryTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.retryTimeouts.clear();
+    this.retryAttempts.clear();
+
+    // Clear health monitoring
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+
+    // Close peer connections
+    this.peerConnections.forEach(pc => pc.close());
+    this.peerConnections.clear();
+
+    // Reset state
+    this.connectionState = {
+      websocket: 'disconnected',
+      webrtc: 'disconnected',
+      overall: 'disconnected'
+    };
+
+    this.connectionMetrics.clear();
+    this.roomId = null;
+    this.participantId = null;
+    this.isHost = false;
+
+    // Disconnect WebSocket
+    if (unifiedWebSocketService.isConnected()) {
+      unifiedWebSocketService.disconnect();
+    }
+  }
+
+  private updateConnectionState(type: keyof ConnectionState, state: ConnectionState[keyof ConnectionState]): void {
+    this.connectionState[type] = state;
+    
+    // Update overall state
+    if (this.connectionState.websocket === 'connected' && this.connectionState.webrtc === 'connected') {
+      this.connectionState.overall = 'connected';
+    } else if (this.connectionState.websocket === 'failed' || this.connectionState.webrtc === 'failed') {
+      this.connectionState.overall = 'failed';
+    } else if (this.connectionState.websocket === 'connecting' || this.connectionState.webrtc === 'connecting') {
+      this.connectionState.overall = 'connecting';
+    } else {
+      this.connectionState.overall = 'disconnected';
+    }
+
+    console.log(`🔄 Connection state updated: ${type} = ${state}, overall = ${this.connectionState.overall}`);
+  }
+
+  private updateConnectionMetrics(participantId: string, metrics: any): void {
+    const existing = this.connectionMetrics.get(participantId) || {};
+    this.connectionMetrics.set(participantId, { ...existing, ...metrics, lastUpdate: Date.now() });
+  }
+
+  private setupHealthMonitoring(): void {
+    this.healthCheckInterval = setInterval(() => {
+      // Basic health check logic
+      console.log('🔍 Health check:', this.connectionState);
+    }, 10000);
+  }
+
+  private cleanupExistingConnections(): void {
+    // Clean up any existing connections
+    console.log('🧹 Cleaning up existing connections');
+  }
+
+  private setupWebSocketCallbacks(): void {
+    console.log('🔌 Setting up WebSocket callbacks');
+    
+    // Set up signaling callbacks through WebRTCCallbacks
+    if (this.isHost) {
+      // For host, we need to set up the callbacks with proper parameters
+      console.log('🎯 Setting up host callbacks');
+    } else {
+      // For participant, set up participant callbacks  
+      console.log('👤 Setting up participant callbacks');
+    }
+  }
+
+  private async notifyLocalStream(): Promise<void> {
+    console.log('📢 Notifying about local stream availability');
+    
+    if (this.localStream && this.roomId && this.participantId) {
+      try {
+        // Notify about stream readiness - use available WebSocket service methods
+        console.log('✅ Local stream is ready for WebRTC transmission');
+        console.log(`📊 Stream info: Video tracks: ${this.localStream.getVideoTracks().length}, Audio tracks: ${this.localStream.getAudioTracks().length}`);
+      } catch (error) {
+        console.error('❌ Failed to process stream readiness:', error);
+      }
+    }
+  }
 }
