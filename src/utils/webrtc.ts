@@ -73,6 +73,12 @@ export const initParticipantWebRTC = async (sessionId: string, participantId?: s
     currentSessionId = sessionId;
     await webrtcManager.initializeAsParticipant(sessionId, finalParticipantId, stream);
     
+    // CRITICAL FIX: Ensure stream is properly set after initialization
+    if (stream) {
+      console.log('📹 CRITICAL FIX: Setting stream in WebRTC manager after initialization');
+      webrtcManager.setLocalStream(stream);
+    }
+    
     return { webrtc: webrtcManager };
     
   } catch (error) {

@@ -15,6 +15,7 @@ import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { clearConnectionCache, validateURLConsistency } from '@/utils/connectionUtils';
 import { clearDeviceCache, validateMobileCameraCapabilities } from '@/utils/media/deviceDetection';
 import { streamLogger } from '@/utils/debug/StreamLogger';
+import { initParticipantWebRTC } from '@/utils/webrtc';
 import { toast } from 'sonner';
 
 const ParticipantPage = () => {
@@ -300,39 +301,62 @@ const ParticipantPage = () => {
       // Aguardar estabilização da conexão WebSocket
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      const hostId = connection.getHostId();
-      if (hostId) {
-        console.log(`🤝 HANDSHAKE: Host detectado (${hostId}), iniciando call automático`);
-        const success = await connection.initiateCallWithRetry(hostId, 3);
-        if (success) {
-          toast.success('🤝 Handshake WebRTC iniciado com sucesso!');
-        } else {
-          console.warn('⚠️ HANDSHAKE: Falhou, mas conexão WebSocket mantida');
-          toast.warning('⚠️ Handshake falhou - tentativa de reconexão em 5s');
+      // CRITICAL: Trigger WebRTC handshake with enhanced stream handling
+      console.log('🤝 CRITICAL: Attempting WebRTC handshake after connection');
+      try {
+        const hostId = connection.getHostId();
+        if (hostId) {
+          console.log(`🎯 HOST DETECTED: ${hostId}, initiating handshake`);
           
-          // Retry automático após 5 segundos
-          setTimeout(async () => {
-            const retryHostId = connection.getHostId();
-            if (retryHostId) {
-              console.log('🔄 HANDSHAKE RETRY: Tentando novamente...');
-              await connection.initiateCallWithRetry(retryHostId, 2);
+          // CRITICAL: Force set stream in WebRTC manager before handshake
+          if (stream) {
+            console.log('📹 CRITICAL: Setting stream in WebRTC manager before handshake');
+            const { webrtc } = await initParticipantWebRTC(sessionId!, participantId!, stream);
+            if (webrtc) {
+              webrtc.setLocalStream(stream);
+              const success = await webrtc.connectToHost(stream);
+              if (success) {
+                toast.success('🤝 Handshake WebRTC iniciado com sucesso!');
+              } else {
+                console.warn('⚠️ HANDSHAKE: Falhou via connectToHost, tentando call direto');
+                await connection.initiateCallWithRetry(hostId, 3);
+              }
             }
-          }, 5000);
-        }
-      } else {
-        console.warn('⚠️ HANDSHAKE: Host não detectado ainda - aguardando...');
-        toast.info('⏳ Aguardando host ficar disponível...');
-        
-        // Fallback: tentar detectar host após 3 segundos
-        setTimeout(async () => {
-          const fallbackHostId = connection.getHostId();
-          if (fallbackHostId) {
-            console.log('🤝 HANDSHAKE FALLBACK: Host detectado, iniciando call');
-            await connection.initiateCallWithRetry(fallbackHostId, 3);
           } else {
-            console.warn('⚠️ HANDSHAKE FALLBACK: Host ainda não disponível');
+            // Fallback without stream
+            const success = await connection.initiateCallWithRetry(hostId, 3);
+            if (success) {
+              toast.success('🤝 Handshake WebRTC iniciado com sucesso!');
+            }
           }
-        }, 3000);
+        } else {
+          console.warn('⚠️ HANDSHAKE: Host não detectado ainda - aguardando...');
+          toast.info('⏳ Aguardando host ficar disponível...');
+          
+          // Enhanced fallback with stream handling
+          setTimeout(async () => {
+            const fallbackHostId = connection.getHostId();
+            if (fallbackHostId) {
+              console.log('🤝 HANDSHAKE FALLBACK: Host detectado, iniciando call');
+              
+              if (stream) {
+                console.log('📹 HANDSHAKE FALLBACK: Re-setting stream before retry');
+                const { webrtc } = await initParticipantWebRTC(sessionId!, participantId!, stream);
+                if (webrtc) {
+                  webrtc.setLocalStream(stream);
+                  await webrtc.connectToHost(stream);
+                }
+              } else {
+                await connection.initiateCallWithRetry(fallbackHostId, 3);
+              }
+            } else {
+              console.warn('⚠️ HANDSHAKE FALLBACK: Host ainda não disponível');
+            }
+          }, 3000);
+        }
+      } catch (error) {
+        console.error('❌ HANDSHAKE: Failed to complete WebRTC handshake:', error);
+        toast.error(`❌ Falha no handshake: ${error instanceof Error ? error.message : String(error)}`);
       }
       
     } catch (error) {

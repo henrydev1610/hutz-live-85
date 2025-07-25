@@ -592,10 +592,50 @@ export class UnifiedWebRTCManager {
     console.log('✅ UNIFIED: Cleanup completed');
   }
 
+  // CRITICAL FIX: Stream management methods
+  public setLocalStream = (stream: MediaStream) => {
+    this.localStream = stream;
+    console.log(`📹 CRITICAL FIX: Local stream set in UnifiedWebRTCManager:`, {
+      streamId: stream.id,
+      active: stream.active,
+      tracks: stream.getTracks().length,
+      videoTracks: stream.getVideoTracks().length,
+      audioTracks: stream.getAudioTracks().length
+    });
+    
+    // Recreate connection handler with new stream if needed
+    if (this.connectionHandler) {
+      this.connectionHandler = new ConnectionHandler(this.peerConnections, () => this.localStream);
+      this.signalingHandler.setConnectionHandler(this.connectionHandler);
+      this.callbacksManager.setConnectionHandler(this.connectionHandler);
+      
+      // Restore callbacks
+      this.connectionHandler.setStreamCallback((participantId, stream) => {
+        console.log(`🎥 UNIFIED: Stream received from ${participantId}`);
+        this.callbacksManager.triggerStreamCallback(participantId, stream);
+      });
+      
+      this.connectionHandler.setParticipantJoinCallback((participantId) => {
+        console.log(`👤 UNIFIED: Participant ${participantId} joined`);
+        this.callbacksManager.triggerParticipantJoinCallback(participantId);
+      });
+    }
+  };
+
+  public getLocalStream = (): MediaStream | null => {
+    return this.localStream;
+  };
+
   // Método para conectar automaticamente ao host (CORREÇÃO HANDSHAKE)
   async connectToHost(stream?: MediaStream): Promise<boolean> {
     if (!this.isHost && this.roomId && this.participantId) {
       console.log('🤝 CONNECT TO HOST: Iniciando conexão automática com host');
+      
+      // CRITICAL FIX: Set stream before attempting connection
+      if (stream && !this.localStream) {
+        console.log('📹 CRITICAL FIX: Setting stream before connecting to host');
+        this.setLocalStream(stream);
+      }
       
       // Aguardar detecção de host
       const maxWaitTime = 10000; // 10 segundos
