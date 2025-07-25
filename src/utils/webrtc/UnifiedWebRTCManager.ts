@@ -345,42 +345,39 @@ export class UnifiedWebRTCManager {
     }
   }
 
-  async initializeAsHost(sessionId: string): Promise<void> {
-    console.log(`🏠 UNIFIED: Initializing as host for session: ${sessionId}`);
-    
-    // Cleanup anterior para evitar relays duplicados
-    this.cleanup();
-    
-    this.roomId = sessionId;
-    this.participantId = `host-${Date.now()}`;
-    this.isHost = true;
+async initializeAsHost(sessionId: string): Promise<void> {
+  console.log(`🏠 UNIFIED: Initializing as host for session: ${sessionId}`);
+  
+  // ⚠️ Definir os valores ANTES da conexão
+  this.roomId = sessionId;
+  this.participantId = `host-${Date.now()}`;
+  this.isHost = true;
 
-    try {
-      this.updateConnectionState('websocket', 'connecting');
-      
-      // Forçar nova conexão WebSocket
-      if (unifiedWebSocketService.isConnected()) {
-        unifiedWebSocketService.disconnect();
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-      
-      await unifiedWebSocketService.connect();
-      this.setupWebSocketCallbacks();
-      
-      // Aguardar estabilização antes de tentar join
-      await new Promise(resolve => setTimeout(resolve, 500));
-      await unifiedWebSocketService.joinRoom(sessionId, this.participantId);
-      
-      this.updateConnectionState('websocket', 'connected');
-      console.log(`✅ UNIFIED HOST: Connected to signaling server`);
-      
-    } catch (error) {
-      console.error(`❌ UNIFIED HOST: Failed to initialize:`, error);
-      this.updateConnectionState('websocket', 'failed');
-      this.cleanup(); // Limpar estado em caso de erro
-      throw error;
+  try {
+    this.updateConnectionState('websocket', 'connecting');
+
+    if (unifiedWebSocketService.isConnected()) {
+      unifiedWebSocketService.disconnect();
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
+
+    await unifiedWebSocketService.connect();
+
+    // ✅ Somente após definir roomId e participantId, fazer join
+    await unifiedWebSocketService.joinRoom(this.roomId, this.participantId);
+
+    this.setupWebSocketCallbacks();
+    this.updateConnectionState('websocket', 'connected');
+    console.log(`✅ UNIFIED HOST: Connected to signaling server`);
+    
+  } catch (error) {
+    console.error(`❌ UNIFIED HOST: Failed to initialize:`, error);
+    this.updateConnectionState('websocket', 'failed');
+    this.cleanup();
+    throw error;
   }
+}
+
 
   async initializeAsParticipant(sessionId: string, participantId: string, stream?: MediaStream): Promise<void> {
     console.log(`👤 UNIFIED: Initializing as participant ${participantId} for session ${sessionId}`);
