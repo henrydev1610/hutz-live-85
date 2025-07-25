@@ -46,6 +46,9 @@ export class UnifiedWebRTCManager {
     overall: 'disconnected'
   };
 
+  // CORREÇÃO: Estado para aguardar confirmação de entrada na sala
+  private webrtcReady: boolean = false;
+
   // Retry management
   private retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG;
   private retryAttempts: Map<string, number> = new Map();
@@ -140,7 +143,12 @@ export class UnifiedWebRTCManager {
       }
 
       await unifiedWebSocketService.connect();
+      console.log(`🚪 Aguardando confirmação de entrada na sala: ${sessionId}`);
       await unifiedWebSocketService.joinRoom(sessionId, participantId);
+      
+      // CORREÇÃO: Marcar como pronto para WebRTC apenas após confirmação de entrada na sala
+      this.webrtcReady = true;
+      console.log(`✅ Confirmação de entrada na sala recebida. WebRTC pronto para iniciar.`);
 
       this.setupWebSocketCallbacks();
       this.updateConnectionState('websocket', 'connected');
@@ -148,11 +156,15 @@ export class UnifiedWebRTCManager {
       if (this.localStream) {
         await this.notifyLocalStream();
         
-        // CORREÇÃO: Iniciar handshake WebRTC automaticamente após notificar stream
-        console.log(`🤝 Iniciando handshake WebRTC automático para participante: ${this.participantId}`);
-        await this.connectionHandler.initiateCallWithRetry('host');
-        this.updateConnectionState('webrtc', 'connecting');
-        console.log(`✅ Handshake WebRTC iniciado com sucesso`);
+        // CORREÇÃO: Aguardar confirmação de sala antes de iniciar handshake WebRTC
+        if (this.webrtcReady) {
+          console.log(`🤝 Iniciando handshake WebRTC automático para participante: ${this.participantId}`);
+          await this.connectionHandler.initiateCallWithRetry('host');
+          this.updateConnectionState('webrtc', 'connecting');
+          console.log(`✅ Handshake WebRTC iniciado com sucesso`);
+        } else {
+          console.warn(`⚠️ WebRTC não pode ser iniciado - ainda não confirmado na sala`);
+        }
       } else {
         throw new Error('Stream was lost during WebRTC initialization');
       }
@@ -180,7 +192,12 @@ export class UnifiedWebRTCManager {
       }
 
       await unifiedWebSocketService.connect();
+      console.log(`🚪 Aguardando confirmação de entrada na sala como host: ${sessionId}`);
       await unifiedWebSocketService.joinRoom(sessionId, 'host');
+      
+      // CORREÇÃO: Marcar como pronto para WebRTC após confirmação de entrada na sala
+      this.webrtcReady = true;
+      console.log(`✅ Confirmação de entrada na sala recebida. Host WebRTC pronto.`);
 
       this.setupWebSocketCallbacks();
       this.updateConnectionState('websocket', 'connected');
@@ -276,6 +293,9 @@ export class UnifiedWebRTCManager {
     this.roomId = null;
     this.participantId = null;
     this.isHost = false;
+    
+    // CORREÇÃO: Reset do estado WebRTC ready
+    this.webrtcReady = false;
 
     // Disconnect WebSocket
     if (unifiedWebSocketService.isConnected()) {
