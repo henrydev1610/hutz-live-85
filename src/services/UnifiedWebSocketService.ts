@@ -433,6 +433,7 @@ class UnifiedWebSocketService {
     }
 
     console.log('📞 SIGNALING: Sending offer to:', targetUserId);
+    console.log('🔍 SIGNALING: Room confirmed, proceeding with offer transmission');
     this.socket!.emit('offer', { targetUserId, offer });
   }
 
@@ -448,6 +449,7 @@ class UnifiedWebSocketService {
     }
 
     console.log('✅ SIGNALING: Sending answer to:', targetUserId);
+    console.log('🔍 SIGNALING: Room confirmed, proceeding with answer transmission');
     this.socket!.emit('answer', { targetUserId, answer });
   }
 
@@ -463,6 +465,7 @@ class UnifiedWebSocketService {
     }
 
     console.log('🧊 SIGNALING: Sending ICE candidate to:', targetUserId);
+    console.log('🔍 SIGNALING: Room confirmed, proceeding with ICE candidate transmission');
     this.socket!.emit('ice-candidate', { targetUserId, candidate });
   }
 
@@ -478,6 +481,7 @@ class UnifiedWebSocketService {
     }
 
     console.log('🎥 SIGNALING: Notifying stream started:', participantId);
+    console.log('🔍 SIGNALING: Room confirmed, proceeding with stream-started notification');
     this.socket!.emit('stream-started', { participantId, streamInfo });
   }
 
