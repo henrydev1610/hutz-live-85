@@ -20,6 +20,71 @@ const ParticipantVideoContainer: React.FC<ParticipantVideoContainerProps> = ({
   // Use unified video creation hook
   const { createVideoElementUnified } = useUnifiedVideoCreation();
 
+  // 🌉 PONTE STREAM-TO-COMPONENT: Listener para eventos de stream
+  React.useEffect(() => {
+    const handleStreamReceived = (event: CustomEvent) => {
+      const { participantId: receivedParticipantId, stream: receivedStream } = event.detail;
+      
+      console.log(`🌉 PARTICIPANT CONTAINER: Stream event received for ${receivedParticipantId}`, {
+        targetParticipant: participant.id,
+        isForThisParticipant: receivedParticipantId === participant.id,
+        hasStream: !!receivedStream,
+        streamId: receivedStream?.id
+      });
+      
+      if (receivedParticipantId === participant.id && receivedStream) {
+        const container = document.getElementById(containerId);
+        if (container) {
+          console.log(`🎯 BRIDGE: Applying stream directly to container for ${participant.id}`);
+          
+          // Remover vídeo existente
+          const existingVideo = container.querySelector('video');
+          if (existingVideo) {
+            existingVideo.remove();
+          }
+          
+          // Criar novo elemento de vídeo
+          const video = document.createElement('video');
+          video.autoplay = true;
+          video.playsInline = true;
+          video.muted = true;
+          video.controls = false;
+          video.className = 'w-full h-full object-cover absolute inset-0 z-10';
+          video.style.cssText = `
+            display: block !important;
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            z-index: 10 !important;
+          `;
+          
+          video.srcObject = receivedStream;
+          container.appendChild(video);
+          
+          // Tentar reproduzir
+          video.play().then(() => {
+            console.log(`✅ BRIDGE: Video playing via event for ${participant.id}`);
+          }).catch(err => {
+            console.log(`⚠️ BRIDGE: Play failed via event for ${participant.id}:`, err);
+          });
+        }
+      }
+    };
+
+    const eventName = `stream-received-${participant.id}`;
+    window.addEventListener(eventName, handleStreamReceived as EventListener);
+    
+    console.log(`🎧 BRIDGE: Listening for ${eventName}`);
+    
+    return () => {
+      window.removeEventListener(eventName, handleStreamReceived as EventListener);
+      console.log(`🔇 BRIDGE: Cleanup listener for ${eventName}`);
+    };
+  }, [participant.id, containerId]);
+
   // Video health monitoring callbacks
   const handleVideoLost = useCallback(async (participantId: string) => {
     console.error('💔 Video lost detected for:', participantId);

@@ -81,6 +81,18 @@ export class UnifiedWebRTCManager {
       console.log(`🎥 UNIFIED: Stream received from ${participantId}`);
       this.updateConnectionMetrics(participantId, { streamReceived: true });
       this.callbacksManager.triggerStreamCallback(participantId, stream);
+      
+      // 🚀 PONTE STREAM-TO-COMPONENT: Disparar evento customizado
+      console.log(`🌉 BRIDGE: Dispatching stream-received event for ${participantId}`);
+      window.dispatchEvent(new CustomEvent(`stream-received-${participantId}`, {
+        detail: { 
+          participantId, 
+          stream,
+          timestamp: Date.now(),
+          streamId: stream.id,
+          tracks: stream.getTracks().length
+        }
+      }));
     });
 
     this.connectionHandler.setParticipantJoinCallback((participantId) => {

@@ -23,6 +23,71 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
   const containerId = `unified-video-${participant.id}`;
   const isMobile = participant.isMobile ?? detectMobileAggressively();
 
+  // 🌉 PONTE STREAM-TO-COMPONENT: Listener para eventos de stream
+  useEffect(() => {
+    const handleStreamReceived = (event: CustomEvent) => {
+      const { participantId: receivedParticipantId, stream: receivedStream } = event.detail;
+      
+      console.log(`🌉 UNIFIED CONTAINER: Stream event received for ${receivedParticipantId}`, {
+        targetParticipant: participant.id,
+        isForThisParticipant: receivedParticipantId === participant.id,
+        hasStream: !!receivedStream,
+        streamId: receivedStream?.id
+      });
+      
+      if (receivedParticipantId === participant.id && receivedStream && containerRef.current) {
+        console.log(`🎯 UNIFIED BRIDGE: Applying stream directly via event for ${participant.id}`);
+        
+        // Remover vídeo existente
+        const existingVideo = containerRef.current.querySelector('video');
+        if (existingVideo) {
+          existingVideo.remove();
+        }
+        
+        // Criar novo elemento de vídeo
+        const video = document.createElement('video');
+        video.autoplay = true;
+        video.playsInline = true;
+        video.muted = true;
+        video.controls = false;
+        video.className = 'w-full h-full object-cover absolute inset-0 z-10';
+        video.style.cssText = `
+          display: block !important;
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: cover !important;
+          position: absolute !important;
+          top: 0 !important;
+          left: 0 !important;
+          z-index: 10 !important;
+        `;
+        
+        video.srcObject = receivedStream;
+        containerRef.current.appendChild(video);
+        
+        // Tentar reproduzir
+        video.play().then(() => {
+          console.log(`✅ UNIFIED BRIDGE: Video playing via event for ${participant.id}`);
+          setIsVideoReady(true);
+          setError(null);
+        }).catch(err => {
+          console.log(`⚠️ UNIFIED BRIDGE: Play failed via event for ${participant.id}:`, err);
+          setError('Falha na reprodução via evento');
+        });
+      }
+    };
+
+    const eventName = `stream-received-${participant.id}`;
+    window.addEventListener(eventName, handleStreamReceived as EventListener);
+    
+    console.log(`🎧 UNIFIED BRIDGE: Listening for ${eventName}`);
+    
+    return () => {
+      window.removeEventListener(eventName, handleStreamReceived as EventListener);
+      console.log(`🔇 UNIFIED BRIDGE: Cleanup listener for ${eventName}`);
+    };
+  }, [participant.id]);
+
   // Main video creation effect
   useEffect(() => {
     if (!stream || !containerRef.current) {
