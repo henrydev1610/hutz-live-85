@@ -62,6 +62,71 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   const streamRecoveryAttempts = useRef<{[key: string]: number}>({});
   const MAX_RECOVERY_ATTEMPTS = 3;
 
+  // 🌉 PONTE STREAM-TO-COMPONENT: Listeners para eventos de stream
+  useEffect(() => {
+    const handleStreamReceived = (event: CustomEvent) => {
+      const { participantId: receivedParticipantId, stream: receivedStream } = event.detail;
+      
+      console.log(`🌉 PARTICIPANT GRID: Stream event received for ${receivedParticipantId}`, {
+        hasStream: !!receivedStream,
+        streamId: receivedStream?.id,
+        tracks: receivedStream?.getTracks().length
+      });
+      
+      if (receivedParticipantId && receivedStream) {
+        const container = videoRefs.current[receivedParticipantId];
+        if (container) {
+          console.log(`🎯 GRID BRIDGE: Applying stream directly to container for ${receivedParticipantId}`);
+          
+          // Remover vídeo existente
+          const existingVideo = container.querySelector('video');
+          if (existingVideo) {
+            existingVideo.remove();
+          }
+          
+          // Criar novo elemento de vídeo
+          const video = document.createElement('video');
+          video.autoplay = true;
+          video.playsInline = true;
+          video.muted = true;
+          video.controls = false;
+          video.className = 'w-full h-full object-cover';
+          video.style.cssText = `
+            display: block !important;
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+          `;
+          
+          video.srcObject = receivedStream;
+          container.appendChild(video);
+          
+          // Tentar reproduzir
+          video.play().then(() => {
+            console.log(`✅ GRID BRIDGE: Video playing via event for ${receivedParticipantId}`);
+          }).catch(err => {
+            console.log(`⚠️ GRID BRIDGE: Play failed via event for ${receivedParticipantId}:`, err);
+          });
+        }
+      }
+    };
+
+    // Escutar eventos de stream para todos os participantes
+    participants.forEach(participant => {
+      const eventName = `stream-received-${participant.id}`;
+      window.addEventListener(eventName, handleStreamReceived as EventListener);
+      console.log(`🎧 GRID BRIDGE: Listening for ${eventName}`);
+    });
+    
+    return () => {
+      participants.forEach(participant => {
+        const eventName = `stream-received-${participant.id}`;
+        window.removeEventListener(eventName, handleStreamReceived as EventListener);
+        console.log(`🔇 GRID BRIDGE: Cleanup listener for ${eventName}`);
+      });
+    };
+  }, [participants]);
+
   // Enhanced broadcast channel listener for better stream reception
   useEffect(() => {
     if (!sessionId) return;
