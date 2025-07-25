@@ -147,6 +147,12 @@ export class UnifiedWebRTCManager {
 
       if (this.localStream) {
         await this.notifyLocalStream();
+        
+        // CORREÇÃO: Iniciar handshake WebRTC automaticamente após notificar stream
+        console.log(`🤝 Iniciando handshake WebRTC automático para participante: ${this.participantId}`);
+        await this.connectionHandler.initiateCallWithRetry('host');
+        this.updateConnectionState('webrtc', 'connecting');
+        console.log(`✅ Handshake WebRTC iniciado com sucesso`);
       } else {
         throw new Error('Stream was lost during WebRTC initialization');
       }

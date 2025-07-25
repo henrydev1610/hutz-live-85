@@ -281,6 +281,17 @@ export class ConnectionHandler {
     // FASE 3: Verificar se a conexão peer existe e está em bom estado
     const peerConnection = this.createPeerConnection(participantId);
 
+    // CORREÇÃO: Garantir que tracks do localStream são adicionados antes da oferta
+    const localStream = this.getLocalStream?.();
+    if (localStream) {
+      console.log(`🎥 Adicionando tracks do stream local ao peer connection para: ${participantId}`);
+      localStream.getTracks().forEach(track => {
+        console.log(`📹 Adicionando track: ${track.kind} (${track.label}) para: ${participantId}`);
+        peerConnection.addTrack(track, localStream);
+      });
+      console.log(`✅ ${localStream.getTracks().length} tracks adicionados ao peer connection`);
+    }
+
     try {
       // FASE 3: Melhorar criação de oferta com mais logs
       console.log(`📝 Creating offer for: ${participantId}`);
