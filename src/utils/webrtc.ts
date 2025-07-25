@@ -7,17 +7,17 @@ let currentSessionId: string | null = null;
 
 export const initHostWebRTC = async (sessionId: string) => {
   try {
-    console.log('🚀 Initializing host WebRTC for session:', sessionId);
+    console.log('🚀 FASE 1: Initializing host WebRTC for session:', sessionId);
     
     // Verificar se já existe manager para mesma sessão
     if (webrtcManager && currentSessionId === sessionId) {
-      console.log('♻️ Reusing existing WebRTC manager for same session:', sessionId);
+      console.log('♻️ FASE 1: Reusing existing WebRTC manager for same session:', sessionId);
       return { webrtc: webrtcManager };
     }
     
     // Cleanup mais agressivo para evitar relay duplicado
     if (webrtcManager) {
-      console.log('🧹 Cleaning up existing WebRTC manager');
+      console.log('🧹 FASE 1: Cleaning up existing WebRTC manager');
       webrtcManager.cleanup();
       webrtcManager = null;
       currentSessionId = null;
@@ -27,14 +27,24 @@ export const initHostWebRTC = async (sessionId: string) => {
     }
     
     // Criar nova instância com identificação única
+    console.log('🔧 FASE 1: Creating new UnifiedWebRTCManager instance');
     webrtcManager = new UnifiedWebRTCManager();
     currentSessionId = sessionId;
+    
+    console.log('🎯 FASE 1: Initializing as host...');
     await webrtcManager.initializeAsHost(sessionId);
     
+    // CRITICAL FIX: Verificar se manager foi armazenado corretamente
+    if (!webrtcManager) {
+      console.error('❌ FASE 1: webrtcManager is null after initialization!');
+      throw new Error('WebRTC manager initialization failed');
+    }
+    
+    console.log('✅ FASE 1: Host WebRTC initialized successfully, manager stored:', !!webrtcManager);
     return { webrtc: webrtcManager };
     
   } catch (error) {
-    console.error('Failed to initialize host WebRTC:', error);
+    console.error('❌ FASE 1: Failed to initialize host WebRTC:', error);
     // Em caso de erro, garantir limpeza
     if (webrtcManager) {
       webrtcManager.cleanup();
@@ -106,6 +116,7 @@ export const setParticipantJoinCallback = (callback: (participantId: string) => 
 };
 
 export const getWebRTCManager = () => {
+  console.log('🔍 FASE 1: getWebRTCManager called, manager exists:', !!webrtcManager, 'sessionId:', currentSessionId);
   return webrtcManager;
 };
 

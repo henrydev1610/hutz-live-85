@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
-import { initHostWebRTC } from '@/utils/webrtc';
+import { initHostWebRTC, getWebRTCManager } from '@/utils/webrtc';
 
 interface UseLivePageEffectsProps {
   sessionId: string | null;
@@ -85,13 +85,27 @@ export const useLivePageEffects = ({
         }
       });
 
-      // Initialize WebRTC with enhanced logging
+      // FASE 1: Initialize WebRTC with enhanced debug logging
+      console.log('🚀 FASE 1: HOST EFFECTS: Starting WebRTC initialization...');
       initHostWebRTC(sessionId).then(result => {
         if (result && result.webrtc) {
-          console.log('✅ HOST: WebRTC initialized successfully');
+          console.log('✅ FASE 1: HOST EFFECTS: WebRTC initialized successfully');
+          
+          // FASE 1: Verificar se o manager está disponível via getWebRTCManager
+          const verifyManager = () => {
+            const manager = getWebRTCManager();
+            console.log('🔍 FASE 1: HOST EFFECTS: Manager verification:', !!manager);
+            return manager;
+          };
+          
+          const manager = verifyManager();
+          if (!manager) {
+            console.error('❌ FASE 1: HOST EFFECTS: Manager verification failed!');
+            throw new Error('WebRTC manager not accessible after initialization');
+          }
           
           result.webrtc.setOnStreamCallback((participantId, stream) => {
-            console.log('🎥 HOST: RECEIVED STREAM from:', participantId, {
+            console.log('🎥 FASE 3: HOST EFFECTS: RECEIVED STREAM from:', participantId, {
               streamId: stream.id,
               trackCount: stream.getTracks().length,
               videoTracks: stream.getVideoTracks().length,
@@ -102,17 +116,19 @@ export const useLivePageEffects = ({
             
             // Update transmission immediately
             setTimeout(() => {
-              console.log('🔄 HOST: Updating transmission after stream received');
+              console.log('🔄 FASE 3: HOST EFFECTS: Updating transmission after stream received');
               updateTransmissionParticipants();
             }, 200);
           });
           
           result.webrtc.setOnParticipantJoinCallback((participantId) => {
-            console.log('👤 HOST: PARTICIPANT JOIN via WebRTC:', participantId);
+            console.log('👤 FASE 3: HOST EFFECTS: PARTICIPANT JOIN via WebRTC:', participantId);
             handleParticipantJoin(participantId);
           });
+          
+          console.log('✅ FASE 1: HOST EFFECTS: All callbacks set successfully');
         } else {
-          console.error('❌ HOST: Failed to initialize WebRTC');
+          console.error('❌ FASE 1: HOST EFFECTS: Failed to initialize WebRTC');
           
           toast({
             title: "Erro de inicialização",
@@ -121,7 +137,7 @@ export const useLivePageEffects = ({
           });
         }
       }).catch(error => {
-        console.error('❌ HOST: WebRTC initialization error:', error);
+        console.error('❌ FASE 1: HOST EFFECTS: WebRTC initialization error:', error);
         
         toast({
           title: "Erro WebRTC",

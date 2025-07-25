@@ -78,12 +78,13 @@ export class UnifiedWebRTCManager {
     this.callbacksManager.setConnectionHandler(this.connectionHandler);
 
     this.connectionHandler.setStreamCallback((participantId, stream) => {
-      console.log(`🎥 UNIFIED: Stream received from ${participantId}`);
+      console.log(`🎥 FASE 3: Stream received from ${participantId}`);
       this.updateConnectionMetrics(participantId, { streamReceived: true });
+      this.updateConnectionState('webrtc', 'connected');
       this.callbacksManager.triggerStreamCallback(participantId, stream);
       
       // 🚀 PONTE STREAM-TO-COMPONENT: Disparar evento customizado
-      console.log(`🌉 BRIDGE: Dispatching stream-received event for ${participantId}`);
+      console.log(`🌉 FASE 3: Dispatching stream-received event for ${participantId}`);
       window.dispatchEvent(new CustomEvent(`stream-received-${participantId}`, {
         detail: { 
           participantId, 
@@ -96,9 +97,19 @@ export class UnifiedWebRTCManager {
     });
 
     this.connectionHandler.setParticipantJoinCallback((participantId) => {
-      console.log(`👤 UNIFIED: Participant ${participantId} joined`);
+      console.log(`👤 FASE 3: Participant ${participantId} joined`);
       this.updateConnectionMetrics(participantId, { joined: true });
       this.callbacksManager.triggerParticipantJoinCallback(participantId);
+      
+      // FASE 2: Auto-iniciar handshake quando participante se conecta (para host)
+      if (this.isHost && participantId !== 'host') {
+        console.log(`🤝 FASE 2: Auto-initiating handshake with new participant ${participantId}`);
+        setTimeout(() => {
+          this.connectionHandler.initiateHandshake(participantId).catch(error => {
+            console.error(`❌ FASE 2: Failed to auto-handshake with ${participantId}:`, error);
+          });
+        }, 1000);
+      }
     });
   }
 
@@ -178,7 +189,7 @@ export class UnifiedWebRTCManager {
   }
 
   async connectToHost(): Promise<void> {
-    console.log('🔗 UNIFIED: Attempting to connect to host');
+    console.log('🔗 FASE 2: Attempting to connect to host with auto-handshake');
     
     if (!this.localStream) {
       throw new Error('No local stream available for host connection');
@@ -186,13 +197,16 @@ export class UnifiedWebRTCManager {
 
     try {
       const hostId = 'host';
-      console.log(`🎯 Initiating connection to host: ${hostId}`);
+      console.log(`🎯 FASE 2: Initiating connection to host: ${hostId}`);
       
-      // Use the connection handler's public method
-      const peerConnection = this.connectionHandler.createPeerConnection(hostId);
-      console.log('✅ Successfully created connection to host');
+      // FASE 2: Usar novo método de handshake automático
+      await this.connectionHandler.initiateHandshake(hostId);
+      this.updateConnectionState('webrtc', 'connecting');
+      
+      console.log('✅ FASE 2: Successfully initiated handshake with host');
     } catch (error) {
-      console.error('❌ Failed to connect to host:', error);
+      console.error('❌ FASE 2: Failed to connect to host:', error);
+      this.updateConnectionState('webrtc', 'failed');
       throw error;
     }
   }

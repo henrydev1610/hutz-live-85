@@ -27,15 +27,41 @@ const ConnectionHealthMonitor: React.FC<ConnectionHealthMonitorProps> = ({ isVis
   useEffect(() => {
     if (!isVisible) return;
 
-    const interval = setInterval(() => {
+    console.log('🔍 FASE 4: Connection Health Monitor starting...');
+    
+    const updateStatus = () => {
       const webrtcManager = getWebRTCManager();
+      console.log('🔍 FASE 4: Monitor update - manager exists:', !!webrtcManager);
+      
       if (webrtcManager) {
-        setConnectionState(webrtcManager.getConnectionState());
-        setMetrics(webrtcManager.getConnectionMetrics());
+        const state = webrtcManager.getConnectionState();
+        const metrics = webrtcManager.getConnectionMetrics();
+        
+        console.log('🔍 FASE 4: Connection state:', state);
+        console.log('🔍 FASE 4: Connection metrics:', Array.from(metrics.entries()));
+        
+        setConnectionState(state);
+        setMetrics(metrics);
+      } else {
+        console.warn('⚠️ FASE 4: No WebRTC manager available for monitoring');
+        setConnectionState({
+          websocket: 'disconnected',
+          webrtc: 'disconnected',
+          overall: 'disconnected'
+        });
+        setMetrics(new Map());
       }
-    }, 1000);
+    };
 
-    return () => clearInterval(interval);
+    // Update immediately
+    updateStatus();
+    
+    const interval = setInterval(updateStatus, 2000); // Update every 2 seconds
+
+    return () => {
+      console.log('🔍 FASE 4: Connection Health Monitor stopping...');
+      clearInterval(interval);
+    };
   }, [isVisible]);
 
   const getStatusColor = (status: string) => {

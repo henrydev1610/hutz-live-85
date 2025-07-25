@@ -28,6 +28,19 @@ export class ConnectionHandler {
     console.log('👤 ConnectionHandler: Participant join callback set');
   }
 
+  // FASE 2: Novo método para iniciar handshake automático
+  async initiateHandshake(participantId: string): Promise<void> {
+    console.log(`🤝 FASE 2: Auto-initiating handshake with ${participantId}`);
+    try {
+      const peerConnection = this.createPeerConnection(participantId);
+      await this.initiateCall(participantId);
+      console.log(`✅ FASE 2: Handshake initiated successfully with ${participantId}`);
+    } catch (error) {
+      console.error(`❌ FASE 2: Failed to initiate handshake with ${participantId}:`, error);
+      throw error;
+    }
+  }
+
   createPeerConnection(participantId: string): RTCPeerConnection {
     console.log(`🔗 Creating peer connection for: ${participantId}`);
 
@@ -262,7 +275,7 @@ export class ConnectionHandler {
     }
   }
 
-  private async initiateCall(participantId: string): Promise<void> {
+  async initiateCall(participantId: string): Promise<void> {
     console.log(`📞 Initiating call to: ${participantId}`);
 
     // FASE 3: Verificar se a conexão peer existe e está em bom estado
