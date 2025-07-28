@@ -257,7 +257,47 @@ export class UnifiedWebRTCManager {
   }
 
   getConnectionState(): ConnectionState {
-    return this.connectionState;
+    // FASE 2: Sincronizar com estado do WebSocket
+    try {
+      const wsConnected = unifiedWebSocketService.isConnected();
+      
+      // Atualizar estado WebSocket baseado no serviço real
+      if (wsConnected && this.connectionState.websocket !== 'connected') {
+        this.connectionState.websocket = 'connected';
+      } else if (!wsConnected && this.connectionState.websocket === 'connected') {
+        this.connectionState.websocket = 'disconnected';
+      }
+      
+      // FASE 3: Lógica híbrida para hosts
+      if (this.isHost) {
+        // Para host: conectado se WebSocket conectado (mesmo sem WebRTC P2P)
+        if (wsConnected) {
+          this.connectionState.webrtc = this.peerConnections.size > 0 ? 'connected' : 'connecting';
+          this.connectionState.overall = 'connected';
+        }
+      } else {
+        // Para participante: precisa WebSocket + WebRTC
+        this.updateOverallState();
+      }
+      
+      console.log('🔍 FASE 2: Connection state sync:', this.connectionState);
+      return this.connectionState;
+    } catch (error) {
+      console.error('❌ FASE 2: Error getting connection state:', error);
+      return this.connectionState;
+    }
+  }
+
+  private updateOverallState(): void {
+    if (this.connectionState.websocket === 'connected' && this.connectionState.webrtc === 'connected') {
+      this.connectionState.overall = 'connected';
+    } else if (this.connectionState.websocket === 'failed' || this.connectionState.webrtc === 'failed') {
+      this.connectionState.overall = 'failed';
+    } else if (this.connectionState.websocket === 'connecting' || this.connectionState.webrtc === 'connecting') {
+      this.connectionState.overall = 'connecting';
+    } else {
+      this.connectionState.overall = 'disconnected';
+    }
   }
 
   getConnectionMetrics(): Map<string, any> {
@@ -306,18 +346,24 @@ export class UnifiedWebRTCManager {
   private updateConnectionState(type: keyof ConnectionState, state: ConnectionState[keyof ConnectionState]): void {
     this.connectionState[type] = state;
     
-    // Update overall state
-    if (this.connectionState.websocket === 'connected' && this.connectionState.webrtc === 'connected') {
-      this.connectionState.overall = 'connected';
-    } else if (this.connectionState.websocket === 'failed' || this.connectionState.webrtc === 'failed') {
-      this.connectionState.overall = 'failed';
-    } else if (this.connectionState.websocket === 'connecting' || this.connectionState.webrtc === 'connecting') {
-      this.connectionState.overall = 'connecting';
+    // FASE 2: Lógica específica para hosts vs participantes
+    if (this.isHost) {
+      // Para host: conectado se WebSocket conectado
+      if (this.connectionState.websocket === 'connected') {
+        this.connectionState.overall = 'connected';
+        // WebRTC para host é "aguardando participantes" ou "conectado"
+        if (this.connectionState.webrtc === 'disconnected' && this.webrtcReady) {
+          this.connectionState.webrtc = 'connecting'; // Aguardando participantes
+        }
+      } else {
+        this.updateOverallState();
+      }
     } else {
-      this.connectionState.overall = 'disconnected';
+      // Para participante: precisa WebSocket + WebRTC
+      this.updateOverallState();
     }
 
-    console.log(`🔄 Connection state updated: ${type} = ${state}, overall = ${this.connectionState.overall}`);
+    console.log(`🔄 FASE 2: State updated: ${type} = ${state}, overall = ${this.connectionState.overall} (Host: ${this.isHost})`);
   }
 
   private updateConnectionMetrics(participantId: string, metrics: any): void {

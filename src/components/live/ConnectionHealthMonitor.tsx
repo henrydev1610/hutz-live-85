@@ -34,16 +34,47 @@ const ConnectionHealthMonitor: React.FC<ConnectionHealthMonitorProps> = ({ isVis
       console.log('🔍 FASE 4: Monitor update - manager exists:', !!webrtcManager);
       
       if (webrtcManager) {
-        const state = webrtcManager.getConnectionState();
-        const metrics = webrtcManager.getConnectionMetrics();
-        
-        console.log('🔍 FASE 4: Connection state:', state);
-        console.log('🔍 FASE 4: Connection metrics:', Array.from(metrics.entries()));
-        
-        setConnectionState(state);
-        setMetrics(metrics);
+        try {
+          const state = webrtcManager.getConnectionState();
+          const metrics = webrtcManager.getConnectionMetrics();
+          
+          console.log('🔍 FASE 4: Connection state:', state);
+          console.log('🔍 FASE 4: Connection metrics:', Array.from(metrics.entries()));
+          
+          setConnectionState(state);
+          setMetrics(metrics);
+        } catch (error) {
+          console.error('❌ FASE 4: Error getting manager state:', error);
+          // Fallback para estado desconectado se manager está corrompido
+          setConnectionState({
+            websocket: 'disconnected',
+            webrtc: 'disconnected',
+            overall: 'disconnected'
+          });
+          setMetrics(new Map());
+        }
       } else {
         console.warn('⚠️ FASE 4: No WebRTC manager available for monitoring');
+        
+        // FASE 4: Fallback - tentar reconectar ou verificar estado externo
+        try {
+          // Importar dinâmicamente o serviço WebSocket para verificar estado
+          import('@/services/UnifiedWebSocketService').then(({ default: wsService }) => {
+            const wsState = wsService.getConnectionState();
+            console.log('🔍 FASE 4: WebSocket fallback state:', wsState);
+            
+            setConnectionState({
+              websocket: wsState.websocket as any,
+              webrtc: 'disconnected',
+              overall: wsState.connected ? 'connecting' : 'disconnected'
+            });
+          }).catch(err => {
+            console.error('❌ FASE 4: Fallback failed:', err);
+          });
+        } catch (error) {
+          console.error('❌ FASE 4: Fallback state check failed:', error);
+        }
+        
         setConnectionState({
           websocket: 'disconnected',
           webrtc: 'disconnected',

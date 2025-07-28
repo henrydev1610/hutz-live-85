@@ -493,6 +493,15 @@ class UnifiedWebSocketService {
     return this.isConnected() && !this.isCircuitOpen;
   }
 
+  // FASE 2: Método para compatibilidade com WebRTC Manager
+  getConnectionState(): { websocket: string; connected: boolean } {
+    const connected = this.isConnected();
+    return {
+      websocket: connected ? 'connected' : this.metrics.status,
+      connected
+    };
+  }
+
   private isMobileDevice(): boolean {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   }

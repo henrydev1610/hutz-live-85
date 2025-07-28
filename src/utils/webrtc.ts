@@ -117,7 +117,28 @@ export const setParticipantJoinCallback = (callback: (participantId: string) => 
 
 export const getWebRTCManager = () => {
   console.log('🔍 FASE 1: getWebRTCManager called, manager exists:', !!webrtcManager, 'sessionId:', currentSessionId);
-  return webrtcManager;
+  
+  // FASE 1: Verificação de saúde do manager
+  if (webrtcManager) {
+    try {
+      const state = webrtcManager.getConnectionState();
+      console.log('🔍 FASE 1: Manager health check - state:', state);
+      
+      // Verificar se o manager está em estado consistente
+      if (!state) {
+        console.warn('⚠️ FASE 1: Manager exists but has no state - possibly corrupted');
+        return null;
+      }
+      
+      return webrtcManager;
+    } catch (error) {
+      console.error('❌ FASE 1: Manager health check failed:', error);
+      return null;
+    }
+  }
+  
+  console.warn('⚠️ FASE 1: No WebRTC manager available');
+  return null;
 };
 
 export const cleanupWebRTC = () => {
