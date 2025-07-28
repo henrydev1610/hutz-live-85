@@ -83,9 +83,15 @@ export const useParticipantStreams = ({
   }, [updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast]);
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
-    console.log('🎬 MOBILE-CRITICAL: Handling participant stream for:', participantId);
+    console.log('🎬 STREAM-CRÍTICO: Processando stream do participante:', participantId);
     
-    // Force immediate participant state update for mobile streams
+    // VISUAL LOG: Toast quando stream é recebido no hook
+    toast({
+      title: "🎥 Stream Recebido",
+      description: `Stream de ${participantId.substring(0, 8)} sendo processado`,
+    });
+    
+    // Atualização imediata do participante para streams móveis
     setParticipantList(prev => {
       const updated = prev.map(p => 
         p.id === participantId 
@@ -100,7 +106,7 @@ export const useParticipantStreams = ({
           : p
       );
       
-      // If participant doesn't exist, add it
+      // Se participante não existe, adicionar
       if (!updated.find(p => p.id === participantId)) {
         updated.push({
           id: participantId,
@@ -113,33 +119,61 @@ export const useParticipantStreams = ({
           connectedAt: Date.now(),
           isMobile: true
         });
+        
+        // VISUAL LOG: Toast quando novo participante é adicionado
+        toast({
+          title: "👤 Novo Participante",
+          description: `${participantId.substring(0, 8)} adicionado à lista`,
+        });
       }
       
-      console.log('🔄 MOBILE-STATE: Updated participant list for:', participantId);
+      console.log('🔄 STREAM-CRÍTICO: Lista de participantes atualizada para:', participantId);
       return updated;
     });
     
     if (!validateStream(stream, participantId)) {
-      console.warn('❌ Stream validation failed for:', participantId);
+      console.warn('❌ STREAM-CRÍTICO: Validação de stream falhou para:', participantId);
+      toast({
+        title: "❌ Stream Inválido",
+        description: `Stream de ${participantId.substring(0, 8)} não passou na validação`,
+        variant: "destructive"
+      });
       return;
     }
 
-    // Force immediate stream state update
+    // Atualização forçada do estado do stream
     setParticipantStreams(prev => {
       const updated = { ...prev, [participantId]: stream };
-      console.log('🔄 MOBILE-STREAM: Updated streams for:', participantId);
+      console.log('🔄 STREAM-CRÍTICO: Streams atualizados para:', participantId);
+      
+      // VISUAL LOG: Toast quando stream é adicionado ao estado
+      toast({
+        title: "📹 Stream Adicionado",
+        description: `Stream de ${participantId.substring(0, 8)} adicionado ao estado`,
+      });
+      
       return updated;
     });
 
-    // Try immediate processing first
+    // Tentar processamento imediato primeiro
     const success = await processStreamSafely(participantId, stream);
     
     if (!success) {
-      // Add to buffer for retry
-      console.log('📦 Adding to buffer for retry:', participantId);
+      console.log('📦 STREAM-CRÍTICO: Adicionando ao buffer para retry:', participantId);
       addToBuffer(participantId, stream);
+      
+      toast({
+        title: "🔄 Stream em Buffer",
+        description: `Stream de ${participantId.substring(0, 8)} será reprocessado`,
+      });
+    } else {
+      // VISUAL LOG: Toast quando processamento é bem-sucedido
+      toast({
+        title: "✅ Stream Processado",
+        description: `Stream de ${participantId.substring(0, 8)} processado com sucesso`,
+      });
     }
-  }, [validateStream, processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams]);
+  }, [validateStream, processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams, toast]);
 
   // Process buffer periodically
   useEffect(() => {

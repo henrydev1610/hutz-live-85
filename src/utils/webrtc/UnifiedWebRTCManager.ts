@@ -124,15 +124,36 @@ export class UnifiedWebRTCManager {
     this.participantId = participantId;
     this.isHost = false;
 
+    // CRÍTICO: Aguardar que callbacks estejam prontos ANTES de qualquer inicialização
+    console.log(`⚙️ CALLBACK-CRÍTICO: Verificando callbacks antes da inicialização`);
+    await new Promise<void>(resolve => {
+      if (this.callbacksManager) {
+        console.log(`✅ CALLBACK-CRÍTICO: Callbacks já disponíveis`);
+        resolve();
+      } else {
+        console.log(`⏳ CALLBACK-CRÍTICO: Aguardando callbacks ficarem disponíveis...`);
+        const checkCallbacks = () => {
+          if (this.callbacksManager) {
+            console.log(`✅ CALLBACK-CRÍTICO: Callbacks agora disponíveis`);
+            resolve();
+          } else {
+            setTimeout(checkCallbacks, 100);
+          }
+        };
+        checkCallbacks();
+      }
+    });
+
     try {
       if (stream) {
+        console.log(`📹 CALLBACK-CRÍTICO: Definindo stream local com callbacks prontos`);
         this.localStream = stream;
         const inactiveTracks = stream.getTracks().filter(track => track.readyState !== 'live');
         if (inactiveTracks.length > 0) {
-          console.warn(`⚠️ Found inactive tracks in stream:`, inactiveTracks);
+          console.warn(`⚠️ CALLBACK-CRÍTICO: Tracks inativos encontrados:`, inactiveTracks);
         }
       } else {
-        throw new Error('Stream is required for participant WebRTC initialization');
+        throw new Error('Stream é obrigatório para inicialização WebRTC do participante');
       }
 
       this.updateConnectionState('websocket', 'connecting');
@@ -143,12 +164,11 @@ export class UnifiedWebRTCManager {
       }
 
       await unifiedWebSocketService.connect();
-      console.log(`🚪 Aguardando confirmação de entrada na sala: ${sessionId}`);
+      console.log(`🚪 CALLBACK-CRÍTICO: Aguardando confirmação de entrada na sala: ${sessionId}`);
       await unifiedWebSocketService.joinRoom(sessionId, participantId);
       
-      // CORREÇÃO: Marcar como pronto para WebRTC apenas após confirmação de entrada na sala
       this.webrtcReady = true;
-      console.log(`✅ Confirmação de entrada na sala recebida. WebRTC pronto para iniciar.`);
+      console.log(`✅ CALLBACK-CRÍTICO: Confirmação de entrada recebida, WebRTC pronto`);
 
       this.setupWebSocketCallbacks();
       this.updateConnectionState('websocket', 'connected');
@@ -156,20 +176,23 @@ export class UnifiedWebRTCManager {
       if (this.localStream) {
         await this.notifyLocalStream();
         
-        // CORREÇÃO: Aguardar confirmação de sala antes de iniciar handshake WebRTC
+        // CRÍTICO: Aguardar estabilização antes do handshake
+        console.log('⏳ CALLBACK-CRÍTICO: Aguardando estabilização antes do WebRTC...');
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
         if (this.webrtcReady) {
-          console.log(`🤝 Iniciando handshake WebRTC automático para participante: ${this.participantId}`);
+          console.log(`🤝 CALLBACK-CRÍTICO: Iniciando handshake WebRTC com callbacks prontos`);
           await this.connectionHandler.initiateCallWithRetry('host');
           this.updateConnectionState('webrtc', 'connecting');
-          console.log(`✅ Handshake WebRTC iniciado com sucesso`);
+          console.log(`✅ CALLBACK-CRÍTICO: Handshake WebRTC iniciado com sucesso`);
         } else {
-          console.warn(`⚠️ WebRTC não pode ser iniciado - ainda não confirmado na sala`);
+          console.warn(`⚠️ CALLBACK-CRÍTICO: WebRTC não pode ser iniciado - não confirmado na sala`);
         }
       } else {
-        throw new Error('Stream was lost during WebRTC initialization');
+        throw new Error('Stream foi perdido durante inicialização WebRTC');
       }
     } catch (error) {
-      console.error(`❌ Failed to initialize as participant:`, error);
+      console.error(`❌ CALLBACK-CRÍTICO: Falha na inicialização do participante:`, error);
       this.updateConnectionState('websocket', 'failed');
       this.cleanup();
       throw error;

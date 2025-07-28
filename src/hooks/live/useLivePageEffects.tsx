@@ -105,19 +105,31 @@ export const useLivePageEffects = ({
           }
           
           result.webrtc.setOnStreamCallback((participantId, stream) => {
-            console.log('🎥 FASE 3: HOST EFFECTS: RECEIVED STREAM from:', participantId, {
+            console.log('🎥 HOST-CRÍTICO: STREAM RECEBIDO de:', participantId, {
               streamId: stream.id,
               trackCount: stream.getTracks().length,
               videoTracks: stream.getVideoTracks().length,
               active: stream.active
             });
             
+            // VISUAL LOG: Toast para stream recebido no host
+            toast({
+              title: "🎥 Stream do Participante",
+              description: `Recebido stream de ${participantId.substring(0, 8)}`,
+            });
+            
             handleParticipantStream(participantId, stream);
             
-            // Update transmission immediately
+            // Atualizar transmissão imediatamente
             setTimeout(() => {
-              console.log('🔄 FASE 3: HOST EFFECTS: Updating transmission after stream received');
+              console.log('🔄 HOST-CRÍTICO: Atualizando transmissão após receber stream');
               updateTransmissionParticipants();
+              
+              // VISUAL LOG: Toast para atualização de transmissão
+              toast({
+                title: "📡 Transmissão Atualizada",
+                description: `Participante ${participantId.substring(0, 8)} adicionado à transmissão`,
+              });
             }, 200);
           });
           

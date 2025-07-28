@@ -92,23 +92,42 @@ export class ConnectionHandler {
     };
 
     peerConnection.onconnectionstatechange = () => {
-      console.log(`🔗 WEBRTC CONNECTION: ${participantId} state changed to: ${peerConnection.connectionState}`);
+      console.log(`🔗 CONNECTION-CRÍTICO: ${participantId} mudou para: ${peerConnection.connectionState}`);
+
+      // VISUAL LOG: Toast para mudanças de estado
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('webrtc-state-change', {
+          detail: { 
+            participantId, 
+            state: peerConnection.connectionState,
+            timestamp: Date.now()
+          }
+        }));
+      }
 
       if (peerConnection.connectionState === 'connected') {
-        console.log(`✅ WEBRTC SUCCESS: Peer connection established with: ${participantId}`);
-        // FASE 2: Limpar timeout de oferta ao conectar com sucesso
+        console.log(`✅ CONNECTION-CRÍTICO: Conexão estabelecida com: ${participantId}`);
         this.clearOfferTimeout(participantId);
+        
+        // Notificar UnifiedWebRTCManager sobre conexão estabelecida
+        if (typeof window !== 'undefined' && (window as any).webrtcManager) {
+          try {
+            (window as any).webrtcManager.updateConnectionState('webrtc', 'connected');
+          } catch (error) {
+            console.warn('⚠️ Falha ao atualizar estado no manager:', error);
+          }
+        }
         
         if (this.participantJoinCallback) {
           this.participantJoinCallback(participantId);
         }
       } else if (peerConnection.connectionState === 'failed') {
-        console.log(`❌ WEBRTC FAILED: Peer connection failed with: ${participantId}`);
+        console.log(`❌ CONNECTION-CRÍTICO: Falha na conexão com: ${participantId}`);
         this.handleConnectionFailure(participantId);
       } else if (peerConnection.connectionState === 'connecting') {
-        console.log(`🔄 WEBRTC CONNECTING: Establishing connection with: ${participantId}`);
+        console.log(`🔄 CONNECTION-CRÍTICO: Conectando com: ${participantId}`);
       } else if (peerConnection.connectionState === 'new') {
-        console.log(`🆕 WEBRTC NEW: New connection created for: ${participantId}`);
+        console.log(`🆕 CONNECTION-CRÍTICO: Nova conexão criada para: ${participantId}`);
       }
     };
 
@@ -126,7 +145,7 @@ export class ConnectionHandler {
     };
 
     peerConnection.ontrack = (event) => {
-      console.log(`🎥 MOBILE-CRITICAL: Track received from ${participantId}:`, {
+      console.log(`🎥 TRACK-CRÍTICO: Track recebido de ${participantId}:`, {
         kind: event.track.kind,
         trackId: event.track.id,
         streamCount: event.streams.length,
@@ -135,9 +154,16 @@ export class ConnectionHandler {
         enabled: event.track.enabled
       });
 
+      // VISUAL LOG: Toast quando track é recebido
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('track-received', {
+          detail: { participantId, trackKind: event.track.kind }
+        }));
+      }
+
       if (event.streams && event.streams.length > 0) {
         const stream = event.streams[0];
-        console.log(`📹 MOBILE-CRITICAL: Processing stream from ${participantId}:`, {
+        console.log(`📹 STREAM-CRÍTICO: Processando stream de ${participantId}:`, {
           streamId: stream.id,
           trackCount: stream.getTracks().length,
           videoTracks: stream.getVideoTracks().length,
@@ -145,13 +171,40 @@ export class ConnectionHandler {
           streamActive: stream.active
         });
 
+        // VISUAL LOG: Toast quando stream é processado
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('stream-processed', {
+            detail: { 
+              participantId, 
+              streamId: stream.id,
+              trackCount: stream.getTracks().length
+            }
+          }));
+        }
+
         const triggerCallback = () => {
           if (this.streamCallback) {
-            console.log(`🚀 MOBILE-IMMEDIATE: Triggering stream callback for ${participantId}`);
+            console.log(`🚀 CALLBACK-CRÍTICO: Disparando callback de stream para ${participantId}`);
             try {
               this.streamCallback(participantId, stream);
+              
+              // VISUAL LOG: Toast quando callback é executado
+              if (typeof window !== 'undefined' && window.dispatchEvent) {
+                window.dispatchEvent(new CustomEvent('stream-callback-executed', {
+                  detail: { participantId, success: true }
+                }));
+              }
             } catch (error) {
-              console.error(`❌ Stream callback error for ${participantId}:`, error);
+              console.error(`❌ CALLBACK-CRÍTICO: Erro no callback para ${participantId}:`, error);
+              
+              // VISUAL LOG: Toast quando callback falha
+              if (typeof window !== 'undefined' && window.dispatchEvent) {
+                window.dispatchEvent(new CustomEvent('stream-callback-error', {
+                  detail: { participantId, error: error.message }
+                }));
+              }
+              
+              // Retry callback
               setTimeout(() => {
                 if (this.streamCallback) {
                   this.streamCallback(participantId, stream);
@@ -159,19 +212,20 @@ export class ConnectionHandler {
               }, 50);
             }
           } else {
-            console.error(`❌ MOBILE-CRITICAL: No stream callback set for ${participantId}`);
+            console.error(`❌ CALLBACK-CRÍTICO: Nenhum callback definido para ${participantId}`);
           }
         };
 
+        // Disparo imediato e com retry
         triggerCallback();
         setTimeout(() => triggerCallback(), 100);
         setTimeout(() => triggerCallback(), 500);
 
       } else {
-        console.warn(`⚠️ MOBILE: Track received from ${participantId} but no streams attached`);
+        console.warn(`⚠️ TRACK-CRÍTICO: Track de ${participantId} sem streams anexados`);
         if (event.track) {
           const syntheticStream = new MediaStream([event.track]);
-          console.log(`🔧 MOBILE-FIX: Created synthetic stream for ${participantId}`);
+          console.log(`🔧 STREAM-CRÍTICO: Stream sintético criado para ${participantId}`);
           if (this.streamCallback) {
             this.streamCallback(participantId, syntheticStream);
           }
@@ -276,20 +330,44 @@ export class ConnectionHandler {
   }
 
   async initiateCall(participantId: string): Promise<void> {
-    console.log(`📞 Initiating call to: ${participantId}`);
+    console.log(`📞 CRÍTICO: Iniciando chamada para: ${participantId}`);
 
-    // FASE 3: Verificar se a conexão peer existe e está em bom estado
+    // CRÍTICO: Usar conexão existente ou criar nova
     const peerConnection = this.createPeerConnection(participantId);
 
-    // CORREÇÃO: Garantir que tracks do localStream são adicionados antes da oferta
+    // CORREÇÃO CRÍTICA: Garantir que tracks estão adicionados ANTES da oferta
     const localStream = this.getLocalStream?.();
     if (localStream) {
-      console.log(`🎥 Adicionando tracks do stream local ao peer connection para: ${participantId}`);
-      localStream.getTracks().forEach(track => {
-        console.log(`📹 Adicionando track: ${track.kind} (${track.label}) para: ${participantId}`);
-        peerConnection.addTrack(track, localStream);
-      });
-      console.log(`✅ ${localStream.getTracks().length} tracks adicionados ao peer connection`);
+      console.log(`🎥 CRÍTICO: Verificando e adicionando tracks para: ${participantId}`);
+      
+      // Limpar senders existentes
+      const existingSenders = peerConnection.getSenders();
+      console.log(`🧹 CRÍTICO: Removendo ${existingSenders.length} senders existentes`);
+      for (const sender of existingSenders) {
+        if (sender.track) {
+          await peerConnection.removeTrack(sender);
+        }
+      }
+      
+      // Adicionar tracks do stream local
+      let tracksAdded = 0;
+      for (const track of localStream.getTracks()) {
+        try {
+          peerConnection.addTrack(track, localStream);
+          tracksAdded++;
+          console.log(`📹 CRÍTICO: Track ${track.kind} adicionado para: ${participantId}`);
+        } catch (error) {
+          console.error(`❌ CRÍTICO: Falha ao adicionar track ${track.kind}:`, error);
+        }
+      }
+      
+      console.log(`✅ CRÍTICO: ${tracksAdded} tracks adicionados antes da oferta para: ${participantId}`);
+      
+      if (tracksAdded === 0) {
+        throw new Error(`Nenhum track foi adicionado ao peer connection para ${participantId}`);
+      }
+    } else {
+      console.warn(`⚠️ CRÍTICO: Nenhum stream local disponível para: ${participantId}`);
     }
 
     try {
