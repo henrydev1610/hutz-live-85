@@ -334,31 +334,42 @@ export class ConnectionHandler {
     if (localStream) {
       console.log(`🎥 CRÍTICO: Verificando e adicionando tracks para: ${participantId}`);
       
-      // Limpar senders existentes
+      // Verificar se tracks já foram adicionados
       const existingSenders = peerConnection.getSenders();
-      console.log(`🧹 CRÍTICO: Removendo ${existingSenders.length} senders existentes`);
-      for (const sender of existingSenders) {
-        if (sender.track) {
-          await peerConnection.removeTrack(sender);
-        }
-      }
+      const existingTrackKinds = existingSenders.map(s => s.track?.kind).filter(Boolean);
       
-      // Adicionar tracks do stream local
+      console.log(`🔍 CRÍTICO: Senders existentes: ${existingSenders.length}, Tracks: [${existingTrackKinds.join(', ')}]`);
+      
+      // CORREÇÃO: Apenas adicionar tracks que não existem
       let tracksAdded = 0;
       for (const track of localStream.getTracks()) {
-        try {
-          peerConnection.addTrack(track, localStream);
-          tracksAdded++;
-          console.log(`📹 CRÍTICO: Track ${track.kind} adicionado para: ${participantId}`);
-        } catch (error) {
-          console.error(`❌ CRÍTICO: Falha ao adicionar track ${track.kind}:`, error);
+        const hasExistingSender = existingSenders.some(s => s.track && s.track.kind === track.kind);
+        
+        if (!hasExistingSender) {
+          try {
+            peerConnection.addTrack(track, localStream);
+            tracksAdded++;
+            console.log(`📹 CRÍTICO: Track ${track.kind} adicionado para: ${participantId} (${track.readyState})`);
+            
+            // VISUAL LOG: Toast quando track é adicionado
+            if (typeof window !== 'undefined' && window.dispatchEvent) {
+              window.dispatchEvent(new CustomEvent('track-added-to-pc', {
+                detail: { participantId, trackKind: track.kind, trackId: track.id }
+              }));
+            }
+          } catch (error) {
+            console.error(`❌ CRÍTICO: Falha ao adicionar track ${track.kind}:`, error);
+          }
+        } else {
+          console.log(`♻️ CRÍTICO: Track ${track.kind} já existe para: ${participantId}`);
         }
       }
       
-      console.log(`✅ CRÍTICO: ${tracksAdded} tracks adicionados antes da oferta para: ${participantId}`);
+      const totalSenders = peerConnection.getSenders().length;
+      console.log(`✅ CRÍTICO: ${tracksAdded} novos tracks adicionados, total: ${totalSenders} senders para: ${participantId}`);
       
-      if (tracksAdded === 0) {
-        throw new Error(`Nenhum track foi adicionado ao peer connection para ${participantId}`);
+      if (totalSenders === 0) {
+        throw new Error(`Nenhum track no peer connection para ${participantId}`);
       }
     } else {
       console.warn(`⚠️ CRÍTICO: Nenhum stream local disponível para: ${participantId}`);

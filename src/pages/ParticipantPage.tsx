@@ -308,13 +308,34 @@ const ParticipantPage = () => {
         if (hostId) {
           console.log(`🎯 HOST DETECTED: ${hostId}, initiating handshake`);
           
-          // CRITICAL: Force set stream in WebRTC manager before handshake
+          // CORREÇÃO CRÍTICA: Garantir que stream está definido e válido ANTES do handshake
           if (stream) {
             console.log('📹 CRITICAL: Setting stream in WebRTC manager before handshake');
+            console.log('📹 CRITICAL: Stream validation:', {
+              streamId: stream.id,
+              active: stream.active,
+              videoTracks: stream.getVideoTracks().length,
+              audioTracks: stream.getAudioTracks().length,
+              readyState: stream.getTracks().map(t => t.readyState)
+            });
+            
+            // CRÍTICO: Garantir que tracks estão ativos antes de passar para WebRTC
+            const activeTracks = stream.getTracks().filter(t => t.readyState === 'live');
+            if (activeTracks.length === 0) {
+              console.warn('⚠️ CRITICAL: No active tracks in stream - may cause handshake failure');
+              toast.warning('⚠️ Stream sem tracks ativos - tentando handshake mesmo assim');
+            }
+            
             const { webrtc } = await initParticipantWebRTC(sessionId!, participantId!, stream);
             if (webrtc) {
               try {
+                // CRÍTICO: Definir stream IMEDIATAMENTE após criação do WebRTC
+                console.log('📹 CRITICAL: Force setting localStream IMMEDIATELY');
                 webrtc.setLocalStream(stream);
+                
+                // Aguardar um pouco para estabilização
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
                 await webrtc.connectToHost();
                 toast.success('🤝 Handshake WebRTC iniciado com sucesso!');
               } catch (error) {
@@ -323,6 +344,9 @@ const ParticipantPage = () => {
               }
             }
           } else {
+            console.warn('⚠️ CRITICAL: No stream available for handshake - this will likely fail');
+            toast.warning('⚠️ Sem stream disponível - handshake pode falhar');
+            
             // Fallback without stream
             const success = await connection.initiateCallWithRetry(hostId, 3);
             if (success) {
