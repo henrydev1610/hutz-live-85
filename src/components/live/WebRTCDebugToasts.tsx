@@ -5,12 +5,34 @@ export const WebRTCDebugToasts = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Event listeners para logs visuais do WebRTC
-    const handleTrackReceived = (event: CustomEvent) => {
-      const { participantId, trackKind } = event.detail;
+    // FASE 6: CRÍTICO - Logs visuais detalhados do fluxo WebRTC
+    
+    // Handle participant join events
+    const handleParticipantJoined = (event: CustomEvent) => {
+      const { participantId } = event.detail;
       toast({
-        title: "🎵 Track Recebido",
-        description: `Track ${trackKind} de ${participantId.substring(0, 8)}`,
+        title: "👤 PARTICIPANTE CONECTADO",
+        description: `${participantId} se conectou via WebSocket`,
+        duration: 3000,
+      });
+    };
+    
+    // Handle stream started events
+    const handleStreamStarted = (event: CustomEvent) => {
+      const { participantId, streamInfo } = event.detail;
+      toast({
+        title: "🎥 STREAM INICIADO",
+        description: `${participantId}: Video: ${streamInfo?.hasVideo ? '✅' : '❌'}, Audio: ${streamInfo?.hasAudio ? '✅' : '❌'}`,
+        duration: 3000,
+      });
+    };
+    
+    // Handle track received events
+    const handleTrackReceived = (event: CustomEvent) => {
+      const { participantId } = event.detail;
+      toast({
+        title: "🎵 TRACK RECEBIDO",
+        description: `Stream chegou ao host via WebRTC de ${participantId.substring(0, 8)}`,
         duration: 3000,
       });
     };
@@ -122,21 +144,14 @@ export const WebRTCDebugToasts = () => {
       });
     };
 
-    // Registrar event listeners existentes
-    window.addEventListener('track-received', handleTrackReceived as EventListener);
-    window.addEventListener('stream-processed', handleStreamProcessed as EventListener);
-    window.addEventListener('stream-callback-executed', handleStreamCallbackExecuted as EventListener);
-    window.addEventListener('stream-callback-error', handleStreamCallbackError as EventListener);
+    // Add event listeners
+    window.addEventListener('participant-discovered', handleParticipantJoined as EventListener);
+    window.addEventListener('stream-started', handleStreamStarted as EventListener);
+    window.addEventListener('webrtc-track-received', handleTrackReceived as EventListener);
+    window.addEventListener('webrtc-stream-processed', handleStreamProcessed as EventListener);
     window.addEventListener('webrtc-state-change', handleWebRTCStateChange as EventListener);
-    window.addEventListener('host-stream-received', handleHostStreamReceived as EventListener);
-    window.addEventListener('webrtc-callback-executed', handleWebRTCCallbackExecuted as EventListener);
-    
-    // Registrar novos event listeners
-    window.addEventListener('stream-callback-triggered', handleStreamCallback as EventListener);
-    window.addEventListener('track-added-to-pc', handleTrackAdded as EventListener);
-    window.addEventListener('offer-created', handleOfferCreated as EventListener);
-    window.addEventListener('ontrack-timeout', handleOntrackTimeout as EventListener);
-    window.addEventListener('stream-missing-error', handleStreamMissing as EventListener);
+    window.addEventListener('webrtc-error', handleStreamCallbackError as EventListener);
+    window.addEventListener('participant-stream-received', handleTrackReceived as EventListener);
 
     // Cleanup existente
     return () => {

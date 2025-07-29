@@ -51,44 +51,37 @@ export const useParticipantManagement = ({
     updateTransmissionParticipants
   });
 
-  // CORREÇÃO CRÍTICA: Enhanced participant join with automatic WebRTC handshake
+  // FASE 4: Enhanced participant join with automatic WebRTC handshake
   const handleParticipantJoin = async (participantId: string, participantInfo?: any) => {
-    console.log('👤 ENHANCED JOIN: Handling participant join for:', participantId);
+    console.log('👤 CRÍTICO: Handling participant join for:', participantId);
     
     // Call original handler first
     originalHandleParticipantJoin(participantId);
     
-    // CORREÇÃO CRÍTICA: Auto-iniciar handshake WebRTC quando participante se conecta
-    if (participantId && participantId.includes('participant-')) {
-      console.log('🤝 CRÍTICO: Iniciando handshake automático com participante:', participantId);
-      
+    // FASE 4: FORÇAR detecção e handshake automático
+    console.log('🤝 CRÍTICO: Forçando handshake WebRTC automático para:', participantId);
+    
+    // Aguardar um pouco para estabilização
+    setTimeout(async () => {
       try {
-        // Aguardar um pouco para estabilização
-        setTimeout(async () => {
-          console.log('🤝 HANDSHAKE: Iniciando call automático para:', participantId);
+        const { getWebRTCManager } = await import('@/utils/webrtc');
+        const webrtcManager = getWebRTCManager();
+        
+        if (webrtcManager) {
+          console.log('🔗 CRÍTICO: Manager encontrado, iniciando handshake automático');
           
-          // Usar o UnifiedWebRTCManager para iniciar conexão
-          const { initHostWebRTC, getWebRTCManager } = await import('@/utils/webrtc');
-          
-          let manager = getWebRTCManager();
-          if (!manager && sessionId) {
-            console.log('🔧 HANDSHAKE: Criando WebRTC manager');
-            const result = await initHostWebRTC(sessionId);
-            manager = result?.webrtc;
+          const connectionHandler = (webrtcManager as any).connectionHandler;
+          if (connectionHandler) {
+            await connectionHandler.initiateCallWithRetry(participantId, 3);
+            console.log('✅ CRÍTICO: Handshake automático iniciado para:', participantId);
           }
-          
-          if (manager) {
-            console.log('🎯 HANDSHAKE: WebRTC manager disponível, iniciando call');
-            console.log('🎯 HANDSHAKE: WebRTC manager disponível, guardando para futura implementação');
-            // WebRTC manager está disponível, participante será conectado automaticamente via callbacks
-          } else {
-            console.error('❌ HANDSHAKE: WebRTC manager não disponível');
-          }
-        }, 1000);
+        } else {
+          console.warn('⚠️ CRÍTICO: WebRTC manager não encontrado para handshake automático');
+        }
       } catch (error) {
-        console.error('❌ HANDSHAKE: Erro no setup automático:', error);
+        console.error('❌ CRÍTICO: Erro no handshake automático:', error);
       }
-    }
+    }, 1500);
   };
 
   const { transferStreamToTransmission } = useParticipantAutoSelection({

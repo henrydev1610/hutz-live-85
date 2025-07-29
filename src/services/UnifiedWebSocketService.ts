@@ -506,9 +506,33 @@ class UnifiedWebSocketService {
       return;
     }
 
-    console.log('🎥 SIGNALING: Notifying stream started:', participantId);
-    console.log('🔍 SIGNALING: Room confirmed, proceeding with stream-started notification');
-    this.socket!.emit('stream-started', { participantId, streamInfo });
+    console.log('📡 CRÍTICO: Enviando notificação stream-started para:', participantId);
+    console.log('🔍 CRÍTICO: Stream info:', streamInfo);
+    
+    // FASE 1: CORREÇÃO CRÍTICA - Tentar múltiplas formas de emitir
+    try {
+      // Método principal
+      this.socket!.emit('stream-started', { 
+        participantId, 
+        streamInfo,
+        roomId: this.currentRoomId,
+        timestamp: Date.now()
+      });
+      
+      // Backup com formato alternativo
+      this.socket!.emit('stream_started', { 
+        participantId, 
+        streamInfo,
+        roomId: this.currentRoomId,
+        timestamp: Date.now()
+      });
+      
+      // Log para debug
+      console.log('✅ CRÍTICO: stream-started emitido com sucesso');
+      
+    } catch (error) {
+      console.error('❌ CRÍTICO: Erro ao emitir stream-started:', error);
+    }
   }
 
   isConnected(): boolean {

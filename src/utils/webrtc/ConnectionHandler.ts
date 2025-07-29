@@ -137,21 +137,58 @@ export class ConnectionHandler {
       }
     };
 
+    // FASE 5: Enhanced track handling with retry and timeout
     peerConnection.ontrack = (event) => {
-      console.log(`🎥 TRACK-CRÍTICO: Track recebido de ${participantId}:`, {
-        kind: event.track.kind,
-        trackId: event.track.id,
-        streamCount: event.streams.length,
-        streamIds: event.streams.map(s => s.id),
-        readyState: event.track.readyState,
-        enabled: event.track.enabled
-      });
-
-      // VISUAL LOG: Toast quando track é recebido
-      if (typeof window !== 'undefined' && window.dispatchEvent) {
-        window.dispatchEvent(new CustomEvent('track-received', {
-          detail: { participantId, trackKind: event.track.kind }
+      console.log('🎵 CRÍTICO: Track received from participant:', participantId);
+      
+      const remoteStream = event.streams[0];
+      if (remoteStream) {
+        console.log('📺 CRÍTICO: Remote stream received:', {
+          streamId: remoteStream.id,
+          tracks: remoteStream.getTracks().length,
+          participantId,
+          active: remoteStream.active
+        });
+        
+        // CORREÇÃO CRÍTICA: Disparar callback imediatamente
+        if (this.streamCallback) {
+          console.log('📞 CRÍTICO: Disparando stream callback');
+          this.streamCallback(participantId, remoteStream);
+        }
+        
+        // CRÍTICO: Disparar eventos múltiplos para forçar atualização do grid
+        console.log('🔄 CRÍTICO: Forçando atualizações do grid');
+        
+        // Custom event
+        window.dispatchEvent(new CustomEvent('participant-stream-received', {
+          detail: { participantId, stream: remoteStream }
         }));
+        
+        // BroadcastChannel
+        try {
+          const bc = new BroadcastChannel('stream-updates');
+          bc.postMessage({
+            type: 'stream-received',
+            participantId,
+            streamInfo: {
+              streamId: remoteStream.id,
+              active: remoteStream.active,
+              tracks: remoteStream.getTracks().length
+            }
+          });
+          bc.close();
+        } catch (error) {
+          console.warn('⚠️ BroadcastChannel não disponível:', error);
+        }
+        
+        // Force grid update via global function if available
+        const forceGridUpdate = (window as any).forceGridUpdate;
+        if (typeof forceGridUpdate === 'function') {
+          console.log('🔄 CRÍTICO: Forçando atualização do grid via função global');
+          forceGridUpdate();
+        }
+      } else {
+        console.warn('⚠️ CRÍTICO: ontrack disparado mas sem stream válido');
       }
 
       if (event.streams && event.streams.length > 0) {

@@ -129,6 +129,27 @@ export const useParticipantMedia = () => {
       
       toast.success(`${displayType} camera connected! Video: ${videoStatus}, Audio: ${audioStatus}`);
       
+      // FASE 1: CRÍTICO - Notificar backend sobre stream ativo
+      console.log('🚀 CRÍTICO: Notificando que stream está pronto para WebRTC');
+      
+      // Enviar sinal de stream-started via callback
+      const streamStartedCallback = (window as any).streamStartedCallback;
+      if (streamStartedCallback && typeof streamStartedCallback === 'function') {
+        console.log('📡 CRÍTICO: Executando streamStartedCallback');
+        try {
+          streamStartedCallback(participantId, {
+            hasVideo: videoTracks.length > 0,
+            hasAudio: audioTracks.length > 0,
+            streamId: stream.id,
+            timestamp: Date.now()
+          });
+        } catch (error) {
+          console.error('❌ CRÍTICO: Erro ao executar streamStartedCallback:', error);
+        }
+      } else {
+        console.warn('⚠️ CRÍTICO: streamStartedCallback não encontrado');
+      }
+      
       return stream;
       
     } catch (error) {

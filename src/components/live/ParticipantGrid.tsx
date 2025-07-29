@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -63,10 +63,49 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   const streamRecoveryAttempts = useRef<{[key: string]: number}>({});
   const MAX_RECOVERY_ATTEMPTS = 3;
 
-  // Função para forçar re-render do grid
-  const forceGridUpdate = () => {
+  // FASE 6: CRÍTICO - Forçar atualização do grid em eventos de stream
+  const forceGridUpdate = useCallback(() => {
+    console.log('🔄 CRÍTICO: Force grid update triggered');
     setForceUpdateCounter(prev => prev + 1);
-  };
+  }, []);
+  
+  // Expor função globalmente para acesso externo
+  useEffect(() => {
+    (window as any).forceGridUpdate = forceGridUpdate;
+    return () => {
+      delete (window as any).forceGridUpdate;
+    };
+  }, [forceGridUpdate]);
+
+  // CRÍTICO: Listener para eventos de stream recebido
+  useEffect(() => {
+    const handleStreamReceived = (event: CustomEvent) => {
+      console.log('🎯 GRID: Stream received event:', event.detail);
+      forceGridUpdate();
+    };
+    
+    window.addEventListener('participant-stream-received', handleStreamReceived as EventListener);
+    
+    return () => {
+      window.removeEventListener('participant-stream-received', handleStreamReceived as EventListener);
+    };
+  }, [forceGridUpdate]);
+  
+  // CRÍTICO: BroadcastChannel listener para atualizações de stream
+  useEffect(() => {
+    const bc = new BroadcastChannel('stream-updates');
+    
+    bc.onmessage = (event) => {
+      if (event.data.type === 'stream-received') {
+        console.log('🎯 GRID: BroadcastChannel stream update:', event.data);
+        forceGridUpdate();
+      }
+    };
+    
+    return () => {
+      bc.close();
+    };
+  }, [forceGridUpdate]);
 
   // FORÇAR atualização quando participantes conectam
   useEffect(() => {

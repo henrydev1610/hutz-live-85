@@ -124,8 +124,12 @@ export class UnifiedWebRTCManager {
     this.participantId = participantId;
     this.isHost = false;
 
-    // CRÍTICO: Configurar callbacks ANTES de qualquer conexão
-    console.log('🎯 UNIFIED WEBRTC: Configurando callbacks ANTES da conexão');
+    // FASE 1: Connect to WebSocket FIRST
+    console.log('🔗 PARTICIPANT: Connecting to WebSocket...');
+    await unifiedWebSocketService.connect();
+    
+    // FASE 2: Setup callbacks BEFORE joining room and setting stream
+    console.log('📞 CRÍTICO: Registrando callbacks ANTES de definir stream');
     this.setupWebSocketCallbacks();
 
     try {
@@ -489,16 +493,41 @@ export class UnifiedWebRTCManager {
   }
 
   private async notifyLocalStream(): Promise<void> {
-    console.log('📢 Notifying about local stream availability');
+    console.log('📢 CRÍTICO: Notificando stream via WebSocket para host');
     
     if (this.localStream && this.roomId && this.participantId) {
       try {
-        // Notify about stream readiness - use available WebSocket service methods
-        console.log('✅ Local stream is ready for WebRTC transmission');
-        console.log(`📊 Stream info: Video tracks: ${this.localStream.getVideoTracks().length}, Audio tracks: ${this.localStream.getAudioTracks().length}`);
+        // FASE 1: CORREÇÃO CRÍTICA - Emitir via WebSocket usando método disponível
+        console.log('🚀 CRÍTICO: Emitindo stream-started para backend');
+        unifiedWebSocketService.notifyStreamStarted(
+          this.participantId,
+          {
+            hasVideo: this.localStream.getVideoTracks().length > 0,
+            hasAudio: this.localStream.getAudioTracks().length > 0,
+            streamId: this.localStream.id,
+            timestamp: Date.now(),
+            roomId: this.roomId
+          }
+        );
+        
+        console.log('✅ CRÍTICO: stream-started emitido com sucesso');
+        
+        // Trigger callback if available
+        if (this.callbacksManager) {
+          console.log('📞 CALLBACK: Disparando callback de stream local');
+          this.callbacksManager.triggerStreamCallback(this.participantId, this.localStream);
+        }
+        
       } catch (error) {
-        console.error('❌ Failed to process stream readiness:', error);
+        console.error('❌ CRÍTICO: Erro ao notificar stream:', error);
+        throw error;
       }
+    } else {
+      console.warn('⚠️ CRÍTICO: notifyLocalStream falhou - faltam dados:', {
+        hasStream: !!this.localStream,
+        hasParticipantId: !!this.participantId,
+        hasRoomId: !!this.roomId
+      });
     }
   }
 }
