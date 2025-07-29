@@ -4,6 +4,8 @@ import { useToast } from "@/components/ui/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
 import { initHostWebRTC, getWebRTCManager } from '@/utils/webrtc';
+import { useAutoParticipantDetection } from './useAutoParticipantDetection';
+import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 interface UseLivePageEffectsProps {
   sessionId: string | null;
@@ -12,7 +14,7 @@ interface UseLivePageEffectsProps {
   participantList: Participant[];
   transmissionOpen: boolean;
   transmissionWindowRef: React.MutableRefObject<Window | null>;
-  handleParticipantJoin: (id: string) => void;
+  handleParticipantJoin: (id: string, participantInfo?: any) => void;
   handleParticipantStream: (id: string, stream: MediaStream) => void;
   setParticipantList: React.Dispatch<React.SetStateAction<Participant[]>>;
   updateTransmissionParticipants: () => void;
@@ -38,6 +40,13 @@ export const useLivePageEffects = ({
 }: UseLivePageEffectsProps) => {
   const { toast } = useToast();
 
+  // Hook de auto-detecção de participantes
+  useAutoParticipantDetection({
+    sessionId: sessionId || '',
+    setParticipantList,
+    handleParticipantJoin
+  });
+
   // QR Code generation effect
   useEffect(() => {
     if (qrCodeURL) {
@@ -59,6 +68,76 @@ export const useLivePageEffects = ({
       }
     };
   }, [sessionId, localStream]);
+
+  // WebSocket event handlers with enhanced participant detection
+  useEffect(() => {
+    if (sessionId) {
+      const unifiedService = unifiedWebSocketService;
+
+      // CORREÇÃO CRÍTICA: Set up callbacks for enhanced participant detection
+      unifiedService.setCallbacks({
+        onUserConnected: (userId) => {
+          console.log('🔗 LIVE EFFECTS: User connected via WebSocket:', userId);
+          
+          // CORREÇÃO CRÍTICA: Garantir que participante seja detectado e conectado
+          console.log('🎯 CRÍTICO: Processando conexão de participante:', userId);
+          
+          // Verificar se é um participante válido
+          if (userId && userId.includes('participant-')) {
+            console.log('✅ PARTICIPANTE DETECTADO: Iniciando processo de conexão');
+            
+            // Chamar handleParticipantJoin com forçar seleção
+            handleParticipantJoin(userId, {
+              isMobile: true,
+              selected: true,
+              connectedAt: Date.now()
+            });
+            
+            // Forçar atualização da lista de participantes
+            setParticipantList(prev => {
+              const existing = prev.find(p => p.id === userId);
+              if (!existing) {
+                console.log('🆕 ADICIONANDO PARTICIPANTE:', userId);
+                return [...prev, {
+                  id: userId,
+                  name: `Mobile-${userId.substring(0, 8)}`,
+                  hasVideo: false,
+                  active: true,
+                  selected: true,
+                  joinedAt: Date.now(),
+                  lastActive: Date.now(),
+                  connectedAt: Date.now(),
+                  isMobile: true
+                }];
+              }
+              return prev.map(p => 
+                p.id === userId 
+                  ? { ...p, active: true, selected: true, connectedAt: Date.now() }
+                  : p
+              );
+            });
+          } else {
+            console.log('ℹ️ HOST DETECTADO:', userId);
+            handleParticipantJoin(userId);
+          }
+        },
+        onUserDisconnected: (userId) => {
+          console.log('🔗 LIVE EFFECTS: User disconnected via WebSocket:', userId);
+          setParticipantList(prev => 
+            prev.map(p => 
+              p.id === userId 
+                ? { ...p, active: false, lastActive: Date.now() }
+                : p
+            )
+          );
+        },
+        onStreamStarted: (participantId, streamInfo) => {
+          console.log('🎥 LIVE EFFECTS: Stream started via WebSocket:', participantId, streamInfo);
+          // This will be handled by the participant streams logic
+        }
+      });
+    }
+  }, [sessionId, handleParticipantJoin, setParticipantList]);
 
   // Enhanced session initialization effect
   useEffect(() => {

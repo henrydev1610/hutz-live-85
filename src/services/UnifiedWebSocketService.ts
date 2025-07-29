@@ -238,7 +238,33 @@ class UnifiedWebSocketService {
 
     this.socket.on('user-connected', (userId: string) => {
       console.log('👤 USER CONNECTED:', userId);
-      this.callbacks.onUserConnected?.(userId);
+      
+      // CORREÇÃO CRÍTICA: Forçar detecção automática de participantes
+      console.log('🔍 CRÍTICO: Disparando eventos de descoberta para:', userId);
+      
+      // Disparar múltiplos eventos para garantir detecção
+      setTimeout(() => {
+        console.log('🔄 DISCOVERY: Enviando participant-joined via callback');
+        this.callbacks.onUserConnected?.(userId);
+        
+        // Disparar evento customizado também
+        window.dispatchEvent(new CustomEvent('participant-discovered', {
+          detail: { participantId: userId, timestamp: Date.now() }
+        }));
+        
+        // BroadcastChannel para comunicação cross-tab
+        try {
+          const bc = new BroadcastChannel('participant-discovery');
+          bc.postMessage({
+            type: 'participant-joined',
+            participantId: userId,
+            timestamp: Date.now()
+          });
+          bc.close();
+        } catch (error) {
+          console.warn('⚠️ BroadcastChannel não disponível:', error);
+        }
+      }, 100);
     });
 
     this.socket.on('user-disconnected', (userId: string) => {
