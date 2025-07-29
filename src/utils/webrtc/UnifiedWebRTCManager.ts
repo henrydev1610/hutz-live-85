@@ -19,9 +19,9 @@ interface RetryConfig {
 }
 
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 5,
-  initialDelay: 1000,
-  maxDelay: 30000,
+  maxRetries: 2, // Reduzido de 5 para 2
+  initialDelay: 3000, // Aumentado para 3s
+  maxDelay: 15000, // Reduzido para 15s
   multiplier: 2
 };
 
@@ -104,15 +104,8 @@ export class UnifiedWebRTCManager {
       this.updateConnectionMetrics(participantId, { joined: true });
       this.callbacksManager.triggerParticipantJoinCallback(participantId);
       
-      // FASE 2: Auto-iniciar handshake quando participante se conecta (para host)
-      if (this.isHost && participantId !== 'host') {
-        console.log(`🤝 FASE 2: Auto-initiating handshake with new participant ${participantId}`);
-        setTimeout(() => {
-          this.connectionHandler.initiateHandshake(participantId).catch(error => {
-            console.error(`❌ FASE 2: Failed to auto-handshake with ${participantId}:`, error);
-          });
-        }, 1000);
-      }
+      // CORREÇÃO: Remover auto-handshake para evitar loops
+      // Auto-handshake removido para prevenir loops infinitos
     });
   }
 
@@ -204,17 +197,12 @@ export class UnifiedWebRTCManager {
       this.webrtcReady = true;
       console.log(`✅ CALLBACK-CRÍTICO: Confirmação de entrada recebida, WebRTC pronto`);
 
-      // Auto-anunciar presença para detectar host
-      setTimeout(() => {
-        console.log('📢 UNIFIED WEBRTC: Auto-anunciando presença do participante');
-        // Usar o método correto do WebSocket service
-        if (unifiedWebSocketService.isConnected()) {
-          // Simular evento de participante conectado
-          window.dispatchEvent(new CustomEvent('participant-joined', {
-            detail: { participantId, sessionId, hasVideo: !!stream, timestamp: Date.now() }
-          }));
-        }
-      }, 500);
+      // CORREÇÃO: Anúncio único sem delay
+      if (unifiedWebSocketService.isConnected()) {
+        window.dispatchEvent(new CustomEvent('participant-joined', {
+          detail: { participantId, sessionId, hasVideo: !!stream, timestamp: Date.now() }
+        }));
+      }
 
       this.updateConnectionState('websocket', 'connected');
 

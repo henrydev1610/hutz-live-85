@@ -51,37 +51,15 @@ export const useParticipantManagement = ({
     updateTransmissionParticipants
   });
 
-  // FASE 4: Enhanced participant join with automatic WebRTC handshake
+  // CORREÇÃO: Participant join simples sem auto-handshake
   const handleParticipantJoin = async (participantId: string, participantInfo?: any) => {
-    console.log('👤 CRÍTICO: Handling participant join for:', participantId);
+    console.log('👤 MANAGEMENT: Handling participant join for:', participantId);
     
-    // Call original handler first
+    // Call original handler only
     originalHandleParticipantJoin(participantId);
     
-    // FASE 4: FORÇAR detecção e handshake automático
-    console.log('🤝 CRÍTICO: Forçando handshake WebRTC automático para:', participantId);
-    
-    // Aguardar um pouco para estabilização
-    setTimeout(async () => {
-      try {
-        const { getWebRTCManager } = await import('@/utils/webrtc');
-        const webrtcManager = getWebRTCManager();
-        
-        if (webrtcManager) {
-          console.log('🔗 CRÍTICO: Manager encontrado, iniciando handshake automático');
-          
-          const connectionHandler = (webrtcManager as any).connectionHandler;
-          if (connectionHandler) {
-            await connectionHandler.initiateCallWithRetry(participantId, 3);
-            console.log('✅ CRÍTICO: Handshake automático iniciado para:', participantId);
-          }
-        } else {
-          console.warn('⚠️ CRÍTICO: WebRTC manager não encontrado para handshake automático');
-        }
-      } catch (error) {
-        console.error('❌ CRÍTICO: Erro no handshake automático:', error);
-      }
-    }, 1500);
+    // CORREÇÃO: Removido auto-handshake para evitar loops
+    console.log('✅ MANAGEMENT: Participant joined without auto-handshake');
   };
 
   const { transferStreamToTransmission } = useParticipantAutoSelection({

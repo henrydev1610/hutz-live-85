@@ -82,41 +82,8 @@ export const useAutoParticipantDetection = ({
     };
   }, [handleParticipantDiscovery]);
 
-  // Verificação periódica de participantes órfãos
-  useEffect(() => {
-    const interval = setInterval(() => {
-      console.log('🔍 AUTO-DETECTION: Verificação periódica de participantes órfãos');
-      
-      // Verificar se há elementos video com streams mas sem participantes na lista
-      const videoElements = document.querySelectorAll('video[data-participant-id]');
-      
-      videoElements.forEach(video => {
-        const participantId = (video as HTMLVideoElement).getAttribute('data-participant-id');
-        if (participantId) {
-          setParticipantList(prev => {
-            const existing = prev.find(p => p.id === participantId);
-            if (!existing) {
-              console.log('🔄 AUTO-DETECTION: Participante órfão detectado:', participantId);
-              return [...prev, {
-                id: participantId,
-                name: `Orphan-${participantId.substring(0, 8)}`,
-                hasVideo: true,
-                active: true,
-                selected: true,
-                joinedAt: Date.now(),
-                lastActive: Date.now(),
-                connectedAt: Date.now(),
-                isMobile: true
-              }];
-            }
-            return prev;
-          });
-        }
-      });
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [setParticipantList]);
+  // CORREÇÃO: Removido polling periódico para evitar loops
+  // Auto-detection convertido para event-driven apenas
 
   return {
     handleParticipantDiscovery

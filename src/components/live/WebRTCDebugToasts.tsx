@@ -1,8 +1,27 @@
 import { useEffect } from 'react';
 import { useToast } from "@/hooks/use-toast";
 
+// CORREÇÃO: Debounce para toasts para evitar spam
+const toastDebounce = new Map<string, number>();
+const TOAST_DEBOUNCE_TIME = 3000; // 3s entre toasts similares
+
 export const WebRTCDebugToasts = () => {
   const { toast } = useToast();
+
+  const showDebouncedToast = (key: string, title: string, description: string, variant: 'default' | 'destructive' = 'default') => {
+    const now = Date.now();
+    const lastShown = toastDebounce.get(key) || 0;
+    
+    if (now - lastShown > TOAST_DEBOUNCE_TIME) {
+      toast({ 
+        title,
+        description,
+        variant,
+        duration: 2000 // Toasts mais curtos
+      });
+      toastDebounce.set(key, now);
+    }
+  };
 
   useEffect(() => {
     // FASE 6: CRÍTICO - Logs visuais detalhados do fluxo WebRTC
@@ -10,11 +29,11 @@ export const WebRTCDebugToasts = () => {
     // Handle participant join events
     const handleParticipantJoined = (event: CustomEvent) => {
       const { participantId } = event.detail;
-      toast({
-        title: "👤 PARTICIPANTE CONECTADO",
-        description: `${participantId} se conectou via WebSocket`,
-        duration: 3000,
-      });
+      showDebouncedToast(
+        `participant-joined-${participantId}`,
+        "👤 PARTICIPANTE CONECTADO",
+        `${participantId} se conectou via WebSocket`
+      );
     };
     
     // Handle stream started events
@@ -93,12 +112,12 @@ export const WebRTCDebugToasts = () => {
       if (state === 'failed') emoji = "❌";
       if (state === 'connecting') emoji = "🔗";
       
-      toast({
-        title: `${emoji} Estado WebRTC`,
-        description: `${participantId.substring(0, 8)}: ${state}`,
-        variant: state === 'failed' ? "destructive" : "default",
-        duration: 4000,
-      });
+      showDebouncedToast(
+        `webrtc-state-${participantId}-${state}`,
+        `${emoji} Estado WebRTC`,
+        `${participantId.substring(0, 8)}: ${state}`,
+        state === 'failed' ? "destructive" : "default"
+      );
     };
 
     // NOVOS HANDLERS PARA DEBUG DETALHADO
@@ -144,31 +163,13 @@ export const WebRTCDebugToasts = () => {
       });
     };
 
-    // Add event listeners
-    window.addEventListener('participant-discovered', handleParticipantJoined as EventListener);
-    window.addEventListener('stream-started', handleStreamStarted as EventListener);
-    window.addEventListener('webrtc-track-received', handleTrackReceived as EventListener);
-    window.addEventListener('webrtc-stream-processed', handleStreamProcessed as EventListener);
+    // CORREÇÃO: Reduzir event listeners para evitar spam
     window.addEventListener('webrtc-state-change', handleWebRTCStateChange as EventListener);
-    window.addEventListener('webrtc-error', handleStreamCallbackError as EventListener);
-    window.addEventListener('participant-stream-received', handleTrackReceived as EventListener);
+    // Outros eventos removidos para reduzir logs excessivos
 
-    // Cleanup existente
+    // CORREÇÃO: Cleanup simplificado
     return () => {
-      window.removeEventListener('track-received', handleTrackReceived as EventListener);
-      window.removeEventListener('stream-processed', handleStreamProcessed as EventListener);
-      window.removeEventListener('stream-callback-executed', handleStreamCallbackExecuted as EventListener);
-      window.removeEventListener('stream-callback-error', handleStreamCallbackError as EventListener);
       window.removeEventListener('webrtc-state-change', handleWebRTCStateChange as EventListener);
-      window.removeEventListener('host-stream-received', handleHostStreamReceived as EventListener);
-      window.removeEventListener('webrtc-callback-executed', handleWebRTCCallbackExecuted as EventListener);
-      
-      // Novo cleanup
-      window.removeEventListener('stream-callback-triggered', handleStreamCallback as EventListener);
-      window.removeEventListener('track-added-to-pc', handleTrackAdded as EventListener);
-      window.removeEventListener('offer-created', handleOfferCreated as EventListener);
-      window.removeEventListener('ontrack-timeout', handleOntrackTimeout as EventListener);
-      window.removeEventListener('stream-missing-error', handleStreamMissing as EventListener);
     };
   }, [toast]);
 

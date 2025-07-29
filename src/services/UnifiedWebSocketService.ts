@@ -41,20 +41,21 @@ class UnifiedWebSocketService {
     networkQuality: 'unknown'
   };
   
-  // FASE 2 & 3: Enhanced reconnection settings
-  private maxReconnectAttempts = 15; // Increased from 10
-  private reconnectDelay = 2000; // Increased from 1000
-  private maxReconnectDelay = 60000; // Increased from 30000
-  private backoffMultiplier = 2; // More aggressive backoff
+  // CORREÇÃO: Configuração menos agressiva para evitar loops
+  private maxReconnectAttempts = 3; // Reduzido de 15 para 3
+  private reconnectDelay = 5000; // Aumentado para 5s
+  private maxReconnectDelay = 30000; // Reduzido para 30s
+  private backoffMultiplier = 2;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
-  // FASE 3: Circuit breaker pattern
-  private circuitBreakerThreshold = 5;
-  private circuitBreakerTimeout = 30000; // 30s before allowing retry
+  // CORREÇÃO: Circuit breaker mais agressivo
+  private circuitBreakerThreshold = 2; // Reduzido de 5 para 2
+  private circuitBreakerTimeout = 60000; // Aumentado para 60s
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
+  private isConnectingFlag = false; // Flag para prevenir conexões simultâneas
 
   constructor() {
     console.log('🔧 UNIFIED WebSocket Service initialized with enhanced stability');
@@ -87,11 +88,13 @@ class UnifiedWebSocketService {
       throw new Error('Circuit breaker open - too many connection failures');
     }
 
-    if (this.isConnecting || this.isConnected()) {
-      console.log('📡 CONNECTION: Already connected or connecting');
+    // CORREÇÃO: Prevenir múltiplas tentativas simultâneas
+    if (this.isConnectingFlag || this.isConnecting || this.isConnected()) {
+      console.log('📡 CONNECTION: Already connected, connecting, or blocked');
       return;
     }
 
+    this.isConnectingFlag = true;
     this.isConnecting = true;
     this.metrics.status = 'connecting';
     this.metrics.attemptCount++;
@@ -129,6 +132,7 @@ class UnifiedWebSocketService {
       }
     } finally {
       this.isConnecting = false;
+      this.isConnectingFlag = false;
     }
   }
 
@@ -305,8 +309,8 @@ class UnifiedWebSocketService {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
-    // FASE 2: Adaptive heartbeat based on network quality
-    const heartbeatInterval = this.metrics.networkQuality === 'slow' ? 45000 : 30000;
+    // CORREÇÃO: Heartbeat menos frequente para reduzir logs
+    const heartbeatInterval = 60000; // 60s fixo para todos
     
     this.heartbeatInterval = setInterval(() => {
       if (this.socket?.connected) {

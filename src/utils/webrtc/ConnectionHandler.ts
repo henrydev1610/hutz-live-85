@@ -156,37 +156,10 @@ export class ConnectionHandler {
           this.streamCallback(participantId, remoteStream);
         }
         
-        // CRÍTICO: Disparar eventos múltiplos para forçar atualização do grid
-        console.log('🔄 CRÍTICO: Forçando atualizações do grid');
-        
-        // Custom event
+        // CORREÇÃO: Atualização única do grid
         window.dispatchEvent(new CustomEvent('participant-stream-received', {
           detail: { participantId, stream: remoteStream }
         }));
-        
-        // BroadcastChannel
-        try {
-          const bc = new BroadcastChannel('stream-updates');
-          bc.postMessage({
-            type: 'stream-received',
-            participantId,
-            streamInfo: {
-              streamId: remoteStream.id,
-              active: remoteStream.active,
-              tracks: remoteStream.getTracks().length
-            }
-          });
-          bc.close();
-        } catch (error) {
-          console.warn('⚠️ BroadcastChannel não disponível:', error);
-        }
-        
-        // Force grid update via global function if available
-        const forceGridUpdate = (window as any).forceGridUpdate;
-        if (typeof forceGridUpdate === 'function') {
-          console.log('🔄 CRÍTICO: Forçando atualização do grid via função global');
-          forceGridUpdate();
-        }
       } else {
         console.warn('⚠️ CRÍTICO: ontrack disparado mas sem stream válido');
       }
@@ -246,10 +219,8 @@ export class ConnectionHandler {
           }
         };
 
-        // Disparo imediato e com retry
+        // CORREÇÃO: Disparo único para evitar spam
         triggerCallback();
-        setTimeout(() => triggerCallback(), 100);
-        setTimeout(() => triggerCallback(), 500);
 
       } else {
         console.warn(`⚠️ TRACK-CRÍTICO: Track de ${participantId} sem streams anexados`);
@@ -302,7 +273,7 @@ export class ConnectionHandler {
     return peerConnection;
   }
 
-  async initiateCallWithRetry(participantId: string, maxRetries: number = 3): Promise<void> {
+  async initiateCallWithRetry(participantId: string, maxRetries: number = 1): Promise<void> {
     const currentRetries = this.retryAttempts.get(participantId) || 0;
 
     if (currentRetries >= maxRetries) {
