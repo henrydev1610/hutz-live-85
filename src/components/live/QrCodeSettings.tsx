@@ -102,7 +102,14 @@ const QrCodeSettings = ({
         <div className="flex gap-2">
           <Button 
             variant={qrCodeGenerated ? "outline" : "default"}
-            onClick={onGenerateQRCode}
+            onClick={() => {
+              console.log("🔴 BOTAO CRIAR NOVA SALA CLICADO!");
+              toast({
+                title: "Botão clicado",
+                description: "Iniciando geração de QR Code...",
+              });
+              onGenerateQRCode();
+            }}
             className={qrCodeGenerated ? "border-white/20" : ""}
           >
             <QrCode className="h-4 w-4 mr-2" />
