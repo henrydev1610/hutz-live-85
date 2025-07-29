@@ -1,4 +1,3 @@
-
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 export class ConnectionHandler {
@@ -329,122 +328,192 @@ export class ConnectionHandler {
     // CRÍTICO: Usar conexão existente ou criar nova
     const peerConnection = this.createPeerConnection(participantId);
 
-    // CORREÇÃO CRÍTICA: Garantir que tracks estão adicionados ANTES da oferta
+    // CORREÇÃO CRÍTICA: Verificar stream ANTES de criar oferta
     const localStream = this.getLocalStream?.();
-    if (localStream) {
-      console.log(`🎥 CRÍTICO: Verificando e adicionando tracks para: ${participantId}`);
-      
-      // Verificar se tracks já foram adicionados
-      const existingSenders = peerConnection.getSenders();
-      const existingTrackKinds = existingSenders.map(s => s.track?.kind).filter(Boolean);
-      
-      console.log(`🔍 CRÍTICO: Senders existentes: ${existingSenders.length}, Tracks: [${existingTrackKinds.join(', ')}]`);
-      
-      // CORREÇÃO: Apenas adicionar tracks que não existem
-      let tracksAdded = 0;
-      for (const track of localStream.getTracks()) {
-        const hasExistingSender = existingSenders.some(s => s.track && s.track.kind === track.kind);
-        
-        if (!hasExistingSender) {
-          try {
-            peerConnection.addTrack(track, localStream);
-            tracksAdded++;
-            console.log(`📹 CRÍTICO: Track ${track.kind} adicionado para: ${participantId} (${track.readyState})`);
-            
-            // VISUAL LOG: Toast quando track é adicionado
-            if (typeof window !== 'undefined' && window.dispatchEvent) {
-              window.dispatchEvent(new CustomEvent('track-added-to-pc', {
-                detail: { participantId, trackKind: track.kind, trackId: track.id }
-              }));
-            }
-          } catch (error) {
-            console.error(`❌ CRÍTICO: Falha ao adicionar track ${track.kind}:`, error);
-          }
-        } else {
-          console.log(`♻️ CRÍTICO: Track ${track.kind} já existe para: ${participantId}`);
-        }
+    if (!localStream) {
+      console.error(`❌ CRÍTICO: LocalStream não disponível para: ${participantId}`);
+      // VISUAL LOG: Toast para stream não encontrado
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('stream-missing-error', {
+          detail: { participantId, error: 'LocalStream não encontrado' }
+        }));
       }
-      
-      const totalSenders = peerConnection.getSenders().length;
-      console.log(`✅ CRÍTICO: ${tracksAdded} novos tracks adicionados, total: ${totalSenders} senders para: ${participantId}`);
-      
-      if (totalSenders === 0) {
-        throw new Error(`Nenhum track no peer connection para ${participantId}`);
-      }
-    } else {
-      console.warn(`⚠️ CRÍTICO: Nenhum stream local disponível para: ${participantId}`);
+      throw new Error(`LocalStream não disponível para ${participantId}`);
     }
 
+    console.log(`🎥 CRÍTICO: Verificando e adicionando tracks para: ${participantId}`, {
+      streamId: localStream.id,
+      active: localStream.active,
+      videoTracks: localStream.getVideoTracks().length,
+      audioTracks: localStream.getAudioTracks().length,
+      totalTracks: localStream.getTracks().length
+    });
+    
+    // Verificar se tracks já foram adicionados
+    const existingSenders = peerConnection.getSenders();
+    const existingTrackKinds = existingSenders.map(s => s.track?.kind).filter(Boolean);
+    
+    console.log(`🔍 CRÍTICO: Senders existentes: ${existingSenders.length}, Tracks: [${existingTrackKinds.join(', ')}]`);
+    
+    // CORREÇÃO: Apenas adicionar tracks que não existem E são válidos
+    let tracksAdded = 0;
+    const validTracks = localStream.getTracks().filter(t => t.readyState === 'live');
+    
+    if (validTracks.length === 0) {
+      console.error(`❌ CRÍTICO: Nenhuma track válida no stream para: ${participantId}`);
+      throw new Error(`Stream sem tracks válidas para ${participantId}`);
+    }
+    
+    for (const track of validTracks) {
+      const hasExistingSender = existingSenders.some(s => s.track && s.track.kind === track.kind);
+      
+      if (!hasExistingSender) {
+        try {
+          peerConnection.addTrack(track, localStream);
+          tracksAdded++;
+          console.log(`📹 CRÍTICO: Track ${track.kind} adicionada para: ${participantId} (${track.readyState})`);
+          
+          // VISUAL LOG: Toast quando track é adicionado
+          if (typeof window !== 'undefined' && window.dispatchEvent) {
+            window.dispatchEvent(new CustomEvent('track-added-to-pc', {
+              detail: { participantId, trackKind: track.kind, trackId: track.id }
+            }));
+          }
+        } catch (error) {
+          console.error(`❌ Failed to add ${track.kind} track:`, error);
+          
+          // VISUAL LOG: Toast para erro ao adicionar track
+          if (typeof window !== 'undefined' && window.dispatchEvent) {
+            window.dispatchEvent(new CustomEvent('track-add-error', {
+              detail: { participantId, trackKind: track.kind, error: error.message }
+            }));
+          }
+        }
+      } else {
+        console.log(`⚪ Track ${track.kind} já existe para: ${participantId}`);
+      }
+    }
+    
+    console.log(`📊 CRÍTICO: ${tracksAdded} tracks adicionadas de ${validTracks.length} válidas para: ${participantId}`);
+    
+    // VERIFICAÇÃO FINAL: Garantir que pelo menos uma track foi adicionada
+    if (tracksAdded === 0 && existingSenders.length === 0) {
+      console.error(`❌ CRÍTICO: Nenhuma track foi adicionada para: ${participantId}`);
+      throw new Error(`Falha ao adicionar tracks para ${participantId}`);
+    }
+
+    // AGUARDAR para tracks serem estabilizadas
+    console.log(`⏳ CRÍTICO: Aguardando estabilização das tracks para: ${participantId}`);
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     try {
-      // FASE 3: Melhorar criação de oferta com mais logs
-      console.log(`📝 Creating offer for: ${participantId}`);
+      console.log(`📋 CRÍTICO: Criando oferta para: ${participantId} com ${peerConnection.getSenders().length} senders`);
       const offer = await peerConnection.createOffer({
-        offerToReceiveVideo: true,
-        offerToReceiveAudio: true
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
       });
       
-      console.log(`📝 Setting local description for: ${participantId}`);
+      console.log(`📝 CRÍTICO: Definindo descrição local para: ${participantId}`);
       await peerConnection.setLocalDescription(offer);
-      console.log(`📤 Sending offer to: ${participantId}`, {
-        sdpType: offer.type,
-        sdpLength: offer.sdp.length,
-        hasVideo: offer.sdp.includes('m=video'),
-        hasAudio: offer.sdp.includes('m=audio')
-      });
-
+      
+      // VISUAL LOG: Toast quando oferta é criada
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('offer-created', {
+          detail: { 
+            participantId, 
+            offerType: offer.type,
+            senderCount: peerConnection.getSenders().length 
+          }
+        }));
+      }
+      
+      console.log(`📤 CRÍTICO: Enviando oferta para: ${participantId}`);
       unifiedWebSocketService.sendOffer(participantId, offer);
-      console.log(`✅ Offer sent successfully to: ${participantId}`);
+      
+      console.log(`✅ CRÍTICO: Oferta enviada com sucesso para: ${participantId}`);
     } catch (error) {
-      console.error(`❌ Failed to create/send offer to ${participantId}:`, error);
+      console.error(`❌ CRÍTICO: Falha ao criar/enviar oferta para: ${participantId}`, error);
+      
+      // VISUAL LOG: Toast para erro na oferta
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('offer-error', {
+          detail: { participantId, error: error.message }
+        }));
+      }
+      
       throw error;
     }
   }
 
-  private handleConnectionFailure(participantId: string): void {
-    console.log(`🔄 Handling connection failure for: ${participantId}`);
+  async handleOffer(participantId: string, offer: RTCSessionDescriptionInit): Promise<void> {
+    console.log(`📥 Handling offer from: ${participantId}`);
+
+    const peerConnection = this.createPeerConnection(participantId);
+    await peerConnection.setRemoteDescription(offer);
+
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+
+    unifiedWebSocketService.sendAnswer(participantId, answer);
+    console.log(`📤 Answer sent to: ${participantId}`);
+  }
+
+  async handleAnswer(participantId: string, answer: RTCSessionDescriptionInit): Promise<void> {
+    console.log(`📥 Handling answer from: ${participantId}`);
 
     const peerConnection = this.peerConnections.get(participantId);
     if (peerConnection) {
-      console.log(`🔌 Closing failed connection for: ${participantId}`);
+      await peerConnection.setRemoteDescription(answer);
+      console.log(`✅ Remote description set for: ${participantId}`);
+    } else {
+      console.warn(`⚠️ No peer connection found for answer from: ${participantId}`);
+    }
+  }
+
+  async handleIceCandidate(participantId: string, candidate: RTCIceCandidateInit): Promise<void> {
+    const peerConnection = this.peerConnections.get(participantId);
+    if (peerConnection) {
+      try {
+        await peerConnection.addIceCandidate(candidate);
+        console.log(`✅ ICE candidate added for: ${participantId}`);
+      } catch (error) {
+        console.error(`❌ Failed to add ICE candidate for: ${participantId}`, error);
+      }
+    } else {
+      console.warn(`⚠️ No peer connection found for ICE candidate from: ${participantId}`);
+    }
+  }
+
+  handleConnectionFailure(participantId: string): void {
+    console.log(`🔄 Handling connection failure for: ${participantId}`);
+    
+    const peerConnection = this.peerConnections.get(participantId);
+    if (peerConnection) {
       peerConnection.close();
       this.peerConnections.delete(participantId);
     }
-
-    this.clearHeartbeat(participantId);
+    
     this.clearOfferTimeout(participantId);
-
-    // FASE 3: Delay maior antes de tentar novamente
-    console.log(`⏱️ Scheduling recovery for ${participantId} in 3 seconds`);
+    this.clearHeartbeat(participantId);
+    
+    // Retry connection after delay
     setTimeout(() => {
+      console.log(`🔄 Retrying connection to: ${participantId}`);
       this.initiateCallWithRetry(participantId);
-    }, 3000);
+    }, 5000);
   }
 
   startHeartbeat(participantId: string): void {
-    console.log(`💓 Starting heartbeat for: ${participantId}`);
-
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    const heartbeatInterval = isMobile ? 5000 : 30000;
-
-    console.log(`💓 MOBILE-OPTIMIZED: Using ${heartbeatInterval}ms heartbeat for ${participantId} (${isMobile ? 'Mobile' : 'Desktop'})`);
-
     const interval = setInterval(() => {
       const peerConnection = this.peerConnections.get(participantId);
       if (peerConnection && peerConnection.connectionState === 'connected') {
-        console.log(`💓 Heartbeat sent to: ${participantId}`);
-
-        if (isMobile) {
-          console.log(`📱 MOBILE HEARTBEAT: ICE state: ${peerConnection.iceConnectionState}`);
-          if (peerConnection.iceConnectionState !== 'connected' && peerConnection.iceConnectionState !== 'completed') {
-            console.warn(`⚠️ MOBILE HEARTBEAT: Unstable ICE connection for ${participantId}`);
-            this.handleConnectionFailure(participantId);
-          }
-        }
+        console.log(`💓 Heartbeat for: ${participantId} - connection healthy`);
       } else {
-        console.log(`💔 No active connection for heartbeat: ${participantId}`);
+        console.warn(`💔 Heartbeat failed for: ${participantId}`);
         this.clearHeartbeat(participantId);
+        this.handleConnectionFailure(participantId);
       }
-    }, heartbeatInterval);
+    }, 30000); // 30 seconds
 
     this.heartbeatIntervals.set(participantId, interval);
   }
@@ -454,23 +523,28 @@ export class ConnectionHandler {
     if (interval) {
       clearInterval(interval);
       this.heartbeatIntervals.delete(participantId);
-      console.log(`💔 Heartbeat cleared for: ${participantId}`);
+      console.log(`🧹 Cleared heartbeat for: ${participantId}`);
     }
-  }
-
-  clearRetries(participantId: string): void {
-    this.retryAttempts.delete(participantId);
   }
 
   cleanup(): void {
     console.log('🧹 Cleaning up ConnectionHandler');
-
+    
+    // Clear all heartbeats
     this.heartbeatIntervals.forEach((interval, participantId) => {
       clearInterval(interval);
-      console.log(`💔 Cleared heartbeat for: ${participantId}`);
+      console.log(`🧹 Cleared heartbeat for: ${participantId}`);
     });
     this.heartbeatIntervals.clear();
-
+    
+    // Clear all retry attempts
     this.retryAttempts.clear();
+    
+    // Clear all offer timeouts
+    this.offerTimeouts.forEach((timeout, participantId) => {
+      clearTimeout(timeout);
+      console.log(`🧹 Cleared offer timeout for: ${participantId}`);
+    });
+    this.offerTimeouts.clear();
   }
 }

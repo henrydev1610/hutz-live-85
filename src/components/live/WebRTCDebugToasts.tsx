@@ -79,7 +79,50 @@ export const WebRTCDebugToasts = () => {
       });
     };
 
-    // Registrar event listeners
+    // NOVOS HANDLERS PARA DEBUG DETALHADO
+    const handleStreamCallback = (event: CustomEvent) => {
+      const { participantId, streamId, trackCount } = event.detail;
+      toast({
+        title: "🚀 Stream Callback Disparado",
+        description: `${participantId.substring(0, 8)} - ${trackCount} tracks`,
+      });
+    };
+
+    const handleTrackAdded = (event: CustomEvent) => {
+      const { participantId, trackKind } = event.detail;
+      toast({
+        title: "➕ Track Adicionada",
+        description: `${trackKind} para ${participantId.substring(0, 8)}`,
+      });
+    };
+
+    const handleOfferCreated = (event: CustomEvent) => {
+      const { participantId, senderCount } = event.detail;
+      toast({
+        title: "📋 Oferta Criada",
+        description: `${participantId.substring(0, 8)} - ${senderCount} senders`,
+      });
+    };
+
+    const handleOntrackTimeout = (event: CustomEvent) => {
+      const { participantId } = event.detail;
+      toast({
+        title: "⏰ Timeout OnTrack",
+        description: `${participantId.substring(0, 8)} - stream não recebido em 5s`,
+        variant: "destructive"
+      });
+    };
+
+    const handleStreamMissing = (event: CustomEvent) => {
+      const { participantId } = event.detail;
+      toast({
+        title: "❌ Stream Não Encontrado",
+        description: `${participantId.substring(0, 8)} - localStream ausente`,
+        variant: "destructive"
+      });
+    };
+
+    // Registrar event listeners existentes
     window.addEventListener('track-received', handleTrackReceived as EventListener);
     window.addEventListener('stream-processed', handleStreamProcessed as EventListener);
     window.addEventListener('stream-callback-executed', handleStreamCallbackExecuted as EventListener);
@@ -87,8 +130,15 @@ export const WebRTCDebugToasts = () => {
     window.addEventListener('webrtc-state-change', handleWebRTCStateChange as EventListener);
     window.addEventListener('host-stream-received', handleHostStreamReceived as EventListener);
     window.addEventListener('webrtc-callback-executed', handleWebRTCCallbackExecuted as EventListener);
+    
+    // Registrar novos event listeners
+    window.addEventListener('stream-callback-triggered', handleStreamCallback as EventListener);
+    window.addEventListener('track-added-to-pc', handleTrackAdded as EventListener);
+    window.addEventListener('offer-created', handleOfferCreated as EventListener);
+    window.addEventListener('ontrack-timeout', handleOntrackTimeout as EventListener);
+    window.addEventListener('stream-missing-error', handleStreamMissing as EventListener);
 
-    // Cleanup
+    // Cleanup existente
     return () => {
       window.removeEventListener('track-received', handleTrackReceived as EventListener);
       window.removeEventListener('stream-processed', handleStreamProcessed as EventListener);
@@ -97,6 +147,13 @@ export const WebRTCDebugToasts = () => {
       window.removeEventListener('webrtc-state-change', handleWebRTCStateChange as EventListener);
       window.removeEventListener('host-stream-received', handleHostStreamReceived as EventListener);
       window.removeEventListener('webrtc-callback-executed', handleWebRTCCallbackExecuted as EventListener);
+      
+      // Novo cleanup
+      window.removeEventListener('stream-callback-triggered', handleStreamCallback as EventListener);
+      window.removeEventListener('track-added-to-pc', handleTrackAdded as EventListener);
+      window.removeEventListener('offer-created', handleOfferCreated as EventListener);
+      window.removeEventListener('ontrack-timeout', handleOntrackTimeout as EventListener);
+      window.removeEventListener('stream-missing-error', handleStreamMissing as EventListener);
     };
   }, [toast]);
 

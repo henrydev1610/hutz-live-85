@@ -139,7 +139,25 @@ export class UnifiedWebRTCManager {
       // FASE 1: REGISTRAR CALLBACKS ANTES DE QUALQUER HANDSHAKE
       console.log(`🎯 CALLBACK-CRÍTICO: Registrando stream callback ANTES do handshake`);
       this.connectionHandler.setStreamCallback((participantId, stream) => {
-        console.log(`🎥 CALLBACK-CRÍTICO: Stream callback disparado para ${participantId}`);
+        console.log(`🎥 CALLBACK-CRÍTICO: Stream callback disparado para ${participantId}`, {
+          streamId: stream.id,
+          tracks: stream.getTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length,
+          active: stream.active
+        });
+        
+        // VISUAL LOG: Toast crítico quando stream é recebido
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('stream-callback-triggered', {
+            detail: { 
+              participantId, 
+              streamId: stream.id,
+              trackCount: stream.getTracks().length
+            }
+          }));
+        }
+        
         this.updateConnectionMetrics(participantId, { streamReceived: true });
         this.updateConnectionState('webrtc', 'connected');
         this.callbacksManager.triggerStreamCallback(participantId, stream);
@@ -188,10 +206,38 @@ export class UnifiedWebRTCManager {
         console.log('⏳ CALLBACK-CRÍTICO: Aguardando estabilização antes do WebRTC...');
         await new Promise(resolve => setTimeout(resolve, 1500));
         
+        // VERIFICAÇÃO FINAL: Garantir que stream ainda está ativo
+        const currentTracks = this.localStream.getTracks();
+        const activeTracks = currentTracks.filter(t => t.readyState === 'live');
+        
+        console.log(`🔍 CALLBACK-CRÍTICO: Verificação final do stream:`, {
+          totalTracks: currentTracks.length,
+          activeTracks: activeTracks.length,
+          streamActive: this.localStream.active
+        });
+        
+        if (activeTracks.length === 0) {
+          console.error(`❌ CALLBACK-CRÍTICO: Stream perdeu todas as tracks ativas antes do handshake`);
+          throw new Error('Stream inválido - todas as tracks foram perdidas');
+        }
+        
         if (this.webrtcReady) {
           console.log(`🤝 CALLBACK-CRÍTICO: Iniciando handshake WebRTC com callbacks já registrados`);
           await this.connectionHandler.initiateCallWithRetry('host');
           this.updateConnectionState('webrtc', 'connecting');
+          
+          // TIMEOUT para verificar se ontrack foi disparado
+          setTimeout(() => {
+            if (this.connectionState.webrtc === 'connecting') {
+              console.warn(`⚠️ CALLBACK-CRÍTICO: Timeout de 5s - ontrack não foi disparado`);
+              if (typeof window !== 'undefined' && window.dispatchEvent) {
+                window.dispatchEvent(new CustomEvent('ontrack-timeout', {
+                  detail: { participantId, timeout: 5000 }
+                }));
+              }
+            }
+          }, 5000);
+          
           console.log(`✅ CALLBACK-CRÍTICO: Handshake WebRTC iniciado com sucesso`);
         } else {
           console.warn(`⚠️ CALLBACK-CRÍTICO: WebRTC não pode ser iniciado - não confirmado na sala`);
