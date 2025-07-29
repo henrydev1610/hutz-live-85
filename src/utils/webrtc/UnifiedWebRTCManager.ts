@@ -124,6 +124,10 @@ export class UnifiedWebRTCManager {
     this.participantId = participantId;
     this.isHost = false;
 
+    // CRÍTICO: Configurar callbacks ANTES de qualquer conexão
+    console.log('🎯 UNIFIED WEBRTC: Configurando callbacks ANTES da conexão');
+    this.setupWebSocketCallbacks();
+
     try {
       if (stream) {
         console.log(`📹 CALLBACK-CRÍTICO: Definindo stream local ANTES de callbacks`);
@@ -196,7 +200,18 @@ export class UnifiedWebRTCManager {
       this.webrtcReady = true;
       console.log(`✅ CALLBACK-CRÍTICO: Confirmação de entrada recebida, WebRTC pronto`);
 
-      this.setupWebSocketCallbacks();
+      // Auto-anunciar presença para detectar host
+      setTimeout(() => {
+        console.log('📢 UNIFIED WEBRTC: Auto-anunciando presença do participante');
+        // Usar o método correto do WebSocket service
+        if (unifiedWebSocketService.isConnected()) {
+          // Simular evento de participante conectado
+          window.dispatchEvent(new CustomEvent('participant-joined', {
+            detail: { participantId, sessionId, hasVideo: !!stream, timestamp: Date.now() }
+          }));
+        }
+      }, 500);
+
       this.updateConnectionState('websocket', 'connected');
 
       if (this.localStream) {

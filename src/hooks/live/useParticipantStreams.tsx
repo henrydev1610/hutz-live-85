@@ -130,6 +130,28 @@ export const useParticipantStreams = ({
       console.log('🔄 STREAM-CRÍTICO: Lista de participantes atualizada para:', participantId);
       return updated;
     });
+
+    // FORÇAR atualização do grid através de múltiplos canais
+    console.log('🔄 PARTICIPANT STREAMS: Forçando atualização do grid via múltiplos canais');
+    
+    // Disparar evento customizado para grid updates
+    window.dispatchEvent(new CustomEvent('participant-stream-connected', {
+      detail: { participantId, stream, timestamp: Date.now() }
+    }));
+    
+    // Atualizar BroadcastChannel para comunicação cross-tab
+    try {
+      const bc = new BroadcastChannel('participant-updates');
+      bc.postMessage({
+        type: 'stream-connected',
+        participantId,
+        hasVideo: true,
+        timestamp: Date.now()
+      });
+      bc.close();
+    } catch (error) {
+      console.warn('⚠️ PARTICIPANT STREAMS: BroadcastChannel não disponível:', error);
+    }
     
     if (!validateStream(stream, participantId)) {
       console.warn('❌ STREAM-CRÍTICO: Validação de stream falhou para:', participantId);

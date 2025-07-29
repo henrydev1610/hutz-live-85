@@ -527,6 +527,14 @@ export class ConnectionHandler {
     }
   }
 
+  hasActiveStream(participantId: string): boolean {
+    const peerConnection = this.peerConnections.get(participantId);
+    if (!peerConnection) return false;
+    
+    const receivers = peerConnection.getReceivers();
+    return receivers.some(receiver => receiver.track && receiver.track.readyState === 'live');
+  }
+
   cleanup(): void {
     console.log('🧹 Cleaning up ConnectionHandler');
     

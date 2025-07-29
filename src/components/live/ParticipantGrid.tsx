@@ -57,10 +57,50 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   const [streamErrors, setStreamErrors] = useState<{[key: string]: string}>({});
   const [streamStats, setStreamStats] = useState<{[key: string]: any}>({});
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [forceUpdateCounter, setForceUpdateCounter] = useState(0);
   const videoRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
   const videoElements = useRef<{[key: string]: HTMLVideoElement | null}>({});
   const streamRecoveryAttempts = useRef<{[key: string]: number}>({});
   const MAX_RECOVERY_ATTEMPTS = 3;
+
+  // Função para forçar re-render do grid
+  const forceGridUpdate = () => {
+    setForceUpdateCounter(prev => prev + 1);
+  };
+
+  // FORÇAR atualização quando participantes conectam
+  useEffect(() => {
+    const handleStreamConnected = (event: CustomEvent) => {
+      const { participantId } = event.detail;
+      console.log('🎬 PARTICIPANT GRID: Stream conectado - forçando re-render:', participantId);
+      forceGridUpdate();
+    };
+
+    const handleParticipantJoined = (event: CustomEvent) => {
+      const { participantId } = event.detail;
+      console.log('👋 PARTICIPANT GRID: Participante entrou - forçando re-render:', participantId);
+      forceGridUpdate();
+    };
+
+    // Escutar eventos de stream para forçar atualizações
+    window.addEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+    window.addEventListener('participant-joined', handleParticipantJoined as EventListener);
+    
+    // Escutar BroadcastChannel para atualizações
+    const bc = new BroadcastChannel('participant-updates');
+    bc.onmessage = (event) => {
+      console.log('📡 PARTICIPANT GRID: BroadcastChannel update recebido:', event.data);
+      if (event.data.type === 'stream-connected') {
+        forceGridUpdate();
+      }
+    };
+    
+    return () => {
+      window.removeEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+      window.removeEventListener('participant-joined', handleParticipantJoined as EventListener);
+      bc.close();
+    };
+  }, []);
 
   // 🌉 PONTE STREAM-TO-COMPONENT: Listeners para eventos de stream
   useEffect(() => {
@@ -104,6 +144,7 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
           // Tentar reproduzir
           video.play().then(() => {
             console.log(`✅ GRID BRIDGE: Video playing via event for ${receivedParticipantId}`);
+            forceGridUpdate(); // Forçar re-render após sucesso
           }).catch(err => {
             console.log(`⚠️ GRID BRIDGE: Play failed via event for ${receivedParticipantId}:`, err);
           });
