@@ -109,14 +109,8 @@ export class ConnectionHandler {
         console.log(`✅ CONNECTION-CRÍTICO: Conexão estabelecida com: ${participantId}`);
         this.clearOfferTimeout(participantId);
         
-        // Notificar UnifiedWebRTCManager sobre conexão estabelecida
-        if (typeof window !== 'undefined' && (window as any).webrtcManager) {
-          try {
-            (window as any).webrtcManager.updateConnectionState('webrtc', 'connected');
-          } catch (error) {
-            console.warn('⚠️ Falha ao atualizar estado no manager:', error);
-          }
-        }
+        // CORREÇÃO: Usar callback direto ao invés de dependência circular
+        console.log(`🔄 CONNECTION-CRÍTICO: Atualizando estado WebRTC para conectado via callback`);
         
         if (this.participantJoinCallback) {
           this.participantJoinCallback(participantId);

@@ -83,12 +83,12 @@ export const useParticipantStreams = ({
   }, [updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast]);
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
-    console.log('🎬 STREAM-CRÍTICO: Processando stream do participante:', participantId);
+    console.log('🎬 STREAM-CRÍTICO: Stream recebido no useParticipantStreams:', participantId);
     
     // VISUAL LOG: Toast quando stream é recebido no hook
     toast({
-      title: "🎥 Stream Recebido",
-      description: `Stream de ${participantId.substring(0, 8)} sendo processado`,
+      title: "🎥 Stream Recebido no Hook",
+      description: `${participantId.substring(0, 8)} - ${stream.getTracks().length} tracks`,
     });
     
     // Atualização imediata do participante para streams móveis

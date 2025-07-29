@@ -48,9 +48,9 @@ export class WebRTCCallbacks {
       onStreamStarted: (participantId, streamInfo) => {
         console.log('🎥 HOST: Stream started event received:', participantId, streamInfo);
         
-        // FASE 1: Host deve iniciar uma oferta quando receber notificação de stream
-        if (this.connectionHandler && participantId) {
-          console.log(`🚀 HOST: Iniciando oferta WebRTC para ${participantId} após receber notificação de stream`);
+        // CORREÇÃO CRÍTICA: Verificar se callback está registrado ANTES de iniciar handshake
+        if (this.connectionHandler && participantId && this.onStreamCallback) {
+          console.log(`🚀 HOST: Callback registrado - iniciando oferta WebRTC para ${participantId}`);
           
           // Primeiro garantir que o callback de participante seja disparado
           if (this.onParticipantJoinCallback) {
@@ -61,14 +61,32 @@ export class WebRTCCallbacks {
           // CRITICAL FIX: Iniciar oferta WebRTC com retry automaticamente
           setTimeout(() => {
             if (this.connectionHandler) {
-              console.log(`📞 HOST: Iniciando chamada WebRTC para ${participantId} com retry logic`);
+              console.log(`📞 HOST: Iniciando chamada WebRTC para ${participantId} com callbacks registrados`);
               this.connectionHandler.initiateCallWithRetry(participantId, 5);
             } else {
               console.error(`❌ HOST: ConnectionHandler não está disponível para iniciar chamada para ${participantId}`);
             }
           }, 500); // Pequeno delay para garantir que tudo esteja pronto
         } else {
-          console.error(`❌ HOST: Não foi possível iniciar oferta para ${participantId} - connectionHandler ${this.connectionHandler ? 'disponível' : 'indisponível'}`);
+          console.error(`❌ HOST: Não foi possível iniciar oferta para ${participantId}`, {
+            connectionHandler: !!this.connectionHandler,
+            participantId: !!participantId,
+            streamCallback: !!this.onStreamCallback
+          });
+          
+          // RETRY LOGIC: Aguardar callback ser registrado
+          if (!this.onStreamCallback) {
+            console.log(`⏳ HOST: Aguardando callback ser registrado para ${participantId}...`);
+            const checkCallback = () => {
+              if (this.onStreamCallback && this.connectionHandler) {
+                console.log(`✅ HOST: Callback disponível - iniciando chamada para ${participantId}`);
+                this.connectionHandler.initiateCallWithRetry(participantId, 5);
+              } else {
+                setTimeout(checkCallback, 100);
+              }
+            };
+            setTimeout(checkCallback, 100);
+          }
         }
       },
       onError: (error) => {

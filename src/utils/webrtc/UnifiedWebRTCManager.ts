@@ -124,29 +124,9 @@ export class UnifiedWebRTCManager {
     this.participantId = participantId;
     this.isHost = false;
 
-    // CRÍTICO: Aguardar que callbacks estejam prontos ANTES de qualquer inicialização
-    console.log(`⚙️ CALLBACK-CRÍTICO: Verificando callbacks antes da inicialização`);
-    await new Promise<void>(resolve => {
-      if (this.callbacksManager) {
-        console.log(`✅ CALLBACK-CRÍTICO: Callbacks já disponíveis`);
-        resolve();
-      } else {
-        console.log(`⏳ CALLBACK-CRÍTICO: Aguardando callbacks ficarem disponíveis...`);
-        const checkCallbacks = () => {
-          if (this.callbacksManager) {
-            console.log(`✅ CALLBACK-CRÍTICO: Callbacks agora disponíveis`);
-            resolve();
-          } else {
-            setTimeout(checkCallbacks, 100);
-          }
-        };
-        checkCallbacks();
-      }
-    });
-
     try {
       if (stream) {
-        console.log(`📹 CALLBACK-CRÍTICO: Definindo stream local com callbacks prontos`);
+        console.log(`📹 CALLBACK-CRÍTICO: Definindo stream local ANTES de callbacks`);
         this.localStream = stream;
         const inactiveTracks = stream.getTracks().filter(track => track.readyState !== 'live');
         if (inactiveTracks.length > 0) {
@@ -155,6 +135,34 @@ export class UnifiedWebRTCManager {
       } else {
         throw new Error('Stream é obrigatório para inicialização WebRTC do participante');
       }
+
+      // FASE 1: REGISTRAR CALLBACKS ANTES DE QUALQUER HANDSHAKE
+      console.log(`🎯 CALLBACK-CRÍTICO: Registrando stream callback ANTES do handshake`);
+      this.connectionHandler.setStreamCallback((participantId, stream) => {
+        console.log(`🎥 CALLBACK-CRÍTICO: Stream callback disparado para ${participantId}`);
+        this.updateConnectionMetrics(participantId, { streamReceived: true });
+        this.updateConnectionState('webrtc', 'connected');
+        this.callbacksManager.triggerStreamCallback(participantId, stream);
+        
+        // 🚀 PONTE STREAM-TO-COMPONENT: Disparar evento customizado
+        console.log(`🌉 CALLBACK-CRÍTICO: Dispatching stream-received event for ${participantId}`);
+        window.dispatchEvent(new CustomEvent(`stream-received-${participantId}`, {
+          detail: { 
+            participantId, 
+            stream,
+            timestamp: Date.now(),
+            streamId: stream.id,
+            tracks: stream.getTracks().length
+          }
+        }));
+      });
+
+      console.log(`👤 CALLBACK-CRÍTICO: Registrando participant callback ANTES do handshake`);
+      this.connectionHandler.setParticipantJoinCallback((participantId) => {
+        console.log(`👤 CALLBACK-CRÍTICO: Participant callback disparado para ${participantId}`);
+        this.updateConnectionMetrics(participantId, { joined: true });
+        this.callbacksManager.triggerParticipantJoinCallback(participantId);
+      });
 
       this.updateConnectionState('websocket', 'connecting');
 
@@ -181,7 +189,7 @@ export class UnifiedWebRTCManager {
         await new Promise(resolve => setTimeout(resolve, 1500));
         
         if (this.webrtcReady) {
-          console.log(`🤝 CALLBACK-CRÍTICO: Iniciando handshake WebRTC com callbacks prontos`);
+          console.log(`🤝 CALLBACK-CRÍTICO: Iniciando handshake WebRTC com callbacks já registrados`);
           await this.connectionHandler.initiateCallWithRetry('host');
           this.updateConnectionState('webrtc', 'connecting');
           console.log(`✅ CALLBACK-CRÍTICO: Handshake WebRTC iniciado com sucesso`);

@@ -34,6 +34,36 @@ export const WebRTCDebugToasts = () => {
       });
     };
 
+    const handleStreamCallbackError = (event: CustomEvent) => {
+      const { participantId, error } = event.detail;
+      toast({
+        title: "❌ Erro no Callback",
+        description: `Falha para ${participantId.substring(0, 8)}: ${error}`,
+        variant: "destructive",
+        duration: 4000,
+      });
+    };
+
+    // Handler para callback WebRTC executado no host
+    const handleHostStreamReceived = (event: CustomEvent) => {
+      const { participantId, streamId, trackCount } = event.detail;
+      toast({
+        title: "🖥️ Host Recebeu Stream",
+        description: `${participantId.substring(0, 8)} com ${trackCount} tracks`,
+        duration: 3000,
+      });
+    };
+
+    // Handler para callback WebRTC executado
+    const handleWebRTCCallbackExecuted = (event: CustomEvent) => {
+      const { participantId, streamId, trackCount } = event.detail;
+      toast({
+        title: "🔄 WebRTC Callback",
+        description: `Processando ${participantId.substring(0, 8)} - ${trackCount} tracks`,
+        duration: 3000,
+      });
+    };
+
     const handleWebRTCStateChange = (event: CustomEvent) => {
       const { participantId, state } = event.detail;
       let emoji = "🔄";
@@ -53,16 +83,20 @@ export const WebRTCDebugToasts = () => {
     window.addEventListener('track-received', handleTrackReceived as EventListener);
     window.addEventListener('stream-processed', handleStreamProcessed as EventListener);
     window.addEventListener('stream-callback-executed', handleStreamCallbackExecuted as EventListener);
-    window.addEventListener('stream-callback-error', handleStreamCallbackExecuted as EventListener);
+    window.addEventListener('stream-callback-error', handleStreamCallbackError as EventListener);
     window.addEventListener('webrtc-state-change', handleWebRTCStateChange as EventListener);
+    window.addEventListener('host-stream-received', handleHostStreamReceived as EventListener);
+    window.addEventListener('webrtc-callback-executed', handleWebRTCCallbackExecuted as EventListener);
 
     // Cleanup
     return () => {
       window.removeEventListener('track-received', handleTrackReceived as EventListener);
       window.removeEventListener('stream-processed', handleStreamProcessed as EventListener);
       window.removeEventListener('stream-callback-executed', handleStreamCallbackExecuted as EventListener);
-      window.removeEventListener('stream-callback-error', handleStreamCallbackExecuted as EventListener);
+      window.removeEventListener('stream-callback-error', handleStreamCallbackError as EventListener);
       window.removeEventListener('webrtc-state-change', handleWebRTCStateChange as EventListener);
+      window.removeEventListener('host-stream-received', handleHostStreamReceived as EventListener);
+      window.removeEventListener('webrtc-callback-executed', handleWebRTCCallbackExecuted as EventListener);
     };
   }, [toast]);
 

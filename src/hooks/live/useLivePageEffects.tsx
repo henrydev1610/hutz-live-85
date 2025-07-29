@@ -104,19 +104,35 @@ export const useLivePageEffects = ({
             throw new Error('WebRTC manager not accessible after initialization');
           }
           
+          // CORREÇÃO CRÍTICA: Registrar callbacks ANTES de qualquer inicialização
+          console.log(`🎯 HOST-CRITICAL-SEQUENCE: Registrando callbacks ANTES da inicialização WebRTC`);
+          
           result.webrtc.setOnStreamCallback((participantId, stream) => {
-            console.log('🎥 HOST-CRÍTICO: STREAM RECEBIDO de:', participantId, {
+            console.log('🎥 HOST-CRÍTICO: STREAM callback executado para:', participantId, {
               streamId: stream.id,
               trackCount: stream.getTracks().length,
               videoTracks: stream.getVideoTracks().length,
-              active: stream.active
+              active: stream.active,
+              timestamp: Date.now()
             });
             
             // VISUAL LOG: Toast para stream recebido no host
             toast({
-              title: "🎥 Stream do Participante",
-              description: `Recebido stream de ${participantId.substring(0, 8)}`,
+              title: "🎥 Host Stream Callback",
+              description: `${participantId.substring(0, 8)} - ${stream.getTracks().length} tracks`,
             });
+            
+            // VISUAL LOG: Evento customizado para debug
+            if (typeof window !== 'undefined' && window.dispatchEvent) {
+              window.dispatchEvent(new CustomEvent('host-stream-received', {
+                detail: { 
+                  participantId, 
+                  streamId: stream.id,
+                  trackCount: stream.getTracks().length,
+                  timestamp: Date.now()
+                }
+              }));
+            }
             
             handleParticipantStream(participantId, stream);
             
