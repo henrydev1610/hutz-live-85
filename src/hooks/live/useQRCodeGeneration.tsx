@@ -78,106 +78,47 @@ export const useQRCodeGeneration = () => {
   };
 
   const handleGenerateQRCode = async (state: any) => {
+    console.log("🎯 QR GENERATION: Starting QR Code generation...");
+    console.log("📍 Frontend URL:", productionUrl);
+    console.log("📱 MOBILE PARAMS:", FORCED_MOBILE_PARAMS);
+    
     try {
-      console.log("🎯 QR GENERATION FASE 1: Starting with FORCED MOBILE PARAMS...");
-      console.log("📍 Frontend URL:", productionUrl);
-      console.log("📡 Backend URL:", backendUrl);
-      console.log("📱 FORCED MOBILE PARAMS:", FORCED_MOBILE_PARAMS);
+      // CORREÇÃO CRÍTICA: Usar geração direta em vez de API backend problemática
+      const sessionId = generateSessionId();
+      const finalUrl = `${productionUrl}/participant/${sessionId}${FORCED_MOBILE_PARAMS}`;
       
-      const response = await fetch(`${backendUrl}/api/rooms`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        mode: 'cors',
-        credentials: 'omit'
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("❌ QR API Error:", response.status, response.statusText, errorText);
-        throw new Error(`API Error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log("✅ QR API Success:", data);
+      console.log(`🎯 QR URL GERADA: ${finalUrl}`);
       
-      // FASE 1: FORÇAR PARÂMETROS MOBILE na URL retornada
-      let finalUrl = data.joinURL;
-      if (finalUrl && !finalUrl.includes('forceMobile=true')) {
-        // Se a URL não tem os parâmetros mobile, adicionar
-        const hasExistingParams = finalUrl.includes('?');
-        if (hasExistingParams) {
-          finalUrl = finalUrl + '&forceMobile=true&camera=environment&qr=1&mobile=true';
-        } else {
-          finalUrl = finalUrl + FORCED_MOBILE_PARAMS;
+      // Gerar QR Code usando a biblioteca qrcode
+      const qrDataUrl = await QRCode.toDataURL(finalUrl, {
+        width: 256,
+        margin: 1,
+        color: {
+          dark: '#000000',
+          light: '#ffffff'
         }
-        console.log('📱 QR FASE 1: FORCED mobile params added to API URL:', finalUrl);
-      }
+      });
       
-      // FASE 1: URL VALIDATION - Verificar se URL final tem parâmetros mobile
-      if (!finalUrl.includes('forceMobile=true') || !finalUrl.includes('camera=environment')) {
-        console.error('❌ QR FASE 1: CRITICAL - URL missing forced mobile params!');
-      } else {
-        console.log('✅ QR FASE 1: URL validated with mobile params');
-      }
-      
-      state.setSessionId(data.roomId);
+      // Atualizar estado
+      state.setSessionId(sessionId);
       state.setQrCodeURL(finalUrl);
-      state.setQrCodeSvg(data.qrDataUrl);
+      state.setQrCodeSvg(qrDataUrl);
       state.setParticipantList([]);
+      
+      console.log("✅ QR Code gerado com sucesso!");
       
       toast({
         title: "QR Code gerado",
-        description: "QR Code gerado com parâmetros mobile FORÇADOS.",
+        description: "Sala criada com sucesso! Compartilhe o link com os participantes.",
       });
       
     } catch (error) {
-      console.error('❌ QR BACKEND ERROR:', error);
-      
-      try {
-        console.log("🔄 QR FALLBACK FASE 1: Generating with FORCED mobile params...");
-        const fallbackSessionId = generateSessionId();
-        
-        // FASE 1: CRÍTICO - SEMPRE incluir parâmetros mobile no fallback
-        const fallbackUrl = `${productionUrl}/participant/${fallbackSessionId}${FORCED_MOBILE_PARAMS}`;
-        console.log(`🎯 QR FALLBACK URL with MOBILE PARAMS: ${fallbackUrl}`);
-        
-        // FASE 1: URL VALIDATION CRÍTICA
-        if (!fallbackUrl.includes('forceMobile=true') || !fallbackUrl.includes('camera=environment')) {
-          console.error('❌ QR FALLBACK FASE 1: CRITICAL - Fallback URL missing mobile params!');
-        } else {
-          console.log('✅ QR FALLBACK FASE 1: URL validated with mobile params');
-        }
-        
-        const qrDataUrl = await QRCode.toDataURL(fallbackUrl, {
-          width: 256,
-          margin: 1,
-          color: {
-            dark: '#000000',
-            light: '#ffffff'
-          }
-        });
-        
-        state.setSessionId(fallbackSessionId);
-        state.setQrCodeURL(fallbackUrl);
-        state.setQrCodeSvg(qrDataUrl);
-        state.setParticipantList([]);
-        
-        toast({
-          title: "QR Code gerado (fallback)",
-          description: "Gerado com parâmetros mobile FORÇADOS.",
-          variant: "default"
-        });
-        
-      } catch (fallbackError) {
-        console.error('❌ QR FALLBACK FAILED:', fallbackError);
-        toast({
-          title: "Erro ao gerar QR Code",
-          description: `Falha total na geração: ${error.message}`,
-          variant: "destructive"
-        });
-      }
+      console.error('❌ QR GENERATION ERROR:', error);
+      toast({
+        title: "Erro ao gerar QR Code",
+        description: `Não foi possível gerar o QR Code: ${error.message}`,
+        variant: "destructive"
+      });
     }
   };
 
