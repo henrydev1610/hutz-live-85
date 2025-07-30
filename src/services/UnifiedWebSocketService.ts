@@ -50,9 +50,9 @@ class UnifiedWebSocketService {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
-  // CORREÇÃO: Circuit breaker mais agressivo
-  private circuitBreakerThreshold = 2; // Reduzido de 5 para 2
-  private circuitBreakerTimeout = 60000; // Aumentado para 60s
+  // CORREÇÃO: Circuit breaker menos agressivo para evitar bloqueio permanente
+  private circuitBreakerThreshold = 8; // Aumentado de 2 para 8 tentativas
+  private circuitBreakerTimeout = 30000; // Reduzido de 60s para 30s
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
   private isConnectingFlag = false; // Flag para prevenir conexões simultâneas
@@ -147,17 +147,17 @@ class UnifiedWebSocketService {
     });
 
     return new Promise((resolve, reject) => {
-      // FASE 2: Progressive timeouts based on network and device
+      // FASE 2: Progressive timeouts com fallback melhorado
       const isMobile = this.isMobileDevice();
       const isSlowNetwork = this.metrics.networkQuality === 'slow';
       
       let connectionTimeout;
       if (isMobile && isSlowNetwork) {
-        connectionTimeout = 45000; // 45s for mobile + slow network
+        connectionTimeout = 60000; // Aumentado para 60s em mobile + rede lenta
       } else if (isMobile || isSlowNetwork) {
-        connectionTimeout = 30000; // 30s for mobile OR slow network
+        connectionTimeout = 45000; // Aumentado para 45s
       } else {
-        connectionTimeout = 20000; // 20s for desktop + fast network
+        connectionTimeout = 30000; // Aumentado para 30s em desktop + rede rápida
       }
       
       console.log(`⏱️ CONNECTION TIMEOUT: ${connectionTimeout}ms (Mobile: ${isMobile}, Slow: ${isSlowNetwork})`);
@@ -234,7 +234,8 @@ class UnifiedWebSocketService {
       this.circuitBreakerTimer = null;
     }
     this.isCircuitOpen = false;
-    console.log('✅ CIRCUIT BREAKER: Reset');
+    this.metrics.consecutiveFailures = 0;
+    console.log('✅ CIRCUIT BREAKER: Reset automaticamente em conexão bem-sucedida');
   }
 
   private setupEventListeners(): void {
