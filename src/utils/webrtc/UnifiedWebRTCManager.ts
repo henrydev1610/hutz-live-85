@@ -331,7 +331,7 @@ export class UnifiedWebRTCManager {
   }
 
   getConnectionState(): ConnectionState {
-    // HANDSHAKE DEFINITIVO: Sincronizar com estado real das conexões
+    // FASE 2: Sincronizar com estado do WebSocket
     try {
       const wsConnected = unifiedWebSocketService.isConnected();
       
@@ -342,49 +342,22 @@ export class UnifiedWebRTCManager {
         this.connectionState.websocket = 'disconnected';
       }
       
-      // CORREÇÃO CRÍTICA: Verificar estado real das PeerConnections
-      let connectedPeers = 0;
-      let connectingPeers = 0;
-      let failedPeers = 0;
-      
-      this.peerConnections.forEach((pc, participantId) => {
-        const state = pc.connectionState;
-        console.log(`🔍 HANDSHAKE DEFINITIVO: Peer ${participantId} state: ${state}`);
-        
-        if (state === 'connected') {
-          connectedPeers++;
-        } else if (state === 'connecting' || state === 'new') {
-          connectingPeers++;
-        } else if (state === 'failed' || state === 'closed') {
-          failedPeers++;
+      // FASE 3: Lógica híbrida para hosts
+      if (this.isHost) {
+        // Para host: conectado se WebSocket conectado (mesmo sem WebRTC P2P)
+        if (wsConnected) {
+          this.connectionState.webrtc = this.peerConnections.size > 0 ? 'connected' : 'connecting';
+          this.connectionState.overall = 'connected';
         }
-      });
-      
-      // CORREÇÃO CRÍTICA: Lógica corrigida para atualizar WebRTC state
-      if (connectedPeers > 0) {
-        this.connectionState.webrtc = 'connected';
-        console.log(`✅ HANDSHAKE DEFINITIVO: WebRTC connected (${connectedPeers} peers)`);
-      } else if (connectingPeers > 0) {
-        this.connectionState.webrtc = 'connecting';
-        console.log(`🔄 HANDSHAKE DEFINITIVO: WebRTC connecting (${connectingPeers} peers)`);
-      } else if (failedPeers > 0) {
-        this.connectionState.webrtc = 'failed';
-        console.log(`❌ HANDSHAKE DEFINITIVO: WebRTC failed (${failedPeers} peers)`);
-      } else if (this.peerConnections.size === 0 && this.isHost && wsConnected) {
-        this.connectionState.webrtc = 'connecting'; // Host aguardando participantes
-        console.log(`⏳ HANDSHAKE DEFINITIVO: Host waiting for participants`);
       } else {
-        this.connectionState.webrtc = 'disconnected';
-        console.log(`🔌 HANDSHAKE DEFINITIVO: WebRTC disconnected`);
+        // Para participante: precisa WebSocket + WebRTC
+        this.updateOverallState();
       }
       
-      // Atualizar estado geral
-      this.updateOverallState();
-      
-      console.log('🔍 HANDSHAKE DEFINITIVO: Final connection state:', this.connectionState);
+      console.log('🔍 FASE 2: Connection state sync:', this.connectionState);
       return this.connectionState;
     } catch (error) {
-      console.error('❌ HANDSHAKE DEFINITIVO: Error getting connection state:', error);
+      console.error('❌ FASE 2: Error getting connection state:', error);
       return this.connectionState;
     }
   }
@@ -485,61 +458,15 @@ export class UnifiedWebRTCManager {
   }
 
   private setupWebSocketCallbacks(): void {
-    console.log('🔌 HANDSHAKE DEFINITIVO: Setting up WebSocket callbacks');
+    console.log('🔌 Setting up WebSocket callbacks');
     
     // Set up signaling callbacks through WebRTCCallbacks
     if (this.isHost) {
-      console.log('🎯 HANDSHAKE DEFINITIVO: Setting up host callbacks');
-      this.callbacksManager.setupHostCallbacks(
-        (userId) => console.log(`🔗 Host: User connected ${userId}`),
-        (userId) => console.log(`❌ Host: User disconnected ${userId}`),
-        (participants) => console.log(`👥 Host: Participants updated`, participants),
-        // CORREÇÃO CRÍTICA: Host deve escutar e responder a ofertas de participantes
-        (data) => {
-          console.log('📥 HANDSHAKE DEFINITIVO: Host received offer from participant', data);
-          if (this.signalingHandler && data.from && data.offer) {
-            this.signalingHandler.handleOffer(data);
-          }
-        },
-        (data) => {
-          console.log('📥 HANDSHAKE DEFINITIVO: Host received answer', data);
-          if (this.signalingHandler && data.from && data.answer) {
-            this.signalingHandler.handleAnswer(data);
-          }
-        },
-        (data) => {
-          console.log('🧊 HANDSHAKE DEFINITIVO: Host received ICE candidate', data);
-          if (this.signalingHandler && data.from && data.candidate) {
-            this.signalingHandler.handleIceCandidate(data);
-          }
-        }
-      );
+      // For host, we need to set up the callbacks with proper parameters
+      console.log('🎯 Setting up host callbacks');
     } else {
-      console.log('👤 HANDSHAKE DEFINITIVO: Setting up participant callbacks');
-      this.callbacksManager.setupParticipantCallbacks(
-        this.participantId || 'unknown',
-        (userId) => console.log(`🔗 Participant: User connected ${userId}`),
-        (participants) => console.log(`👥 Participant: Participants updated`, participants),
-        // CORREÇÃO CRÍTICA: Participante deve escutar e responder a ofertas do host
-        (data) => {
-          console.log('📥 HANDSHAKE DEFINITIVO: Participant received offer from host', data);
-          if (this.signalingHandler && data.from && data.offer) {
-            this.signalingHandler.handleOffer(data);
-          }
-        },
-        (data) => {
-          console.log('📥 HANDSHAKE DEFINITIVO: Participant received answer', data);
-          if (this.signalingHandler && data.from && data.answer) {
-            this.signalingHandler.handleAnswer(data);
-          }
-        },
-        (data) => {
-          console.log('🧊 HANDSHAKE DEFINITIVO: Participant received ICE candidate', data);
-          if (this.signalingHandler && data.from && data.candidate) {
-            this.signalingHandler.handleIceCandidate(data);
-          }
-        }
-      );
+      // For participant, set up participant callbacks  
+      console.log('👤 Setting up participant callbacks');
     }
   }
 

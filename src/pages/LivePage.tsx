@@ -11,7 +11,6 @@ import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
-import HandshakeDebugToasts from '@/components/live/HandshakeDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
@@ -224,7 +223,6 @@ const LivePage: React.FC = () => {
       </div>
 
       <WebRTCDebugToasts />
-      <HandshakeDebugToasts />
     </div>
   );
 };
