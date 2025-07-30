@@ -6,6 +6,7 @@ import { useVideoElementManagement } from './useVideoElementManagement';
 import { useCleanStreamManagement } from './useCleanStreamManagement';
 import { useParticipantLifecycle } from './useParticipantLifecycle';
 import { useParticipantAutoSelection } from './useParticipantAutoSelection';
+import { useAutoHandshake } from './useAutoHandshake';
 import { clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
@@ -17,6 +18,7 @@ interface UseParticipantManagementProps {
   sessionId: string | null;
   transmissionWindowRef: React.MutableRefObject<Window | null>;
   updateTransmissionParticipants: () => void;
+  isHost?: boolean;
 }
 
 export const useParticipantManagement = ({
@@ -26,7 +28,8 @@ export const useParticipantManagement = ({
   setParticipantStreams,
   sessionId,
   transmissionWindowRef,
-  updateTransmissionParticipants
+  updateTransmissionParticipants,
+  isHost = false
 }: UseParticipantManagementProps) => {
   const { updateVideoElementsImmediately } = useVideoElementManagement();
   
@@ -69,6 +72,16 @@ export const useParticipantManagement = ({
     sessionId,
     transmissionWindowRef,
     updateTransmissionParticipants
+  });
+
+  // CORREÇÃO 3: Hook para auto-handshake do host
+  useAutoHandshake({
+    isHost,
+    sessionId,
+    onHandshakeRequest: (participantId: string) => {
+      console.log('🤝 CRÍTICO: Iniciando handshake automático com', participantId);
+      handleParticipantJoin(participantId);
+    }
   });
 
   // Enhanced stream handling with retry and cache busting

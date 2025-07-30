@@ -233,17 +233,7 @@ export class UnifiedWebRTCManager {
           await this.connectionHandler.initiateCallWithRetry('host');
           this.updateConnectionState('webrtc', 'connecting');
           
-          // TIMEOUT para verificar se ontrack foi disparado
-          setTimeout(() => {
-            if (this.connectionState.webrtc === 'connecting') {
-              console.warn(`⚠️ CALLBACK-CRÍTICO: Timeout de 5s - ontrack não foi disparado`);
-              if (typeof window !== 'undefined' && window.dispatchEvent) {
-                window.dispatchEvent(new CustomEvent('ontrack-timeout', {
-                  detail: { participantId, timeout: 5000 }
-                }));
-              }
-            }
-          }, 5000);
+          // CORREÇÃO 2: Remover timeout que causa loops infinitos
           
           console.log(`✅ CALLBACK-CRÍTICO: Handshake WebRTC iniciado com sucesso`);
         } else {

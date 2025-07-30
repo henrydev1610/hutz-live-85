@@ -298,6 +298,15 @@ class UnifiedWebSocketService {
 
     this.socket.on('stream-started', (participantId: string, streamInfo: any) => {
       console.log('🎥 STREAM STARTED:', participantId, streamInfo);
+      
+      // CORREÇÃO 3: Auto-handshake quando host recebe stream-started
+      if (this.currentUserId === 'host') {
+        console.log('🤝 CRÍTICO: Host auto-iniciando handshake com', participantId);
+        window.dispatchEvent(new CustomEvent('auto-handshake-request', {
+          detail: { participantId, streamInfo }
+        }));
+      }
+      
       this.callbacks.onStreamStarted?.(participantId, streamInfo);
     });
 

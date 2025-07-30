@@ -137,100 +137,35 @@ export class ConnectionHandler {
       }
     };
 
-    // FASE 5: Enhanced track handling with retry and timeout
+    // CORREÇÃO 1: Callback direto e simples do ontrack
     peerConnection.ontrack = (event) => {
       console.log('🎵 CRÍTICO: Track received from participant:', participantId);
       
-      const remoteStream = event.streams[0];
-      if (remoteStream) {
-        console.log('📺 CRÍTICO: Remote stream received:', {
-          streamId: remoteStream.id,
-          tracks: remoteStream.getTracks().length,
-          participantId,
-          active: remoteStream.active
-        });
-        
-        // CORREÇÃO CRÍTICA: Disparar callback imediatamente
-        if (this.streamCallback) {
-          console.log('📞 CRÍTICO: Disparando stream callback');
-          this.streamCallback(participantId, remoteStream);
-        }
-        
-        // CORREÇÃO: Atualização única do grid
-        window.dispatchEvent(new CustomEvent('participant-stream-received', {
-          detail: { participantId, stream: remoteStream }
-        }));
-      } else {
-        console.warn('⚠️ CRÍTICO: ontrack disparado mas sem stream válido');
-      }
-
       if (event.streams && event.streams.length > 0) {
         const stream = event.streams[0];
-        console.log(`📹 STREAM-CRÍTICO: Processando stream de ${participantId}:`, {
+        console.log('📺 CRÍTICO: Stream válido recebido:', {
           streamId: stream.id,
           trackCount: stream.getTracks().length,
-          videoTracks: stream.getVideoTracks().length,
-          audioTracks: stream.getAudioTracks().length,
-          streamActive: stream.active
+          participantId,
+          active: stream.active
         });
-
-        // VISUAL LOG: Toast quando stream é processado
-        if (typeof window !== 'undefined' && window.dispatchEvent) {
-          window.dispatchEvent(new CustomEvent('stream-processed', {
-            detail: { 
-              participantId, 
-              streamId: stream.id,
-              trackCount: stream.getTracks().length
-            }
-          }));
-        }
-
-        const triggerCallback = () => {
-          if (this.streamCallback) {
-            console.log(`🚀 CALLBACK-CRÍTICO: Disparando callback de stream para ${participantId}`);
-            try {
-              this.streamCallback(participantId, stream);
-              
-              // VISUAL LOG: Toast quando callback é executado
-              if (typeof window !== 'undefined' && window.dispatchEvent) {
-                window.dispatchEvent(new CustomEvent('stream-callback-executed', {
-                  detail: { participantId, success: true }
-                }));
-              }
-            } catch (error) {
-              console.error(`❌ CALLBACK-CRÍTICO: Erro no callback para ${participantId}:`, error);
-              
-              // VISUAL LOG: Toast quando callback falha
-              if (typeof window !== 'undefined' && window.dispatchEvent) {
-                window.dispatchEvent(new CustomEvent('stream-callback-error', {
-                  detail: { participantId, error: error.message }
-                }));
-              }
-              
-              // Retry callback
-              setTimeout(() => {
-                if (this.streamCallback) {
-                  this.streamCallback(participantId, stream);
-                }
-              }, 50);
-            }
-          } else {
-            console.error(`❌ CALLBACK-CRÍTICO: Nenhum callback definido para ${participantId}`);
+        
+        // CORREÇÃO: Callback direto sem delays ou retries
+        if (this.streamCallback) {
+          console.log('📞 CRÍTICO: Executando callback de stream');
+          try {
+            this.streamCallback(participantId, stream);
+          } catch (error) {
+            console.error('❌ CRÍTICO: Erro no callback:', error);
           }
-        };
-
-        // CORREÇÃO: Disparo único para evitar spam
-        triggerCallback();
-
+        }
+        
+        // Evento direto para o grid
+        window.dispatchEvent(new CustomEvent('participant-stream-received', {
+          detail: { participantId, stream }
+        }));
       } else {
-        console.warn(`⚠️ TRACK-CRÍTICO: Track de ${participantId} sem streams anexados`);
-        if (event.track) {
-          const syntheticStream = new MediaStream([event.track]);
-          console.log(`🔧 STREAM-CRÍTICO: Stream sintético criado para ${participantId}`);
-          if (this.streamCallback) {
-            this.streamCallback(participantId, syntheticStream);
-          }
-        }
+        console.warn('⚠️ CRÍTICO: ontrack sem streams válidos');
       }
     };
 
