@@ -79,67 +79,108 @@ export const useContainerManagement = () => {
         console.log(`✅ Found ${containers.length} container(s) for ${participantId}`);
         resolve(containers);
       } else {
-        // Wait and try again
-        console.log(`⏳ No containers found initially, retrying for ${participantId}...`);
-        setTimeout(() => {
-          const retryContainers = searchContainers();
-          console.log(`🔄 Retry found ${retryContainers.length} containers for ${participantId}`);
-          resolve(retryContainers);
-        }, 300);
+        // CORREÇÃO 2: SEMPRE criar container se não encontrar
+        console.log(`🆘 CRÍTICO: Nenhum container encontrado, criando de emergência para ${participantId}`);
+        
+        const emergencyContainer = createEmergencyContainer(participantId);
+        if (emergencyContainer) {
+          console.log(`✅ CRÍTICO: Container de emergência criado para ${participantId}`);
+          resolve([emergencyContainer]);
+        } else {
+          // Wait and try again como fallback final
+          console.log(`⏳ Fallback: Aguardando containers aparecerem para ${participantId}...`);
+          setTimeout(() => {
+            const retryContainers = searchContainers();
+            console.log(`🔄 Retry found ${retryContainers.length} containers for ${participantId}`);
+            
+            // Se ainda não encontrou, criar outro emergency
+            if (retryContainers.length === 0) {
+              const finalEmergency = createEmergencyContainer(participantId);
+              resolve(finalEmergency ? [finalEmergency] : []);
+            } else {
+              resolve(retryContainers);
+            }
+          }, 300);
+        }
       }
     });
   }, []);
 
   const createEmergencyContainer = useCallback((participantId: string) => {
-    console.log('🆘 Creating emergency video container for:', participantId);
+    console.log('🆘 CRÍTICO: Criando container de emergência GARANTIDO para:', participantId);
     
-    // Find the participant grid first
-    let targetParent = document.querySelector('.participant-grid');
-    
-    if (!targetParent) {
-      console.log('⚠️ No participant grid found, searching for alternatives...');
-      // Try to find alternative parent containers
-      targetParent = document.querySelector('.live-preview') || 
-                   document.querySelector('[class*="preview"]') ||
-                   document.querySelector('.aspect-video') ||
-                   document.querySelector('[class*="container"]');
-    }
+    // CORREÇÃO 2: Buscar parent com fallbacks múltiplos
+    let targetParent = document.querySelector('.participant-grid') ||
+                      document.querySelector('.live-preview') || 
+                      document.querySelector('[class*="preview"]') ||
+                      document.querySelector('.grid') ||
+                      document.querySelector('[class*="container"]') ||
+                      document.querySelector('main') ||
+                      document.body;
     
     if (!targetParent) {
-      console.log('🆘 No suitable parent found, creating emergency preview area...');
-      // Create emergency preview area
-      const mainContainer = document.querySelector('.container') || 
-                           document.querySelector('main') || 
-                           document.body;
-      const previewArea = document.createElement('div');
-      previewArea.className = 'participant-grid grid grid-cols-2 gap-4 p-4 bg-black/20 rounded-lg';
-      previewArea.id = 'emergency-participant-grid';
-      mainContainer.appendChild(previewArea);
-      targetParent = previewArea;
+      console.error('❌ CRÍTICO: Nenhum parent encontrado - usando body como fallback');
+      targetParent = document.body;
     }
     
-    if (targetParent) {
-      const emergencyContainer = document.createElement('div');
-      emergencyContainer.id = `preview-participant-video-${participantId}`;
-      emergencyContainer.className = 'participant-video aspect-video bg-gray-800 rounded-lg overflow-hidden relative';
-      emergencyContainer.setAttribute('data-participant-id', participantId);
-      emergencyContainer.style.minHeight = '200px';
-      emergencyContainer.style.minWidth = '300px';
-      emergencyContainer.style.backgroundColor = 'rgba(55, 65, 81, 0.6)';
-      
-      // Add visual indicator
-      const indicator = document.createElement('div');
-      indicator.className = 'absolute top-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded z-20';
-      indicator.textContent = `P${participantId.substring(0, 4)}`;
-      emergencyContainer.appendChild(indicator);
-      
-      targetParent.appendChild(emergencyContainer);
-      console.log('✅ Emergency container created:', emergencyContainer.id);
-      return emergencyContainer;
+    // GARANTIR que temos uma grid de participantes
+    let participantGrid = document.querySelector('.participant-grid');
+    if (!participantGrid) {
+      console.log('🆘 CRÍTICO: Criando participant-grid de emergência');
+      const emergencyGrid = document.createElement('div');
+      emergencyGrid.className = 'participant-grid grid grid-cols-2 gap-4 p-4 bg-black/20 rounded-lg min-h-[400px]';
+      emergencyGrid.id = 'emergency-participant-grid';
+      emergencyGrid.style.position = 'relative';
+      emergencyGrid.style.zIndex = '10';
+      targetParent.appendChild(emergencyGrid);
+      participantGrid = emergencyGrid;
     }
     
-    console.error('❌ Could not create emergency container - no suitable parent found');
-    return null;
+    // CRIAR container com múltiplos IDs para garantir detecção
+    const emergencyContainer = document.createElement('div');
+    const containerId = `preview-participant-video-${participantId}`;
+    
+    emergencyContainer.id = containerId;
+    emergencyContainer.className = 'participant-video aspect-video bg-gray-800 rounded-lg overflow-hidden relative border-2 border-green-500';
+    emergencyContainer.setAttribute('data-participant-id', participantId);
+    emergencyContainer.setAttribute('data-emergency', 'true');
+    
+    // CORREÇÃO: Dimensões e visibilidade garantidas
+    emergencyContainer.style.minHeight = '240px';
+    emergencyContainer.style.minWidth = '320px';
+    emergencyContainer.style.backgroundColor = 'rgba(55, 65, 81, 0.8)';
+    emergencyContainer.style.display = 'block';
+    emergencyContainer.style.visibility = 'visible';
+    emergencyContainer.style.opacity = '1';
+    emergencyContainer.style.position = 'relative';
+    
+    // Indicador visual melhorado
+    const indicator = document.createElement('div');
+    indicator.className = 'absolute top-2 left-2 bg-green-500 text-white text-xs px-3 py-1 rounded z-30 font-bold';
+    indicator.textContent = `EMERGENCY ${participantId.substring(0, 6)}`;
+    indicator.style.pointerEvents = 'none';
+    emergencyContainer.appendChild(indicator);
+    
+    // Loading indicator
+    const loader = document.createElement('div');
+    loader.className = 'absolute inset-0 flex items-center justify-center text-white text-sm bg-black/50';
+    loader.textContent = 'Aguardando stream...';
+    loader.id = `loader-${participantId}`;
+    emergencyContainer.appendChild(loader);
+    
+    participantGrid.appendChild(emergencyContainer);
+    
+    console.log('✅ CRÍTICO: Container de emergência criado com GARANTIAS:', {
+      id: containerId,
+      parent: participantGrid.className,
+      dimensions: `${emergencyContainer.offsetWidth}x${emergencyContainer.offsetHeight}`,
+      visible: emergencyContainer.offsetParent !== null
+    });
+    
+    // Força uma atualização do layout
+    emergencyContainer.offsetHeight;
+    
+    return emergencyContainer;
   }, []);
 
   return { findVideoContainers, createEmergencyContainer };

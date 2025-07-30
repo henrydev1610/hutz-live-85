@@ -50,9 +50,9 @@ class UnifiedWebSocketService {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
-  // CORREÇÃO: Circuit breaker menos agressivo para evitar bloqueio permanente
-  private circuitBreakerThreshold = 8; // Aumentado de 2 para 8 tentativas
-  private circuitBreakerTimeout = 30000; // Reduzido de 60s para 30s
+  // CORREÇÃO 3: Circuit breaker TEMPORARIAMENTE desabilitado para reconexão
+  private circuitBreakerThreshold = 20; // Aumentado para 20 tentativas (quase desabilitado)
+  private circuitBreakerTimeout = 10000; // Reduzido para 10s (recovery rápido)
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
   private isConnectingFlag = false; // Flag para prevenir conexões simultâneas

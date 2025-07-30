@@ -137,7 +137,7 @@ export class ConnectionHandler {
       }
     };
 
-    // CORREÇÃO 1: Callback direto e simples do ontrack
+    // CORREÇÃO 1: Callback direto e imediato do ontrack
     peerConnection.ontrack = (event) => {
       console.log('🎵 CRÍTICO: Track received from participant:', participantId);
       
@@ -150,20 +150,48 @@ export class ConnectionHandler {
           active: stream.active
         });
         
-        // CORREÇÃO: Callback direto sem delays ou retries
+        // CORREÇÃO CRÍTICA: Forçar atualização imediata do participantStreams
         if (this.streamCallback) {
-          console.log('📞 CRÍTICO: Executando callback de stream');
+          console.log('📞 CRÍTICO: Executando callback IMEDIATO de stream');
           try {
+            // Callback direto SEM delays
             this.streamCallback(participantId, stream);
+            
+            // FALLBACK: Forçar atualização via evento se callback falhar
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('force-participant-stream-update', {
+                detail: { participantId, stream, source: 'ontrack-fallback' }
+              }));
+            }, 100);
+            
           } catch (error) {
             console.error('❌ CRÍTICO: Erro no callback:', error);
+            // Fallback direto se callback falhar
+            window.dispatchEvent(new CustomEvent('force-participant-stream-update', {
+              detail: { participantId, stream, source: 'ontrack-error-fallback' }
+            }));
           }
+        } else {
+          console.warn('⚠️ CRÍTICO: Callback não definido, usando fallback direto');
+          window.dispatchEvent(new CustomEvent('force-participant-stream-update', {
+            detail: { participantId, stream, source: 'ontrack-no-callback' }
+          }));
         }
         
-        // Evento direto para o grid
+        // Evento direto para o grid (múltiplos eventos para garantir)
         window.dispatchEvent(new CustomEvent('participant-stream-received', {
           detail: { participantId, stream }
         }));
+        
+        // BroadcastChannel para casos de falha
+        try {
+          const bc = new BroadcastChannel('participant-stream-updates');
+          bc.postMessage({ participantId, streamId: stream.id, action: 'stream-received' });
+          bc.close();
+        } catch (e) {
+          console.warn('⚠️ BroadcastChannel fallback failed:', e);
+        }
+        
       } else {
         console.warn('⚠️ CRÍTICO: ontrack sem streams válidos');
       }
