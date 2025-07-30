@@ -417,27 +417,118 @@ export class ConnectionHandler {
   }
 
   async handleOffer(participantId: string, offer: RTCSessionDescriptionInit): Promise<void> {
-    console.log(`📥 Handling offer from: ${participantId}`);
+    console.log(`📥 HANDSHAKE DEFINITIVO: Handling offer from: ${participantId}`, {
+      offerType: offer.type,
+      hasOffer: !!offer,
+      offerSdp: !!offer.sdp
+    });
 
-    const peerConnection = this.createPeerConnection(participantId);
-    await peerConnection.setRemoteDescription(offer);
-
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-
-    unifiedWebSocketService.sendAnswer(participantId, answer);
-    console.log(`📤 Answer sent to: ${participantId}`);
+    try {
+      // CORREÇÃO CRÍTICA: Garantir que a conexão está pronta antes de processar offer
+      const peerConnection = this.createPeerConnection(participantId);
+      
+      // VISUAL LOG: Toast quando offer é processado
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('offer-received', {
+          detail: { participantId, offerType: offer.type }
+        }));
+      }
+      
+      console.log(`🔧 HANDSHAKE DEFINITIVO: Setting remote description for: ${participantId}`);
+      await peerConnection.setRemoteDescription(offer);
+      
+      console.log(`📝 HANDSHAKE DEFINITIVO: Creating answer for: ${participantId}`);
+      const answer = await peerConnection.createAnswer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+      });
+      
+      console.log(`🔧 HANDSHAKE DEFINITIVO: Setting local description for: ${participantId}`);
+      await peerConnection.setLocalDescription(answer);
+      
+      // VISUAL LOG: Toast quando answer é criado
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('answer-created', {
+          detail: { participantId, answerType: answer.type }
+        }));
+      }
+      
+      console.log(`📤 HANDSHAKE DEFINITIVO: Sending answer to: ${participantId}`);
+      unifiedWebSocketService.sendAnswer(participantId, answer);
+      
+      console.log(`✅ HANDSHAKE DEFINITIVO: Answer sent successfully to: ${participantId}`);
+      
+      // VISUAL LOG: Toast quando answer é enviado
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('answer-sent', {
+          detail: { participantId }
+        }));
+      }
+      
+    } catch (error) {
+      console.error(`❌ HANDSHAKE DEFINITIVO: Failed to handle offer from ${participantId}:`, error);
+      
+      // VISUAL LOG: Toast para erro no handshake
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('handshake-error', {
+          detail: { participantId, error: error.message, phase: 'handleOffer' }
+        }));
+      }
+      
+      throw error;
+    }
   }
 
   async handleAnswer(participantId: string, answer: RTCSessionDescriptionInit): Promise<void> {
-    console.log(`📥 Handling answer from: ${participantId}`);
+    console.log(`📥 HANDSHAKE DEFINITIVO: Handling answer from: ${participantId}`, {
+      answerType: answer.type,
+      hasAnswer: !!answer,
+      answerSdp: !!answer.sdp
+    });
 
-    const peerConnection = this.peerConnections.get(participantId);
-    if (peerConnection) {
-      await peerConnection.setRemoteDescription(answer);
-      console.log(`✅ Remote description set for: ${participantId}`);
-    } else {
-      console.warn(`⚠️ No peer connection found for answer from: ${participantId}`);
+    try {
+      const peerConnection = this.peerConnections.get(participantId);
+      if (peerConnection) {
+        // VISUAL LOG: Toast quando answer é processado
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('answer-received', {
+            detail: { participantId, answerType: answer.type }
+          }));
+        }
+        
+        console.log(`🔧 HANDSHAKE DEFINITIVO: Setting remote description from answer for: ${participantId}`);
+        await peerConnection.setRemoteDescription(answer);
+        
+        console.log(`✅ HANDSHAKE DEFINITIVO: Remote description set successfully for: ${participantId}`);
+        
+        // VISUAL LOG: Toast quando handshake está completo
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('handshake-complete', {
+            detail: { participantId, phase: 'answer-processed' }
+          }));
+        }
+        
+      } else {
+        console.error(`❌ HANDSHAKE DEFINITIVO: No peer connection found for answer from: ${participantId}`);
+        
+        // VISUAL LOG: Toast para erro de peer connection não encontrada
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('handshake-error', {
+            detail: { participantId, error: 'Peer connection not found', phase: 'handleAnswer' }
+          }));
+        }
+      }
+    } catch (error) {
+      console.error(`❌ HANDSHAKE DEFINITIVO: Failed to handle answer from ${participantId}:`, error);
+      
+      // VISUAL LOG: Toast para erro no processamento da answer
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('handshake-error', {
+          detail: { participantId, error: error.message, phase: 'handleAnswer' }
+        }));
+      }
+      
+      throw error;
     }
   }
 
