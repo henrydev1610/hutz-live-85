@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Participant } from './ParticipantGrid';
 import UnifiedVideoContainer from './UnifiedVideoContainer';
 
@@ -14,23 +14,58 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   participantCount,
   participantStreams
 }) => {
-  // Filter out placeholder participants and get real participants
-  const realParticipants = participantList.filter(p => !p.id.startsWith('placeholder-'));
+  // FASE 3: CONTAINER PRE-CREATION - Estado para slots P1-P4
+  const [slots, setSlots] = useState<Participant[]>([]);
+  
+  // FASE 3: Pré-criar slots P1-P4 na inicialização
+  useEffect(() => {
+    console.log('🏗️ FASE 3: PRE-CREATION - Inicializando slots P1-P4');
+    
+    const preCreatedSlots = Array.from({ length: participantCount }, (_, i) => ({
+      id: `slot-p${i + 1}`,
+      name: `P${i + 1}`,
+      joinedAt: Date.now(),
+      lastActive: Date.now(),
+      active: false,
+      selected: false,
+      hasVideo: false,
+      isMobile: false
+    }));
+    
+    setSlots(preCreatedSlots);
+  }, [participantCount]);
+  
+  // FASE 2: Listener para eventos de stream para atualização direta
+  useEffect(() => {
+    const handleStreamConnected = (event: CustomEvent) => {
+      const { participantId, stream } = event.detail;
+      console.log('🌉 FASE 2: GRID BRIDGE - Stream conectado no grid:', participantId);
+      
+      // Forçar re-render do grid quando stream conecta
+      setSlots(currentSlots => [...currentSlots]);
+    };
+    
+    window.addEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+    
+    return () => {
+      window.removeEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+    };
+  }, []);
+  
+  // Combinar participantes reais com slots pré-criados
+  const realParticipants = participantList.filter(p => !p.id.startsWith('placeholder-') && !p.id.startsWith('slot-'));
   const selectedParticipants = realParticipants.filter(p => p.selected);
   
-  // Create placeholder participants to match participantCount if needed
-  const placeholders = Array.from({ length: Math.max(0, participantCount - realParticipants.length) }, (_, i) => ({
-    id: `placeholder-${i}`,
-    name: `P${realParticipants.length + i + 1}`,
-    joinedAt: Date.now(),
-    lastActive: Date.now(),
-    active: false,
-    selected: false,
-    hasVideo: false,
-    isMobile: false
-  }));
+  // FASE 1: Sistema de slots - P1 sempre recebe o primeiro participante
+  const finalSlots = slots.map((slot, index) => {
+    if (index < selectedParticipants.length) {
+      // Substituir slot por participante real
+      return selectedParticipants[index];
+    }
+    return slot; // Manter slot vazio
+  });
 
-  const allParticipants = [...selectedParticipants, ...placeholders].slice(0, participantCount);
+  const allParticipants = finalSlots.slice(0, participantCount);
 
   // Grid layout based on participant count
   const getGridClass = (count: number) => {
@@ -40,10 +75,10 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
     return 'grid-cols-4';
   };
 
-  console.log('🎭 PREVIEW GRID: Rendering participants', {
+  console.log('🎭 FASE 3: PREVIEW GRID - Rendering participants', {
     realParticipants: realParticipants.length,
     selectedParticipants: selectedParticipants.length,
-    placeholders: placeholders.length,
+    slots: slots.length,
     totalShown: allParticipants.length,
     streams: Object.keys(participantStreams).length
   });

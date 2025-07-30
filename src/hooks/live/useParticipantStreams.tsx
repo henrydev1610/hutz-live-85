@@ -83,32 +83,27 @@ export const useParticipantStreams = ({
   }, [updateStreamState, updateVideoElementsImmediately, transmissionWindowRef, sendStreamToTransmission, toast]);
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
-    console.log('🎬 STREAM-CRÍTICO: Stream recebido no useParticipantStreams:', participantId);
+    console.log('🎬 FASE 1: FORÇAR AUTO-DETECTION - Stream recebido:', participantId);
     
-    // VISUAL LOG: Toast quando stream é recebido no hook
-    toast({
-      title: "🎥 Stream Recebido no Hook",
-      description: `${participantId.substring(0, 8)} - ${stream.getTracks().length} tracks`,
-    });
-    
-    // Atualização imediata do participante para streams móveis
+    // FASE 1: FORÇAR DETECÇÃO AUTOMÁTICA DE STREAM
+    // Garantir que o primeiro stream sempre vá para P1
     setParticipantList(prev => {
-      const updated = prev.map(p => 
-        p.id === participantId 
-          ? { 
-              ...p, 
-              hasVideo: true, 
-              active: true, 
-              selected: true,
-              connectedAt: Date.now(),
-              isMobile: true
-            }
-          : p
-      );
+      const existingIndex = prev.findIndex(p => p.id === participantId);
+      let updated = [...prev];
       
-      // Se participante não existe, adicionar
-      if (!updated.find(p => p.id === participantId)) {
-        updated.push({
+      if (existingIndex >= 0) {
+        // Atualizar participante existente e forçar seleção
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          hasVideo: true,
+          active: true,
+          selected: true,
+          connectedAt: Date.now(),
+          isMobile: true
+        };
+      } else {
+        // NOVO PARTICIPANTE: Inserir na posição P1 se estiver vazio
+        const newParticipant = {
           id: participantId,
           name: `Mobile-${participantId.substring(0, 8)}`,
           hasVideo: true,
@@ -118,39 +113,51 @@ export const useParticipantStreams = ({
           lastActive: Date.now(),
           connectedAt: Date.now(),
           isMobile: true
-        });
+        };
         
-        // VISUAL LOG: Toast quando novo participante é adicionado
+        // Se não há participantes selecionados, este vai para P1
+        if (!updated.some(p => p.selected && p.active)) {
+          updated.unshift(newParticipant); // Adiciona no início (P1)
+          console.log('🎯 FASE 1: Participante vai para P1 (primeiro quadrante)');
+        } else {
+          updated.push(newParticipant); // Adiciona no final
+        }
+        
         toast({
-          title: "👤 Novo Participante",
-          description: `${participantId.substring(0, 8)} adicionado à lista`,
+          title: "👤 P1: Novo Participante",
+          description: `${participantId.substring(0, 8)} conectado no primeiro quadrante`,
         });
       }
       
-      console.log('🔄 STREAM-CRÍTICO: Lista de participantes atualizada para:', participantId);
       return updated;
     });
 
-    // FORÇAR atualização do grid através de múltiplos canais
-    console.log('🔄 PARTICIPANT STREAMS: Forçando atualização do grid via múltiplos canais');
+    // FASE 2: BRIDGING DIRETO STREAM → GRID
+    console.log('🌉 FASE 2: BRIDGE DIRETO - Disparando eventos para grid');
     
-    // Disparar evento customizado para grid updates
+    // Evento específico para o primeiro quadrante
+    window.dispatchEvent(new CustomEvent(`stream-received-${participantId}`, {
+      detail: { participantId, stream, timestamp: Date.now(), isP1: true }
+    }));
+    
+    // Evento global para atualizações do grid
     window.dispatchEvent(new CustomEvent('participant-stream-connected', {
       detail: { participantId, stream, timestamp: Date.now() }
     }));
     
-    // Atualizar BroadcastChannel para comunicação cross-tab
+    // BroadcastChannel para comunicação cross-tab
     try {
       const bc = new BroadcastChannel('participant-updates');
       bc.postMessage({
         type: 'stream-connected',
         participantId,
         hasVideo: true,
+        isP1: true,
         timestamp: Date.now()
       });
       bc.close();
     } catch (error) {
-      console.warn('⚠️ PARTICIPANT STREAMS: BroadcastChannel não disponível:', error);
+      console.warn('⚠️ FASE 2: BroadcastChannel não disponível:', error);
     }
     
     if (!validateStream(stream, participantId)) {
