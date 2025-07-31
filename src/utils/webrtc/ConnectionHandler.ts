@@ -19,12 +19,14 @@ export class ConnectionHandler {
 
   setStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
     this.streamCallback = callback;
-    console.log('📞 ConnectionHandler: Stream callback set');
+    console.log('📞 WEBRTC DEBUG: Stream callback registrado com sucesso');
+    console.log('📞 WEBRTC DEBUG: Callback é válido:', typeof callback === 'function');
   }
 
   setParticipantJoinCallback(callback: (participantId: string) => void) {
     this.participantJoinCallback = callback;
-    console.log('👤 ConnectionHandler: Participant join callback set');
+    console.log('👤 WEBRTC DEBUG: Participant join callback registrado com sucesso');
+    console.log('👤 WEBRTC DEBUG: Callback é válido:', typeof callback === 'function');
   }
 
   // FASE 2: Novo método para iniciar handshake automático
@@ -41,19 +43,26 @@ export class ConnectionHandler {
   }
 
   createPeerConnection(participantId: string): RTCPeerConnection {
-    console.log(`🔗 Creating peer connection for: ${participantId}`);
+    console.log(`🔗 WEBRTC DEBUG: ===== CRIANDO PEER CONNECTION =====`);
+    console.log(`🔗 WEBRTC DEBUG: Participante: ${participantId}`);
+    console.log(`🔗 WEBRTC DEBUG: Conexões existentes: ${this.peerConnections.size}`);
+    console.log(`🔗 WEBRTC DEBUG: Stream callback disponível: ${!!this.streamCallback}`);
+    console.log(`🔗 WEBRTC DEBUG: Join callback disponível: ${!!this.participantJoinCallback}`);
 
     // Verificar se já existe conexão para este participante
     if (this.peerConnections.has(participantId)) {
       const existingPC = this.peerConnections.get(participantId)!;
+      console.log(`🔗 WEBRTC DEBUG: Conexão existente encontrada para ${participantId}`);
+      console.log(`🔗 WEBRTC DEBUG: Estado da conexão existente: ${existingPC.connectionState}`);
+      console.log(`🔗 WEBRTC DEBUG: Estado ICE existente: ${existingPC.iceConnectionState}`);
       
       // FASE 2: Verificar se a conexão existente está em bom estado
       if (existingPC.connectionState === 'connected' || 
           existingPC.connectionState === 'connecting') {
-        console.log(`♻️ Reusing existing peer connection for: ${participantId} in state: ${existingPC.connectionState}`);
+        console.log(`♻️ WEBRTC DEBUG: Reutilizando conexão existente para: ${participantId} (estado: ${existingPC.connectionState})`);
         return existingPC;
       } else {
-        console.log(`🔄 Replacing stale peer connection for: ${participantId} in state: ${existingPC.connectionState}`);
+        console.log(`🔄 WEBRTC DEBUG: Substituindo conexão inválida para: ${participantId} (estado: ${existingPC.connectionState})`);
         existingPC.close();
         this.peerConnections.delete(participantId);
       }
@@ -79,14 +88,22 @@ export class ConnectionHandler {
     this.peerConnections.set(participantId, peerConnection);
 
     peerConnection.onicecandidate = (event) => {
+      console.log(`🧊 WEBRTC DEBUG: ===== ICE CANDIDATE EVENT =====`);
+      console.log(`🧊 WEBRTC DEBUG: Participante: ${participantId}`);
+      console.log(`🧊 WEBRTC DEBUG: Candidate exists: ${!!event.candidate}`);
+      
       if (event.candidate) {
-        console.log(`🧊 Sending ICE candidate to: ${participantId}`, {
+        console.log(`🧊 WEBRTC DEBUG: Enviando ICE candidate para: ${participantId}`, {
           type: event.candidate.type,
           protocol: event.candidate.protocol,
           address: event.candidate.address,
-          port: event.candidate.port
+          port: event.candidate.port,
+          foundation: event.candidate.foundation
         });
         unifiedWebSocketService.sendIceCandidate(participantId, event.candidate);
+        console.log(`🧊 WEBRTC DEBUG: ICE candidate enviado via WebSocket`);
+      } else {
+        console.log(`🧊 WEBRTC DEBUG: ICE gathering completado para: ${participantId}`);
       }
     };
 
@@ -206,40 +223,73 @@ export class ConnectionHandler {
       }
     };
 
-    // FASE 3: Adicionar os tracks de forma mais robusta
+    // ADICIONAR TRACKS: Verificação e logging detalhado
     const localStream = this.getLocalStream();
+    console.log(`📤 WEBRTC DEBUG: ===== ADICIONANDO TRACKS =====`);
+    console.log(`📤 WEBRTC DEBUG: Participante: ${participantId}`);
+    console.log(`📤 WEBRTC DEBUG: LocalStream disponível: ${!!localStream}`);
+    
     if (localStream) {
-      console.log(`📤 Preparing to push local tracks to: ${participantId}`, {
+      console.log(`📤 WEBRTC DEBUG: Detalhes do LocalStream:`, {
         streamId: localStream.id,
         active: localStream.active,
         videoTracks: localStream.getVideoTracks().length,
-        audioTracks: localStream.getAudioTracks().length
+        audioTracks: localStream.getAudioTracks().length,
+        totalTracks: localStream.getTracks().length
+      });
+      
+      // Log detalhado de cada track
+      localStream.getTracks().forEach((track, index) => {
+        console.log(`📹 WEBRTC DEBUG: Track ${index}:`, {
+          kind: track.kind,
+          id: track.id,
+          label: track.label,
+          readyState: track.readyState,
+          enabled: track.enabled,
+          muted: track.muted
+        });
       });
       
       // Limpar senders existentes se necessário
       const senders = peerConnection.getSenders();
+      console.log(`🧹 WEBRTC DEBUG: Senders existentes: ${senders.length}`);
+      
       if (senders.length > 0) {
-        console.log(`🧹 Cleaning up ${senders.length} existing senders before adding tracks`);
+        console.log(`🧹 WEBRTC DEBUG: Limpando ${senders.length} senders existentes`);
+        senders.forEach((sender, index) => {
+          console.log(`🧹 WEBRTC DEBUG: Sender ${index}:`, {
+            trackKind: sender.track?.kind || 'no-track',
+            trackId: sender.track?.id || 'no-id'
+          });
+        });
       }
 
+      let tracksAdicionadas = 0;
       localStream.getTracks().forEach(newTrack => {
         const existingSender = senders.find(s => s.track?.kind === newTrack.kind);
         if (existingSender) {
-          console.log(`🔁 Replacing ${newTrack.kind} track for: ${participantId}`);
-          existingSender.replaceTrack(newTrack).catch(err =>
-            console.error(`❌ Failed to replace ${newTrack.kind} track for ${participantId}:`, err)
-          );
+          console.log(`🔁 WEBRTC DEBUG: Substituindo track ${newTrack.kind} para: ${participantId}`);
+          existingSender.replaceTrack(newTrack).then(() => {
+            console.log(`✅ WEBRTC DEBUG: Track ${newTrack.kind} substituída com sucesso`);
+          }).catch(err => {
+            console.error(`❌ WEBRTC DEBUG: Falha ao substituir track ${newTrack.kind}:`, err);
+          });
         } else {
-          console.log(`➕ Adding new ${newTrack.kind} track to: ${participantId}`);
+          console.log(`➕ WEBRTC DEBUG: Adicionando nova track ${newTrack.kind} para: ${participantId}`);
           try {
             peerConnection.addTrack(newTrack, localStream);
+            tracksAdicionadas++;
+            console.log(`✅ WEBRTC DEBUG: Track ${newTrack.kind} adicionada com sucesso (total: ${tracksAdicionadas})`);
           } catch (error) {
-            console.error(`❌ Failed to add ${newTrack.kind} track:`, error);
+            console.error(`❌ WEBRTC DEBUG: Falha ao adicionar track ${newTrack.kind}:`, error);
           }
         }
       });
+      
+      console.log(`📊 WEBRTC DEBUG: Resumo de tracks: ${tracksAdicionadas} novas adicionadas de ${localStream.getTracks().length} totais`);
     } else {
-      console.warn(`⚠️ No local stream available when creating connection for ${participantId}`);
+      console.warn(`⚠️ WEBRTC DEBUG: LocalStream NÃO DISPONÍVEL para: ${participantId}`);
+      console.warn(`⚠️ WEBRTC DEBUG: getLocalStream retornou:`, localStream);
     }
 
     return peerConnection;
@@ -308,10 +358,18 @@ export class ConnectionHandler {
     // CRÍTICO: Usar conexão existente ou criar nova
     const peerConnection = this.createPeerConnection(participantId);
 
-    // CORREÇÃO CRÍTICA: Verificar stream ANTES de criar oferta
+    // STREAM VALIDATION: Verificação detalhada antes de criar oferta
     const localStream = this.getLocalStream?.();
+    console.log(`🎥 WEBRTC DEBUG: ===== VALIDAÇÃO DE STREAM =====`);
+    console.log(`🎥 WEBRTC DEBUG: Participante: ${participantId}`);
+    console.log(`🎥 WEBRTC DEBUG: getLocalStream function: ${typeof this.getLocalStream}`);
+    console.log(`🎥 WEBRTC DEBUG: LocalStream result: ${!!localStream}`);
+    
     if (!localStream) {
-      console.error(`❌ CRÍTICO: LocalStream não disponível para: ${participantId}`);
+      console.error(`❌ WEBRTC DEBUG: LocalStream NÃO DISPONÍVEL para: ${participantId}`);
+      console.error(`❌ WEBRTC DEBUG: getLocalStream retornou:`, localStream);
+      console.error(`❌ WEBRTC DEBUG: Tipo retornado:`, typeof localStream);
+      
       // VISUAL LOG: Toast para stream não encontrado
       if (typeof window !== 'undefined' && window.dispatchEvent) {
         window.dispatchEvent(new CustomEvent('stream-missing-error', {
@@ -321,7 +379,7 @@ export class ConnectionHandler {
       throw new Error(`LocalStream não disponível para ${participantId}`);
     }
 
-    console.log(`🎥 CRÍTICO: Verificando e adicionando tracks para: ${participantId}`, {
+    console.log(`🎥 WEBRTC DEBUG: Stream válido encontrado:`, {
       streamId: localStream.id,
       active: localStream.active,
       videoTracks: localStream.getVideoTracks().length,

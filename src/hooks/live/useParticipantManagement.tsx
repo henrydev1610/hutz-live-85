@@ -8,6 +8,7 @@ import { useParticipantLifecycle } from './useParticipantLifecycle';
 import { useParticipantAutoSelection } from './useParticipantAutoSelection';
 import { useAutoHandshake } from './useAutoHandshake';
 import { useWebRTCBridge } from './useWebRTCBridge';
+import { useWebRTCDebugLogger } from './useWebRTCDebugLogger';
 import { clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
@@ -40,6 +41,9 @@ export const useParticipantManagement = ({
     setParticipantStreams,
     setParticipantList
   });
+  
+  // DEBUG LOGGER: Monitoramento WebRTC
+  const { debugCurrentState } = useWebRTCDebugLogger();
   
   // Use clean stream management with enhanced error handling
   const { handleParticipantStream } = useCleanStreamManagement({
@@ -129,24 +133,34 @@ export const useParticipantManagement = ({
     }
   };
 
-  // Set up WebRTC callbacks with cache clearing
+  // Set up WebRTC callbacks with cache clearing e debug
   useEffect(() => {
-    console.log('🔧 ENHANCED MANAGEMENT: Setting up WebRTC callbacks with cache management');
+    console.log('🔧 WEBRTC DEBUG: ===== CONFIGURANDO CALLBACKS =====');
+    console.log('🔧 WEBRTC DEBUG: SessionId:', sessionId);
+    console.log('🔧 WEBRTC DEBUG: IsHost:', isHost);
     
     // Clear cache on session change
     if (sessionId) {
-      console.log('🧹 ENHANCED MANAGEMENT: Clearing cache for new session');
+      console.log('🧹 WEBRTC DEBUG: Limpando cache para nova sessão');
       clearConnectionCache();
       clearDeviceCache();
     }
     
+    console.log('🔧 WEBRTC DEBUG: Registrando enhancedHandleParticipantStream');
     setStreamCallback(enhancedHandleParticipantStream);
+    
+    console.log('🔧 WEBRTC DEBUG: Registrando handleParticipantJoin');
     setParticipantJoinCallback(handleParticipantJoin);
     
+    console.log('✅ WEBRTC DEBUG: Callbacks WebRTC registrados com sucesso');
+    
+    // Debug do estado atual
+    debugCurrentState();
+    
     return () => {
-      console.log('🧹 ENHANCED MANAGEMENT: Cleaning up WebRTC callbacks');
+      console.log('🧹 WEBRTC DEBUG: Limpando callbacks WebRTC');
     };
-  }, [sessionId, handleParticipantJoin]);
+  }, [sessionId, handleParticipantJoin, debugCurrentState]);
 
   const testConnection = () => {
     console.log('🧪 ENHANCED MANAGEMENT: Testing connection with cache clearing...');
