@@ -114,17 +114,38 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         // Etapa 3: Conectar WebRTC com timeouts otimizados
         console.log(`🔗 PARTICIPANT CONNECTION: Initializing WebRTC (attempt ${retryCount})`);
         
-        // CRITICAL FIX: Ensure stream is passed correctly to WebRTC
+        // FASE 2: CRITICAL FIX - Auto-handshake após stream ready
         if (stream) {
-          console.log(`🎥 CRITICAL: Stream being passed to WebRTC:`, {
+          console.log(`🎥 FASE 2 FIX: Stream sendo passado para WebRTC:`, {
             streamId: stream.id,
             active: stream.active,
             videoTracks: stream.getVideoTracks().length,
             audioTracks: stream.getAudioTracks().length,
             readyState: stream.getTracks().map(t => t.readyState)
           });
+          
+          // FASE 2: Configurar auto-handshake listener
+          const handleStreamReady = (event: CustomEvent) => {
+            const { participantId: eventParticipantId, stream: eventStream } = event.detail;
+            if (eventParticipantId === participantId && eventStream?.id === stream.id) {
+              console.log(`🤝 FASE 2 FIX: Auto-handshake ativado para ${participantId}`);
+              // Forçar inicialização do handshake
+              setTimeout(() => {
+                initiateCallWithRetry('host-default', 3);
+              }, 1000);
+            }
+          };
+          
+          window.addEventListener('participant-stream-ready', handleStreamReady as EventListener);
+          
+          // Cleanup listener quando conexão for estabelecida
+          const connectionEstablished = () => {
+            window.removeEventListener('participant-stream-ready', handleStreamReady as EventListener);
+          };
+          window.addEventListener('webrtc-connection-established', connectionEstablished);
+          
         } else {
-          console.warn(`⚠️ CRITICAL: No stream being passed to WebRTC - this will cause handshake failure`);
+          console.warn(`⚠️ FASE 2 FIX: Sem stream - handshake pode falhar`);
         }
         
         const webrtcStartTime = Date.now();

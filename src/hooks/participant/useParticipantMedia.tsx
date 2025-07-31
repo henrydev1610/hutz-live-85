@@ -129,25 +129,49 @@ export const useParticipantMedia = () => {
       
       toast.success(`${displayType} camera connected! Video: ${videoStatus}, Audio: ${audioStatus}`);
       
-      // FASE 1: CRÍTICO - Notificar backend sobre stream ativo
-      console.log('🚀 CRÍTICO: Notificando que stream está pronto para WebRTC');
+      // FASE 1: CRÍTICO - Notificar backend sobre stream ativo VIA WEBSOCKET
+      console.log('🚀 FASE 1 FIX: Notificando diretamente via WebSocket que stream está pronto');
       
-      // Enviar sinal de stream-started via callback
-      const streamStartedCallback = (window as any).streamStartedCallback;
-      if (streamStartedCallback && typeof streamStartedCallback === 'function') {
-        console.log('📡 CRÍTICO: Executando streamStartedCallback');
-        try {
+      // CORREÇÃO: Usar unifiedWebSocketService diretamente ao invés de callback inexistente
+      try {
+        // Importar e usar o serviço unificado
+        const { default: unifiedWebSocketService } = await import('@/services/UnifiedWebSocketService');
+        
+        console.log('📡 FASE 1 FIX: Enviando stream-ready via WebSocket');
+        
+        // Notificar o host via WebSocket que o stream está pronto
+        unifiedWebSocketService.notifyStreamStarted(participantId, {
+          hasVideo: videoTracks.length > 0,
+          hasAudio: audioTracks.length > 0,
+          streamId: stream.id,
+          timestamp: Date.now()
+        });
+        
+        console.log('✅ FASE 1 FIX: Stream-ready notificado com sucesso via WebSocket');
+        
+        // FASE 2: Disparar evento para forçar handshake local também
+        window.dispatchEvent(new CustomEvent('participant-stream-ready', {
+          detail: { 
+            participantId, 
+            stream,
+            hasVideo: videoTracks.length > 0,
+            hasAudio: audioTracks.length > 0
+          }
+        }));
+        
+      } catch (error) {
+        console.error('❌ FASE 1 FIX: Erro ao notificar via WebSocket:', error);
+        // Fallback: tentar o método antigo se o WebSocket falhar
+        const streamStartedCallback = (window as any).streamStartedCallback;
+        if (streamStartedCallback && typeof streamStartedCallback === 'function') {
+          console.log('🔄 FASE 1 FALLBACK: Usando callback antigo');
           streamStartedCallback(participantId, {
             hasVideo: videoTracks.length > 0,
             hasAudio: audioTracks.length > 0,
             streamId: stream.id,
             timestamp: Date.now()
           });
-        } catch (error) {
-          console.error('❌ CRÍTICO: Erro ao executar streamStartedCallback:', error);
         }
-      } else {
-        console.warn('⚠️ CRÍTICO: streamStartedCallback não encontrado');
       }
       
       return stream;

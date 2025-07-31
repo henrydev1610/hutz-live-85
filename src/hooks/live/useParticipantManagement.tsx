@@ -9,6 +9,8 @@ import { useParticipantAutoSelection } from './useParticipantAutoSelection';
 import { useAutoHandshake } from './useAutoHandshake';
 import { useWebRTCBridge } from './useWebRTCBridge';
 import { useWebRTCDebugLogger } from './useWebRTCDebugLogger';
+import { useWebRTCConnectionBridge } from './useWebRTCConnectionBridge';
+import { useWebRTCAutoRetry } from './useWebRTCAutoRetry';
 import { clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
@@ -40,6 +42,19 @@ export const useParticipantManagement = ({
     participantStreams,
     setParticipantStreams,
     setParticipantList
+  });
+
+  // FASE 3 & 4: Novos hooks para correção completa
+  const { debugConnectionBridge } = useWebRTCConnectionBridge({
+    participantStreams,
+    setParticipantStreams,
+    setParticipantList
+  });
+
+  const { debugAutoRetry, forceRetry, scheduleRetry } = useWebRTCAutoRetry({
+    sessionId,
+    participantStreams,
+    participantList
   });
   
   // DEBUG LOGGER: Monitoramento WebRTC
@@ -211,6 +226,12 @@ export const useParticipantManagement = ({
     handleParticipantJoin,
     handleParticipantStream: enhancedHandleParticipantStream,
     testConnection,
-    transferStreamToTransmission
+    transferStreamToTransmission,
+    
+    // FASE 3 & 4: Novos métodos de debug e controle
+    debugConnectionBridge,
+    debugAutoRetry,
+    forceRetry,
+    scheduleRetry
   };
 };
