@@ -8,6 +8,7 @@ export class ConnectionHandler {
   private retryAttempts: Map<string, number> = new Map();
   private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
   private offerTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private currentParticipantId: string | null = null;
 
   constructor(
     peerConnections: Map<string, RTCPeerConnection>,
@@ -223,14 +224,32 @@ export class ConnectionHandler {
       }
     };
 
-    // ADICIONAR TRACKS: Verificação e logging detalhado
+    // Perfect Negotiation: Define polite/impolite roles based on participant IDs
+    const isPolite = participantId < (this.currentParticipantId || '');
+    console.log(`🤝 PERFECT NEGOTIATION: Role for ${participantId}: ${isPolite ? 'polite' : 'impolite'}`);
+
+    // Perfect Negotiation: Handle negotiation needed with glare protection
+    peerConnection.onnegotiationneeded = async () => {
+      console.log(`🔄 PERFECT NEGOTIATION: Negotiation needed for ${participantId}`);
+      try {
+        if (!isPolite && peerConnection.signalingState !== 'stable') {
+          console.log(`⚠️ PERFECT NEGOTIATION: Impolite peer ignoring negotiation (not stable) for ${participantId}`);
+          return;
+        }
+        await this.initiateCall(participantId);
+      } catch (error) {
+        console.error(`❌ PERFECT NEGOTIATION: Error in negotiation for ${participantId}:`, error);
+      }
+    };
+
+    // ADICIONAR TRANSCEIVERS: Uso moderno com controle explícito
     const localStream = this.getLocalStream();
-    console.log(`📤 WEBRTC DEBUG: ===== ADICIONANDO TRACKS =====`);
-    console.log(`📤 WEBRTC DEBUG: Participante: ${participantId}`);
-    console.log(`📤 WEBRTC DEBUG: LocalStream disponível: ${!!localStream}`);
+    console.log(`📤 WEBRTC TRANSCEIVERS: ===== ADICIONANDO TRANSCEIVERS =====`);
+    console.log(`📤 WEBRTC TRANSCEIVERS: Participante: ${participantId}`);
+    console.log(`📤 WEBRTC TRANSCEIVERS: LocalStream disponível: ${!!localStream}`);
     
     if (localStream) {
-      console.log(`📤 WEBRTC DEBUG: Detalhes do LocalStream:`, {
+      console.log(`📤 WEBRTC TRANSCEIVERS: Detalhes do LocalStream:`, {
         streamId: localStream.id,
         active: localStream.active,
         videoTracks: localStream.getVideoTracks().length,
@@ -238,9 +257,9 @@ export class ConnectionHandler {
         totalTracks: localStream.getTracks().length
       });
       
-      // Log detalhado de cada track
+      // Adicionar transceivers primeiro para controle completo do SDP
       localStream.getTracks().forEach((track, index) => {
-        console.log(`📹 WEBRTC DEBUG: Track ${index}:`, {
+        console.log(`📹 WEBRTC TRANSCEIVERS: Processando track ${index}:`, {
           kind: track.kind,
           id: track.id,
           label: track.label,
@@ -248,48 +267,43 @@ export class ConnectionHandler {
           enabled: track.enabled,
           muted: track.muted
         });
-      });
-      
-      // Limpar senders existentes se necessário
-      const senders = peerConnection.getSenders();
-      console.log(`🧹 WEBRTC DEBUG: Senders existentes: ${senders.length}`);
-      
-      if (senders.length > 0) {
-        console.log(`🧹 WEBRTC DEBUG: Limpando ${senders.length} senders existentes`);
-        senders.forEach((sender, index) => {
-          console.log(`🧹 WEBRTC DEBUG: Sender ${index}:`, {
-            trackKind: sender.track?.kind || 'no-track',
-            trackId: sender.track?.id || 'no-id'
-          });
-        });
-      }
 
-      let tracksAdicionadas = 0;
-      localStream.getTracks().forEach(newTrack => {
-        const existingSender = senders.find(s => s.track?.kind === newTrack.kind);
-        if (existingSender) {
-          console.log(`🔁 WEBRTC DEBUG: Substituindo track ${newTrack.kind} para: ${participantId}`);
-          existingSender.replaceTrack(newTrack).then(() => {
-            console.log(`✅ WEBRTC DEBUG: Track ${newTrack.kind} substituída com sucesso`);
-          }).catch(err => {
-            console.error(`❌ WEBRTC DEBUG: Falha ao substituir track ${newTrack.kind}:`, err);
+        try {
+          // 1. Adicionar transceiver com direção explícita
+          const transceiver = peerConnection.addTransceiver(track.kind, {
+            direction: 'sendrecv'
           });
-        } else {
-          console.log(`➕ WEBRTC DEBUG: Adicionando nova track ${newTrack.kind} para: ${participantId}`);
-          try {
-            peerConnection.addTrack(newTrack, localStream);
-            tracksAdicionadas++;
-            console.log(`✅ WEBRTC DEBUG: Track ${newTrack.kind} adicionada com sucesso (total: ${tracksAdicionadas})`);
-          } catch (error) {
-            console.error(`❌ WEBRTC DEBUG: Falha ao adicionar track ${newTrack.kind}:`, error);
-          }
+          
+          console.log(`✅ WEBRTC TRANSCEIVERS: Transceiver ${track.kind} criado:`, {
+            direction: transceiver.direction,
+            mid: transceiver.mid
+          });
+
+          // 2. Adicionar track ao transceiver
+          peerConnection.addTrack(track, localStream);
+          
+          console.log(`✅ WEBRTC TRANSCEIVERS: Track ${track.kind} adicionada ao transceiver`);
+          
+        } catch (error) {
+          console.error(`❌ WEBRTC TRANSCEIVERS: Erro ao adicionar transceiver/track ${track.kind}:`, error);
         }
       });
       
-      console.log(`📊 WEBRTC DEBUG: Resumo de tracks: ${tracksAdicionadas} novas adicionadas de ${localStream.getTracks().length} totais`);
+      // Log estado final dos transceivers
+      const finalTransceivers = peerConnection.getTransceivers();
+      console.log(`📊 WEBRTC TRANSCEIVERS: Estado final - ${finalTransceivers.length} transceivers criados:`);
+      finalTransceivers.forEach((transceiver, index) => {
+        console.log(`🎯 WEBRTC TRANSCEIVERS: Transceiver ${index}:`, {
+          direction: transceiver.direction,
+          kind: transceiver.receiver?.track?.kind || 'unknown',
+          currentDirection: transceiver.currentDirection,
+          mid: transceiver.mid
+        });
+      });
+      
     } else {
-      console.warn(`⚠️ WEBRTC DEBUG: LocalStream NÃO DISPONÍVEL para: ${participantId}`);
-      console.warn(`⚠️ WEBRTC DEBUG: getLocalStream retornou:`, localStream);
+      console.warn(`⚠️ WEBRTC TRANSCEIVERS: LocalStream NÃO DISPONÍVEL para: ${participantId}`);
+      console.warn(`⚠️ WEBRTC TRANSCEIVERS: getLocalStream retornou:`, localStream);
     }
 
     return peerConnection;
@@ -427,13 +441,33 @@ export class ConnectionHandler {
         }));
       }, 10000); // 10s timeout para ontrack
       
-      // Limpar timeout quando ontrack for chamado
+      // FASE 3: Melhorar ontrack sem sobrescrever - encadear callbacks
+      let ontrackReceived = false;
       const originalOntrack = peerConnection.ontrack;
-      peerConnection.ontrack = (event) => {
-        clearTimeout(ontrackTimeout);
-        console.log(`✅ WEBRTC TIMING: ontrack recebido dentro do prazo para ${participantId}`);
-        if (originalOntrack) originalOntrack.call(peerConnection, event);
+      const enhancedOntrack = (event: RTCTrackEvent) => {
+        if (!ontrackReceived) {
+          ontrackReceived = true;
+          clearTimeout(ontrackTimeout);
+          console.log(`✅ WEBRTC TIMING: ontrack recebido dentro do prazo para ${participantId}`);
+          
+          // FASE 5: Log estado final dos transceivers após conexão estável
+          if (peerConnection.signalingState === 'stable') {
+            const finalTransceivers = peerConnection.getTransceivers();
+            console.log(`🎯 WEBRTC FINAL: Transceivers finais para ${participantId}:`);
+            finalTransceivers.forEach((transceiver, index) => {
+              console.log(`🎯 WEBRTC FINAL: Transceiver ${index} currentDirection:`, transceiver.currentDirection);
+            });
+          }
+        }
+        
+        // Encadear callback original se existir
+        if (originalOntrack) {
+          originalOntrack.call(peerConnection, event);
+        }
       };
+      
+      // Substituir ontrack preservando encadeamento
+      peerConnection.ontrack = enhancedOntrack;
       
       console.log(`📤 WEBRTC TIMING: Enviando oferta para: ${participantId}`);
       unifiedWebSocketService.sendOffer(participantId, offer);
