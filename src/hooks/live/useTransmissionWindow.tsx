@@ -1,9 +1,13 @@
 import { useRef, useEffect } from 'react';
 import { useToast } from "@/components/ui/use-toast";
+import { useTransmissionWindowDebounce } from './useTransmissionWindowDebounce';
 
 export const useTransmissionWindow = () => {
   const { toast } = useToast();
   const transmissionWindowRef = useRef<Window | null>(null);
+  
+  // FASE 5: Implementar debounce para evitar loops infinitos
+  const { debouncedUpdate, cancelUpdate } = useTransmissionWindowDebounce({ delay: 2000 });
 
   const createTransmissionHTML = (state: any) => {
     return `

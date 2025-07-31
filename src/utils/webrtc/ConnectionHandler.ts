@@ -9,6 +9,16 @@ export class ConnectionHandler {
   private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
   private offerTimeouts: Map<string, NodeJS.Timeout> = new Map();
   private currentParticipantId: string | null = null;
+  
+  // FASE 2: Contadores para diagnóstico
+  private iceCandidatesSent: Map<string, number> = new Map();
+  private iceCandidatesReceived: Map<string, number> = new Map();
+  private iceGatheringTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  
+  // FASE 4: Circuit breaker para retry loops
+  private circuitBreaker: Map<string, { failures: number, lastFailure: number, isOpen: boolean }> = new Map();
+  private readonly CIRCUIT_BREAKER_THRESHOLD = 3;
+  private readonly CIRCUIT_BREAKER_TIMEOUT = 30000; // 30 segundos
 
   constructor(
     peerConnections: Map<string, RTCPeerConnection>,
@@ -33,37 +43,57 @@ export class ConnectionHandler {
   // FASE 2: Novo método para iniciar handshake automático
   async initiateHandshake(participantId: string): Promise<void> {
     console.log(`🤝 FASE 2: Auto-initiating handshake with ${participantId}`);
+    
+    // FASE 4: Verificar circuit breaker
+    if (this.isCircuitBreakerOpen(participantId)) {
+      console.log(`🚫 WEBRTC DIAGNÓSTICO: Circuit breaker ABERTO para ${participantId} - ignorando handshake`);
+      return;
+    }
+    
     try {
       const peerConnection = this.createPeerConnection(participantId);
       await this.initiateCall(participantId);
       console.log(`✅ FASE 2: Handshake initiated successfully with ${participantId}`);
+      
+      // FASE 4: Reset circuit breaker em caso de sucesso
+      this.resetCircuitBreaker(participantId);
+      
     } catch (error) {
       console.error(`❌ FASE 2: Failed to initiate handshake with ${participantId}:`, error);
+      
+      // FASE 4: Incrementar falhas no circuit breaker
+      this.recordCircuitBreakerFailure(participantId);
+      
       throw error;
     }
   }
 
   createPeerConnection(participantId: string): RTCPeerConnection {
-    console.log(`🔗 WEBRTC DEBUG: ===== CRIANDO PEER CONNECTION =====`);
-    console.log(`🔗 WEBRTC DEBUG: Participante: ${participantId}`);
-    console.log(`🔗 WEBRTC DEBUG: Conexões existentes: ${this.peerConnections.size}`);
-    console.log(`🔗 WEBRTC DEBUG: Stream callback disponível: ${!!this.streamCallback}`);
-    console.log(`🔗 WEBRTC DEBUG: Join callback disponível: ${!!this.participantJoinCallback}`);
+    console.log(`🔗 WEBRTC DIAGNÓSTICO: ===== CRIANDO PEER CONNECTION =====`);
+    console.log(`🔗 WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
+    console.log(`🔗 WEBRTC DIAGNÓSTICO: Timestamp: ${new Date().toISOString()}`);
+    console.log(`🔗 WEBRTC DIAGNÓSTICO: Conexões existentes: ${this.peerConnections.size}`);
+    console.log(`🔗 WEBRTC DIAGNÓSTICO: Stream callback disponível: ${!!this.streamCallback}`);
+    console.log(`🔗 WEBRTC DIAGNÓSTICO: Join callback disponível: ${!!this.participantJoinCallback}`);
 
     // Verificar se já existe conexão para este participante
     if (this.peerConnections.has(participantId)) {
       const existingPC = this.peerConnections.get(participantId)!;
-      console.log(`🔗 WEBRTC DEBUG: Conexão existente encontrada para ${participantId}`);
-      console.log(`🔗 WEBRTC DEBUG: Estado da conexão existente: ${existingPC.connectionState}`);
-      console.log(`🔗 WEBRTC DEBUG: Estado ICE existente: ${existingPC.iceConnectionState}`);
+      console.log(`🔗 WEBRTC DIAGNÓSTICO: Conexão existente encontrada para ${participantId}`);
+      console.log(`🔗 WEBRTC DIAGNÓSTICO: Estado da conexão existente:`, {
+        connectionState: existingPC.connectionState,
+        signalingState: existingPC.signalingState,
+        iceConnectionState: existingPC.iceConnectionState,
+        iceGatheringState: existingPC.iceGatheringState
+      });
       
       // FASE 2: Verificar se a conexão existente está em bom estado
       if (existingPC.connectionState === 'connected' || 
           existingPC.connectionState === 'connecting') {
-        console.log(`♻️ WEBRTC DEBUG: Reutilizando conexão existente para: ${participantId} (estado: ${existingPC.connectionState})`);
+        console.log(`♻️ WEBRTC DIAGNÓSTICO: Reutilizando conexão existente para: ${participantId} (estado: ${existingPC.connectionState})`);
         return existingPC;
       } else {
-        console.log(`🔄 WEBRTC DEBUG: Substituindo conexão inválida para: ${participantId} (estado: ${existingPC.connectionState})`);
+        console.log(`🔄 WEBRTC DIAGNÓSTICO: Substituindo conexão inválida para: ${participantId} (estado: ${existingPC.connectionState})`);
         existingPC.close();
         this.peerConnections.delete(participantId);
       }
@@ -80,7 +110,9 @@ export class ConnectionHandler {
       ]
     };
 
-    console.log(`🔧 Creating WebRTC connection with unique ID: ${uniqueId}`);
+    console.log(`🔧 WEBRTC DIAGNÓSTICO: Criando WebRTC connection com unique ID: ${uniqueId}`);
+    console.log(`🔧 WEBRTC DIAGNÓSTICO: ICE servers configurados:`, config.iceServers);
+    
     const peerConnection = new RTCPeerConnection(config);
     
     // Adicionar propriedade única para debug
@@ -88,28 +120,81 @@ export class ConnectionHandler {
     
     this.peerConnections.set(participantId, peerConnection);
 
+    // FASE 2: ICE CANDIDATE com diagnóstico avançado
     peerConnection.onicecandidate = (event) => {
-      console.log(`🧊 WEBRTC DEBUG: ===== ICE CANDIDATE EVENT =====`);
-      console.log(`🧊 WEBRTC DEBUG: Participante: ${participantId}`);
-      console.log(`🧊 WEBRTC DEBUG: Candidate exists: ${!!event.candidate}`);
+      console.log(`🧊 WEBRTC DIAGNÓSTICO: ===== ICE CANDIDATE EVENT =====`);
+      console.log(`🧊 WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
+      console.log(`🧊 WEBRTC DIAGNÓSTICO: Timestamp: ${new Date().toISOString()}`);
+      console.log(`🧊 WEBRTC DIAGNÓSTICO: Candidate exists: ${!!event.candidate}`);
+      console.log(`🧊 WEBRTC DIAGNÓSTICO: ICE gathering state: ${peerConnection.iceGatheringState}`);
       
       if (event.candidate) {
-        console.log(`🧊 WEBRTC DEBUG: Enviando ICE candidate para: ${participantId}`, {
+        // FASE 2: DIAGNÓSTICO DETALHADO DE ICE CANDIDATES
+        const candidateInfo = {
           type: event.candidate.type,
           protocol: event.candidate.protocol,
           address: event.candidate.address,
           port: event.candidate.port,
-          foundation: event.candidate.foundation
-        });
-        unifiedWebSocketService.sendIceCandidate(participantId, event.candidate);
-        console.log(`🧊 WEBRTC DEBUG: ICE candidate enviado via WebSocket`);
+          foundation: event.candidate.foundation,
+          priority: event.candidate.priority,
+          component: event.candidate.component,
+          sdpMid: event.candidate.sdpMid,
+          sdpMLineIndex: event.candidate.sdpMLineIndex,
+          usernameFragment: event.candidate.usernameFragment
+        };
+        
+        console.log(`🧊 WEBRTC DIAGNÓSTICO: ICE Candidate detalhado para ${participantId}:`, candidateInfo);
+        
+        // FASE 2: Verificar tipo de candidato
+        if (event.candidate.type === 'host') {
+          console.log(`🏠 WEBRTC DIAGNÓSTICO: Candidato HOST encontrado - conexão local possível`);
+        } else if (event.candidate.type === 'srflx') {
+          console.log(`🌐 WEBRTC DIAGNÓSTICO: Candidato SRFLX encontrado - NAT traversal via STUN`);
+        } else if (event.candidate.type === 'relay') {
+          console.log(`🔄 WEBRTC DIAGNÓSTICO: Candidato RELAY encontrado - usando TURN server`);
+        }
+        
+        try {
+          const sendStartTime = performance.now();
+          unifiedWebSocketService.sendIceCandidate(participantId, event.candidate);
+          const sendEndTime = performance.now();
+          
+          console.log(`✅ WEBRTC DIAGNÓSTICO: ICE candidate enviado via WebSocket em ${(sendEndTime - sendStartTime).toFixed(2)}ms`);
+          
+          // FASE 2: Incrementar contador de ICE candidates enviados
+          const currentCount = this.iceCandidatesSent.get(participantId) || 0;
+          this.iceCandidatesSent.set(participantId, currentCount + 1);
+          
+        } catch (iceError) {
+          console.error(`❌ WEBRTC DIAGNÓSTICO: FALHA ao enviar ICE candidate:`, iceError);
+        }
+        
       } else {
-        console.log(`🧊 WEBRTC DEBUG: ICE gathering completado para: ${participantId}`);
+        // FASE 2: ICE GATHERING COMPLETADO
+        console.log(`🏁 WEBRTC DIAGNÓSTICO: ICE gathering COMPLETADO para: ${participantId}`);
+        console.log(`🏁 WEBRTC DIAGNÓSTICO: Total de candidates enviados: ${this.iceCandidatesSent?.get(participantId) || 0}`);
+        console.log(`🏁 WEBRTC DIAGNÓSTICO: Estado final ICE: ${peerConnection.iceGatheringState}`);
+        
+        // FASE 2: Verificar se algum candidato foi enviado
+        const totalSent = this.iceCandidatesSent?.get(participantId) || 0;
+        if (totalSent === 0) {
+          console.warn(`⚠️ WEBRTC DIAGNÓSTICO: ATENÇÃO - Nenhum ICE candidate foi enviado para ${participantId}`);
+          console.warn(`⚠️ WEBRTC DIAGNÓSTICO: Possível problema de rede ou configuração STUN`);
+        }
+        
+        // FASE 2: Limpar timeout de ICE gathering
+        this.clearIceGatheringTimeout(participantId);
       }
     };
 
     peerConnection.onconnectionstatechange = () => {
-      console.log(`🔗 CONNECTION-CRÍTICO: ${participantId} mudou para: ${peerConnection.connectionState}`);
+      console.log(`🔗 WEBRTC DIAGNÓSTICO: ${participantId} mudou para: ${peerConnection.connectionState}`);
+      console.log(`🔗 WEBRTC DIAGNÓSTICO: Estados completos:`, {
+        connectionState: peerConnection.connectionState,
+        signalingState: peerConnection.signalingState,
+        iceConnectionState: peerConnection.iceConnectionState,
+        iceGatheringState: peerConnection.iceGatheringState
+      });
 
       // VISUAL LOG: Toast para mudanças de estado
       if (typeof window !== 'undefined' && window.dispatchEvent) {
@@ -117,78 +202,116 @@ export class ConnectionHandler {
           detail: { 
             participantId, 
             state: peerConnection.connectionState,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            fullState: {
+              connectionState: peerConnection.connectionState,
+              signalingState: peerConnection.signalingState,
+              iceConnectionState: peerConnection.iceConnectionState,
+              iceGatheringState: peerConnection.iceGatheringState
+            }
           }
         }));
       }
 
       if (peerConnection.connectionState === 'connected') {
-        console.log(`✅ CONNECTION-CRÍTICO: Conexão estabelecida com: ${participantId}`);
+        console.log(`✅ WEBRTC DIAGNÓSTICO: Conexão estabelecida com: ${participantId}`);
         this.clearOfferTimeout(participantId);
+        this.resetCircuitBreaker(participantId);
         
         // CORREÇÃO: Usar callback direto ao invés de dependência circular
-        console.log(`🔄 CONNECTION-CRÍTICO: Atualizando estado WebRTC para conectado via callback`);
+        console.log(`🔄 WEBRTC DIAGNÓSTICO: Atualizando estado WebRTC para conectado via callback`);
         
         if (this.participantJoinCallback) {
           this.participantJoinCallback(participantId);
         }
       } else if (peerConnection.connectionState === 'failed') {
-        console.log(`❌ CONNECTION-CRÍTICO: Falha na conexão com: ${participantId}`);
+        console.log(`❌ WEBRTC DIAGNÓSTICO: Falha na conexão com: ${participantId}`);
+        this.recordCircuitBreakerFailure(participantId);
         this.handleConnectionFailure(participantId);
       } else if (peerConnection.connectionState === 'connecting') {
-        console.log(`🔄 CONNECTION-CRÍTICO: Conectando com: ${participantId}`);
+        console.log(`🔄 WEBRTC DIAGNÓSTICO: Conectando com: ${participantId}`);
       } else if (peerConnection.connectionState === 'new') {
-        console.log(`🆕 CONNECTION-CRÍTICO: Nova conexão criada para: ${participantId}`);
+        console.log(`🆕 WEBRTC DIAGNÓSTICO: Nova conexão criada para: ${participantId}`);
       }
     };
 
     // FASE 3: Adicionar evento específico de ICE
     peerConnection.oniceconnectionstatechange = () => {
-      console.log(`🧊 ICE CONNECTION: ${participantId} state changed to: ${peerConnection.iceConnectionState}`);
+      console.log(`🧊 WEBRTC DIAGNÓSTICO: ICE connection state para ${participantId}: ${peerConnection.iceConnectionState}`);
       
       // Monitorar estados de ICE que podem indicar problemas
       if (peerConnection.iceConnectionState === 'failed') {
-        console.error(`❌ ICE CONNECTION FAILED: Peer ${participantId} ICE negotiation failed`);
+        console.error(`❌ WEBRTC DIAGNÓSTICO: ICE CONNECTION FAILED para ${participantId}`);
+        console.error(`❌ WEBRTC DIAGNÓSTICO: ICE candidates enviados: ${this.iceCandidatesSent.get(participantId) || 0}`);
+        console.error(`❌ WEBRTC DIAGNÓSTICO: ICE candidates recebidos: ${this.iceCandidatesReceived.get(participantId) || 0}`);
         this.handleConnectionFailure(participantId);
       } else if (peerConnection.iceConnectionState === 'disconnected') {
-        console.warn(`⚠️ ICE CONNECTION DISCONNECTED: Peer ${participantId} ICE connection unstable`);
+        console.warn(`⚠️ WEBRTC DIAGNÓSTICO: ICE CONNECTION DISCONNECTED para ${participantId}`);
+      } else if (peerConnection.iceConnectionState === 'connected') {
+        console.log(`✅ WEBRTC DIAGNÓSTICO: ICE CONNECTION CONNECTED para ${participantId}`);
+      } else if (peerConnection.iceConnectionState === 'completed') {
+        console.log(`🏁 WEBRTC DIAGNÓSTICO: ICE CONNECTION COMPLETED para ${participantId}`);
       }
     };
 
-    // CORREÇÃO CRÍTICA: ontrack com múltiplos fallbacks
+    // FASE 4: ONTRACK com timeout e fallback robusto
+    let onTrackReceived = false;
+    const onTrackTimeout = setTimeout(() => {
+      if (!onTrackReceived) {
+        console.warn(`⏰ WEBRTC DIAGNÓSTICO: TIMEOUT - ontrack não disparou em 10s para ${participantId}`);
+        console.warn(`⏰ WEBRTC DIAGNÓSTICO: Forçando restart da peer connection...`);
+        
+        // FASE 4: FALLBACK - Restart completo da peer connection
+        this.forceConnectionRestart(participantId);
+      }
+    }, 10000);
+
     peerConnection.ontrack = (event) => {
-      console.log('🎵 WEBRTC→REACT BRIDGE: Track received from participant:', participantId);
+      onTrackReceived = true;
+      clearTimeout(onTrackTimeout);
+      
+      console.log('🎵 WEBRTC DIAGNÓSTICO: ===== ONTRACK DISPARADO =====');
+      console.log('🎵 WEBRTC DIAGNÓSTICO: Participante:', participantId);
+      console.log('🎵 WEBRTC DIAGNÓSTICO: Timestamp:', new Date().toISOString());
+      console.log('🎵 WEBRTC DIAGNÓSTICO: Event details:', {
+        streamsCount: event.streams?.length || 0,
+        trackKind: event.track?.kind,
+        trackId: event.track?.id,
+        trackReadyState: event.track?.readyState
+      });
       
       if (event.streams && event.streams.length > 0) {
         const stream = event.streams[0];
-        console.log('📺 WEBRTC→REACT BRIDGE: Stream válido recebido:', {
+        console.log('📺 WEBRTC DIAGNÓSTICO: Stream válido recebido:', {
           streamId: stream.id,
           trackCount: stream.getTracks().length,
           participantId,
-          active: stream.active
+          active: stream.active,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length
         });
         
         // PONTE 1: Callback direto React
         if (this.streamCallback) {
-          console.log('📞 PONTE 1: Executando callback React IMEDIATO');
+          console.log('📞 WEBRTC DIAGNÓSTICO: Executando callback React IMEDIATO');
           try {
             this.streamCallback(participantId, stream);
-            console.log('✅ PONTE 1: Callback React executado com sucesso');
+            console.log('✅ WEBRTC DIAGNÓSTICO: Callback React executado com sucesso');
           } catch (error) {
-            console.error('❌ PONTE 1: Erro no callback React:', error);
+            console.error('❌ WEBRTC DIAGNÓSTICO: Erro no callback React:', error);
           }
         } else {
-          console.error('❌ PONTE 1: Callback React não está definido!');
+          console.error('❌ WEBRTC DIAGNÓSTICO: Callback React não está definido!');
         }
         
         // PONTE 2: Evento personalizado para ParticipantPreviewGrid
-        console.log('📡 PONTE 2: Disparando evento participant-stream-connected');
+        console.log('📡 WEBRTC DIAGNÓSTICO: Disparando evento participant-stream-connected');
         window.dispatchEvent(new CustomEvent('participant-stream-connected', {
           detail: { participantId, stream }
         }));
         
         // PONTE 3: Forçar atualização de estado via evento
-        console.log('🔄 PONTE 3: Disparando força atualização de streams');
+        console.log('🔄 WEBRTC DIAGNÓSTICO: Disparando força atualização de streams');
         window.dispatchEvent(new CustomEvent('force-stream-state-update', {
           detail: { 
             participantId, 
@@ -199,7 +322,7 @@ export class ConnectionHandler {
         }));
         
         // PONTE 4: Evento específico para containers de vídeo
-        console.log('📹 PONTE 4: Disparando evento stream-received para containers');
+        console.log('📹 WEBRTC DIAGNÓSTICO: Disparando evento stream-received para containers');
         window.dispatchEvent(new CustomEvent('stream-received', {
           detail: { participantId, stream }
         }));
@@ -214,42 +337,77 @@ export class ConnectionHandler {
             timestamp: Date.now()
           });
           bc.close();
-          console.log('📻 PONTE 5: BroadcastChannel enviado');
+          console.log('📻 WEBRTC DIAGNÓSTICO: BroadcastChannel enviado');
         } catch (e) {
-          console.warn('⚠️ PONTE 5: BroadcastChannel failed:', e);
+          console.warn('⚠️ WEBRTC DIAGNÓSTICO: BroadcastChannel failed:', e);
         }
         
       } else {
-        console.warn('⚠️ WEBRTC→REACT BRIDGE: ontrack sem streams válidos');
+        console.warn('⚠️ WEBRTC DIAGNÓSTICO: ontrack sem streams válidos');
       }
     };
 
     // Perfect Negotiation: Define polite/impolite roles based on participant IDs
     const isPolite = participantId < (this.currentParticipantId || '');
-    console.log(`🤝 PERFECT NEGOTIATION: Role for ${participantId}: ${isPolite ? 'polite' : 'impolite'}`);
+    console.log(`🤝 WEBRTC DIAGNÓSTICO: Perfect Negotiation role para ${participantId}: ${isPolite ? 'polite' : 'impolite'}`);
 
-    // Perfect Negotiation: Handle negotiation needed with glare protection
+    // FASE 3: PERFECT NEGOTIATION com diagnóstico avançado
     peerConnection.onnegotiationneeded = async () => {
-      console.log(`🔄 PERFECT NEGOTIATION: Negotiation needed for ${participantId}`);
+      console.log(`🔄 WEBRTC DIAGNÓSTICO: ===== NEGOTIATION NEEDED =====`);
+      console.log(`🔄 WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
+      console.log(`🔄 WEBRTC DIAGNÓSTICO: Role: ${isPolite ? 'polite' : 'impolite'}`);
+      console.log(`🔄 WEBRTC DIAGNÓSTICO: Signaling state: ${peerConnection.signalingState}`);
+      console.log(`🔄 WEBRTC DIAGNÓSTICO: Timestamp: ${new Date().toISOString()}`);
+      
       try {
+        // FASE 3: POLITE/IMPOLITE pattern com logging detalhado
         if (!isPolite && peerConnection.signalingState !== 'stable') {
-          console.log(`⚠️ PERFECT NEGOTIATION: Impolite peer ignoring negotiation (not stable) for ${participantId}`);
+          console.log(`⚠️ WEBRTC DIAGNÓSTICO: GLARE DETECTADO - Peer impolite ignorando renegociação`);
+          console.log(`⚠️ WEBRTC DIAGNÓSTICO: Estado atual: ${peerConnection.signalingState}`);
+          console.log(`⚠️ WEBRTC DIAGNÓSTICO: Aguardando peer polite resolver o conflito`);
           return;
         }
+        
+        console.log(`🚀 WEBRTC DIAGNÓSTICO: Iniciando renegociação para ${participantId}`);
+        
+        // FASE 3: Verificar estado antes da renegociação
+        const preNegotiationState = {
+          signalingState: peerConnection.signalingState,
+          iceConnectionState: peerConnection.iceConnectionState,
+          connectionState: peerConnection.connectionState,
+          transceivers: peerConnection.getTransceivers().length,
+          senders: peerConnection.getSenders().length
+        };
+        
+        console.log(`🔍 WEBRTC DIAGNÓSTICO: Estado pré-renegociação:`, preNegotiationState);
+        
         await this.initiateCall(participantId);
+        
+        console.log(`✅ WEBRTC DIAGNÓSTICO: Renegociação iniciada com sucesso para ${participantId}`);
+        
       } catch (error) {
-        console.error(`❌ PERFECT NEGOTIATION: Error in negotiation for ${participantId}:`, error);
+        console.error(`❌ WEBRTC DIAGNÓSTICO: ERRO na renegociação para ${participantId}:`, error);
+        console.error(`❌ WEBRTC DIAGNÓSTICO: Stack trace:`, error.stack);
+        console.error(`❌ WEBRTC DIAGNÓSTICO: Estado da conexão:`, {
+          signalingState: peerConnection.signalingState,
+          iceConnectionState: peerConnection.iceConnectionState,
+          connectionState: peerConnection.connectionState
+        });
+        
+        // FASE 4: FALLBACK - Tentar restart da conexão se renegociação falhar
+        console.log(`🔄 WEBRTC DIAGNÓSTICO: Tentando restart da conexão após falha na renegociação...`);
+        this.handleConnectionFailure(participantId);
       }
     };
 
     // ADICIONAR TRANSCEIVERS: Uso moderno com controle explícito
     const localStream = this.getLocalStream();
-    console.log(`📤 WEBRTC TRANSCEIVERS: ===== ADICIONANDO TRANSCEIVERS =====`);
-    console.log(`📤 WEBRTC TRANSCEIVERS: Participante: ${participantId}`);
-    console.log(`📤 WEBRTC TRANSCEIVERS: LocalStream disponível: ${!!localStream}`);
+    console.log(`📤 WEBRTC DIAGNÓSTICO: ===== ADICIONANDO TRANSCEIVERS =====`);
+    console.log(`📤 WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
+    console.log(`📤 WEBRTC DIAGNÓSTICO: LocalStream disponível: ${!!localStream}`);
     
     if (localStream) {
-      console.log(`📤 WEBRTC TRANSCEIVERS: Detalhes do LocalStream:`, {
+      console.log(`📤 WEBRTC DIAGNÓSTICO: Detalhes do LocalStream:`, {
         streamId: localStream.id,
         active: localStream.active,
         videoTracks: localStream.getVideoTracks().length,
@@ -259,7 +417,7 @@ export class ConnectionHandler {
       
       // Adicionar transceivers primeiro para controle completo do SDP
       localStream.getTracks().forEach((track, index) => {
-        console.log(`📹 WEBRTC TRANSCEIVERS: Processando track ${index}:`, {
+        console.log(`📹 WEBRTC DIAGNÓSTICO: Processando track ${index}:`, {
           kind: track.kind,
           id: track.id,
           label: track.label,
@@ -274,7 +432,7 @@ export class ConnectionHandler {
             direction: 'sendrecv'
           });
           
-          console.log(`✅ WEBRTC TRANSCEIVERS: Transceiver ${track.kind} criado:`, {
+          console.log(`✅ WEBRTC DIAGNÓSTICO: Transceiver ${track.kind} criado:`, {
             direction: transceiver.direction,
             mid: transceiver.mid
           });
@@ -282,18 +440,18 @@ export class ConnectionHandler {
           // 2. Adicionar track ao transceiver
           peerConnection.addTrack(track, localStream);
           
-          console.log(`✅ WEBRTC TRANSCEIVERS: Track ${track.kind} adicionada ao transceiver`);
+          console.log(`✅ WEBRTC DIAGNÓSTICO: Track ${track.kind} adicionada ao transceiver`);
           
         } catch (error) {
-          console.error(`❌ WEBRTC TRANSCEIVERS: Erro ao adicionar transceiver/track ${track.kind}:`, error);
+          console.error(`❌ WEBRTC DIAGNÓSTICO: Erro ao adicionar transceiver/track ${track.kind}:`, error);
         }
       });
       
       // Log estado final dos transceivers
       const finalTransceivers = peerConnection.getTransceivers();
-      console.log(`📊 WEBRTC TRANSCEIVERS: Estado final - ${finalTransceivers.length} transceivers criados:`);
+      console.log(`📊 WEBRTC DIAGNÓSTICO: Estado final - ${finalTransceivers.length} transceivers criados:`);
       finalTransceivers.forEach((transceiver, index) => {
-        console.log(`🎯 WEBRTC TRANSCEIVERS: Transceiver ${index}:`, {
+        console.log(`🎯 WEBRTC DIAGNÓSTICO: Transceiver ${index}:`, {
           direction: transceiver.direction,
           kind: transceiver.receiver?.track?.kind || 'unknown',
           currentDirection: transceiver.currentDirection,
@@ -302,8 +460,8 @@ export class ConnectionHandler {
       });
       
     } else {
-      console.warn(`⚠️ WEBRTC TRANSCEIVERS: LocalStream NÃO DISPONÍVEL para: ${participantId}`);
-      console.warn(`⚠️ WEBRTC TRANSCEIVERS: getLocalStream retornou:`, localStream);
+      console.warn(`⚠️ WEBRTC DIAGNÓSTICO: LocalStream NÃO DISPONÍVEL para: ${participantId}`);
+      console.warn(`⚠️ WEBRTC DIAGNÓSTICO: getLocalStream retornou:`, localStream);
     }
 
     return peerConnection;
@@ -312,13 +470,20 @@ export class ConnectionHandler {
   async initiateCallWithRetry(participantId: string, maxRetries: number = 1): Promise<void> {
     const currentRetries = this.retryAttempts.get(participantId) || 0;
 
+    // FASE 4: Verificar circuit breaker
+    if (this.isCircuitBreakerOpen(participantId)) {
+      console.error(`🚫 WEBRTC DIAGNÓSTICO: Circuit breaker ABERTO para ${participantId} - cancelando retry`);
+      return;
+    }
+
     if (currentRetries >= maxRetries) {
-      console.error(`❌ Max retry attempts (${maxRetries}) reached for: ${participantId}`);
+      console.error(`❌ WEBRTC DIAGNÓSTICO: Max retry attempts (${maxRetries}) reached for: ${participantId}`);
+      this.recordCircuitBreakerFailure(participantId);
       return;
     }
 
     this.retryAttempts.set(participantId, currentRetries + 1);
-    console.log(`🔄 Initiating call attempt ${currentRetries + 1}/${maxRetries} to: ${participantId}`);
+    console.log(`🔄 WEBRTC DIAGNÓSTICO: Initiating call attempt ${currentRetries + 1}/${maxRetries} to: ${participantId}`);
 
     // FASE 2: Verificar se já existe um timeout pendente
     this.clearOfferTimeout(participantId);
@@ -330,10 +495,10 @@ export class ConnectionHandler {
       const timeout = setTimeout(() => {
         const pc = this.peerConnections.get(participantId);
         if (pc && (pc.connectionState !== 'connected' && pc.connectionState !== 'connecting')) {
-          console.warn(`⏱️ Offer timeout for ${participantId} - connection state: ${pc.connectionState}`);
+          console.warn(`⏱️ WEBRTC DIAGNÓSTICO: Offer timeout for ${participantId} - connection state: ${pc.connectionState}`);
           
           if (currentRetries + 1 < maxRetries) {
-            console.log(`🔄 Auto-retrying call to ${participantId} after timeout`);
+            console.log(`🔄 WEBRTC DIAGNÓSTICO: Auto-retrying call to ${participantId} after timeout`);
             this.initiateCallWithRetry(participantId, maxRetries);
           }
         }
@@ -341,18 +506,24 @@ export class ConnectionHandler {
       
       this.offerTimeouts.set(participantId, timeout);
       
+      // FASE 4: Reset circuit breaker em caso de sucesso
+      this.resetCircuitBreaker(participantId);
+      
     } catch (error) {
-      console.error(`❌ Call initiation failed for ${participantId} (attempt ${currentRetries + 1}):`, error);
+      console.error(`❌ WEBRTC DIAGNÓSTICO: Call initiation failed for ${participantId} (attempt ${currentRetries + 1}):`, error);
+      
+      // FASE 4: Registrar falha no circuit breaker
+      this.recordCircuitBreakerFailure(participantId);
 
-      if (currentRetries + 1 < maxRetries) {
+      if (currentRetries + 1 < maxRetries && !this.isCircuitBreakerOpen(participantId)) {
         const retryDelay = Math.min(2000 * Math.pow(2, currentRetries), 10000);
-        console.log(`🔄 Retrying call to ${participantId} in ${retryDelay/1000} seconds...`);
+        console.log(`🔄 WEBRTC DIAGNÓSTICO: Retrying call to ${participantId} in ${retryDelay/1000} seconds...`);
         
         setTimeout(() => {
           this.initiateCallWithRetry(participantId, maxRetries);
         }, retryDelay);
       } else {
-        console.error(`❌ Failed to establish WebRTC connection with ${participantId} after ${maxRetries} attempts`);
+        console.error(`❌ WEBRTC DIAGNÓSTICO: Failed to establish WebRTC connection with ${participantId} after ${maxRetries} attempts`);
       }
     }
   }
@@ -362,193 +533,393 @@ export class ConnectionHandler {
     if (existingTimeout) {
       clearTimeout(existingTimeout);
       this.offerTimeouts.delete(participantId);
-      console.log(`🧹 Cleared offer timeout for: ${participantId}`);
+      console.log(`🧹 WEBRTC DIAGNÓSTICO: Cleared offer timeout for: ${participantId}`);
     }
   }
 
   async initiateCall(participantId: string): Promise<void> {
-    console.log(`📞 WEBRTC TIMING: ===== INICIANDO CALL =====`);
-    console.log(`📞 WEBRTC TIMING: Participante: ${participantId}`);
+    console.log(`📞 WEBRTC DIAGNÓSTICO: ===== INICIANDO CALL =====`);
+    console.log(`📞 WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
+    console.log(`📞 WEBRTC DIAGNÓSTICO: Timestamp: ${new Date().toISOString()}`);
 
-    // CORREÇÃO FASE 2: Usar conexão existente SEM recriar
+    // FASE 1: LOGGING CRÍTICO DETALHADO - Estado inicial
+    let peerConnection = this.peerConnections.get(participantId);
+    if (!peerConnection) {
+      console.log(`🔧 WEBRTC DIAGNÓSTICO: Criando nova peer connection para ${participantId}`);
+      peerConnection = this.createPeerConnection(participantId);
+    }
+
+    console.log(`🔍 WEBRTC DIAGNÓSTICO: Estado inicial da conexão:`, {
+      signalingState: peerConnection.signalingState,
+      iceConnectionState: peerConnection.iceConnectionState,
+      iceGatheringState: peerConnection.iceGatheringState,
+      connectionState: peerConnection.connectionState
+    });
+
+    // FASE 1: Validar transceivers
+    const existingSenders = peerConnection.getSenders();
+    const existingTransceivers = peerConnection.getTransceivers();
+    const hasVideoTrack = existingSenders.some(s => s.track?.kind === 'video');
+    const hasAudioTrack = existingSenders.some(s => s.track?.kind === 'audio');
+    
+    console.log(`🎯 WEBRTC DIAGNÓSTICO: Análise de transceivers:`, {
+      totalSenders: existingSenders.length,
+      totalTransceivers: existingTransceivers.length,
+      hasVideo: hasVideoTrack,
+      hasAudio: hasAudioTrack,
+      senderDetails: existingSenders.map(s => ({
+        trackKind: s.track?.kind,
+        trackId: s.track?.id,
+        trackReadyState: s.track?.readyState,
+        trackEnabled: s.track?.enabled
+      }))
+    });
+    
+    if (existingSenders.length === 0) {
+      console.error(`❌ WEBRTC DIAGNÓSTICO: CRÍTICO - Nenhuma track adicionada antes da oferta para: ${participantId}`);
+      throw new Error(`CRÍTICO: Tracks não foram adicionadas antes da oferta para ${participantId}`);
+    }
+
+    // FASE 1: Delay para estabilização com logging
+    console.log(`⏱️ WEBRTC DIAGNÓSTICO: Aguardando 1000ms para estabilização...`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // FASE 1: LOGGING CRÍTICO - Antes de createOffer
+    console.log(`🚀 WEBRTC DIAGNÓSTICO: ===== INICIANDO createOffer() =====`);
+    console.log(`🚀 WEBRTC DIAGNÓSTICO: Estado antes createOffer:`, {
+      signalingState: peerConnection.signalingState,
+      canCreateOffer: peerConnection.signalingState === 'stable' || peerConnection.signalingState === 'have-local-pranswer'
+    });
+
+    try {
+      // FASE 1: CRIAR OFERTA com logging detalhado
+      console.log(`📊 WEBRTC DIAGNÓSTICO: Executando createOffer()...`);
+      
+      const offerStartTime = performance.now();
+      let offer;
+      
+      try {
+        offer = await peerConnection.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true
+        });
+        
+        const offerEndTime = performance.now();
+        console.log(`✅ WEBRTC DIAGNÓSTICO: createOffer() SUCESSO em ${(offerEndTime - offerStartTime).toFixed(2)}ms`, {
+          type: offer.type,
+          sdpLength: offer.sdp?.length || 0,
+          hasVideo: offer.sdp?.includes('m=video') || false,
+          hasAudio: offer.sdp?.includes('m=audio') || false,
+          hasICE: offer.sdp?.includes('a=candidate') || false
+        });
+        
+        // FASE 2: Verificar SDP em detalhes
+        if (offer.sdp) {
+          const sdpLines = offer.sdp.split('\n');
+          const videoLines = sdpLines.filter(line => line.includes('m=video'));
+          const audioLines = sdpLines.filter(line => line.includes('m=audio'));
+          const iceLines = sdpLines.filter(line => line.includes('a=candidate'));
+          
+          console.log(`🔍 WEBRTC DIAGNÓSTICO: Análise SDP da oferta:`, {
+            totalLines: sdpLines.length,
+            videoLines: videoLines.length,
+            audioLines: audioLines.length,
+            iceCandidatesInSDP: iceLines.length,
+            firstVideoLine: videoLines[0] || 'N/A',
+            firstAudioLine: audioLines[0] || 'N/A'
+          });
+        }
+        
+      } catch (createOfferError) {
+        console.error(`❌ WEBRTC DIAGNÓSTICO: FALHA CRÍTICA em createOffer():`, createOfferError);
+        console.error(`❌ WEBRTC DIAGNÓSTICO: Stack trace:`, createOfferError.stack);
+        throw new Error(`createOffer() falhou: ${createOfferError.message}`);
+      }
+
+      // FASE 1: SET LOCAL DESCRIPTION com logging detalhado
+      console.log(`🔧 WEBRTC DIAGNÓSTICO: ===== INICIANDO setLocalDescription() =====`);
+      console.log(`🔧 WEBRTC DIAGNÓSTICO: Estado antes setLocalDescription:`, {
+        signalingState: peerConnection.signalingState,
+        hasLocalDescription: !!peerConnection.localDescription
+      });
+
+      const setLocalStartTime = performance.now();
+      
+      try {
+        await peerConnection.setLocalDescription(offer);
+        
+        const setLocalEndTime = performance.now();
+        console.log(`✅ WEBRTC DIAGNÓSTICO: setLocalDescription() SUCESSO em ${(setLocalEndTime - setLocalStartTime).toFixed(2)}ms`);
+        console.log(`✅ WEBRTC DIAGNÓSTICO: Estado após setLocalDescription:`, {
+          signalingState: peerConnection.signalingState,
+          localDescription: !!peerConnection.localDescription,
+          iceGatheringState: peerConnection.iceGatheringState
+        });
+        
+      } catch (setLocalError) {
+        console.error(`❌ WEBRTC DIAGNÓSTICO: FALHA CRÍTICA em setLocalDescription():`, setLocalError);
+        console.error(`❌ WEBRTC DIAGNÓSTICO: Stack trace:`, setLocalError.stack);
+        throw new Error(`setLocalDescription() falhou: ${setLocalError.message}`);
+      }
+
+      // FASE 2: ENVIAR OFERTA via WebSocket com logging
+      console.log(`📤 WEBRTC DIAGNÓSTICO: ===== ENVIANDO OFERTA VIA WEBSOCKET =====`);
+      console.log(`📤 WEBRTC DIAGNÓSTICO: Participante destino: ${participantId}`);
+      
+      const sendStartTime = performance.now();
+      
+      try {
+        unifiedWebSocketService.sendOffer(participantId, offer);
+        
+        const sendEndTime = performance.now();
+        console.log(`✅ WEBRTC DIAGNÓSTICO: sendOffer() SUCESSO em ${(sendEndTime - sendStartTime).toFixed(2)}ms`);
+        
+        // FASE 2: Iniciar timeout para ICE gathering se necessário
+        this.startIceGatheringTimeout(participantId, peerConnection);
+        
+      } catch (sendError) {
+        console.error(`❌ WEBRTC DIAGNÓSTICO: FALHA CRÍTICA em sendOffer():`, sendError);
+        throw new Error(`sendOffer() falhou: ${sendError.message}`);
+      }
+
+    } catch (error) {
+      console.error(`❌ WEBRTC DIAGNÓSTICO: ERRO GERAL no processo de oferta:`, error);
+      console.error(`❌ WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
+      console.error(`❌ WEBRTC DIAGNÓSTICO: Estado final da conexão:`, {
+        signalingState: peerConnection.signalingState,
+        iceConnectionState: peerConnection.iceConnectionState,
+        connectionState: peerConnection.connectionState
+      });
+      throw error;
+    }
+  }
+
+  // FASE 2: Método para timeout de ICE gathering
+  private startIceGatheringTimeout(participantId: string, peerConnection: RTCPeerConnection): void {
+    const timeout = setTimeout(() => {
+      const candidates = this.iceCandidatesSent.get(participantId) || 0;
+      if (candidates === 0) {
+        console.warn(`⏰ WEBRTC DIAGNÓSTICO: TIMEOUT ICE GATHERING - Nenhum candidate enviado para ${participantId}`);
+        console.warn(`⏰ WEBRTC DIAGNÓSTICO: Estado ICE: ${peerConnection.iceGatheringState}`);
+        
+        // FASE 4: MANUAL ICE RESTART
+        console.log(`🔄 WEBRTC DIAGNÓSTICO: Forçando ICE restart para ${participantId}...`);
+        this.forceIceRestart(participantId);
+      }
+    }, 5000); // 5 segundos para ICE gathering
+    
+    this.iceGatheringTimeouts.set(participantId, timeout);
+  }
+
+  private clearIceGatheringTimeout(participantId: string): void {
+    const timeout = this.iceGatheringTimeouts.get(participantId);
+    if (timeout) {
+      clearTimeout(timeout);
+      this.iceGatheringTimeouts.delete(participantId);
+      console.log(`🧹 WEBRTC DIAGNÓSTICO: Cleared ICE gathering timeout for: ${participantId}`);
+    }
+  }
+
+  // FASE 4: CIRCUIT BREAKER para evitar retry loops infinitos
+  private isCircuitBreakerOpen(participantId: string): boolean {
+    const state = this.circuitBreaker.get(participantId);
+    if (!state) return false;
+    
+    const now = Date.now();
+    if (state.isOpen && (now - state.lastFailure) > this.CIRCUIT_BREAKER_TIMEOUT) {
+      // Reset do circuit breaker após timeout
+      console.log(`🔄 WEBRTC DIAGNÓSTICO: Circuit breaker RESET após timeout para ${participantId}`);
+      this.resetCircuitBreaker(participantId);
+      return false;
+    }
+    
+    return state.isOpen;
+  }
+
+  private recordCircuitBreakerFailure(participantId: string): void {
+    const state = this.circuitBreaker.get(participantId) || { failures: 0, lastFailure: 0, isOpen: false };
+    state.failures++;
+    state.lastFailure = Date.now();
+    
+    if (state.failures >= this.CIRCUIT_BREAKER_THRESHOLD) {
+      state.isOpen = true;
+      console.warn(`🚫 WEBRTC DIAGNÓSTICO: Circuit breaker ABERTO para ${participantId} após ${state.failures} falhas`);
+    }
+    
+    this.circuitBreaker.set(participantId, state);
+  }
+
+  private resetCircuitBreaker(participantId: string): void {
+    this.circuitBreaker.delete(participantId);
+    console.log(`✅ WEBRTC DIAGNÓSTICO: Circuit breaker RESET para ${participantId}`);
+  }
+
+  // FASE 4: FORCE CONNECTION RESTART
+  private forceConnectionRestart(participantId: string): void {
+    console.log(`🔄 WEBRTC DIAGNÓSTICO: ===== FORCE CONNECTION RESTART =====`);
+    console.log(`🔄 WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
+    
+    // Fechar conexão existente
+    const existingPC = this.peerConnections.get(participantId);
+    if (existingPC) {
+      existingPC.close();
+      this.peerConnections.delete(participantId);
+    }
+    
+    // Limpar timeouts
+    this.clearOfferTimeout(participantId);
+    this.clearIceGatheringTimeout(participantId);
+    
+    // Reset contadores
+    this.iceCandidatesSent.delete(participantId);
+    this.iceCandidatesReceived.delete(participantId);
+    this.retryAttempts.delete(participantId);
+    
+    // Criar nova conexão após delay
+    setTimeout(() => {
+      console.log(`🆕 WEBRTC DIAGNÓSTICO: Criando nova conexão após restart para ${participantId}`);
+      this.initiateCallWithRetry(participantId, 1);
+    }, 2000);
+  }
+
+  // FASE 4: FORCE ICE RESTART
+  private forceIceRestart(participantId: string): void {
+    const pc = this.peerConnections.get(participantId);
+    if (!pc) return;
+    
+    console.log(`🧊 WEBRTC DIAGNÓSTICO: Forçando ICE restart para ${participantId}`);
+    
+    try {
+      pc.restartIce();
+      console.log(`✅ WEBRTC DIAGNÓSTICO: ICE restart executado para ${participantId}`);
+    } catch (error) {
+      console.error(`❌ WEBRTC DIAGNÓSTICO: Falha no ICE restart para ${participantId}:`, error);
+      this.forceConnectionRestart(participantId);
+    }
+  }
+
+  async handleOffer(participantId: string, offer: RTCSessionDescriptionInit): Promise<void> {
+    console.log(`📨 WEBRTC DIAGNÓSTICO: ===== HANDLING OFFER =====`);
+    console.log(`📨 WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
+    console.log(`📨 WEBRTC DIAGNÓSTICO: Offer type: ${offer.type}`);
+    console.log(`📨 WEBRTC DIAGNÓSTICO: SDP length: ${offer.sdp?.length || 0}`);
+
     let peerConnection = this.peerConnections.get(participantId);
     if (!peerConnection) {
       peerConnection = this.createPeerConnection(participantId);
     }
 
-    // CORREÇÃO FASE 1: Validar que tracks já foram adicionadas em createPeerConnection
-    const existingSenders = peerConnection.getSenders();
-    const hasVideoTrack = existingSenders.some(s => s.track?.kind === 'video');
-    const hasAudioTrack = existingSenders.some(s => s.track?.kind === 'audio');
-    
-    console.log(`🎯 WEBRTC TIMING: Transceivers antes da oferta:`, {
-      totalSenders: existingSenders.length,
-      hasVideo: hasVideoTrack,
-      hasAudio: hasAudioTrack,
-      transceivers: peerConnection.getTransceivers().length
-    });
-
-    // CORREÇÃO FASE 2: ELIMINAR duplicação de addTrack - tracks já foram adicionadas em createPeerConnection
-    // REMOVIDO: Todo o código duplicado de validação e adição de tracks
-    
-    if (existingSenders.length === 0) {
-      console.error(`❌ WEBRTC TIMING: Nenhuma track adicionada antes da oferta para: ${participantId}`);
-      throw new Error(`Tracks não foram adicionadas antes da oferta para ${participantId}`);
-    }
-
-    // CORREÇÃO FASE 2: Delay aumentado para 1000ms para estabilização mobile
-    console.log(`⏱️ WEBRTC TIMING: Aguardando 1000ms para estabilização antes da oferta...`);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // CORREÇÃO FASE 1+3: Criar oferta com transceivers estabelecidos
     try {
-      console.log(`📋 WEBRTC TIMING: Criando oferta para: ${participantId} com ${peerConnection.getSenders().length} senders`);
-      
-      // FASE 3: Log detalhado dos transceivers antes da oferta
-      const transceivers = peerConnection.getTransceivers();
-      console.log(`🎯 WEBRTC TIMING: Estado dos transceivers:`, transceivers.map(t => ({
-        direction: t.direction,
-        kind: t.receiver?.track?.kind || 'unknown',
-        senderTrack: !!t.sender?.track,
-        currentDirection: t.currentDirection
-      })));
+      console.log(`🔧 WEBRTC DIAGNÓSTICO: Aplicando remote description (offer)...`);
+      await peerConnection.setRemoteDescription(offer);
+      console.log(`✅ WEBRTC DIAGNÓSTICO: Remote description aplicada com sucesso`);
 
-      const offer = await peerConnection.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-      });
-      
-      // CORREÇÃO FASE 1: Log detalhado do SDP da oferta
-      console.log(`📝 WEBRTC TIMING: Offer SDP:\n`, offer.sdp);
-      
-      // FASE 1: Verificar presença de m=video no SDP
-      const hasVideoInSDP = offer.sdp?.includes('m=video') || false;
-      const hasAudioInSDP = offer.sdp?.includes('m=audio') || false;
-      console.log(`🎥 WEBRTC TIMING: SDP contém m=video: ${hasVideoInSDP}, m=audio: ${hasAudioInSDP}`);
-      
-      if (!hasVideoInSDP && !hasAudioInSDP) {
-        console.error(`❌ WEBRTC TIMING: SDP não contém seções de mídia válidas!`);
-        throw new Error(`SDP inválido gerado para ${participantId}`);
-      }
-      
-      await peerConnection.setLocalDescription(offer);
-      
-      // FASE 4: Configurar timeout para detectar ontrack
-      const ontrackTimeout = setTimeout(() => {
-        console.warn(`⏰ WEBRTC TIMING: ontrack timeout para ${participantId} - forçando renegociação`);
-        window.dispatchEvent(new CustomEvent('ontrack-timeout', {
-          detail: { participantId, timestamp: Date.now() }
-        }));
-      }, 10000); // 10s timeout para ontrack
-      
-      // FASE 3: Melhorar ontrack sem sobrescrever - encadear callbacks
-      let ontrackReceived = false;
-      const originalOntrack = peerConnection.ontrack;
-      const enhancedOntrack = (event: RTCTrackEvent) => {
-        if (!ontrackReceived) {
-          ontrackReceived = true;
-          clearTimeout(ontrackTimeout);
-          console.log(`✅ WEBRTC TIMING: ontrack recebido dentro do prazo para ${participantId}`);
-          
-          // FASE 5: Log estado final dos transceivers após conexão estável
-          if (peerConnection.signalingState === 'stable') {
-            const finalTransceivers = peerConnection.getTransceivers();
-            console.log(`🎯 WEBRTC FINAL: Transceivers finais para ${participantId}:`);
-            finalTransceivers.forEach((transceiver, index) => {
-              console.log(`🎯 WEBRTC FINAL: Transceiver ${index} currentDirection:`, transceiver.currentDirection);
-            });
-          }
-        }
-        
-        // Encadear callback original se existir
-        if (originalOntrack) {
-          originalOntrack.call(peerConnection, event);
-        }
-      };
-      
-      // Substituir ontrack preservando encadeamento
-      peerConnection.ontrack = enhancedOntrack;
-      
-      console.log(`📤 WEBRTC TIMING: Enviando oferta para: ${participantId}`);
-      unifiedWebSocketService.sendOffer(participantId, offer);
-      
-      console.log(`✅ WEBRTC TIMING: Oferta enviada com sucesso para: ${participantId}`);
+      console.log(`📊 WEBRTC DIAGNÓSTICO: Criando answer...`);
+      const answer = await peerConnection.createAnswer();
+      console.log(`✅ WEBRTC DIAGNÓSTICO: Answer criada com sucesso`);
+
+      console.log(`🔧 WEBRTC DIAGNÓSTICO: Aplicando local description (answer)...`);
+      await peerConnection.setLocalDescription(answer);
+      console.log(`✅ WEBRTC DIAGNÓSTICO: Local description aplicada com sucesso`);
+
+      console.log(`📤 WEBRTC DIAGNÓSTICO: Enviando answer via WebSocket...`);
+      unifiedWebSocketService.sendAnswer(participantId, answer);
+      console.log(`✅ WEBRTC DIAGNÓSTICO: Answer enviada com sucesso`);
+
     } catch (error) {
-      console.error(`❌ WEBRTC TIMING: Falha ao criar/enviar oferta para: ${participantId}`, error);
+      console.error(`❌ WEBRTC DIAGNÓSTICO: Erro ao processar offer:`, error);
       throw error;
     }
   }
 
-  async handleOffer(participantId: string, offer: RTCSessionDescriptionInit): Promise<void> {
-    console.log(`📥 Handling offer from: ${participantId}`);
-
-    const peerConnection = this.createPeerConnection(participantId);
-    await peerConnection.setRemoteDescription(offer);
-
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-
-    unifiedWebSocketService.sendAnswer(participantId, answer);
-    console.log(`📤 Answer sent to: ${participantId}`);
-  }
-
   async handleAnswer(participantId: string, answer: RTCSessionDescriptionInit): Promise<void> {
-    console.log(`📥 Handling answer from: ${participantId}`);
+    console.log(`📨 WEBRTC DIAGNÓSTICO: ===== HANDLING ANSWER =====`);
+    console.log(`📨 WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
+    console.log(`📨 WEBRTC DIAGNÓSTICO: Answer type: ${answer.type}`);
 
     const peerConnection = this.peerConnections.get(participantId);
-    if (peerConnection) {
+    if (!peerConnection) {
+      console.error(`❌ WEBRTC DIAGNÓSTICO: Peer connection não encontrada para ${participantId}`);
+      return;
+    }
+
+    try {
+      console.log(`🔧 WEBRTC DIAGNÓSTICO: Aplicando remote description (answer)...`);
       await peerConnection.setRemoteDescription(answer);
-      console.log(`✅ Remote description set for: ${participantId}`);
-    } else {
-      console.warn(`⚠️ No peer connection found for answer from: ${participantId}`);
+      console.log(`✅ WEBRTC DIAGNÓSTICO: Remote description (answer) aplicada com sucesso`);
+    } catch (error) {
+      console.error(`❌ WEBRTC DIAGNÓSTICO: Erro ao processar answer:`, error);
+      throw error;
     }
   }
 
   async handleIceCandidate(participantId: string, candidate: RTCIceCandidateInit): Promise<void> {
+    console.log(`🧊 WEBRTC DIAGNÓSTICO: ===== HANDLING ICE CANDIDATE =====`);
+    console.log(`🧊 WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
+    console.log(`🧊 WEBRTC DIAGNÓSTICO: Candidate details:`, candidate);
+
     const peerConnection = this.peerConnections.get(participantId);
-    if (peerConnection) {
-      try {
-        await peerConnection.addIceCandidate(candidate);
-        console.log(`✅ ICE candidate added for: ${participantId}`);
-      } catch (error) {
-        console.error(`❌ Failed to add ICE candidate for: ${participantId}`, error);
-      }
-    } else {
-      console.warn(`⚠️ No peer connection found for ICE candidate from: ${participantId}`);
+    if (!peerConnection) {
+      console.error(`❌ WEBRTC DIAGNÓSTICO: Peer connection não encontrada para ${participantId}`);
+      return;
+    }
+
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      
+      // FASE 2: Incrementar contador de candidates recebidos
+      const currentCount = this.iceCandidatesReceived.get(participantId) || 0;
+      this.iceCandidatesReceived.set(participantId, currentCount + 1);
+      
+      console.log(`✅ WEBRTC DIAGNÓSTICO: ICE candidate adicionado para ${participantId} (total: ${currentCount + 1})`);
+    } catch (error) {
+      console.error(`❌ WEBRTC DIAGNÓSTICO: Erro ao adicionar ICE candidate:`, error);
     }
   }
 
   handleConnectionFailure(participantId: string): void {
-    console.log(`🔄 Handling connection failure for: ${participantId}`);
+    console.log(`❌ WEBRTC DIAGNÓSTICO: ===== CONNECTION FAILURE =====`);
+    console.log(`❌ WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
     
-    const peerConnection = this.peerConnections.get(participantId);
-    if (peerConnection) {
-      peerConnection.close();
+    const pc = this.peerConnections.get(participantId);
+    if (pc) {
+      console.log(`❌ WEBRTC DIAGNÓSTICO: Estado da conexão:`, {
+        connectionState: pc.connectionState,
+        signalingState: pc.signalingState,
+        iceConnectionState: pc.iceConnectionState,
+        iceGatheringState: pc.iceGatheringState
+      });
+      
+      pc.close();
       this.peerConnections.delete(participantId);
     }
-    
+
     this.clearOfferTimeout(participantId);
+    this.clearIceGatheringTimeout(participantId);
     this.clearHeartbeat(participantId);
-    
-    // Retry connection after delay
-    setTimeout(() => {
-      console.log(`🔄 Retrying connection to: ${participantId}`);
-      this.initiateCallWithRetry(participantId);
-    }, 5000);
+
+    // FASE 4: Verificar se deve tentar reconectar
+    if (!this.isCircuitBreakerOpen(participantId)) {
+      console.log(`🔄 WEBRTC DIAGNÓSTICO: Tentando reconectar ${participantId} após falha...`);
+      setTimeout(() => {
+        this.initiateCallWithRetry(participantId, 1);
+      }, 5000);
+    } else {
+      console.log(`🚫 WEBRTC DIAGNÓSTICO: Circuit breaker aberto - não reconectando ${participantId}`);
+    }
   }
 
   startHeartbeat(participantId: string): void {
+    console.log(`💓 WEBRTC DIAGNÓSTICO: Iniciando heartbeat para ${participantId}`);
     const interval = setInterval(() => {
-      const peerConnection = this.peerConnections.get(participantId);
-      if (peerConnection && peerConnection.connectionState === 'connected') {
-        console.log(`💓 Heartbeat for: ${participantId} - connection healthy`);
-      } else {
-        console.warn(`💔 Heartbeat failed for: ${participantId}`);
+      const pc = this.peerConnections.get(participantId);
+      if (!pc || pc.connectionState === 'closed') {
         this.clearHeartbeat(participantId);
-        this.handleConnectionFailure(participantId);
+        return;
       }
-    }, 30000); // 30 seconds
-
+      console.log(`💓 WEBRTC DIAGNÓSTICO: Heartbeat ${participantId}: ${pc.connectionState}`);
+    }, 5000);
+    
     this.heartbeatIntervals.set(participantId, interval);
   }
 
@@ -557,36 +928,45 @@ export class ConnectionHandler {
     if (interval) {
       clearInterval(interval);
       this.heartbeatIntervals.delete(participantId);
-      console.log(`🧹 Cleared heartbeat for: ${participantId}`);
+      console.log(`🧹 WEBRTC DIAGNÓSTICO: Heartbeat cleared for: ${participantId}`);
     }
   }
 
   hasActiveStream(participantId: string): boolean {
-    const peerConnection = this.peerConnections.get(participantId);
-    if (!peerConnection) return false;
+    const pc = this.peerConnections.get(participantId);
+    if (!pc) return false;
     
-    const receivers = peerConnection.getReceivers();
+    const receivers = pc.getReceivers();
     return receivers.some(receiver => receiver.track && receiver.track.readyState === 'live');
   }
 
   cleanup(): void {
-    console.log('🧹 Cleaning up ConnectionHandler');
+    console.log('🧹 WEBRTC DIAGNÓSTICO: ===== CLEANUP =====');
     
-    // Clear all heartbeats
-    this.heartbeatIntervals.forEach((interval, participantId) => {
-      clearInterval(interval);
-      console.log(`🧹 Cleared heartbeat for: ${participantId}`);
+    // Fechar todas as conexões
+    this.peerConnections.forEach((pc, participantId) => {
+      console.log(`🧹 WEBRTC DIAGNÓSTICO: Fechando conexão para ${participantId}`);
+      pc.close();
     });
-    this.heartbeatIntervals.clear();
-    
-    // Clear all retry attempts
-    this.retryAttempts.clear();
-    
-    // Clear all offer timeouts
-    this.offerTimeouts.forEach((timeout, participantId) => {
-      clearTimeout(timeout);
-      console.log(`🧹 Cleared offer timeout for: ${participantId}`);
-    });
+    this.peerConnections.clear();
+
+    // Limpar timeouts
+    this.offerTimeouts.forEach(timeout => clearTimeout(timeout));
     this.offerTimeouts.clear();
+    
+    this.iceGatheringTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.iceGatheringTimeouts.clear();
+
+    // Limpar heartbeats
+    this.heartbeatIntervals.forEach(interval => clearInterval(interval));
+    this.heartbeatIntervals.clear();
+
+    // Limpar contadores
+    this.iceCandidatesSent.clear();
+    this.iceCandidatesReceived.clear();
+    this.retryAttempts.clear();
+    this.circuitBreaker.clear();
+
+    console.log('✅ WEBRTC DIAGNÓSTICO: Cleanup completado');
   }
 }
