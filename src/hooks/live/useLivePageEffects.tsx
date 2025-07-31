@@ -76,14 +76,20 @@ export const useLivePageEffects = ({
 
       // CORREÇÃO CRÍTICA: Set up callbacks for enhanced participant detection
       unifiedService.setCallbacks({
-        onUserConnected: (userId) => {
-          console.log('🔗 LIVE EFFECTS: User connected via WebSocket:', userId);
+        onUserConnected: (data) => {
+          console.log('🔗 LIVE EFFECTS: User connected via WebSocket:', data);
           
-          // CORREÇÃO CRÍTICA: Garantir que participante seja detectado e conectado
+          // CORREÇÃO CRÍTICA: Validar e extrair userId do objeto
+          if (!data || typeof data !== 'object' || !data.userId) {
+            console.error('❌ onUserConnected: Formato inválido:', data);
+            return;
+          }
+          
+          const { userId } = data;
           console.log('🎯 CRÍTICO: Processando conexão de participante:', userId);
           
           // Verificar se é um participante válido
-          if (userId && userId.includes('participant-')) {
+          if (userId && typeof userId === 'string' && userId.includes('participant-')) {
             console.log('✅ PARTICIPANTE DETECTADO: Iniciando processo de conexão');
             
             // Chamar handleParticipantJoin com forçar seleção

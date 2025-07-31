@@ -5,7 +5,7 @@ export interface UnifiedSignalingCallbacks {
   onConnected?: () => void;
   onDisconnected?: () => void;
   onConnectionFailed?: (error: any) => void;
-  onUserConnected?: (userId: string) => void;
+  onUserConnected?: (data: { userId: string, socketId: string, timestamp: number, networkQuality: string }) => void;
   onUserDisconnected?: (userId: string) => void;
   onParticipantsUpdate?: (participants: any[]) => void;
   onOffer?: (fromUserId: string, offer: RTCSessionDescriptionInit) => void;
@@ -241,20 +241,26 @@ class UnifiedWebSocketService {
   private setupEventListeners(): void {
     if (!this.socket) return;
 
-    this.socket.on('user-connected', (userId: string) => {
-      console.log('👤 USER CONNECTED:', userId);
+    this.socket.on('user-connected', (data: { userId: string, socketId: string, timestamp: number, networkQuality: string }) => {
+      console.log('👤 USER CONNECTED:', data);
       
-      // CORREÇÃO CRÍTICA: Forçar detecção automática de participantes
+      // CORREÇÃO CRÍTICA: Validar formato do payload
+      if (!data || typeof data !== 'object') {
+        console.error('❌ onUserConnected: Payload inválido:', data);
+        return;
+      }
+      
+      const { userId } = data;
       console.log('🔍 CRÍTICO: Disparando eventos de descoberta para:', userId);
       
       // Disparar múltiplos eventos para garantir detecção
       setTimeout(() => {
         console.log('🔄 DISCOVERY: Enviando participant-joined via callback');
-        this.callbacks.onUserConnected?.(userId);
+        this.callbacks.onUserConnected?.(data);
         
         // Disparar evento customizado também
         window.dispatchEvent(new CustomEvent('participant-discovered', {
-          detail: { participantId: userId, timestamp: Date.now() }
+          detail: { participantId: userId, timestamp: data.timestamp }
         }));
         
         // BroadcastChannel para comunicação cross-tab
@@ -263,7 +269,7 @@ class UnifiedWebSocketService {
           bc.postMessage({
             type: 'participant-joined',
             participantId: userId,
-            timestamp: Date.now()
+            timestamp: data.timestamp
           });
           bc.close();
         } catch (error) {

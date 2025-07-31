@@ -28,7 +28,7 @@ export class WebRTCCallbacks {
   }
 
   setupHostCallbacks(
-    onUserConnected: (userId: string) => void,
+    onUserConnected: (data: { userId: string, socketId: string, timestamp: number, networkQuality: string }) => void,
     onUserDisconnected: (userId: string) => void,
     onParticipantsUpdate: (participants: any[]) => void,
     onOffer: (data: any) => void,
@@ -115,7 +115,7 @@ export class WebRTCCallbacks {
 
   setupParticipantCallbacks(
     participantId: string,
-    onUserConnected: (userId: string) => void,
+    onUserConnected: (data: { userId: string, socketId: string, timestamp: number, networkQuality: string }) => void,
     onParticipantsUpdate: (participants: any[]) => void,
     onOffer: (data: any) => void,
     onAnswer: (data: any) => void,
