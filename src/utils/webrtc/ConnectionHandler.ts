@@ -353,132 +353,94 @@ export class ConnectionHandler {
   }
 
   async initiateCall(participantId: string): Promise<void> {
-    console.log(`📞 CRÍTICO: Iniciando chamada para: ${participantId}`);
+    console.log(`📞 WEBRTC TIMING: ===== INICIANDO CALL =====`);
+    console.log(`📞 WEBRTC TIMING: Participante: ${participantId}`);
 
-    // CRÍTICO: Usar conexão existente ou criar nova
-    const peerConnection = this.createPeerConnection(participantId);
-
-    // STREAM VALIDATION: Verificação detalhada antes de criar oferta
-    const localStream = this.getLocalStream?.();
-    console.log(`🎥 WEBRTC DEBUG: ===== VALIDAÇÃO DE STREAM =====`);
-    console.log(`🎥 WEBRTC DEBUG: Participante: ${participantId}`);
-    console.log(`🎥 WEBRTC DEBUG: getLocalStream function: ${typeof this.getLocalStream}`);
-    console.log(`🎥 WEBRTC DEBUG: LocalStream result: ${!!localStream}`);
-    
-    if (!localStream) {
-      console.error(`❌ WEBRTC DEBUG: LocalStream NÃO DISPONÍVEL para: ${participantId}`);
-      console.error(`❌ WEBRTC DEBUG: getLocalStream retornou:`, localStream);
-      console.error(`❌ WEBRTC DEBUG: Tipo retornado:`, typeof localStream);
-      
-      // VISUAL LOG: Toast para stream não encontrado
-      if (typeof window !== 'undefined' && window.dispatchEvent) {
-        window.dispatchEvent(new CustomEvent('stream-missing-error', {
-          detail: { participantId, error: 'LocalStream não encontrado' }
-        }));
-      }
-      throw new Error(`LocalStream não disponível para ${participantId}`);
+    // CORREÇÃO FASE 2: Usar conexão existente SEM recriar
+    let peerConnection = this.peerConnections.get(participantId);
+    if (!peerConnection) {
+      peerConnection = this.createPeerConnection(participantId);
     }
 
-    console.log(`🎥 WEBRTC DEBUG: Stream válido encontrado:`, {
-      streamId: localStream.id,
-      active: localStream.active,
-      videoTracks: localStream.getVideoTracks().length,
-      audioTracks: localStream.getAudioTracks().length,
-      totalTracks: localStream.getTracks().length
-    });
-    
-    // Verificar se tracks já foram adicionados
+    // CORREÇÃO FASE 1: Validar que tracks já foram adicionadas em createPeerConnection
     const existingSenders = peerConnection.getSenders();
-    const existingTrackKinds = existingSenders.map(s => s.track?.kind).filter(Boolean);
+    const hasVideoTrack = existingSenders.some(s => s.track?.kind === 'video');
+    const hasAudioTrack = existingSenders.some(s => s.track?.kind === 'audio');
     
-    console.log(`🔍 CRÍTICO: Senders existentes: ${existingSenders.length}, Tracks: [${existingTrackKinds.join(', ')}]`);
+    console.log(`🎯 WEBRTC TIMING: Transceivers antes da oferta:`, {
+      totalSenders: existingSenders.length,
+      hasVideo: hasVideoTrack,
+      hasAudio: hasAudioTrack,
+      transceivers: peerConnection.getTransceivers().length
+    });
+
+    // CORREÇÃO FASE 2: ELIMINAR duplicação de addTrack - tracks já foram adicionadas em createPeerConnection
+    // REMOVIDO: Todo o código duplicado de validação e adição de tracks
     
-    // CORREÇÃO: Apenas adicionar tracks que não existem E são válidos
-    let tracksAdded = 0;
-    const validTracks = localStream.getTracks().filter(t => t.readyState === 'live');
-    
-    if (validTracks.length === 0) {
-      console.error(`❌ CRÍTICO: Nenhuma track válida no stream para: ${participantId}`);
-      throw new Error(`Stream sem tracks válidas para ${participantId}`);
-    }
-    
-    for (const track of validTracks) {
-      const hasExistingSender = existingSenders.some(s => s.track && s.track.kind === track.kind);
-      
-      if (!hasExistingSender) {
-        try {
-          peerConnection.addTrack(track, localStream);
-          tracksAdded++;
-          console.log(`📹 CRÍTICO: Track ${track.kind} adicionada para: ${participantId} (${track.readyState})`);
-          
-          // VISUAL LOG: Toast quando track é adicionado
-          if (typeof window !== 'undefined' && window.dispatchEvent) {
-            window.dispatchEvent(new CustomEvent('track-added-to-pc', {
-              detail: { participantId, trackKind: track.kind, trackId: track.id }
-            }));
-          }
-        } catch (error) {
-          console.error(`❌ Failed to add ${track.kind} track:`, error);
-          
-          // VISUAL LOG: Toast para erro ao adicionar track
-          if (typeof window !== 'undefined' && window.dispatchEvent) {
-            window.dispatchEvent(new CustomEvent('track-add-error', {
-              detail: { participantId, trackKind: track.kind, error: error.message }
-            }));
-          }
-        }
-      } else {
-        console.log(`⚪ Track ${track.kind} já existe para: ${participantId}`);
-      }
-    }
-    
-    console.log(`📊 CRÍTICO: ${tracksAdded} tracks adicionadas de ${validTracks.length} válidas para: ${participantId}`);
-    
-    // VERIFICAÇÃO FINAL: Garantir que pelo menos uma track foi adicionada
-    if (tracksAdded === 0 && existingSenders.length === 0) {
-      console.error(`❌ CRÍTICO: Nenhuma track foi adicionada para: ${participantId}`);
-      throw new Error(`Falha ao adicionar tracks para ${participantId}`);
+    if (existingSenders.length === 0) {
+      console.error(`❌ WEBRTC TIMING: Nenhuma track adicionada antes da oferta para: ${participantId}`);
+      throw new Error(`Tracks não foram adicionadas antes da oferta para ${participantId}`);
     }
 
-    // AGUARDAR para tracks serem estabilizadas
-    console.log(`⏳ CRÍTICO: Aguardando estabilização das tracks para: ${participantId}`);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // CORREÇÃO FASE 2: Delay aumentado para 1000ms para estabilização mobile
+    console.log(`⏱️ WEBRTC TIMING: Aguardando 1000ms para estabilização antes da oferta...`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
+    // CORREÇÃO FASE 1+3: Criar oferta com transceivers estabelecidos
     try {
-      console.log(`📋 CRÍTICO: Criando oferta para: ${participantId} com ${peerConnection.getSenders().length} senders`);
+      console.log(`📋 WEBRTC TIMING: Criando oferta para: ${participantId} com ${peerConnection.getSenders().length} senders`);
+      
+      // FASE 3: Log detalhado dos transceivers antes da oferta
+      const transceivers = peerConnection.getTransceivers();
+      console.log(`🎯 WEBRTC TIMING: Estado dos transceivers:`, transceivers.map(t => ({
+        direction: t.direction,
+        kind: t.receiver?.track?.kind || 'unknown',
+        senderTrack: !!t.sender?.track,
+        currentDirection: t.currentDirection
+      })));
+
       const offer = await peerConnection.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
       });
       
-      console.log(`📝 CRÍTICO: Definindo descrição local para: ${participantId}`);
+      // CORREÇÃO FASE 1: Log detalhado do SDP da oferta
+      console.log(`📝 WEBRTC TIMING: Offer SDP:\n`, offer.sdp);
+      
+      // FASE 1: Verificar presença de m=video no SDP
+      const hasVideoInSDP = offer.sdp?.includes('m=video') || false;
+      const hasAudioInSDP = offer.sdp?.includes('m=audio') || false;
+      console.log(`🎥 WEBRTC TIMING: SDP contém m=video: ${hasVideoInSDP}, m=audio: ${hasAudioInSDP}`);
+      
+      if (!hasVideoInSDP && !hasAudioInSDP) {
+        console.error(`❌ WEBRTC TIMING: SDP não contém seções de mídia válidas!`);
+        throw new Error(`SDP inválido gerado para ${participantId}`);
+      }
+      
       await peerConnection.setLocalDescription(offer);
       
-      // VISUAL LOG: Toast quando oferta é criada
-      if (typeof window !== 'undefined' && window.dispatchEvent) {
-        window.dispatchEvent(new CustomEvent('offer-created', {
-          detail: { 
-            participantId, 
-            offerType: offer.type,
-            senderCount: peerConnection.getSenders().length 
-          }
+      // FASE 4: Configurar timeout para detectar ontrack
+      const ontrackTimeout = setTimeout(() => {
+        console.warn(`⏰ WEBRTC TIMING: ontrack timeout para ${participantId} - forçando renegociação`);
+        window.dispatchEvent(new CustomEvent('ontrack-timeout', {
+          detail: { participantId, timestamp: Date.now() }
         }));
-      }
+      }, 10000); // 10s timeout para ontrack
       
-      console.log(`📤 CRÍTICO: Enviando oferta para: ${participantId}`);
+      // Limpar timeout quando ontrack for chamado
+      const originalOntrack = peerConnection.ontrack;
+      peerConnection.ontrack = (event) => {
+        clearTimeout(ontrackTimeout);
+        console.log(`✅ WEBRTC TIMING: ontrack recebido dentro do prazo para ${participantId}`);
+        if (originalOntrack) originalOntrack.call(peerConnection, event);
+      };
+      
+      console.log(`📤 WEBRTC TIMING: Enviando oferta para: ${participantId}`);
       unifiedWebSocketService.sendOffer(participantId, offer);
       
-      console.log(`✅ CRÍTICO: Oferta enviada com sucesso para: ${participantId}`);
+      console.log(`✅ WEBRTC TIMING: Oferta enviada com sucesso para: ${participantId}`);
     } catch (error) {
-      console.error(`❌ CRÍTICO: Falha ao criar/enviar oferta para: ${participantId}`, error);
-      
-      // VISUAL LOG: Toast para erro na oferta
-      if (typeof window !== 'undefined' && window.dispatchEvent) {
-        window.dispatchEvent(new CustomEvent('offer-error', {
-          detail: { participantId, error: error.message }
-        }));
-      }
-      
+      console.error(`❌ WEBRTC TIMING: Falha ao criar/enviar oferta para: ${participantId}`, error);
       throw error;
     }
   }
