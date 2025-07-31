@@ -13,8 +13,11 @@ import {
   AlertTriangle,
   RefreshCw,
   Video,
-  Monitor
+  Monitor,
+  Smartphone
 } from 'lucide-react';
+import { detectMobileAggressively, validateMobileCameraCapabilities } from '@/utils/media/deviceDetection';
+import { getUserMediaWithFallback } from '@/utils/media/getUserMediaFallback';
 
 interface ConnectionDiagnosticsProps {
   sessionId: string | null;
@@ -32,6 +35,8 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
   const { toast } = useToast();
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [lastTestResult, setLastTestResult] = useState<'success' | 'error' | null>(null);
+  const [isTestingMobileCamera, setIsTestingMobileCamera] = useState(false);
+  const [mobileTestResult, setMobileTestResult] = useState<'success' | 'error' | null>(null);
 
   const handleTestConnection = async () => {
     setIsTestingConnection(true);
@@ -66,6 +71,88 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
       setLastTestResult('error');
     } finally {
       setIsTestingConnection(false);
+    }
+  };
+
+  const handleTestMobileCamera = async () => {
+    setIsTestingMobileCamera(true);
+    setMobileTestResult(null);
+    
+    try {
+      // Check if device is mobile
+      const isMobile = detectMobileAggressively();
+      
+      if (!isMobile) {
+        toast({
+          title: "⚠️ Dispositivo não é móvel",
+          description: "Este teste é específico para câmeras de celular",
+          variant: "destructive"
+        });
+        setMobileTestResult('error');
+        return;
+      }
+
+      // Test environment camera first (back camera - typical mobile)
+      let stream: MediaStream | null = null;
+      let facingMode = 'unknown';
+      let resolution = 'unknown';
+      
+      try {
+        // Test environment camera first (back camera)
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: { exact: 'environment' } } 
+          });
+        } catch (error) {
+          // Fallback to front camera
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ 
+              video: { facingMode: { exact: 'user' } } 
+            });
+          } catch (error2) {
+            // Final fallback to any camera
+            stream = await navigator.mediaDevices.getUserMedia({ 
+              video: true 
+            });
+          }
+        }
+        
+        if (stream) {
+          const videoTrack = stream.getVideoTracks()[0];
+          const settings = videoTrack.getSettings();
+          facingMode = settings.facingMode || 'unknown';
+          resolution = `${settings.width}x${settings.height}`;
+          
+          toast({
+            title: "📱 Câmera móvel funcionando!",
+            description: `${facingMode === 'environment' ? 'Câmera traseira' : 'Câmera frontal'} detectada - ${resolution}`
+          });
+          
+          setMobileTestResult('success');
+        }
+        
+      } catch (error) {
+        console.error('Mobile camera test failed:', error);
+        
+        toast({
+          title: "❌ Erro na câmera móvel",
+          description: "Câmera do celular não detectada",
+          variant: "destructive"
+        });
+        
+        setMobileTestResult('error');
+      } finally {
+        // Clean up test stream
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+      }
+      
+    } catch (error) {
+      console.error('Mobile detection failed:', error);
+      setMobileTestResult('error');
+    } finally {
+      setIsTestingMobileCamera(false);
     }
   };
 
@@ -156,6 +243,38 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
                 <span className="text-green-600">✅ Teste bem-sucedido</span>
               ) : (
                 <span className="text-red-600">❌ Teste falhou</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Test Mobile Camera Button */}
+        <div className="pt-4 border-t">
+          <Button 
+            onClick={handleTestMobileCamera}
+            disabled={isTestingMobileCamera}
+            className="w-full"
+            variant={mobileTestResult === 'success' ? 'default' : 'outline'}
+          >
+            {isTestingMobileCamera ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Testando câmera móvel...
+              </>
+            ) : (
+              <>
+                <Smartphone className="mr-2 h-4 w-4" />
+                Testar Câmera do Celular
+              </>
+            )}
+          </Button>
+          
+          {mobileTestResult && (
+            <div className="mt-2 text-center text-sm">
+              {mobileTestResult === 'success' ? (
+                <span className="text-green-600">✅ Câmera móvel funcionando</span>
+              ) : (
+                <span className="text-red-600">❌ Câmera móvel falhou</span>
               )}
             </div>
           )}
