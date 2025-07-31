@@ -137,63 +137,72 @@ export class ConnectionHandler {
       }
     };
 
-    // CORREÇÃO 1: Callback direto e imediato do ontrack
+    // CORREÇÃO CRÍTICA: ontrack com múltiplos fallbacks
     peerConnection.ontrack = (event) => {
-      console.log('🎵 CRÍTICO: Track received from participant:', participantId);
+      console.log('🎵 WEBRTC→REACT BRIDGE: Track received from participant:', participantId);
       
       if (event.streams && event.streams.length > 0) {
         const stream = event.streams[0];
-        console.log('📺 CRÍTICO: Stream válido recebido:', {
+        console.log('📺 WEBRTC→REACT BRIDGE: Stream válido recebido:', {
           streamId: stream.id,
           trackCount: stream.getTracks().length,
           participantId,
           active: stream.active
         });
         
-        // CORREÇÃO CRÍTICA: Forçar atualização imediata do participantStreams
+        // PONTE 1: Callback direto React
         if (this.streamCallback) {
-          console.log('📞 CRÍTICO: Executando callback IMEDIATO de stream');
+          console.log('📞 PONTE 1: Executando callback React IMEDIATO');
           try {
-            // Callback direto SEM delays
             this.streamCallback(participantId, stream);
-            
-            // FALLBACK: Forçar atualização via evento se callback falhar
-            setTimeout(() => {
-              window.dispatchEvent(new CustomEvent('force-participant-stream-update', {
-                detail: { participantId, stream, source: 'ontrack-fallback' }
-              }));
-            }, 100);
-            
+            console.log('✅ PONTE 1: Callback React executado com sucesso');
           } catch (error) {
-            console.error('❌ CRÍTICO: Erro no callback:', error);
-            // Fallback direto se callback falhar
-            window.dispatchEvent(new CustomEvent('force-participant-stream-update', {
-              detail: { participantId, stream, source: 'ontrack-error-fallback' }
-            }));
+            console.error('❌ PONTE 1: Erro no callback React:', error);
           }
         } else {
-          console.warn('⚠️ CRÍTICO: Callback não definido, usando fallback direto');
-          window.dispatchEvent(new CustomEvent('force-participant-stream-update', {
-            detail: { participantId, stream, source: 'ontrack-no-callback' }
-          }));
+          console.error('❌ PONTE 1: Callback React não está definido!');
         }
         
-        // Evento direto para o grid (múltiplos eventos para garantir)
-        window.dispatchEvent(new CustomEvent('participant-stream-received', {
+        // PONTE 2: Evento personalizado para ParticipantPreviewGrid
+        console.log('📡 PONTE 2: Disparando evento participant-stream-connected');
+        window.dispatchEvent(new CustomEvent('participant-stream-connected', {
           detail: { participantId, stream }
         }));
         
-        // BroadcastChannel para casos de falha
+        // PONTE 3: Forçar atualização de estado via evento
+        console.log('🔄 PONTE 3: Disparando força atualização de streams');
+        window.dispatchEvent(new CustomEvent('force-stream-state-update', {
+          detail: { 
+            participantId, 
+            stream,
+            streamId: stream.id,
+            timestamp: Date.now()
+          }
+        }));
+        
+        // PONTE 4: Evento específico para containers de vídeo
+        console.log('📹 PONTE 4: Disparando evento stream-received para containers');
+        window.dispatchEvent(new CustomEvent('stream-received', {
+          detail: { participantId, stream }
+        }));
+        
+        // PONTE 5: BroadcastChannel como último recurso
         try {
-          const bc = new BroadcastChannel('participant-stream-updates');
-          bc.postMessage({ participantId, streamId: stream.id, action: 'stream-received' });
+          const bc = new BroadcastChannel('webrtc-stream-bridge');
+          bc.postMessage({ 
+            action: 'stream-received',
+            participantId, 
+            streamId: stream.id,
+            timestamp: Date.now()
+          });
           bc.close();
+          console.log('📻 PONTE 5: BroadcastChannel enviado');
         } catch (e) {
-          console.warn('⚠️ BroadcastChannel fallback failed:', e);
+          console.warn('⚠️ PONTE 5: BroadcastChannel failed:', e);
         }
         
       } else {
-        console.warn('⚠️ CRÍTICO: ontrack sem streams válidos');
+        console.warn('⚠️ WEBRTC→REACT BRIDGE: ontrack sem streams válidos');
       }
     };
 

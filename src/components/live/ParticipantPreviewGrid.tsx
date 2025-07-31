@@ -35,20 +35,42 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
     setSlots(preCreatedSlots);
   }, [participantCount]);
   
-  // FASE 2: Listener para eventos de stream para atualização direta
+  // PONTE WEBRTC→REACT: Múltiplos listeners para garantir bridge
   useEffect(() => {
+    console.log('🌉 PONTE WEBRTC→REACT: Configurando listeners no grid');
+    
     const handleStreamConnected = (event: CustomEvent) => {
       const { participantId, stream } = event.detail;
-      console.log('🌉 FASE 2: GRID BRIDGE - Stream conectado no grid:', participantId);
+      console.log('🌉 PONTE BRIDGE: Stream WebRTC recebido no grid:', participantId, stream?.id);
       
-      // Forçar re-render do grid quando stream conecta
-      setSlots(currentSlots => [...currentSlots]);
+      // Forçar re-render completo do grid
+      setSlots(currentSlots => {
+        console.log('🔄 PONTE BRIDGE: Forçando re-render do grid para stream:', participantId);
+        return [...currentSlots];
+      });
     };
     
+    const handleForceUpdate = (event: CustomEvent) => {
+      const { participantId, streamId } = event.detail;
+      console.log('🔄 PONTE FORCE: Forçando atualização para:', participantId, streamId);
+      
+      // Re-render forçado mais agressivo
+      setSlots(currentSlots => {
+        const updated = currentSlots.map(slot => ({ ...slot }));
+        console.log('🔄 PONTE FORCE: Grid atualizado forçadamente');
+        return updated;
+      });
+    };
+    
+    // Múltiplos event listeners para diferentes pontes
     window.addEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+    window.addEventListener('force-stream-state-update', handleForceUpdate as EventListener);
+    window.addEventListener('stream-received', handleStreamConnected as EventListener);
     
     return () => {
       window.removeEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+      window.removeEventListener('force-stream-state-update', handleForceUpdate as EventListener);
+      window.removeEventListener('stream-received', handleStreamConnected as EventListener);
     };
   }, []);
   

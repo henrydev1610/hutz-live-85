@@ -7,6 +7,7 @@ import { useCleanStreamManagement } from './useCleanStreamManagement';
 import { useParticipantLifecycle } from './useParticipantLifecycle';
 import { useParticipantAutoSelection } from './useParticipantAutoSelection';
 import { useAutoHandshake } from './useAutoHandshake';
+import { useWebRTCBridge } from './useWebRTCBridge';
 import { clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
@@ -32,6 +33,13 @@ export const useParticipantManagement = ({
   isHost = false
 }: UseParticipantManagementProps) => {
   const { updateVideoElementsImmediately } = useVideoElementManagement();
+  
+  // CORREÇÃO CRÍTICA: Usar ponte WebRTC → React
+  const { debugBridge } = useWebRTCBridge({
+    participantStreams,
+    setParticipantStreams,
+    setParticipantList
+  });
   
   // Use clean stream management with enhanced error handling
   const { handleParticipantStream } = useCleanStreamManagement({
