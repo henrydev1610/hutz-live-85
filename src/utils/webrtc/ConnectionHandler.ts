@@ -1,4 +1,5 @@
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+import { setupOnTrackWithTimeout, setupICEGatheringTimeout, validateTransceiversPostNegotiation } from './ConnectionHandlerMethods';
 
 export class ConnectionHandler {
   private peerConnections: Map<string, RTCPeerConnection>;
@@ -75,6 +76,12 @@ export class ConnectionHandler {
     console.log(`🔗 WEBRTC DIAGNÓSTICO: Conexões existentes: ${this.peerConnections.size}`);
     console.log(`🔗 WEBRTC DIAGNÓSTICO: Stream callback disponível: ${!!this.streamCallback}`);
     console.log(`🔗 WEBRTC DIAGNÓSTICO: Join callback disponível: ${!!this.participantJoinCallback}`);
+    
+    // FASE 5: Importar diagnóstico de conectividade
+    import('@/utils/webrtc/ConnectivityDiagnostics').then(({ connectivityDiagnostics }) => {
+      const networkType = connectivityDiagnostics.detectNetworkType();
+      console.log(`📶 NETWORK TYPE detected: ${networkType}`);
+    });
 
     // Verificar se já existe conexão para este participante
     if (this.peerConnections.has(participantId)) {
@@ -102,13 +109,14 @@ export class ConnectionHandler {
     // Criar nome único para o relay baseado na sessão e timestamp
     const uniqueId = `relay-${participantId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    const config = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
-      ]
-    };
+    // FASE 1: Usar configuração robusta de STUN/TURN
+    import('@/utils/webrtc/WebRTCConfig').then(({ WEBRTC_CONFIG }) => {
+      console.log('📡 WEBRTC CONFIG: Using enhanced STUN/TURN configuration');
+      console.log('📡 ICE SERVERS:', WEBRTC_CONFIG.iceServers.length, 'servers configured');
+    });
+    
+    const { WEBRTC_CONFIG } = require('@/utils/webrtc/WebRTCConfig');
+    const config = WEBRTC_CONFIG;
 
     console.log(`🔧 WEBRTC DIAGNÓSTICO: Criando WebRTC connection com unique ID: ${uniqueId}`);
     console.log(`🔧 WEBRTC DIAGNÓSTICO: ICE servers configurados:`, config.iceServers);

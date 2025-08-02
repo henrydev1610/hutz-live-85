@@ -147,8 +147,8 @@ const initializeSocketHandlers = (io) => {
         // Entrar na sala do Socket.IO
         socket.join(roomId);
         
-        // Enviar configuração dos servidores ICE
-        socket.emit('ice-servers', { servers: getICEServers() });
+        // FASE 1: Enviar configuração dos servidores ICE
+        socket.emit('ice-servers', { iceServers: getICEServers() });
         
         // Notificar outros participantes
         socket.to(roomId).emit('user-connected', { 

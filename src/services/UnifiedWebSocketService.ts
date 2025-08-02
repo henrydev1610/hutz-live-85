@@ -288,6 +288,16 @@ class UnifiedWebSocketService {
       this.callbacks.onParticipantsUpdate?.(participants);
     });
 
+    // FASE 1: Receber configuração ICE servers do backend
+    this.socket.on('ice-servers', (data) => {
+      console.log('🧊 ICE Servers received from backend:', data);
+      
+      // Atualizar configuração global
+      window.dispatchEvent(new CustomEvent('ice-servers-updated', {
+        detail: { iceServers: data.iceServers }
+      }));
+    });
+
     this.socket.on('offer', (fromUserId: string, offer: RTCSessionDescriptionInit) => {
       console.log('📞 OFFER received from:', fromUserId);
       this.callbacks.onOffer?.(fromUserId, offer);
