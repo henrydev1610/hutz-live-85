@@ -104,7 +104,7 @@ export class UnifiedWebRTCManager {
       this.updateConnectionMetrics(participantId, { joined: true });
       this.callbacksManager.triggerParticipantJoinCallback(participantId);
       
-      // CORREÇÃO: Remover auto-handshake para evitar loops
+      //  Remover auto-handshake para evitar loops
       // Auto-handshake removido para prevenir loops infinitos
     });
   }
