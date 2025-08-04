@@ -20,7 +20,7 @@ const allowedOrigins = [
   "http://172.26.204.230:8080", // Rede local - IP da máquina detectado pelo Vite
   "https://id-preview--f728da22-f48a-45b2-91e9-28492d654d7f.lovable.app", // Lovable staging
   "https://server-hutz-live.onrender.com", // Backend do Render
-  "https://hutz-live-85.onrender.com", // Frontend do Render
+  "https://hutz-live-85.onrender.com", // pega o front do render
   /^https:\/\/.*\.lovableproject\.com$/, // Qualquer subdomínio lovableproject.com
   /^https:\/\/.*\.lovable\.app$/, // Qualquer subdomínio lovable.app
   /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/, // UUIDs do Lovable
