@@ -38,27 +38,43 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     setConnectionStatus('connecting');
     setError(null);
 
-    // FASE 2: Enhanced retry configuration based on mobile/network
-    const maxRetries = isMobile ? 10 : 7;
+    // FASE 4: QUEBRA DE RETRY LOOP - Circuit breaker rígido
+    const maxRetries = isMobile ? 3 : 2; // REDUZIDO drasticamente
     const connectionMetrics = {
       startTime: Date.now(),
       attempts: 0,
-      networkQuality: envInfo.urlMapping ? 'detected' : 'unknown'
+      networkQuality: envInfo.urlMapping ? 'detected' : 'unknown',
+      lastAttemptTime: 0
     };
     
     let retryCount = 0;
+    const DEBOUNCE_MINIMUM = 5000; // 5s mínimo entre tentativas
     
     const attemptConnection = async (): Promise<void> => {
+      // FASE 4: DEBOUNCE CHECK - evitar retry muito frequente
+      const now = Date.now();
+      if (connectionMetrics.lastAttemptTime > 0 && (now - connectionMetrics.lastAttemptTime) < DEBOUNCE_MINIMUM) {
+        const waitTime = DEBOUNCE_MINIMUM - (now - connectionMetrics.lastAttemptTime);
+        console.log(`⏸️ FASE 4: DEBOUNCE - aguardando ${waitTime}ms antes da próxima tentativa`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+      
       connectionMetrics.attempts++;
+      connectionMetrics.lastAttemptTime = Date.now();
       retryCount++;
       
+      // FASE 4: TIMEOUT ABSOLUTO - 30s máximo total
+      if ((Date.now() - connectionMetrics.startTime) > 30000) {
+        throw new Error('TIMEOUT: Connection attempts exceeded 30 seconds total time');
+      }
+      
       try {
-        console.log(`🔄 ENHANCED Connection attempt ${retryCount}/${maxRetries} for participant ${participantId}`);
-        console.log(`📊 CONNECTION METRICS:`, {
+        console.log(`🔄 FASE 4: CONTROLLED Connection attempt ${retryCount}/${maxRetries} for ${participantId}`);
+        console.log(`📊 FASE 4: METRICS:`, {
           attempt: retryCount,
           elapsedTime: Date.now() - connectionMetrics.startTime,
-          mobile: isMobile,
-          environment: envInfo.isLovable ? 'lovable' : envInfo.isLocalhost ? 'local' : 'production'
+          lastAttemptGap: connectionMetrics.lastAttemptTime - (connectionMetrics.attempts > 1 ? connectionMetrics.lastAttemptTime - DEBOUNCE_MINIMUM : 0),
+          mobile: isMobile
         });
         
         // Setup enhanced callbacks primeiro

@@ -62,20 +62,74 @@ export const getUserMediaWithFallback = async (participantId: string = 'unknown'
   const deviceType = isMobile ? 'mobile' : 'desktop';
   const isParticipant = isParticipantRoute();
   
-  console.log(`🎬 FASE 3: MEDIA FALLBACK Starting - Mobile: ${isMobile}, Participant: ${isParticipant}`);
+  console.log(`🎬 FASE 1: DIAGNÓSTICO CRÍTICO - Starting media capture process`);
+  console.log(`📱 FASE 1: Mobile: ${isMobile}, Participant: ${isParticipant}`);
+  console.log(`🔐 FASE 1: Permission API available: ${!!navigator?.permissions}`);
+  console.log(`📹 FASE 1: getUserMedia available: ${!!navigator?.mediaDevices?.getUserMedia}`);
   
-  // Log início do processo
-  streamLogger.log(
-    'STREAM_START' as any,
-    participantId,
-    isMobile,
-    deviceType,
-    { timestamp: Date.now(), duration: 0 },
-    undefined,
-    'MEDIA_FALLBACK',
-    'Media fallback process started',
-    { isMobile, isParticipant }
-  );
+  // FASE 1: DIAGNÓSTICO CRÍTICO DE PERMISSÕES
+  try {
+    if (navigator.permissions) {
+      const cameraPermission = await navigator.permissions.query({ name: 'camera' as PermissionName });
+      const micPermission = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+      
+      console.log(`🔐 FASE 1: PERMISSÕES ATUAIS - Camera: ${cameraPermission.state}, Micro: ${micPermission.state}`);
+      
+      if (cameraPermission.state === 'denied') {
+        console.error(`❌ FASE 1: CRÍTICO - Câmera NEGADA pelo usuário`);
+        streamLogger.log('STREAM_ERROR' as any, participantId, isMobile, deviceType, 
+          { timestamp: Date.now(), duration: 0, errorType: 'CAMERA_PERMISSION_DENIED' },
+          undefined, 'PERMISSION_CRITICAL', 'Camera permission denied by user');
+        return null;
+      }
+      
+      if (cameraPermission.state === 'prompt') {
+        console.log(`🔐 FASE 1: Câmera requer permissão - dialog será exibido`);
+      }
+    }
+  } catch (permError) {
+    console.warn(`⚠️ FASE 1: Não foi possível verificar permissões:`, permError);
+  }
+  
+  // FASE 1: TIMEOUT PARA DETECÇÃO DE PERMISSION DIALOG
+  const mediaPromise = (isParticipant || isMobile) ? 
+    getMobileStreamWithForceValidation(isParticipant, participantId) :
+    getDesktopStreamWithMobileFallback(participantId);
+    
+  const timeoutPromise = new Promise<MediaStream | null>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error('TIMEOUT: Permission dialog ignored or taking too long (10s)'));
+    }, 10000);
+  });
+  
+  try {
+    const result = await Promise.race([mediaPromise, timeoutPromise]);
+    
+    if (result) {
+      console.log(`✅ FASE 1: SUCESSO - Stream capturado:`, {
+        streamId: result.id,
+        active: result.active,
+        tracks: result.getTracks().length
+      });
+      
+      streamLogger.log('STREAM_SUCCESS' as any, participantId, isMobile, deviceType,
+        { timestamp: Date.now(), duration: 0 },
+        undefined, 'MEDIA_CAPTURE', 'Stream captured successfully');
+    }
+    
+    return result;
+  } catch (error) {
+    console.error(`❌ FASE 1: FALHA NA CAPTURA:`, error);
+    
+    if (error instanceof Error && error.message.includes('TIMEOUT')) {
+      console.error(`⏰ FASE 1: TIMEOUT - Permission dialog pode ter sido ignorado`);
+      streamLogger.log('STREAM_ERROR' as any, participantId, isMobile, deviceType,
+        { timestamp: Date.now(), duration: 0, errorType: 'PERMISSION_TIMEOUT' },
+        undefined, 'PERMISSION_CRITICAL', 'Permission dialog timeout');
+    }
+    
+    return null;
+  }
   
   // FASE 3: If participant route, ALWAYS force mobile behavior
   if (isParticipant) {
