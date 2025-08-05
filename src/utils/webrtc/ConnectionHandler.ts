@@ -363,37 +363,50 @@ export class ConnectionHandler {
       }
     };
 
+    // 🚨 CORREÇÃO CRÍTICA: ADICIONAR TRACKS ANTES DE onnegotiationneeded
+    const localStream = this.getLocalStream();
+    if (localStream && localStream.getTracks().length > 0) {
+      console.log(`📹 TRACK ORDER FIX: Adicionando ${localStream.getTracks().length} tracks ANTES de onnegotiationneeded para ${participantId}`);
+      localStream.getTracks().forEach(track => {
+        if (track.readyState === 'live') {
+          peerConnection.addTrack(track, localStream);
+          console.log(`✅ TRACK ORDER FIX: Track ${track.kind} adicionado ANTES de onnegotiationneeded`);
+        } else {
+          console.warn(`⚠️ TRACK ORDER FIX: Track ${track.kind} não está ativo: ${track.readyState}`);
+        }
+      });
+    } else {
+      console.error(`❌ TRACK ORDER FIX: Nenhuma stream local disponível para ${participantId}`);
+      throw new Error('Local stream inválido - necessário para WebRTC');
+    }
+
     // Perfect Negotiation: Define polite/impolite roles based on participant IDs
     const isPolite = participantId < (this.currentParticipantId || '');
     console.log(`🤝 WEBRTC DIAGNÓSTICO: Perfect Negotiation role para ${participantId}: ${isPolite ? 'polite' : 'impolite'}`);
 
-    // Negotiation needed handler
+    // 🚨 CORREÇÃO: onnegotiationneeded AGORA É CONFIGURADO APÓS addTrack
     peerConnection.onnegotiationneeded = async () => {
-      console.log(`🤝 WEBRTC DIAGNÓSTICO: Negotiation needed for ${participantId}`);
+      console.log(`🤝 TRACK ORDER FIX: Negotiation needed for ${participantId} (tracks já adicionadas)`);
       
       try {
         const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
+        console.log(`📄 TRACK ORDER FIX: Offer criado para ${participantId} - SDP length: ${offer.sdp?.length}`);
         
-        console.log(`📤 WEBRTC DIAGNÓSTICO: Sending offer to ${participantId}`);
+        // Verificar se SDP contém tracks
+        if (offer.sdp && offer.sdp.includes('m=video')) {
+          console.log(`✅ TRACK ORDER FIX: SDP contém m=video - tracks presentes!`);
+        } else {
+          console.warn(`⚠️ TRACK ORDER FIX: SDP não contém m=video - possível problema`);
+        }
+        
+        await peerConnection.setLocalDescription(offer);
+        console.log(`📤 TRACK ORDER FIX: Sending offer to ${participantId} com tracks no SDP`);
         unifiedWebSocketService.sendOffer(participantId, offer);
         
       } catch (error) {
-        console.error(`❌ WEBRTC DIAGNÓSTICO: Error in negotiation for ${participantId}:`, error);
+        console.error(`❌ TRACK ORDER FIX: Error in negotiation for ${participantId}:`, error);
       }
     };
-
-    // Add local stream tracks
-    const localStream = this.getLocalStream();
-    if (localStream) {
-      console.log(`📹 WEBRTC DIAGNÓSTICO: Adding local stream tracks to ${participantId}`);
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-        console.log(`➕ WEBRTC DIAGNÓSTICO: Added ${track.kind} track to ${participantId}`);
-      });
-    } else {
-      console.warn(`⚠️ WEBRTC DIAGNÓSTICO: No local stream available for ${participantId}`);
-    }
     
     return peerConnection;
   }
