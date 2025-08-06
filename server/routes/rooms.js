@@ -39,7 +39,7 @@ router.post('/', async (req, res) => {
     
     rooms.set(roomId, roomData);
     
-    console.log(`✅ Room created: ${roomId}`);
+    console.log(`✅ Sala criada: ${roomId}`);
     
     // Retornar dados da sala
     res.status(201).json({
@@ -49,9 +49,9 @@ router.post('/', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error creating room:', error);
+    console.error('Erro ao criar a sala:', error);
     res.status(500).json({
-      error: 'Failed to create room',
+      error: 'Falha ao criar a sala ',
       message: error.message
     });
   }
@@ -80,9 +80,9 @@ router.get('/:roomId', (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error getting room:', error);
+    console.error('Erro ao chamar a sala:', error);
     res.status(500).json({
-      error: 'Failed to get room',
+      error: 'Failha ao obter informações da sala',
       message: error.message
     });
   }
@@ -104,17 +104,17 @@ router.delete('/:roomId', (req, res) => {
     roomData.isActive = false;
     rooms.set(roomId, roomData);
     
-    console.log(`🔒 Room closed: ${roomId}`);
+    console.log(`🔒 Sala feichada: ${roomId}`);
     
     res.json({
-      message: 'Room closed successfully',
+      message: 'Sala fechada com sucessso',
       roomId
     });
     
   } catch (error) {
-    console.error('Error closing room:', error);
+    console.error('Erro ao fechar a sala:', error);
     res.status(500).json({
-      error: 'Failed to close room',
+      error: 'Falha ao fechar a sala',
       message: error.message
     });
   }

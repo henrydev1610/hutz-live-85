@@ -646,6 +646,9 @@ class UnifiedWebSocketService {
     this.resetCircuitBreaker();
   }
 }
+// ✅ Expor método emit diretamente para uso externo
+
+
 
 // Export singleton instance
 export default new UnifiedWebSocketService();

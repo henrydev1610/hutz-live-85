@@ -7,7 +7,7 @@ const CONNECTION_VERSION = Date.now().toString();
 
 export const clearConnectionCache = (): void => {
   console.log('🧹 CONNECTION CACHE: Clearing all connection-related cache');
-  localStorage.removeItem('connectionCache');
+  localStorage.removeItem('connecction cache')
   localStorage.removeItem('lastConnectionCheck');
   sessionStorage.removeItem('accessedViaQR');
   sessionStorage.removeItem('currentSessionId');
@@ -79,7 +79,7 @@ export const getWebSocketURL = (): string => {
   const wsProtocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${wsProtocol}//${baseUrl.host}`;
   
-  console.log(`🔗 CONNECTION: WebSocket URL SYNCHRONIZED with backend: ${wsUrl}`);
+  console.log(`🔗 CONNECTION: WebSocket URL Sincronizado com backend: ${wsUrl}`);
   console.log(`📋 CONNECTION: Backend base: ${backendBaseUrl} → WebSocket: ${wsUrl}`);
   console.log(`🎯 URL VERIFICATION: Backend host: ${baseUrl.host}, Protocol: ${wsProtocol}`);
   

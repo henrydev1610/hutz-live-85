@@ -5,6 +5,7 @@ import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getEnvironmentInfo, validateURLConsistency } from '@/utils/connectionUtils';
+import UnifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 export const useParticipantConnection = (sessionId: string | undefined, participantId: string) => {
   const [isConnected, setIsConnected] = useState(false);
@@ -37,6 +38,24 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     setIsConnecting(true);
     setConnectionStatus('connecting');
     setError(null);
+
+    // ✅ Emitir stream-started para o host ser notificado
+if (stream && UnifiedWebSocketService?.emit) {
+  console.log('📡 Emitindo stream-started para o host');
+
+  unifiedWebSocketService.emit('stream-started', {
+    participantId,
+    roomId: sessionId,
+    streamInfo: {
+      streamId: stream.id,
+      hasVideo: stream.getVideoTracks().length > 0,
+      hasAudio: stream.getAudioTracks().length > 0
+    }
+  });
+}
+
+
+   
 
     // FASE 4: QUEBRA DE RETRY LOOP - Circuit breaker rígido
     const maxRetries = isMobile ? 3 : 2; // REDUZIDO drasticamente
