@@ -40,19 +40,27 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     setError(null);
 
     // ✅ Emitir stream-started para o host ser notificado
-if (stream && UnifiedWebSocketService?.emit) {
-  console.log('📡 Emitindo stream-started para o host');
-
-  unifiedWebSocketService.emit('stream-started', {
-    participantId,
-    roomId: sessionId,
-    streamInfo: {
-      streamId: stream.id,
-      hasVideo: stream.getVideoTracks().length > 0,
-      hasAudio: stream.getAudioTracks().length > 0
+    if (stream) {
+      console.log('📡 Emitindo stream-started para o host');
+      
+      // Aguardar conexão WebSocket antes de emitir
+      try {
+        // Emitir stream-started após conectar ao WebSocket
+        setTimeout(() => {
+          unifiedWebSocketService.emit('stream-started', {
+            participantId,
+            roomId: sessionId,
+            streamInfo: {
+              streamId: stream.id,
+              hasVideo: stream.getVideoTracks().length > 0,
+              hasAudio: stream.getAudioTracks().length > 0
+            }
+          });
+        }, 3000); // Aguardar 3s para WebSocket estar estável
+      } catch (error) {
+        console.warn('⚠️ Erro ao configurar emit stream-started:', error);
+      }
     }
-  });
-}
 
 
    

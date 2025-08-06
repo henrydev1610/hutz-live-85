@@ -317,11 +317,10 @@ export class ConnectionHandler {
     // FASE 2: ONTRACK CORRIGIDO com múltiplas pontes
     peerConnection.ontrack = (event) => {
       onTrackReceived = true;
-      const [stream] = event.streams
+      const [stream] = event.streams;
       clearTimeout(onTrackTimeout);
       
-      console.log(`Atribuindo ao fluxo do participante ${participantId}`);
-      console.log(`Host recebido pelo Peer: ${stream}`)
+      console.log(`🎥 [HOST] ontrack received stream:`, stream);
       console.log('🎉 FASE 2: ===== ONTRACK DISPARADO COM SUCESSO =====');
       console.log('🎉 FASE 2: Participante:', participantId);
       console.log('🎉 FASE 2: Event details:', {
@@ -350,8 +349,11 @@ export class ConnectionHandler {
           }))
         });
         
-        this.handleTrackReceived(participantId, stream);
+        // FASE 2: CALLBACK GLOBAL CRÍTICO
+        console.log(`🔥 FASE 2: CALLBACK DIRETO - chamando this.streamCallback para ${participantId}`);
+        this.streamCallback?.(participantId, stream); // Callback global
         
+        console.log('🎉 FASE 2: ONTRACK processado com sucesso - video deve aparecer agora!');
       } else {
         console.warn('⚠️ FASE 2: ontrack sem streams - tentando construir do evento');
         

@@ -352,6 +352,13 @@ export class UnifiedWebRTCManager {
     return this.localStream;
   }
 
+  // FASE 3: CORREÇÃO CRÍTICA - Método setStreamCallback que estava faltando
+  setStreamCallback(callback: (participantId: string, stream: MediaStream) => void): void {
+    console.log('🎯 WEBRTC MANAGER: Setting stream callback');
+    this.connectionHandler.setStreamCallback(callback);
+    this.callbacksManager.setOnStreamCallback(callback);
+  }
+
   setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void): void {
     this.callbacksManager.setOnStreamCallback(callback);
   }
