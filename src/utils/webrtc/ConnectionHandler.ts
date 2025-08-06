@@ -37,7 +37,7 @@ export class ConnectionHandler {
 
   setParticipantJoinCallback(callback: (participantId: string) => void) {
     this.participantJoinCallback = callback;
-    console.log('👤 WEBRTC DEBUG: Participant join callback registrado com sucesso');
+    console.log('👤 WEBRTC DEBUG: Participante registrado com sucesso');
     console.log('👤 WEBRTC DEBUG: Callback é válido:', typeof callback === 'function');
   }
 
