@@ -99,11 +99,11 @@ if (stream && UnifiedWebSocketService?.emit) {
         // Setup enhanced callbacks primeiro
         unifiedWebSocketService.setCallbacks({
           onConnected: () => {
-            console.log('🔗 PARTICIPANT CONNECTION: WebSocket connected successfully');
+            console.log('🔗Participante conectado com sucesso!');
             setConnectionStatus('connected');
           },
           onDisconnected: () => {
-            console.log('🔗 PARTICIPANT CONNECTION: WebSocket disconnected');
+            console.log('🔗 PARTICIPANT CONNECTION: WebSocket disconnectado');
             setConnectionStatus('disconnected');
             setIsConnected(false);
           },
@@ -111,7 +111,12 @@ if (stream && UnifiedWebSocketService?.emit) {
             console.error('🔗 PARTICIPANT CONNECTION: WebSocket connection failed:', error);
             setConnectionStatus('failed');
             setError('Falha na conexão WebSocket');
-          }
+          },
+          onStreamStarted(participantId, streamInfo) {
+            console.log(`🎥 PARTICIPANT CONNECTION: Stream iniciado por:  ${participantId}:`, streamInfo);
+            // Atualizar estado do participante com o stream recebido
+        
+          },
         });
 
         // Etapa 1: Conectar WebSocket com timeouts otimizados
