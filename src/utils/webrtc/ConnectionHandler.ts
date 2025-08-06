@@ -317,8 +317,11 @@ export class ConnectionHandler {
     // FASE 2: ONTRACK CORRIGIDO com múltiplas pontes
     peerConnection.ontrack = (event) => {
       onTrackReceived = true;
+      const [stream] = event.streams
       clearTimeout(onTrackTimeout);
       
+      console.log(`Atribuindo ao fluxo do participante ${participantId}`);
+      console.log(`Host recebido pelo Peer: ${stream}`)
       console.log('🎉 FASE 2: ===== ONTRACK DISPARADO COM SUCESSO =====');
       console.log('🎉 FASE 2: Participante:', participantId);
       console.log('🎉 FASE 2: Event details:', {
