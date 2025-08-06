@@ -645,12 +645,23 @@ export class ConnectionHandler {
     // Implement connection failure handling logic
   }
 
-  private initiateCall(participantId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      // Implement call initiation logic
-      console.log(`📞 WEBRTC: Initiating call to ${participantId}`);
-      resolve();
-    });
+  private async initiateCall(participantId: string): Promise<void> {
+    const peerConnection = this.peerConnections.get(participantId);
+    if (!peerConnection) {
+      throw new Error(`❌ No RTCPeerConnection found for ${participantId}`);
+    }
+
+    try {
+      console.log(`📞 WEBRTC: Generating offer for ${participantId}`);
+      const offer = await peerConnection.createOffer();
+
+      await peerConnection.setLocalDescription(offer);
+      console.log(`📤 WEBRTC: Sending offer to ${participantId}`);
+      unifiedWebSocketService.sendOffer(participantId, offer);
+    } catch (error) {
+      console.error(`❌ WEBRTC: Failed to initiate call with ${participantId}`, error);
+      throw error;
+    }
   }
 
   initiateCallWithRetry(participantId: string, retries: number = 3): Promise<boolean> {
