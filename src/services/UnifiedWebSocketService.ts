@@ -619,6 +619,17 @@ class UnifiedWebSocketService {
     await this.connect();
   }
 
+  // FASE 1: CORREÇÃO CRÍTICA - Adicionar método emit que estava faltando
+  emit(event: string, data: any): void {
+    if (!this.socket?.connected) {
+      console.warn(`❌ EMIT: Cannot emit '${event}' - socket not connected`);
+      return;
+    }
+    
+    console.log(`📡 EMIT: Sending event '${event}' with data:`, data);
+    this.socket.emit(event, data);
+  }
+
   disconnect(): void {
     console.log('🔌 CONNECTION: Disconnecting...');
     this.shouldReconnect = false;

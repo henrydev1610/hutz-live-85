@@ -29,6 +29,26 @@ export const useParticipantStreams = ({
   });
   const { addToBuffer, processBuffer, removeFromBuffer, cleanup } = useStreamBuffer();
 
+  // FASE 4: CONFIGURAR CALLBACK NO WEBRTC MANAGER
+  useEffect(() => {
+    // Importar UnifiedWebRTCManager dinamicamente para evitar dependência circular
+    import('@/utils/webrtc/UnifiedWebRTCManager').then(({ UnifiedWebRTCManager }) => {
+      const manager = new UnifiedWebRTCManager();
+      
+      console.log('🎯 Stream callback sendo registrado no WebRTC Manager');
+      manager.setStreamCallback((participantId, stream) => {
+        console.log('🎯 Stream callback triggered for:', participantId);
+        setParticipantStreams((prev) => ({
+          ...prev,
+          [participantId]: stream
+        }));
+        
+        // Processar stream imediatamente
+        handleParticipantStream(participantId, stream);
+      });
+    });
+  }, []);
+
   // Process function for buffered streams
   const processStreamSafely = useCallback(async (participantId: string, stream: MediaStream): Promise<boolean> => {
     try {

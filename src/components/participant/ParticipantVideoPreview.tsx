@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Camera, CameraOff, Mic, MicOff, Monitor } from "lucide-react";
@@ -28,6 +28,14 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
   onRetryMedia
 }) => {
   const showDiagnostics = !hasVideo && !hasAudio;
+  
+  // FASE 5: GARANTIR EXIBIÇÃO NO COMPONENTE DE VÍDEO
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+      console.log('🎬 Video attached to preview:', localStream);
+    }
+  }, [localStream, localVideoRef]);
   
   return (
     <>
