@@ -41,7 +41,8 @@ export const useParticipantStreams = ({
         [participantId]: stream
       }));
 
-      // Processar stream imediatamente
+      // Lógica de processamento do stream
+      console.log('📹 FASE 1: Processando stream recebido:', participantId);
       handleParticipantStream(participantId, stream);
     });
   }, []);
