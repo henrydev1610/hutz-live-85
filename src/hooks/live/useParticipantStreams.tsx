@@ -5,7 +5,7 @@ import { useStreamValidation } from './useStreamValidation';
 import { useStreamTransmission } from './useStreamTransmission';
 import { useStreamStateManagement } from './useStreamStateManagement';
 import { useStreamBuffer } from './useStreamBuffer';
-import { getWebRTCManagerInstance } from '@/utils/webrtc/webrtc';
+import { getWebRTCManagerInstance } from '@/utils/webrtc';
 
 interface UseParticipantStreamsProps {
   setParticipantStreams: React.Dispatch<React.SetStateAction<{[id: string]: MediaStream}>>;
