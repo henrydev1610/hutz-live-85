@@ -149,3 +149,10 @@ export const cleanupWebRTC = () => {
     currentSessionId = null;
   }
 };
+export const getWebRTCManagerInstance = (): UnifiedWebRTCManager =>{
+  if (!webrtcManager) {
+    console.error(' Nenhum WebRTC manager inicializado. Certifique-se de chamar initHostWebRTC ou initParticipantWebRTC primeiro.');
+    webrtcManager = new UnifiedWebRTCManager(); // Inicializa para evitar retornos nulos
+  }
+  return webrtcManager;
+}
