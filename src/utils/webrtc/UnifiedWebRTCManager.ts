@@ -30,6 +30,8 @@ export class UnifiedWebRTCManager {
   private localStream: MediaStream | null = null;
   private roomId: string | null = null;
   private participantId: string | null = null;
+  private onStreamCallback: ((participantId: string, stream: MediaStream) => void) | null = null;
+
   private isHost: boolean = false;
   private isMobile: boolean = false;
 
@@ -353,12 +355,11 @@ export class UnifiedWebRTCManager {
   }
 
   // FASE 3: CORREÇÃO CRÍTICA - Método setStreamCallback que estava faltando
- // ✅ Método novo isolado
-public setStreamCallback(callback: (participantId: string, stream: MediaStream) => void): void {
-  console.log('🎯 UNIFIED MANAGER: Registrando callback de stream externo');
-  this.onStreamCallback = callback;
-}
-
+  setStreamCallback(callback: (participantId: string, stream: MediaStream) => void): void {
+    console.log('🎯 WEBRTC MANAGER: Setting stream callback');
+    this.connectionHandler.setStreamCallback(callback);
+    this.callbacksManager.setOnStreamCallback(callback);
+  }
 
   setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void): void {
     this.callbacksManager.setOnStreamCallback(callback);
