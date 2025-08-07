@@ -95,6 +95,7 @@ export const useParticipantStreams = ({
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
     console.log('🎬 FASE 1: FORÇAR AUTO-DETECTION - Stream recebido:', participantId);
+    console.log(`✅ handleParticipantStream DISPARADO para ${participantId}`, stream);
 
     setParticipantList(prev => {
       const existingIndex = prev.findIndex(p => p.id === participantId);
