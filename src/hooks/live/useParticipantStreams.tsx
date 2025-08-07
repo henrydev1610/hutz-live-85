@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { Participant } from '@/components/live/ParticipantGrid';
@@ -6,6 +5,7 @@ import { useStreamValidation } from './useStreamValidation';
 import { useStreamTransmission } from './useStreamTransmission';
 import { useStreamStateManagement } from './useStreamStateManagement';
 import { useStreamBuffer } from './useStreamBuffer';
+import { getWebRTCManagerInstance } from '@/utils/webrtc/webrtc';
 
 interface UseParticipantStreamsProps {
   setParticipantStreams: React.Dispatch<React.SetStateAction<{[id: string]: MediaStream}>>;
@@ -31,33 +31,27 @@ export const useParticipantStreams = ({
 
   // FASE 4: CONFIGURAR CALLBACK NO WEBRTC MANAGER
   useEffect(() => {
-    // Importar UnifiedWebRTCManager dinamicamente para evitar dependência circular
-    import('@/utils/webrtc/UnifiedWebRTCManager').then(({ UnifiedWebRTCManager }) => {
-      const manager = new UnifiedWebRTCManager();
-      
-      console.log('🎯 Stream callback sendo registrado no WebRTC Manager');
-      manager.setStreamCallback((participantId, stream) => {
-        console.log('🎯 Stream callback triggered for:', participantId);
-        setParticipantStreams((prev) => ({
-          ...prev,
-          [participantId]: stream
-        }));
-        
-        // Processar stream imediatamente
-        handleParticipantStream(participantId, stream);
-      });
+    const manager = getWebRTCManagerInstance();
+
+    console.log('🎯 Stream callback sendo registrado no WebRTC Manager');
+    manager.setStreamCallback((participantId, stream) => {
+      console.log('🎯 Stream callback triggered for:', participantId);
+      setParticipantStreams((prev) => ({
+        ...prev,
+        [participantId]: stream
+      }));
+
+      // Processar stream imediatamente
+      handleParticipantStream(participantId, stream);
     });
   }, []);
 
-  // Process function for buffered streams
   const processStreamSafely = useCallback(async (participantId: string, stream: MediaStream): Promise<boolean> => {
     try {
       console.log('🎯 CRITICAL: Processing stream for:', participantId);
-      
-      // Update stream state immediately
+
       updateStreamState(participantId, stream);
-      
-      // Wait for DOM to be ready
+
       await new Promise(resolve => {
         if (document.readyState === 'complete') {
           resolve(undefined);
@@ -69,28 +63,24 @@ export const useParticipantStreams = ({
           document.addEventListener('readystatechange', handler);
         }
       });
-      
-      // Process video update with timeout
+
       await Promise.race([
         updateVideoElementsImmediately(participantId, stream, transmissionWindowRef),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Video processing timeout')), 5000))
       ]);
-      
-      // Send to transmission window
+
       await sendStreamToTransmission(participantId, stream, transmissionWindowRef);
-      
-      // Success notification
+
       toast({
         title: "Participante conectado!",
         description: `${participantId.substring(0, 8)} está transmitindo vídeo`,
       });
-      
+
       console.log('✅ CRITICAL: Stream processing completed for:', participantId);
       return true;
     } catch (error) {
       console.error('❌ Error processing stream for:', participantId, error);
-      
-      // Error notification only for final failures
+
       if (error.message !== 'Video processing timeout') {
         toast({
           title: "Erro no vídeo",
@@ -104,15 +94,12 @@ export const useParticipantStreams = ({
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
     console.log('🎬 FASE 1: FORÇAR AUTO-DETECTION - Stream recebido:', participantId);
-    
-    // FASE 1: FORÇAR DETECÇÃO AUTOMÁTICA DE STREAM
-    // Garantir que o primeiro stream sempre vá para P1
+
     setParticipantList(prev => {
       const existingIndex = prev.findIndex(p => p.id === participantId);
       let updated = [...prev];
-      
+
       if (existingIndex >= 0) {
-        // Atualizar participante existente e forçar seleção
         updated[existingIndex] = {
           ...updated[existingIndex],
           hasVideo: true,
@@ -122,7 +109,6 @@ export const useParticipantStreams = ({
           isMobile: true
         };
       } else {
-        // NOVO PARTICIPANTE: Inserir na posição P1 se estiver vazio
         const newParticipant = {
           id: participantId,
           name: `Mobile-${participantId.substring(0, 8)}`,
@@ -134,38 +120,33 @@ export const useParticipantStreams = ({
           connectedAt: Date.now(),
           isMobile: true
         };
-        
-        // Se não há participantes selecionados, este vai para P1
+
         if (!updated.some(p => p.selected && p.active)) {
-          updated.unshift(newParticipant); // Adiciona no início (P1)
+          updated.unshift(newParticipant);
           console.log('🎯 FASE 1: Participante vai para P1 (primeiro quadrante)');
         } else {
-          updated.push(newParticipant); // Adiciona no final
+          updated.push(newParticipant);
         }
-        
+
         toast({
           title: "👤 P1: Novo Participante",
           description: `${participantId.substring(0, 8)} conectado no primeiro quadrante`,
         });
       }
-      
+
       return updated;
     });
 
-    // FASE 2: BRIDGING DIRETO STREAM → GRID
     console.log('🌉 FASE 2: BRIDGE DIRETO - Disparando eventos para grid');
-    
-    // Evento específico para o primeiro quadrante
+
     window.dispatchEvent(new CustomEvent(`stream-received-${participantId}`, {
       detail: { participantId, stream, timestamp: Date.now(), isP1: true }
     }));
-    
-    // Evento global para atualizações do grid
+
     window.dispatchEvent(new CustomEvent('participant-stream-connected', {
       detail: { participantId, stream, timestamp: Date.now() }
     }));
-    
-    // BroadcastChannel para comunicação cross-tab
+
     try {
       const bc = new BroadcastChannel('participant-updates');
       bc.postMessage({
@@ -179,7 +160,7 @@ export const useParticipantStreams = ({
     } catch (error) {
       console.warn('⚠️ FASE 2: BroadcastChannel não disponível:', error);
     }
-    
+
     if (!validateStream(stream, participantId)) {
       console.warn('❌ STREAM-CRÍTICO: Validação de stream falhou para:', participantId);
       toast({
@@ -190,33 +171,29 @@ export const useParticipantStreams = ({
       return;
     }
 
-    // Atualização forçada do estado do stream
     setParticipantStreams(prev => {
       const updated = { ...prev, [participantId]: stream };
       console.log('🔄 STREAM-CRÍTICO: Streams atualizados para:', participantId);
-      
-      // VISUAL LOG: Toast quando stream é adicionado ao estado
+
       toast({
         title: "📹 Stream Adicionado",
         description: `Stream de ${participantId.substring(0, 8)} adicionado ao estado`,
       });
-      
+
       return updated;
     });
 
-    // Tentar processamento imediato primeiro
     const success = await processStreamSafely(participantId, stream);
-    
+
     if (!success) {
       console.log('📦 STREAM-CRÍTICO: Adicionando ao buffer para retry:', participantId);
       addToBuffer(participantId, stream);
-      
+
       toast({
         title: "🔄 Stream em Buffer",
         description: `Stream de ${participantId.substring(0, 8)} será reprocessado`,
       });
     } else {
-      // VISUAL LOG: Toast quando processamento é bem-sucedido
       toast({
         title: "✅ Stream Processado",
         description: `Stream de ${participantId.substring(0, 8)} processado com sucesso`,
@@ -224,7 +201,6 @@ export const useParticipantStreams = ({
     }
   }, [validateStream, processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams, toast]);
 
-  // Process buffer periodically
   useEffect(() => {
     const interval = setInterval(() => {
       processBuffer(processStreamSafely);
@@ -233,15 +209,13 @@ export const useParticipantStreams = ({
     return () => clearInterval(interval);
   }, [processBuffer, processStreamSafely]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return cleanup;
   }, [cleanup]);
 
   const handleParticipantTrack = useCallback((participantId: string, track: MediaStreamTrack) => {
     updateTrackState(participantId, track);
-    
-    // Send updated stream to transmission and update video elements
+
     setTimeout(async () => {
       const currentStreams = await new Promise<{[id: string]: MediaStream}>(resolve => {
         setParticipantStreams(prev => {
@@ -249,7 +223,7 @@ export const useParticipantStreams = ({
           return prev;
         });
       });
-      
+
       const stream = currentStreams[participantId];
       if (stream) {
         sendStreamToTransmission(participantId, stream, transmissionWindowRef);
