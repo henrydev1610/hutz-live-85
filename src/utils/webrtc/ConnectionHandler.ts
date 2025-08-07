@@ -349,21 +349,44 @@ export class ConnectionHandler {
           }))
         });
         
-        // FASE 2: CRÍTICO - Disparar evento direto para o UnifiedVideoContainer
-        console.log(`🎯 EVENTO DIRETO: Disparando stream-received-${participantId}`);
+        // FASE 1+3: CRÍTICO - Eventos compatíveis com Lovable
+        console.log(`🎯 EVENTO DIRETO LOVABLE: Disparando stream-received-${participantId}`);
+        
+        // Detectar ambiente e ajustar eventos
+        const isLovable = window.location.hostname.includes('lovable') || 
+                         !!document.querySelector('script[src*="gptengineer"]');
+        
+        if (isLovable) {
+          console.log(`🌉 LOVABLE DETECTED: Usando eventos aprimorados para ${participantId}`);
+        }
+        
         window.dispatchEvent(new CustomEvent(`stream-received-${participantId}`, {
           detail: { 
             participantId, 
             stream, 
             timestamp: Date.now(), 
-            isP1: true 
+            isP1: true,
+            isLovableEnvironment: isLovable,
+            streamMetadata: {
+              id: stream.id,
+              active: stream.active,
+              tracks: stream.getTracks().length,
+              videoTracks: stream.getVideoTracks().length,
+              audioTracks: stream.getAudioTracks().length
+            }
           }
         }));
         
-        // FASE 2: CRÍTICO - Disparar evento global para o grid  
-        console.log(`🌍 EVENTO GLOBAL: Disparando participant-stream-connected`);
+        // FASE 1+3: CRÍTICO - Evento global aprimorado
+        console.log(`🌍 EVENTO GLOBAL LOVABLE: Disparando participant-stream-connected`);
         window.dispatchEvent(new CustomEvent('participant-stream-connected', {
-          detail: { participantId, stream, timestamp: Date.now() }
+          detail: { 
+            participantId, 
+            stream, 
+            timestamp: Date.now(),
+            environment: isLovable ? 'lovable' : 'standard',
+            requiresFallback: isLovable
+          }
         }));
         
         // FASE 2: CALLBACK GLOBAL CRÍTICO

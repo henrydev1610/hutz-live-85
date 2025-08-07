@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import LivePageContainer from '@/components/live/LivePageContainer';
+import { LovableDebugPanel } from '@/components/debug/LovableDebugPanel';
 import ConnectionHealthMonitor from '@/components/live/ConnectionHealthMonitor';
 import { useLivePageState } from '@/hooks/live/useLivePageState';
 import { useParticipantManagement } from '@/hooks/live/useParticipantManagement';
@@ -223,6 +224,9 @@ const LivePage: React.FC = () => {
       </div>
 
       <WebRTCDebugToasts />
+      
+      {/* FASE 5: Painel de Debug Lovable */}
+      <LovableDebugPanel sessionId={state.sessionId} />
     </div>
   );
 };

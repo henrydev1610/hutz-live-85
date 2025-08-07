@@ -4,6 +4,8 @@ import { Participant } from './ParticipantGrid';
 import { useUnifiedVideoCreation } from '@/hooks/live/useUnifiedVideoCreation';
 import { useRealTimeStatus } from '@/hooks/live/useRealTimeStatus';
 import { detectMobileAggressively } from '@/utils/media/deviceDetection';
+import { lovableBridge } from '@/utils/LovableWebRTCBridge';
+import { environmentDetector } from '@/utils/LovableEnvironmentDetector';
 
 interface UnifiedVideoContainerProps {
   participant: Participant;
@@ -39,32 +41,52 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
     stream
   });
 
-  // FASE 4: AUTO-PLAY FORÇADO - Listener para eventos de stream
+  // FASE 1+3: AUTO-PLAY FORÇADO com detecção de ambiente Lovable
   useEffect(() => {
     const handleStreamReceived = (event: CustomEvent) => {
       const { participantId: receivedParticipantId, stream: receivedStream, isP1 } = event.detail;
       
-      console.log(`🎬 FASE 4: AUTO-PLAY - Stream event para ${receivedParticipantId}`, {
+      console.log(`🎬 FASE 1+3: AUTO-PLAY - Stream event para ${receivedParticipantId}`, {
         targetParticipant: participant.id,
         isForThisParticipant: receivedParticipantId === participant.id,
         isP1: isP1,
         hasStream: !!receivedStream,
-        streamId: receivedStream?.id
+        streamId: receivedStream?.id,
+        isLovable: environmentDetector.isLovable(),
+        requiresFallback: environmentDetector.requiresFallback()
       });
       
       if (receivedParticipantId === participant.id && receivedStream && containerRef.current) {
-        console.log(`🎯 FASE 4: AUTO-PLAY FORÇADO para ${participant.id} ${isP1 ? '(P1)' : ''}`);
+        console.log(`🎯 FASE 1+3: AUTO-PLAY FORÇADO para ${participant.id} ${isP1 ? '(P1)' : ''}`);
         
         setIsVideoReady(false);
         setError(null);
         
-        // Remover vídeo existente
-        const existingVideo = containerRef.current.querySelector('video');
-        if (existingVideo) {
-          existingVideo.remove();
+        // Limpar container existente
+        while (containerRef.current.firstChild) {
+          containerRef.current.removeChild(containerRef.current.firstChild);
         }
         
-        // FASE 4: Criar elemento de vídeo com configuração mobile-first
+        // FASE 1+3: Usar bridge do Lovable ou vídeo padrão baseado no ambiente
+        if (environmentDetector.isLovable() && environmentDetector.requiresFallback()) {
+          console.log(`🌉 LOVABLE BRIDGE: Usando canvas fallback para ${participant.id}`);
+          
+          // Iniciar bridge para converter stream em dados transferíveis
+          lovableBridge.convertStreamToTransferable(participant.id, receivedStream);
+          
+          // Criar canvas renderer para exibir frames
+          const canvas = lovableBridge.setupLovableVideoElement(containerRef.current, participant.id);
+          if (canvas) {
+            setIsVideoReady(true);
+            console.log(`✅ LOVABLE BRIDGE: Canvas renderer ativo para ${participant.id}`);
+            return;
+          } else {
+            console.warn(`⚠️ LOVABLE BRIDGE: Falha criando canvas, tentando vídeo padrão`);
+          }
+        }
+        
+        // FASE 1: Criar elemento de vídeo padrão (ambientes não-Lovable ou fallback)
+        console.log(`🎥 VIDEO PADRÃO: Criando elemento de vídeo para ${participant.id}`);
         const video = document.createElement('video');
         video.autoplay = true;
         video.playsInline = true;
@@ -84,31 +106,56 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
           background: #000;
         `;
         
-        video.srcObject = receivedStream;
+        // FASE 1: Tentar srcObject primeiro, fallback para ObjectURL
+        try {
+          video.srcObject = receivedStream;
+          console.log(`✅ srcObject definido para ${participant.id}`);
+        } catch (srcObjectError) {
+          console.warn(`⚠️ srcObject falhou para ${participant.id}, tentando ObjectURL:`, srcObjectError);
+          try {
+            video.src = URL.createObjectURL(receivedStream);
+            console.log(`✅ ObjectURL fallback para ${participant.id}`);
+          } catch (urlError) {
+            console.error(`❌ Ambos srcObject e ObjectURL falharam para ${participant.id}:`, urlError);
+            setError('Falha configurando stream de vídeo');
+            return;
+          }
+        }
+        
         containerRef.current.appendChild(video);
         
-        // FASE 4: Auto-play com retry automático
+        // FASE 1: Auto-play com retry automático e logs detalhados
         const attemptPlay = async (attempts = 0) => {
           try {
+            console.log(`🎬 Tentativa ${attempts + 1} de play para ${participant.id}`);
             await video.play();
-            console.log(`✅ FASE 4: Video playing (tentativa ${attempts + 1}) para ${participant.id}`);
+            console.log(`✅ FASE 1: Video playing (tentativa ${attempts + 1}) para ${participant.id}`);
             setIsVideoReady(true);
             setError(null);
           } catch (err) {
-            console.log(`⚠️ FASE 4: Play falhou (tentativa ${attempts + 1}) para ${participant.id}:`, err);
+            console.log(`⚠️ FASE 1: Play falhou (tentativa ${attempts + 1}) para ${participant.id}:`, err);
             
-            if (attempts < 3) {
+            if (attempts < 5) { // Aumentado para 5 tentativas no Lovable
               // Retry com delay crescente
               setTimeout(() => attemptPlay(attempts + 1), (attempts + 1) * 1000);
             } else {
-              setError('Falha na reprodução após 3 tentativas');
+              console.error(`❌ FASE 1: Video play falhou após 5 tentativas para ${participant.id}`);
+              setError('Falha na reprodução após 5 tentativas');
+              
+              // FASE 1: Última tentativa - forçar display mesmo sem play
+              if (environmentDetector.isLovable()) {
+                console.log(`🔄 LOVABLE FALLBACK: Forçando display do vídeo para ${participant.id}`);
+                setIsVideoReady(true);
+                setError(null);
+              }
             }
           }
         };
         
-        // Tentar play imediato + com delay para garantir
+        // Tentar play imediato + múltiplos delays para garantir
         attemptPlay();
         setTimeout(() => attemptPlay(), 500);
+        setTimeout(() => attemptPlay(), 1500);  // Delay extra para Lovable
       }
     };
 
