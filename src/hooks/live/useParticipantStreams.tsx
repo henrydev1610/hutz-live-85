@@ -5,7 +5,7 @@ import { useStreamValidation } from './useStreamValidation';
 import { useStreamTransmission } from './useStreamTransmission';
 import { useStreamStateManagement } from './useStreamStateManagement';
 import { useStreamBuffer } from './useStreamBuffer';
-import { getWebRTCManagerInstance } from '@/utils/webrtc';
+import { getWebRTCManagerInstance, getWebRTCManager  } from '@/utils/webrtc';
 
 interface UseParticipantStreamsProps {
   setParticipantStreams: React.Dispatch<React.SetStateAction<{[id: string]: MediaStream}>>;
@@ -30,22 +30,21 @@ export const useParticipantStreams = ({
   const { addToBuffer, processBuffer, removeFromBuffer, cleanup } = useStreamBuffer();
 
   // FASE 4: CONFIGURAR CALLBACK NO WEBRTC MANAGER
-useEffect(() => {
-  const manager = getWebRTCManager();
-  if (manager) {
-    console.log('🎯 Registrando stream callback na instância global do WebRTC Manager');
+  useEffect(() => {
+    const manager = getWebRTCManagerInstance();
+
+    console.log('🎯 Stream callback sendo registrado no WebRTC Manager');
     manager.setStreamCallback((participantId, stream) => {
-      console.log('🎯 ✅ CALLBACK EXECUTADO → Stream recebido de:', participantId);
+      console.log('🎯 Stream callback triggered for:', participantId);
       setParticipantStreams((prev) => ({
         ...prev,
         [participantId]: stream
       }));
+
+      // Processar stream imediatamente
       handleParticipantStream(participantId, stream);
     });
-  } else {
-    console.warn('⚠️ Nenhum WebRTC manager encontrado para registrar callback de stream');
-  }
-}, []);
+  }, []);
 
   const processStreamSafely = useCallback(async (participantId: string, stream: MediaStream): Promise<boolean> => {
     try {
