@@ -51,9 +51,6 @@ export class UnifiedWebRTCManager {
 
   // Retry management
   private retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG;
-  // 🔗 Callback para notificar stream recebida
-private onStreamCallback: ((participantId: string, stream: MediaStream) => void) | null = null;
-
   private retryAttempts: Map<string, number> = new Map();
   private retryTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
@@ -324,7 +321,7 @@ private onStreamCallback: ((participantId: string, stream: MediaStream) => void)
     if (!this.localStream) {
       throw new Error('No local stream available for host connection');
     }
-      
+
     try {
       const hostId = 'host';
       console.log(`🎯 FASE 2: Initiating connection to host: ${hostId}`);
@@ -354,19 +351,14 @@ private onStreamCallback: ((participantId: string, stream: MediaStream) => void)
   getLocalStream(): MediaStream | null {
     return this.localStream;
   }
+
   // FASE 3: CORREÇÃO CRÍTICA - Método setStreamCallback que estava faltando
-  public setStreamCallback(callback: (participantId: string, stream: MediaStream) => void): void {
+ // ✅ Método novo isolado
+public setStreamCallback(callback: (participantId: string, stream: MediaStream) => void): void {
   console.log('🎯 UNIFIED MANAGER: Registrando callback de stream externo');
   this.onStreamCallback = callback;
 }
 
-
-  // FASE 3: CORREÇÃO CRÍTICA - Método setStreamCallback que estava faltando
-/*   setStreamCallback(callback: (participantId: string, stream: MediaStream) => void): void {
-    console.log('🎯 WEBRTC MANAGER: Setting stream callback');
-    this.connectionHandler.setStreamCallback(callback);
-    this.callbacksManager.setOnStreamCallback(callback); */
-  }
 
   setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void): void {
     this.callbacksManager.setOnStreamCallback(callback);
