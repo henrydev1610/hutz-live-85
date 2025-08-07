@@ -349,6 +349,23 @@ export class ConnectionHandler {
           }))
         });
         
+        // FASE 2: CRÍTICO - Disparar evento direto para o UnifiedVideoContainer
+        console.log(`🎯 EVENTO DIRETO: Disparando stream-received-${participantId}`);
+        window.dispatchEvent(new CustomEvent(`stream-received-${participantId}`, {
+          detail: { 
+            participantId, 
+            stream, 
+            timestamp: Date.now(), 
+            isP1: true 
+          }
+        }));
+        
+        // FASE 2: CRÍTICO - Disparar evento global para o grid  
+        console.log(`🌍 EVENTO GLOBAL: Disparando participant-stream-connected`);
+        window.dispatchEvent(new CustomEvent('participant-stream-connected', {
+          detail: { participantId, stream, timestamp: Date.now() }
+        }));
+        
         // FASE 2: CALLBACK GLOBAL CRÍTICO
         console.log(`🔥 FASE 2: CALLBACK DIRETO - chamando this.streamCallback para ${participantId}`);
         this.streamCallback?.(participantId, stream); // Callback global
