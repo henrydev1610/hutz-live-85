@@ -189,6 +189,27 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
         setError(null);
         setIsVideoReady(false);
 
+        // Lovable fallback: usar canvas/bridge ao invés de <video>
+        if (environmentDetector.isLovable() && environmentDetector.requiresFallback()) {
+          console.log(`🌉 UNIFIED CONTAINER: Lovable fallback ativo para ${participant.id}`);
+
+          // Limpar container existente
+          while (containerRef.current!.firstChild) {
+            containerRef.current!.removeChild(containerRef.current!.firstChild as Node);
+          }
+
+          // Iniciar captura/transferência e criar canvas renderer
+          await lovableBridge.convertStreamToTransferable(participant.id, stream);
+          const canvas = lovableBridge.setupLovableVideoElement(containerRef.current!, participant.id);
+          if (canvas) {
+            setIsVideoReady(true);
+            console.log(`✅ UNIFIED CONTAINER: Canvas pronto para ${participant.id}`);
+            return; // Não tentar criar <video>
+          } else {
+            console.warn(`⚠️ UNIFIED CONTAINER: Canvas não pôde ser criado, tentando <video>`);
+          }
+        }
+
         const videoElement = await createVideoElementUnified(
           containerRef.current!,
           stream,
@@ -208,6 +229,13 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
     };
 
     createVideo();
+
+    return () => {
+      // Cleanup específico do fallback Lovable
+      if (environmentDetector.isLovable() && environmentDetector.requiresFallback()) {
+        lovableBridge.cleanup(participant.id);
+      }
+    };
   }, [participant.id, stream, createVideoElementUnified, isMobile]);
 
   return (

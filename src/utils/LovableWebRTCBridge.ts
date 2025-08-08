@@ -15,6 +15,8 @@ interface StreamTransferData {
 export class LovableWebRTCBridge {
   private canvasCache = new Map<string, HTMLCanvasElement>();
   private frameIntervals = new Map<string, number>();
+  private frameRafs = new Map<string, number>();
+  private frameHandlers = new Map<string, (e: CustomEvent) => void>();
   private isLovableEnvironment = false;
 
   constructor() {
@@ -63,19 +65,63 @@ export class LovableWebRTCBridge {
       const context = canvas.getContext('2d');
       if (!context) return;
 
-      // Criar video temporário para captura
+      // Preferir ImageCapture para evitar uso de <video>. Fallback para <video> temporário se indisponível
+      const anyWindow = window as any;
+      if (anyWindow.ImageCapture) {
+        try {
+          const imageCapture = new anyWindow.ImageCapture(videoTrack);
+          const targetIntervalMs = 66; // ~15 FPS
+
+          const grabAndDispatch = async () => {
+            try {
+              const bitmap: ImageBitmap = await imageCapture.grabFrame();
+              // Ajustar tamanho do canvas
+              if (canvas!.width !== bitmap.width || canvas!.height !== bitmap.height) {
+                canvas!.width = bitmap.width;
+                canvas!.height = bitmap.height;
+              }
+              context.drawImage(bitmap, 0, 0, canvas!.width, canvas!.height);
+              const frameData = canvas!.toDataURL('image/jpeg', 0.7);
+
+              window.dispatchEvent(new CustomEvent(`lovable-frame-${participantId}`, {
+                detail: {
+                  participantId,
+                  frameData,
+                  timestamp: Date.now(),
+                  width: canvas!.width,
+                  height: canvas!.height
+                }
+              }));
+            } catch (err) {
+              console.warn(`⚠️ ImageCapture.grabFrame falhou para ${participantId}, tentando novamente`, err);
+            } finally {
+              // Agendar próximo frame
+              const raf = window.setTimeout(grabAndDispatch, targetIntervalMs);
+              this.frameIntervals.set(participantId, raf);
+            }
+          };
+
+          // Iniciar loop
+          grabAndDispatch();
+          console.log(`✅ LOVABLE BRIDGE: Captura via ImageCapture iniciada para ${participantId}`);
+          return;
+        } catch (icErr) {
+          console.warn(`⚠️ ImageCapture indisponível/falhou para ${participantId}, fallback para <video> oculto`, icErr);
+        }
+      }
+
+      // Fallback: usar <video> temporário fora do DOM
       const tempVideo = document.createElement('video');
       tempVideo.srcObject = stream;
       tempVideo.muted = true;
       tempVideo.playsInline = true;
 
-      await tempVideo.play();
+      await tempVideo.play().catch(() => void 0);
 
-      // FASE 3: Capturar frames e transferir via MessageChannel
       const captureAndTransfer = () => {
         try {
-          context.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
-          const frameData = canvas.toDataURL('image/jpeg', 0.7);
+          context.drawImage(tempVideo, 0, 0, canvas!.width, canvas!.height);
+          const frameData = canvas!.toDataURL('image/jpeg', 0.7);
 
           // Enviar frame via CustomEvent para o componente
           window.dispatchEvent(new CustomEvent(`lovable-frame-${participantId}`, {
@@ -83,21 +129,21 @@ export class LovableWebRTCBridge {
               participantId,
               frameData,
               timestamp: Date.now(),
-              width: canvas.width,
-              height: canvas.height
+              width: canvas!.width,
+              height: canvas!.height
             }
           }));
 
         } catch (error) {
           console.error(`❌ Erro capturando frame para ${participantId}:`, error);
         }
+        const raf = window.setTimeout(captureAndTransfer, 66);
+        this.frameIntervals.set(participantId, raf);
       };
 
       // Iniciar captura de frames (15 FPS para performance)
-      const interval = window.setInterval(captureAndTransfer, 66);
-      this.frameIntervals.set(participantId, interval);
-
-      console.log(`✅ LOVABLE BRIDGE: Captura de frames iniciada para ${participantId}`);
+      captureAndTransfer();
+      console.log(`✅ LOVABLE BRIDGE: Captura de frames via <video> iniciada para ${participantId}`);
 
     } catch (error) {
       console.error(`❌ LOVABLE BRIDGE: Erro convertendo stream para ${participantId}:`, error);
@@ -148,6 +194,7 @@ export class LovableWebRTCBridge {
     };
 
     window.addEventListener(`lovable-frame-${participantId}`, handleFrame as EventListener);
+    this.frameHandlers.set(participantId, handleFrame as unknown as (e: CustomEvent) => void);
 
     // Adicionar canvas ao container
     container.appendChild(displayCanvas);
@@ -161,15 +208,25 @@ export class LovableWebRTCBridge {
     // Parar captura de frames
     const interval = this.frameIntervals.get(participantId);
     if (interval) {
-      window.clearInterval(interval);
+      window.clearTimeout(interval);
       this.frameIntervals.delete(participantId);
+    }
+
+    const raf = this.frameRafs.get(participantId);
+    if (raf) {
+      cancelAnimationFrame(raf);
+      this.frameRafs.delete(participantId);
     }
 
     // Remover canvas do cache
     this.canvasCache.delete(participantId);
 
     // Remover event listeners
-    window.removeEventListener(`lovable-frame-${participantId}`, () => {});
+    const handler = this.frameHandlers.get(participantId);
+    if (handler) {
+      window.removeEventListener(`lovable-frame-${participantId}`, handler as unknown as EventListener);
+      this.frameHandlers.delete(participantId);
+    }
 
     console.log(`🧹 LOVABLE BRIDGE: Cleanup realizado para ${participantId}`);
   }
