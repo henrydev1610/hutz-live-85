@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { getWebSocketURL, detectSlowNetwork, getBackendBaseURL } from '@/utils/connectionUtils';
+import { getWebSocketURL, detectSlowNetwork } from '@/utils/connectionUtils';
 
 export interface UnifiedSignalingCallbacks {
   onConnected?: () => void;
@@ -137,7 +137,7 @@ class UnifiedWebSocketService {
   }
 
   private async _doConnect(serverUrl?: string): Promise<void> {
-    const url = serverUrl || getBackendBaseURL();
+    const url = serverUrl || getWebSocketURL();
     console.log(`🔗 CONNECTION: Attempting to connect to ${url}`);
     console.log(`📊 CONNECTION METRICS:`, {
       attempt: this.metrics.attemptCount,
