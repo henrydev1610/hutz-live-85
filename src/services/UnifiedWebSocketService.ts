@@ -488,9 +488,25 @@ class UnifiedWebSocketService {
       return;
     }
 
-    console.log('📞 SIGNALING: Sending offer to:', targetUserId);
-    console.log('🔍 SIGNALING: Room confirmed, proceeding with offer transmission');
-    this.socket!.emit('offer', { roomId: this.currentRoomId, targetUserId, offer, fromUserId: this.currentUserId });
+    // FASE 4: Validação e log detalhado do payload
+    const payload = {
+      roomId: this.currentRoomId,
+      targetUserId,
+      offer,
+      fromUserId: this.currentUserId
+    };
+
+    console.log(`📤 FASE 4: Sending offer to ${targetUserId}`);
+    console.log('📊 FASE 4: OFFER PAYLOAD:', {
+      type: offer.type,
+      sdpLength: offer.sdp?.length || 0,
+      targetUserId,
+      roomId: this.currentRoomId,
+      fromUserId: this.currentUserId,
+      hasVideoInSDP: offer.sdp?.includes('m=video') || false
+    });
+
+    this.socket!.emit('offer', payload);
   }
 
   sendAnswer(targetUserId: string, answer: RTCSessionDescriptionInit): void {
@@ -504,9 +520,25 @@ class UnifiedWebSocketService {
       return;
     }
 
-    console.log('✅ SIGNALING: Sending answer to:', targetUserId);
-    console.log('🔍 SIGNALING: Room confirmed, proceeding with answer transmission');
-    this.socket!.emit('answer', { roomId: this.currentRoomId, targetUserId, answer, fromUserId: this.currentUserId });
+    // FASE 4: Validação e log detalhado do payload
+    const payload = {
+      roomId: this.currentRoomId,
+      targetUserId,
+      answer,
+      fromUserId: this.currentUserId
+    };
+
+    console.log(`📤 FASE 4: Sending answer to ${targetUserId}`);
+    console.log('📊 FASE 4: ANSWER PAYLOAD:', {
+      type: answer.type,
+      sdpLength: answer.sdp?.length || 0,
+      targetUserId,
+      roomId: this.currentRoomId,
+      fromUserId: this.currentUserId,
+      hasRecvOnly: answer.sdp?.includes('a=recvonly') || false
+    });
+
+    this.socket!.emit('answer', payload);
   }
 
   sendIceCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
@@ -520,9 +552,24 @@ class UnifiedWebSocketService {
       return;
     }
 
-    console.log('🧊 SIGNALING: Sending ICE candidate to:', targetUserId);
-    console.log('🔍 SIGNALING: Room confirmed, proceeding with ICE candidate transmission');
-    this.socket!.emit('ice-candidate', { roomId: this.currentRoomId, targetUserId, candidate, fromUserId: this.currentUserId });
+    // FASE 4: Validação e log detalhado do payload
+    const payload = {
+      roomId: this.currentRoomId,
+      targetUserId,
+      candidate,
+      fromUserId: this.currentUserId
+    };
+
+    console.log(`🧊 FASE 4: Sending ICE candidate to ${targetUserId}`);
+    console.log('📊 FASE 4: ICE CANDIDATE PAYLOAD:', {
+      type: candidate.type,
+      protocol: candidate.protocol,
+      targetUserId,
+      roomId: this.currentRoomId,
+      fromUserId: this.currentUserId
+    });
+
+    this.socket!.emit('ice-candidate', payload);
   }
 
   notifyStreamStarted(participantId: string, streamInfo: any): void {

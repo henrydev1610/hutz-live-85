@@ -20,10 +20,17 @@ export class SignalingHandler {
   }
 
   async handleOffer(data: any) {
-    console.log('📤 PLANO CIRÚRGICO: Handling offer from:', data.fromUserId || data.fromSocketId);
-    console.log('🔍 PLANO CIRÚRGICO: Offer data structure:', { hasOffer: !!data.offer, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
+    console.log('📤 FASE 2: Handling offer from:', data.fromUserId || data.fromSocketId);
+    console.log('🔍 FASE 2: Offer data structure:', { hasOffer: !!data.offer, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
     
     const participantId = data.fromUserId || data.fromSocketId;
+    const targetUserId = data.targetUserId;
+    
+    console.log('🎯 FASE 2: Detectando tipo de receptor:', {
+      participantId,
+      targetUserId,
+      isForHost: targetUserId === 'host'
+    });
     
     // Use connection handler if available, otherwise create directly
     const peerConnection = this.connectionHandler 
@@ -31,18 +38,41 @@ export class SignalingHandler {
       : this.createBasicPeerConnection(participantId);
     
     try {
-      console.log('📋 PLANO CIRÚRGICO: Setting remote description for offer');
+      // FASE 2: Para hosts, garantir transceivers receive-only ANTES de processar offer
+      if (targetUserId === 'host') {
+        console.log('🖥️ FASE 2: Configurando HOST para receber offer');
+        
+        // Verificar se já tem transceivers, se não, criar
+        const existingTransceivers = peerConnection.getTransceivers();
+        if (existingTransceivers.length === 0) {
+          console.log('📡 FASE 2: Criando transceivers receive-only para host');
+          peerConnection.addTransceiver('video', { direction: 'recvonly' });
+          peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+        }
+      }
+      
+      console.log('📋 FASE 2: Setting remote description for offer');
       await peerConnection.setRemoteDescription(data.offer);
       
-      console.log('🔄 PLANO CIRÚRGICO: Creating answer');
+      console.log('🔄 FASE 2: Creating answer');
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       
-      console.log('📤 PLANO CIRÚRGICO: Sending answer to:', participantId);
+      // FASE 2: Verificar se answer contém receive-only
+      if (answer.sdp) {
+        const hasRecvOnlyVideo = answer.sdp.includes('a=recvonly') || answer.sdp.includes('a=inactive');
+        console.log('🔍 FASE 2: Answer SDP analysis:', {
+          hasRecvOnlyVideo,
+          sdpLength: answer.sdp.length,
+          containsVideo: answer.sdp.includes('m=video')
+        });
+      }
+      
+      console.log('📤 FASE 2: Sending answer to:', participantId);
       unifiedWebSocketService.sendAnswer(participantId, answer);
-      console.log('✅ PLANO CIRÚRGICO: Answer sent successfully to:', participantId);
+      console.log('✅ FASE 2: Answer sent successfully to:', participantId);
     } catch (error) {
-      console.error('❌ PLANO CIRÚRGICO: Failed to handle offer:', error);
+      console.error('❌ FASE 2: Failed to handle offer:', error);
     }
   }
 

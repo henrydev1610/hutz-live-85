@@ -259,6 +259,9 @@ export class UnifiedWebRTCManager {
             }
             
             await peerConnection.setLocalDescription(offer);
+            
+            // FASE 3: Garantir que offer é enviada para "host" com dados corretos
+            console.log('📤 FASE 3: Enviando offer para host com dados completos');
             unifiedWebSocketService.sendOffer('host', offer);
             
             this.updateConnectionState('webrtc', 'connecting');
@@ -297,11 +300,11 @@ export class UnifiedWebRTCManager {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      await unifiedWebSocketService.connect();
-      
-      // FASE 3: Setup callbacks ANTES de entrar na sala (crítico para não perder offers)
-      console.log('📞 CRÍTICO: Registrando callbacks ANTES de entrar na sala');
+      // FASE 5: Setup callbacks ANTES de conectar (crítico para não perder offers)
+      console.log('📞 FASE 5: Registrando callbacks ANTES de conectar ao WebSocket');
       this.setupWebSocketCallbacks();
+      
+      await unifiedWebSocketService.connect();
       
       console.log(`🚪 Aguardando confirmação de entrada na sala como host: ${sessionId}`);
       await unifiedWebSocketService.joinRoom(sessionId, 'host');

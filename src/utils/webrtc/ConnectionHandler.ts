@@ -77,6 +77,17 @@ export class ConnectionHandler {
     console.log(`🔗 WEBRTC DIAGNÓSTICO: Stream callback disponível: ${!!this.streamCallback}`);
     console.log(`🔗 WEBRTC DIAGNÓSTICO: Join callback disponível: ${!!this.participantJoinCallback}`);
     
+    // FASE 1: Detectar se é host e forçar modo receive-only
+    const isHost = participantId === 'host' || this.currentParticipantId === 'host';
+    const hasLocalTracksForConnection = this.getLocalStream() && this.getLocalStream()!.getTracks().length > 0;
+    
+    console.log(`🎯 FASE 1: Detectando tipo de conexão:`, {
+      participantId,
+      isHost,
+      hasLocalTracks: hasLocalTracksForConnection,
+      forceRecvOnly: isHost || !hasLocalTracksForConnection
+    });
+    
     // FASE 5: Importar diagnóstico de conectividade
     import('@/utils/webrtc/ConnectivityDiagnostics').then(({ connectivityDiagnostics }) => {
       const networkType = connectivityDiagnostics.detectNetworkType();
@@ -268,15 +279,15 @@ export class ConnectionHandler {
     let onTrackReceived = false;
     let onTrackFallbackExecuted = false;
     
-    // FASE 2: Timeout reduzido para 15s com fallback mais agressivo
+    // FASE 6: Timeout reduzido para 8s com fallback mais agressivo
     const onTrackTimeout = setTimeout(() => {
       if (!onTrackReceived && !onTrackFallbackExecuted) {
         onTrackFallbackExecuted = true;
-        console.error(`❌ FASE 2: CRÍTICO - ontrack NUNCA disparou para ${participantId} em 15s`);
+        console.error(`❌ FASE 6: CRÍTICO - ontrack NUNCA disparou para ${participantId} em 8s`);
         
-        // FASE 2: DIAGNÓSTICO - verificar transceivers
+        // FASE 6: DIAGNÓSTICO - verificar transceivers
         const transceivers = peerConnection.getTransceivers();
-        console.log(`🔍 FASE 2: Transceivers disponíveis: ${transceivers.length}`);
+        console.log(`🔍 FASE 6: Transceivers disponíveis: ${transceivers.length}`);
         transceivers.forEach((t, i) => {
           console.log(`📡 Transceiver ${i}:`, {
             direction: t.direction,
@@ -286,10 +297,19 @@ export class ConnectionHandler {
           });
         });
         
-        // FASE 2: FALLBACK AGRESSIVO - tentar extrair stream dos transceivers
+        // FASE 6: Verificar se answer foi aplicada corretamente
+        console.log(`🔍 FASE 6: Estado da PeerConnection:`, {
+          signalingState: peerConnection.signalingState,
+          connectionState: peerConnection.connectionState,
+          iceConnectionState: peerConnection.iceConnectionState,
+          localDescription: !!peerConnection.localDescription,
+          remoteDescription: !!peerConnection.remoteDescription
+        });
+        
+        // FASE 6: FALLBACK MELHORADO - tentar extrair stream dos transceivers
         const videoTransceiver = transceivers.find(t => t.receiver?.track?.kind === 'video');
         if (videoTransceiver && videoTransceiver.receiver?.track) {
-          console.log(`🔄 FASE 2: FALLBACK - Tentando criar stream dos transceivers`);
+          console.log(`🔄 FASE 6: FALLBACK - Tentando criar stream dos transceivers`);
           
           const tracks = transceivers
             .map(t => t.receiver?.track)
@@ -297,22 +317,22 @@ export class ConnectionHandler {
             
           if (tracks.length > 0) {
             const syntheticStream = new MediaStream(tracks as MediaStreamTrack[]);
-            console.log(`🎉 FASE 2: STREAM SINTÉTICO criado:`, {
+            console.log(`🎉 FASE 6: STREAM SINTÉTICO criado:`, {
               streamId: syntheticStream.id,
               tracks: syntheticStream.getTracks().length
             });
             
             this.handleTrackReceived(participantId, syntheticStream);
           } else {
-            console.error(`❌ FASE 2: Nenhuma track utilizável encontrada`);
+            console.error(`❌ FASE 6: Nenhuma track utilizável encontrada`);
             this.forceConnectionRestart(participantId);
           }
         } else {
-          console.error(`❌ FASE 2: Nenhum transceiver de vídeo encontrado`);
+          console.error(`❌ FASE 6: Nenhum transceiver de vídeo encontrado`);
           this.forceConnectionRestart(participantId);
         }
       }
-    }, 15000);
+    }, 8000);
 
     // FASE 2: ONTRACK CORRIGIDO com múltiplas pontes
     peerConnection.ontrack = (event) => {
@@ -410,8 +430,8 @@ export class ConnectionHandler {
 
     // 🚨 CORREÇÃO CRÍTICA: ADICIONAR TRACKS ANTES DE onnegotiationneeded
     const localStream = this.getLocalStream();
-    const hasLocalTracks = !!localStream && localStream.getTracks().length > 0;
-    if (hasLocalTracks) {
+    const hasLocalTracksForNegotiation = !!localStream && localStream.getTracks().length > 0;
+    if (hasLocalTracksForNegotiation) {
       console.log(`📹 TRACK ORDER FIX: Adicionando ${localStream!.getTracks().length} tracks ANTES de onnegotiationneeded para ${participantId}`);
       localStream!.getTracks().forEach(track => {
         if (track.readyState === 'live') {
@@ -439,7 +459,7 @@ export class ConnectionHandler {
 
     // 🚨 CORREÇÃO: onnegotiationneeded AGORA É CONFIGURADO APÓS addTrack/transceivers
     peerConnection.onnegotiationneeded = async () => {
-      if (!hasLocalTracks) {
+      if (!hasLocalTracksForNegotiation) {
         // Receiver-only: aguardamos ofertas do remoto (participante) e apenas respondemos
         console.log(`🤝 Receiver-only: ignorando createOffer para ${participantId} (sem mídia local)`);
         return;
