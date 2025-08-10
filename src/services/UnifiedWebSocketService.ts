@@ -8,9 +8,9 @@ export interface UnifiedSignalingCallbacks {
   onUserConnected?: (data: { userId: string, socketId: string, timestamp: number, networkQuality: string }) => void;
   onUserDisconnected?: (userId: string) => void;
   onParticipantsUpdate?: (participants: any[]) => void;
-  onOffer?: (fromUserId: string, offer: RTCSessionDescriptionInit) => void;
-  onAnswer?: (fromUserId: string, answer: RTCSessionDescriptionInit) => void;
-  onIceCandidate?: (fromUserId: string, candidate: RTCIceCandidate) => void;
+  onOffer?: (data: { offer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => void;
+  onAnswer?: (data: { answer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => void;
+  onIceCandidate?: (data: { candidate: RTCIceCandidate, fromUserId: string, fromSocketId: string }) => void;
   onStreamStarted?: (participantId: string, streamInfo: any) => void;
   onError?: (error: any) => void;
 }
@@ -298,19 +298,19 @@ class UnifiedWebSocketService {
       }));
     });
 
-    this.socket.on('offer', (fromUserId: string, offer: RTCSessionDescriptionInit) => {
-      console.log('📞 OFFER received from:', fromUserId);
-      this.callbacks.onOffer?.(fromUserId, offer);
+    this.socket.on('offer', (data: { offer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
+      console.log('📞 OFFER received from:', data.fromUserId || data.fromSocketId);
+      this.callbacks.onOffer?.(data);
     });
 
-    this.socket.on('answer', (fromUserId: string, answer: RTCSessionDescriptionInit) => {
-      console.log('✅ ANSWER received from:', fromUserId);
-      this.callbacks.onAnswer?.(fromUserId, answer);
+    this.socket.on('answer', (data: { answer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
+      console.log('✅ ANSWER received from:', data.fromUserId || data.fromSocketId);
+      this.callbacks.onAnswer?.(data);
     });
 
-    this.socket.on('ice-candidate', (fromUserId: string, candidate: RTCIceCandidate) => {
-      console.log('🧊 ICE CANDIDATE received from:', fromUserId);
-      this.callbacks.onIceCandidate?.(fromUserId, candidate);
+    this.socket.on('ice-candidate', (data: { candidate: RTCIceCandidate, fromUserId: string, fromSocketId: string }) => {
+      console.log('🧊 ICE CANDIDATE received from:', data.fromUserId || data.fromSocketId);
+      this.callbacks.onIceCandidate?.(data);
     });
 
     this.socket.on('stream-started', (participantId: string, streamInfo: any) => {
@@ -490,7 +490,7 @@ class UnifiedWebSocketService {
 
     console.log('📞 SIGNALING: Sending offer to:', targetUserId);
     console.log('🔍 SIGNALING: Room confirmed, proceeding with offer transmission');
-    this.socket!.emit('offer', { targetUserId, offer });
+    this.socket!.emit('offer', { roomId: this.currentRoomId, targetUserId, offer, fromUserId: this.currentUserId });
   }
 
   sendAnswer(targetUserId: string, answer: RTCSessionDescriptionInit): void {
@@ -506,7 +506,7 @@ class UnifiedWebSocketService {
 
     console.log('✅ SIGNALING: Sending answer to:', targetUserId);
     console.log('🔍 SIGNALING: Room confirmed, proceeding with answer transmission');
-    this.socket!.emit('answer', { targetUserId, answer });
+    this.socket!.emit('answer', { roomId: this.currentRoomId, targetUserId, answer, fromUserId: this.currentUserId });
   }
 
   sendIceCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
@@ -522,7 +522,7 @@ class UnifiedWebSocketService {
 
     console.log('🧊 SIGNALING: Sending ICE candidate to:', targetUserId);
     console.log('🔍 SIGNALING: Room confirmed, proceeding with ICE candidate transmission');
-    this.socket!.emit('ice-candidate', { targetUserId, candidate });
+    this.socket!.emit('ice-candidate', { roomId: this.currentRoomId, targetUserId, candidate, fromUserId: this.currentUserId });
   }
 
   notifyStreamStarted(participantId: string, streamInfo: any): void {

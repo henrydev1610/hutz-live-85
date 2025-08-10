@@ -298,14 +298,17 @@ export class UnifiedWebRTCManager {
       }
 
       await unifiedWebSocketService.connect();
+      
+      // FASE 3: Setup callbacks ANTES de entrar na sala (crítico para não perder offers)
+      console.log('📞 CRÍTICO: Registrando callbacks ANTES de entrar na sala');
+      this.setupWebSocketCallbacks();
+      
       console.log(`🚪 Aguardando confirmação de entrada na sala como host: ${sessionId}`);
       await unifiedWebSocketService.joinRoom(sessionId, 'host');
       
       // CORREÇÃO: Marcar como pronto para WebRTC após confirmação de entrada na sala
       this.webrtcReady = true;
       console.log(`✅ Confirmação de entrada na sala recebida. Host WebRTC pronto.`);
-
-      this.setupWebSocketCallbacks();
       this.updateConnectionState('websocket', 'connected');
 
       console.log(`✅ Host initialized for session ${sessionId}`);
@@ -518,18 +521,21 @@ export class UnifiedWebRTCManager {
     };
 
     // Signaling bridge → SignalingHandler
-    const onOffer = (data: any) => {
-      console.log('📨 WS offer recebido');
+    const onOffer = (data: { offer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
+      console.log('📞 PLANO CIRÚRGICO: Offer received in manager from:', data.fromUserId || data.fromSocketId);
+      console.log('🔍 PLANO CIRÚRGICO: Offer structure validation:', { hasOffer: !!data.offer, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
       this.signalingHandler.handleOffer(data);
     };
 
-    const onAnswer = (data: any) => {
-      console.log('📬 WS answer recebido');
+    const onAnswer = (data: { answer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
+      console.log('✅ PLANO CIRÚRGICO: Answer received in manager from:', data.fromUserId || data.fromSocketId);
+      console.log('🔍 PLANO CIRÚRGICO: Answer structure validation:', { hasAnswer: !!data.answer, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
       this.signalingHandler.handleAnswer(data);
     };
 
-    const onIceCandidate = (data: any) => {
-      console.log('🧊 WS ice-candidate recebido');
+    const onIceCandidate = (data: { candidate: RTCIceCandidate, fromUserId: string, fromSocketId: string }) => {
+      console.log('🧊 PLANO CIRÚRGICO: ICE candidate received in manager from:', data.fromUserId || data.fromSocketId);
+      console.log('🔍 PLANO CIRÚRGICO: ICE candidate structure validation:', { hasCandidate: !!data.candidate, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
       this.signalingHandler.handleIceCandidate(data);
     };
 
