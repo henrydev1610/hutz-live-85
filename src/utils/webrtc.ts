@@ -149,10 +149,10 @@ export const cleanupWebRTC = () => {
     currentSessionId = null;
   }
 };
-export const getWebRTCManagerInstance = (): UnifiedWebRTCManager =>{
+export const getWebRTCManagerInstance = (): UnifiedWebRTCManager => {
   if (!webrtcManager) {
-    console.error(' Nenhum WebRTC manager inicializado. Certifique-se de chamar initHostWebRTC ou initParticipantWebRTC primeiro.');
-    webrtcManager = new UnifiedWebRTCManager(); // Inicializa para evitar retornos nulos
+    console.error('❌ FASE 2: Nenhum WebRTC manager inicializado. Use initHostWebRTC ou initParticipantWebRTC primeiro.');
+    throw new Error('WebRTC manager not initialized - call init function first');
   }
   return webrtcManager;
 }

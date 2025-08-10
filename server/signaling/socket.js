@@ -242,7 +242,12 @@ const initializeSocketHandlers = (io) => {
         // Update last seen
         connection.lastSeen = Date.now();
 
-        console.log(`📤 Offer from ${fromUserId || connection.userId} to ${targetUserId || targetSocketId}`);
+        // FASE 4: Enhanced offer routing with targetUserId: "host" validation
+        console.log(`📤 FASE 4: Offer from ${fromUserId || connection.userId} to ${targetUserId || targetSocketId}`);
+        
+        if (targetUserId === 'host') {
+          console.log('🎯 FASE 4: CRÍTICO - Offer direcionado ao HOST detectado');
+        }
 
         let finalTargetSocketId = targetSocketId;
 
@@ -253,6 +258,7 @@ const initializeSocketHandlers = (io) => {
               const conn = connections.get(socketId);
               if (conn && conn.userId === targetUserId) {
                 finalTargetSocketId = socketId;
+                console.log(`✅ FASE 4: Found target socket for userId=${targetUserId}: ${socketId}`);
                 break;
               }
             }
@@ -260,13 +266,14 @@ const initializeSocketHandlers = (io) => {
         }
 
         if (finalTargetSocketId) {
+          console.log(`📨 FASE 4: Routing offer to socket ${finalTargetSocketId} (user: ${targetUserId})`);
           socket.to(finalTargetSocketId).emit('offer', {
             offer,
             fromSocketId: socket.id,
             fromUserId: connection.userId
           });
         } else {
-          console.warn(`❌ OFFER: target not found for userId=${targetUserId} / socketId=${targetSocketId}`);
+          console.error(`❌ FASE 4: CRÍTICO - target not found for userId=${targetUserId} / socketId=${targetSocketId}`);
           socket.emit('error', { message: 'Target not found for offer' });
           return;
         }

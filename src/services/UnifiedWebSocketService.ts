@@ -488,9 +488,16 @@ class UnifiedWebSocketService {
       return;
     }
 
-    console.log('📞 SIGNALING: Sending offer to:', targetUserId);
+    // FASE 1: CRÍTICO - Garantir targetUserId: "host" e roomId
+    const finalTargetUserId = targetUserId === 'host' ? 'host' : targetUserId;
+    console.log('📞 CRÍTICO: Sending offer to:', finalTargetUserId, '(force host targeting)');
     console.log('🔍 SIGNALING: Room confirmed, proceeding with offer transmission');
-    this.socket!.emit('offer', { targetUserId, offer });
+    this.socket!.emit('offer', { 
+      roomId: this.currentRoomId, 
+      targetUserId: finalTargetUserId, 
+      offer,
+      fromUserId: this.currentUserId
+    });
   }
 
   sendAnswer(targetUserId: string, answer: RTCSessionDescriptionInit): void {
@@ -504,9 +511,14 @@ class UnifiedWebSocketService {
       return;
     }
 
-    console.log('✅ SIGNALING: Sending answer to:', targetUserId);
+    console.log('✅ CRÍTICO: Sending answer to:', targetUserId, '(with fromUserId)');
     console.log('🔍 SIGNALING: Room confirmed, proceeding with answer transmission');
-    this.socket!.emit('answer', { targetUserId, answer });
+    this.socket!.emit('answer', { 
+      roomId: this.currentRoomId, 
+      targetUserId, 
+      answer,
+      fromUserId: this.currentUserId
+    });
   }
 
   sendIceCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
@@ -520,9 +532,14 @@ class UnifiedWebSocketService {
       return;
     }
 
-    console.log('🧊 SIGNALING: Sending ICE candidate to:', targetUserId);
+    console.log('🧊 CRÍTICO: Sending ICE candidate to:', targetUserId, '(with fromUserId)');
     console.log('🔍 SIGNALING: Room confirmed, proceeding with ICE candidate transmission');
-    this.socket!.emit('ice-candidate', { targetUserId, candidate });
+    this.socket!.emit('ice-candidate', { 
+      roomId: this.currentRoomId,
+      targetUserId, 
+      candidate,
+      fromUserId: this.currentUserId
+    });
   }
 
   notifyStreamStarted(participantId: string, streamInfo: any): void {
