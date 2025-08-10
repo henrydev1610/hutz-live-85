@@ -75,22 +75,14 @@ export const useParticipantAutoSelection = ({
     });
   }, [participantStreams, participantList, transmissionWindowRef, updateTransmissionParticipants]);
 
-  // FASE 5: Function to transfer streams to transmission window with availability check
+  // Function to transfer streams to transmission window
   const transferStreamToTransmission = (participantId: string, stream: MediaStream) => {
-    // FASE 5: Add debounce and availability check
     if (!transmissionWindowRef.current || transmissionWindowRef.current.closed) {
-      console.warn('⚠️ FASE 5: Transmission window not available for stream transfer - queuing for later');
-      // Instead of immediate error, queue for later attempt
-      setTimeout(() => {
-        if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-          console.log('♻️ FASE 5: Retrying transmission window transfer after delay');
-          transferStreamToTransmission(participantId, stream);
-        }
-      }, 2000);
+      console.warn('⚠️ Transmission window not available for stream transfer');
       return;
     }
 
-    console.log('📤 FASE 5: CRITICAL: Transferring stream to transmission window:', participantId);
+    console.log('📤 CRITICAL: Transferring stream to transmission window:', participantId);
     
     try {
       // Send stream information to transmission window

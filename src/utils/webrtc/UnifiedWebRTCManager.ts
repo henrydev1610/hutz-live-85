@@ -259,9 +259,6 @@ export class UnifiedWebRTCManager {
             }
             
             await peerConnection.setLocalDescription(offer);
-            
-            // FASE 1: CRÍTICO - Garantir targetUserId: "host" sempre
-            console.log('📤 CRÍTICO: Enviando offer para HOST com targetUserId explícito');
             unifiedWebSocketService.sendOffer('host', offer);
             
             this.updateConnectionState('webrtc', 'connecting');
@@ -500,7 +497,7 @@ export class UnifiedWebRTCManager {
   }
 
   private setupWebSocketCallbacks(): void {
-    console.log('🔌 FASE 3: Setting up WebSocket callbacks with signaling bridge');
+    console.log('🔌 Setting up WebSocket callbacks');
 
     // Common handlers
     const onUserConnected = (data: { userId: string; socketId: string; timestamp: number; networkQuality: string }) => {
