@@ -498,14 +498,62 @@ export class UnifiedWebRTCManager {
 
   private setupWebSocketCallbacks(): void {
     console.log('🔌 Setting up WebSocket callbacks');
-    
-    // Set up signaling callbacks through WebRTCCallbacks
+
+    // Common handlers
+    const onUserConnected = (data: { userId: string; socketId: string; timestamp: number; networkQuality: string }) => {
+      console.log('🟢 WS user-connected:', data);
+    };
+
+    const onUserDisconnected = (userId: string) => {
+      console.log('🔴 WS user-disconnected:', userId);
+      try {
+        this.connectionHandler.closePeerConnection(userId);
+      } catch (e) {
+        console.warn('⚠️ closePeerConnection falhou (pode já estar fechado):', e);
+      }
+    };
+
+    const onParticipantsUpdate = (participants: any[]) => {
+      console.log('👥 WS participants-update:', participants?.length || 0);
+    };
+
+    // Signaling bridge → SignalingHandler
+    const onOffer = (data: any) => {
+      console.log('📨 WS offer recebido');
+      this.signalingHandler.handleOffer(data);
+    };
+
+    const onAnswer = (data: any) => {
+      console.log('📬 WS answer recebido');
+      this.signalingHandler.handleAnswer(data);
+    };
+
+    const onIceCandidate = (data: any) => {
+      console.log('🧊 WS ice-candidate recebido');
+      this.signalingHandler.handleIceCandidate(data);
+    };
+
     if (this.isHost) {
-      // For host, we need to set up the callbacks with proper parameters
       console.log('🎯 Setting up host callbacks');
+      this.callbacksManager.setupHostCallbacks(
+        onUserConnected,
+        onUserDisconnected,
+        onParticipantsUpdate,
+        onOffer,
+        onAnswer,
+        onIceCandidate
+      );
     } else {
-      // For participant, set up participant callbacks  
       console.log('👤 Setting up participant callbacks');
+      const pid = this.participantId || 'participant';
+      this.callbacksManager.setupParticipantCallbacks(
+        pid,
+        onUserConnected,
+        onParticipantsUpdate,
+        onOffer,
+        onAnswer,
+        onIceCandidate
+      );
     }
   }
 

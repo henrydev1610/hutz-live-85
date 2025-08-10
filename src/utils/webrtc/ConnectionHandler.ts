@@ -410,29 +410,42 @@ export class ConnectionHandler {
 
     // 🚨 CORREÇÃO CRÍTICA: ADICIONAR TRACKS ANTES DE onnegotiationneeded
     const localStream = this.getLocalStream();
-    if (localStream && localStream.getTracks().length > 0) {
-      console.log(`📹 TRACK ORDER FIX: Adicionando ${localStream.getTracks().length} tracks ANTES de onnegotiationneeded para ${participantId}`);
-      localStream.getTracks().forEach(track => {
+    const hasLocalTracks = !!localStream && localStream.getTracks().length > 0;
+    if (hasLocalTracks) {
+      console.log(`📹 TRACK ORDER FIX: Adicionando ${localStream!.getTracks().length} tracks ANTES de onnegotiationneeded para ${participantId}`);
+      localStream!.getTracks().forEach(track => {
         if (track.readyState === 'live') {
-          peerConnection.addTrack(track, localStream);
+          peerConnection.addTrack(track, localStream!);
           console.log(`✅ TRACK ORDER FIX: Track ${track.kind} adicionado ANTES de onnegotiationneeded`);
         } else {
           console.warn(`⚠️ TRACK ORDER FIX: Track ${track.kind} não está ativo: ${track.readyState}`);
         }
       });
     } else {
-      console.error(`❌ TRACK ORDER FIX: Nenhuma stream local disponível para ${participantId}`);
-      throw new Error('Local stream inválido - necessário para WebRTC');
+      // Host (receiver-only): não temos mídia local, então adicionamos transceivers recvonly
+      console.warn(`🎧 Receiver-only: sem stream local para ${participantId} — adicionando transceivers recvonly`);
+      try {
+        peerConnection.addTransceiver('video', { direction: 'recvonly' });
+        peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+        console.log('✅ Transceivers recvonly adicionados (video/audio)');
+      } catch (e) {
+        console.error('❌ Falha ao adicionar transceivers recvonly:', e);
+      }
     }
 
     // Perfect Negotiation: Define polite/impolite roles based on participant IDs
     const isPolite = participantId < (this.currentParticipantId || '');
     console.log(`🤝 WEBRTC DIAGNÓSTICO: Perfect Negotiation role para ${participantId}: ${isPolite ? 'polite' : 'impolite'}`);
 
-    // 🚨 CORREÇÃO: onnegotiationneeded AGORA É CONFIGURADO APÓS addTrack
+    // 🚨 CORREÇÃO: onnegotiationneeded AGORA É CONFIGURADO APÓS addTrack/transceivers
     peerConnection.onnegotiationneeded = async () => {
+      if (!hasLocalTracks) {
+        // Receiver-only: aguardamos ofertas do remoto (participante) e apenas respondemos
+        console.log(`🤝 Receiver-only: ignorando createOffer para ${participantId} (sem mídia local)`);
+        return;
+      }
+
       console.log(`🤝 TRACK ORDER FIX: Negotiation needed for ${participantId} (tracks já adicionadas)`);
-      
       try {
         const offer = await peerConnection.createOffer();
         console.log(`📄 TRACK ORDER FIX: Offer criado para ${participantId} - SDP length: ${offer.sdp?.length}`);
@@ -447,7 +460,6 @@ export class ConnectionHandler {
         await peerConnection.setLocalDescription(offer);
         console.log(`📤 TRACK ORDER FIX: Sending offer to ${participantId} com tracks no SDP`);
         unifiedWebSocketService.sendOffer(participantId, offer);
-        
       } catch (error) {
         console.error(`❌ TRACK ORDER FIX: Error in negotiation for ${participantId}:`, error);
       }
