@@ -13,11 +13,18 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 
-// Sanitiza ALLOWED_ORIGINS do env (separado por vírgulas, sem colchetes/aspas)
+// FASE 1: Sanitiza ALLOWED_ORIGINS do env (separado por vírgulas, sem colchetes/aspas)
 const raw = process.env.ALLOWED_ORIGINS || '';
 const allowedOrigins = raw.split(',').map(s => s.trim()).filter(Boolean);
 
-console.log('✅ Allowed origins (sanitized):', allowedOrigins);
+// ALERTA CRÍTICO: Se não há origens permitidas, ninguém pode conectar
+if (allowedOrigins.length === 0) {
+  console.error('🚨 CRITICAL: ALLOWED_ORIGINS is empty! All WebSocket connections will be blocked!');
+  console.error('🔧 Add ALLOWED_ORIGINS to environment variables with comma-separated URLs');
+  console.error('💡 Example: ALLOWED_ORIGINS=https://domain1.com,https://domain2.com');
+} else {
+  console.log('✅ Allowed origins (sanitized):', allowedOrigins);
+}
 
 const corsOptions = {
   origin: function (origin, callback) {

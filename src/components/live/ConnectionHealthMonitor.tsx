@@ -59,8 +59,8 @@ const ConnectionHealthMonitor: React.FC<ConnectionHealthMonitorProps> = ({ isVis
         // FASE 4: Fallback - tentar reconectar ou verificar estado externo
         try {
           // Importar dinâmicamente o serviço WebSocket para verificar estado
-          import('@/services/UnifiedWebSocketService').then(({ default: wsService }) => {
-            const wsState = wsService.getConnectionState();
+          import('@/services/UnifiedWebSocketService').then(({ unifiedWebSocketService: wsService }) => {
+            const wsState = { websocket: wsService.getConnectionStatus(), connected: wsService.isConnected() };
             console.log('🔍 FASE 4: WebSocket fallback state:', wsState);
             
             setConnectionState({

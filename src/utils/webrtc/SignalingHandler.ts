@@ -1,5 +1,5 @@
 
-import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { ConnectionHandler } from './ConnectionHandler';
 
 export class SignalingHandler {

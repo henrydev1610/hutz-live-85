@@ -11,7 +11,7 @@ import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPr
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
 import StreamDebugPanel from '@/utils/debug/StreamDebugPanel';
-import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { clearConnectionCache, validateURLConsistency } from '@/utils/connectionUtils';
 import { clearDeviceCache, validateMobileCameraCapabilities } from '@/utils/media/deviceDetection';
 import { streamLogger } from '@/utils/debug/StreamLogger';

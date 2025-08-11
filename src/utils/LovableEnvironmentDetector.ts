@@ -98,10 +98,12 @@ export class LovableEnvironmentDetector {
   // Testes dinâmicos de capacidades
   public async testWebRTCCapabilities(): Promise<boolean> {
     try {
-      // Usar configuração básica sem credenciais para teste
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      // FASE 2: Padronizar para usar configuração global do sistema
+      const { getActiveWebRTCConfig } = await import('@/utils/webrtc/WebRTCConfig');
+      const config = getActiveWebRTCConfig();
+      const pc = new RTCPeerConnection(config);
       await pc.close();
-      console.log('✅ RTCPeerConnection funcional');
+      console.log('✅ RTCPeerConnection funcional com configuração padrão do sistema');
       return true;
     } catch (error) {
       console.error('❌ RTCPeerConnection bloqueado:', error);

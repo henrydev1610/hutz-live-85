@@ -5,7 +5,7 @@ import { Participant } from '@/components/live/ParticipantGrid';
 import { initializeHostSession, cleanupSession } from '@/utils/liveStreamUtils';
 import { initHostWebRTC, getWebRTCManager } from '@/utils/webrtc';
 import { useAutoParticipantDetection } from './useAutoParticipantDetection';
-import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 
 interface UseLivePageEffectsProps {
   sessionId: string | null;

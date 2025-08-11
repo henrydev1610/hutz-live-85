@@ -1,4 +1,4 @@
-import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { setupOnTrackWithTimeout, setupICEGatheringTimeout, validateTransceiversPostNegotiation } from './ConnectionHandlerMethods';
 import { getActiveWebRTCConfig } from '@/utils/webrtc/WebRTCConfig';
 

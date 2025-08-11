@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { toast } from 'sonner';
 
 interface WebRTCStabilityMetrics {

@@ -2,10 +2,9 @@
 import { useState, useCallback } from 'react';
 import { toast } from "sonner";
 import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
-import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getEnvironmentInfo, validateURLConsistency } from '@/utils/connectionUtils';
-import UnifiedWebSocketService from '@/services/UnifiedWebSocketService';
 
 export const useParticipantConnection = (sessionId: string | undefined, participantId: string) => {
   const [isConnected, setIsConnected] = useState(false);

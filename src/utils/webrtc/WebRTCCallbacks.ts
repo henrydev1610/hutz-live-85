@@ -1,5 +1,5 @@
 
-import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
+import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { toast } from 'sonner';
 import { ConnectionHandler } from './ConnectionHandler';
 

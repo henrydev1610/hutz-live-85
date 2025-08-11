@@ -86,6 +86,52 @@ class UnifiedWebSocketService {
     this.callbacks = callbacks;
   }
 
+  // FASE 2: Sistema de fallback com múltiplas URLs
+  private async connectWithRetry(serverUrl?: string): Promise<{ success: boolean; url?: string; error?: string }> {
+    const urls = serverUrl ? [serverUrl] : this.getAlternativeURLs();
+    
+    for (const url of urls) {
+      console.log(`🔄 [WS] Trying URL: ${url}`);
+      
+      // Diagnóstico específico para esta URL
+      try {
+        const diagnostics = await WebSocketDiagnostics.runDiagnostics();
+        console.log(`📊 [WS] Diagnostics for ${url}:`, diagnostics);
+        
+        if (diagnostics.success || diagnostics.details.hostReachable) {
+          console.log(`✅ [WS] URL ${url} passed diagnostics`);
+          return { success: true, url };
+        } else {
+          console.warn(`⚠️ [WS] URL ${url} failed diagnostics: ${diagnostics.error}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ [WS] Diagnostics failed for ${url}:`, error);
+      }
+    }
+    
+    // Se nenhuma URL passou nos diagnósticos, alertar usuário
+    OfflineFallback.createOfflineAlert();
+    OfflineFallback.checkServerAfterDelay(30000);
+    
+    return { 
+      success: false, 
+      error: `All ${urls.length} server URLs failed diagnostics` 
+    };
+  }
+
+  private getAlternativeURLs(): string[] {
+    const primary = getWebSocketURL();
+    const alternatives = [
+      primary,
+      // Adicionar URLs alternativas baseadas na URL primária
+      primary.replace('wss://', 'ws://'),
+      primary.replace('ws://', 'wss://'),
+    ];
+    
+    // Remover duplicatas
+    return [...new Set(alternatives)];
+  }
+
   async connect(serverUrl?: string): Promise<void> {
     // Log do ambiente antes de conectar
     if (this.metrics.attemptCount === 0) {
@@ -107,21 +153,13 @@ class UnifiedWebSocketService {
     console.log(`🔄 [WS] CONNECTION ATTEMPT ${this.metrics.attemptCount}/${this.maxReconnectAttempts}`);
 
     try {
-      // Primeiro diagnóstico crítico se for primeira tentativa ou múltiplas falhas
-      if (this.metrics.attemptCount === 1 || this.metrics.consecutiveFailures > 2) {
-        console.log('🔧 [WS] Running connection diagnostics...');
-        const diagnostics = await WebSocketDiagnostics.runDiagnostics();
-        console.log('📊 [WS] Diagnostics result:', diagnostics);
-        
-        if (!diagnostics.success && !diagnostics.details.hostReachable) {
-          // Criar alerta para o usuário e sugerir soluções
-          OfflineFallback.createOfflineAlert();
-          OfflineFallback.checkServerAfterDelay(30000);
-          throw new Error(`Backend not reachable: ${diagnostics.error}`);
-        }
+      // FASE 2: Tentar conectar com múltiplas URLs se necessário
+      const connectionResult = await this.connectWithRetry(serverUrl);
+      if (!connectionResult.success) {
+        throw new Error(`All connection attempts failed: ${connectionResult.error}`);
       }
 
-      await this._doConnect(serverUrl);
+      await this._doConnect(connectionResult.url!);
       
       this.metrics.lastSuccess = Date.now();
       this.metrics.status = 'connected';
@@ -157,9 +195,7 @@ class UnifiedWebSocketService {
     }
   }
 
-  private async _doConnect(serverUrl?: string): Promise<void> {
-    const url = serverUrl || getWebSocketURL();
-    
+  private async _doConnect(url: string): Promise<void> {
     // DIAGNÓSTICO CRÍTICO: Log detalhado da URL
     console.log(`🔗 [WS] CONNECTION ATTEMPT: ${url}`);
     console.log(`🔍 [WS] URL BREAKDOWN:`, {
@@ -197,14 +233,16 @@ class UnifiedWebSocketService {
         reject(new Error(`Connection timeout after ${connectionTimeout}ms`));
       }, connectionTimeout);
 
-      // SIMPLIFICAÇÃO: Configuração mínima para debug
+      // FASE 1: Configuração Socket.IO robusta e menos agressiva
       console.log(`🚀 [WS] Creating socket.io connection...`);
       this.socket = io(url, {
-        transports: ['polling', 'websocket'], // Polling primeiro para maior compatibilidade
-        timeout: 15000,
-        reconnection: false,
+        transports: ['websocket', 'polling'], // WebSocket primeiro, polling como fallback
+        timeout: 25000, // Aumentado para 25s
+        reconnection: false, // Controlamos manualmente
         forceNew: true,
-        autoConnect: true
+        autoConnect: true,
+        upgrade: true, // Permite upgrade para WebSocket
+        rememberUpgrade: true // Lembra preferência WebSocket
       });
 
       this.socket.on('connect', () => {
@@ -464,295 +502,183 @@ this.socket.on('ice-servers', (data) => {
           this.socket?.off('error', handleJoinError);
           resolve();
         } else {
-          reject(new Error(response?.error || 'Failed to join room'));
+          clearTimeout(timeout);
+          this.socket?.off('room_joined', handleJoinSuccess);
+          this.socket?.off('join-room-response', handleJoinResponse);
+          this.socket?.off('error', handleJoinError);
+          reject(new Error(response?.error || 'Join room failed'));
         }
       };
 
       const handleJoinError = (error: any) => {
-        console.error(`❌ WEBSOCKET: Failed to join room ${roomId}:`, error);
+        console.error(`❌ WEBSOCKET: Join room error for ${roomId}:`, error);
         clearTimeout(timeout);
         this.socket?.off('room_joined', handleJoinSuccess);
         this.socket?.off('join-room-response', handleJoinResponse);
         this.socket?.off('error', handleJoinError);
-        reject(new Error(`Failed to join room: ${error.message || error}`));
+        reject(error);
       };
 
-      this.socket?.once('room_joined', handleJoinSuccess);
-      this.socket?.once('join-room-response', handleJoinResponse);
-      this.socket?.once('error', handleJoinError);
+      this.socket?.on('room_joined', handleJoinSuccess);
+      this.socket?.on('join-room-response', handleJoinResponse);
+      this.socket?.on('error', handleJoinError);
 
-      const sendJoinRequest = (attempt = 1) => {
-        console.log(`📡 WEBSOCKET: Sending join request (attempt ${attempt})`);
-        
-        try {
-          this.socket?.emit('join_room', { 
-            roomId, 
-            userId,
-            timestamp: Date.now(),
-            attempt,
-            networkQuality: this.metrics.networkQuality
-          });
-          
-          this.socket?.emit('join-room', { 
-            roomId, 
-            userId,
-            timestamp: Date.now(),
-            attempt,
-            networkQuality: this.metrics.networkQuality
-          });
-          
-          if (attempt < 3) {
-            setTimeout(() => {
-              if (this.currentRoomId === roomId) {
-                sendJoinRequest(attempt + 1);
-              }
-            }, 5000 * attempt);
-          }
-        } catch (error) {
-          console.error(`❌ WEBSOCKET: Error sending join request:`, error);
-          handleJoinError(error);
-        }
-      };
-
-      sendJoinRequest();
+      console.log(`📡 WEBSOCKET: Sending join-room for ${roomId} as ${userId}`);
+      this.socket?.emit('join-room', { roomId, userId, timestamp: Date.now() });
     });
   }
 
   sendOffer(targetUserId: string, offer: RTCSessionDescriptionInit): void {
     if (!this.isConnected()) {
-      console.error('❌ SIGNALING: Cannot send offer - not connected');
-      return;
-    }
-    
-    if (!this.currentRoomId) {
-      console.error('❌ SIGNALING: Cannot send offer - not joined to any room');
+      console.error('Cannot send offer: not connected');
       return;
     }
 
-    // FASE 4: Validação e log detalhado do payload
-    const payload = {
-      roomId: this.currentRoomId,
-      targetUserId,
+    console.log(`📞 WEBSOCKET: Sending offer to ${targetUserId}`);
+    this.socket?.emit('offer', {
       offer,
-      fromUserId: this.currentUserId
-    };
-
-    console.log(`📤 [WS] Sending offer to: ${targetUserId}`);
-    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
-    if (DEBUG) {
-      console.log('📊 [WS] Offer payload:', {
-        type: offer.type,
-        sdpLength: offer.sdp?.length || 0,
-        targetUserId,
-        hasVideoInSDP: offer.sdp?.includes('m=video') || false
-      });
-    }
-
-    this.socket!.emit('offer', payload);
+      targetUserId,
+      fromUserId: this.currentUserId,
+      timestamp: Date.now()
+    });
   }
 
   sendAnswer(targetUserId: string, answer: RTCSessionDescriptionInit): void {
     if (!this.isConnected()) {
-      console.error('❌ SIGNALING: Cannot send answer - not connected');
-      return;
-    }
-    
-    if (!this.currentRoomId) {
-      console.error('❌ SIGNALING: Cannot send answer - not joined to any room');
+      console.error('Cannot send answer: not connected');
       return;
     }
 
-    // FASE 4: Validação e log detalhado do payload
-    const payload = {
-      roomId: this.currentRoomId,
-      targetUserId,
+    console.log(`✅ WEBSOCKET: Sending answer to ${targetUserId}`);
+    this.socket?.emit('answer', {
       answer,
-      fromUserId: this.currentUserId
-    };
-
-    console.log(`📤 [WS] Sending answer to: ${targetUserId}`);
-    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
-    if (DEBUG) {
-      console.log('📊 [WS] Answer payload:', {
-        type: answer.type,
-        sdpLength: answer.sdp?.length || 0,
-        targetUserId,
-        hasRecvOnly: answer.sdp?.includes('a=recvonly') || false
-      });
-    }
-
-    this.socket!.emit('answer', payload);
+      targetUserId,
+      fromUserId: this.currentUserId,
+      timestamp: Date.now()
+    });
   }
 
   sendIceCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
     if (!this.isConnected()) {
-      console.error('❌ SIGNALING: Cannot send ICE candidate - not connected');
-      return;
-    }
-    
-    if (!this.currentRoomId) {
-      console.error('❌ SIGNALING: Cannot send ICE candidate - not joined to any room');
+      console.error('Cannot send ICE candidate: not connected');
       return;
     }
 
-    // FASE 4: Validação e log detalhado do payload
-    const payload = {
-      roomId: this.currentRoomId,
-      targetUserId,
+    console.log(`🧊 WEBSOCKET: Sending ICE candidate to ${targetUserId}`);
+    this.socket?.emit('ice-candidate', {
       candidate,
-      fromUserId: this.currentUserId
-    };
-
-    console.log(`🧊 [WS] Sending ICE candidate to: ${targetUserId}`);
-    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
-    if (DEBUG) {
-      console.log('📊 [WS] ICE payload:', {
-        type: candidate.type,
-        protocol: candidate.protocol,
-        targetUserId,
-        roomId: this.currentRoomId,
-        fromUserId: this.currentUserId
-      });
-    }
-
-    this.socket!.emit('ice-candidate', payload);
+      targetUserId,
+      fromUserId: this.currentUserId,
+      timestamp: Date.now()
+    });
   }
 
   notifyStreamStarted(participantId: string, streamInfo: any): void {
     if (!this.isConnected()) {
-      console.error('❌ SIGNALING: Cannot notify stream started - not connected');
-      return;
-    }
-    
-    if (!this.currentRoomId) {
-      console.error('❌ SIGNALING: Cannot notify stream started - not joined to any room');
+      console.error('Cannot notify stream started: not connected');
       return;
     }
 
-    console.log('📡 CRÍTICO: Enviando notificação stream-started para:', participantId);
-    console.log('🔍 CRÍTICO: Stream info:', streamInfo);
-    
-    // FASE 1: CORREÇÃO CRÍTICA - Tentar múltiplas formas de emitir
-    try {
-      // Método principal
-      this.socket!.emit('stream-started', { 
-        participantId, 
-        streamInfo,
-        roomId: this.currentRoomId,
-        timestamp: Date.now()
-      });
-      
-      // Backup com formato alternativo
-      this.socket!.emit('stream_started', { 
-        participantId, 
-        streamInfo,
-        roomId: this.currentRoomId,
-        timestamp: Date.now()
-      });
-      
-      // Log para debug
-      console.log('✅ CRÍTICO: stream-started emitido com sucesso');
-      
-    } catch (error) {
-      console.error('❌ CRÍTICO: Erro ao emitir stream-started:', error);
-    }
+    console.log(`🎥 WEBSOCKET: Notifying stream started for ${participantId}:`, streamInfo);
+    this.socket?.emit('stream-started', {
+      participantId,
+      streamInfo,
+      timestamp: Date.now()
+    });
   }
 
   isConnected(): boolean {
     return this.socket?.connected || false;
   }
 
-  isReady(): boolean {
-    return this.isConnected() && !this.isCircuitOpen;
-  }
-
-  // FASE 2: Método para compatibilidade com WebRTC Manager
-  getConnectionState(): { websocket: string; connected: boolean } {
-    const connected = this.isConnected();
-    return {
-      websocket: connected ? 'connected' : this.metrics.status,
-      connected
-    };
-  }
-
-  private isMobileDevice(): boolean {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  }
-
-  getConnectionStatus(): string {
-    if (this.isCircuitOpen) return 'circuit-open';
-    return this.metrics.status;
-  }
-
-  getConnectionMetrics(): ConnectionMetrics {
-    return { ...this.metrics };
-  }
-
-  // FASE 3: Enhanced health check with circuit breaker awareness
-  async healthCheck(): Promise<boolean> {
-    if (!this.isConnected() || this.isCircuitOpen) {
-      return false;
-    }
-
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve(false), 8000); // Increased timeout
-      
-      this.socket!.emit('ping', (response: any) => {
-        clearTimeout(timeout);
-        resolve(true);
-      });
-    });
-  }
-
-  async forceReconnect(): Promise<void> {
-    console.log('🔄 CONNECTION: Forcing reconnect...');
-    this.disconnect();
-    this.resetCircuitBreaker();
-    this.shouldReconnect = true;
-    await this.connect();
-  }
-
-  // FASE 1: CORREÇÃO CRÍTICA - Adicionar método emit que estava faltando
-  emit(event: string, data: any): void {
-    if (!this.socket?.connected) {
-      console.warn(`❌ EMIT: Cannot emit '${event}' - socket not connected`);
-      return;
-    }
-    
-    console.log(`📡 EMIT: Sending event '${event}' with data:`, data);
-    this.socket.emit(event, data);
-  }
-
   disconnect(): void {
-    console.log('🔌 CONNECTION: Disconnecting...');
+    console.log('🔌 WEBSOCKET: Disconnecting...');
     this.shouldReconnect = false;
-    this.stopHeartbeat();
     
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-
+    
     if (this.circuitBreakerTimer) {
       clearTimeout(this.circuitBreakerTimer);
       this.circuitBreakerTimer = null;
     }
 
+    this.stopHeartbeat();
+    
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
     }
 
-    this.metrics.status = 'disconnected';
     this.currentRoomId = null;
     this.currentUserId = null;
+    this.metrics.status = 'disconnected';
     this.isConnecting = false;
-    this.resetCircuitBreaker();
+    this.isConnectingFlag = false;
+    
+    console.log('✅ WEBSOCKET: Disconnected successfully');
+  }
+
+  emit(event: string, data: any): void {
+    if (!this.isConnected()) {
+      console.error(`Cannot emit ${event}: not connected`);
+      return;
+    }
+
+    console.log(`📡 WEBSOCKET: Emitting ${event}:`, data);
+    this.socket?.emit(event, data);
+  }
+
+  // FASE 1: Utilities
+  private isMobileDevice(): boolean {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }
+
+  // FASE 3: Métricas para debugging
+  getConnectionMetrics(): ConnectionMetrics {
+    return { ...this.metrics };
+  }
+
+  // FASE 3: Reset completo para casos extremos
+  resetService(): void {
+    console.log('🔄 WEBSOCKET: Resetting service completely...');
+    this.disconnect();
+    this.metrics = {
+      attemptCount: 0,
+      lastAttempt: 0,
+      lastSuccess: 0,
+      errorCount: 0,
+      status: 'disconnected',
+      consecutiveFailures: 0,
+      networkQuality: 'unknown'
+    };
+    this.isCircuitOpen = false;
+    this.shouldReconnect = true;
+    this.detectNetworkQuality();
+    console.log('✅ WEBSOCKET: Service reset completed');
+  }
+
+  // FASE 3: Métodos adicionais para compatibilidade
+  healthCheck(): Promise<boolean> {
+    return Promise.resolve(this.isConnected());
+  }
+
+  forceReconnect(): Promise<void> {
+    console.log('🔄 WEBSOCKET: Force reconnecting...');
+    this.disconnect();
+    return this.connect();
+  }
+
+  isReady(): boolean {
+    return this.isConnected();
+  }
+
+  getConnectionStatus(): string {
+    return this.metrics.status;
   }
 }
-// ✅ Expor método emit diretamente para uso externo
 
-
-
-// Export singleton instance
-export default new UnifiedWebSocketService();
+// Export singleton
+export const unifiedWebSocketService = new UnifiedWebSocketService();
