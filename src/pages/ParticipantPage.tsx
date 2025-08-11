@@ -38,9 +38,11 @@ const ParticipantPage = () => {
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
   console.log('🎯 PARTICIPANT PAGE: Enhanced mobile guard:', { isMobile, isValidated, isBlocked });
   
+  // ÚNICA FONTE: participantId gerado apenas aqui
   const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
 
+  // PROPAGAÇÃO: participantId único passado para todos os hooks
   const connection = useParticipantConnection(sessionId, participantId);
   const media = useParticipantMedia(participantId);
 
@@ -297,65 +299,47 @@ const ParticipantPage = () => {
       // Connect sempre, mesmo em modo degradado
       await connection.connectToSession(stream);
       
-      // CORREÇÃO CRÍTICA: Iniciar handshake WebRTC automático após conexão
-      console.log('🤝 HANDSHAKE: Iniciando detecção automática de host e handshake WebRTC');
+      // HANDSHAKE: Único caminho limpo
+      console.log(`🤝 [PART] Initiating WebRTC handshake with participantId: ${participantId}`);
       
       // Aguardar estabilização da conexão WebSocket
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // CRITICAL: Trigger WebRTC handshake with enhanced stream handling
-      console.log('🤝 CRITICAL: Attempting WebRTC handshake after connection');
       try {
         const hostId = connection.getHostId();
-        if (hostId) {
-          console.log(`🎯 HOST DETECTED: ${hostId}, initiating handshake`);
+        if (hostId && stream) {
+          console.log(`🎯 [PART] Host detected: ${hostId}, starting handshake`);
           
-          // CORREÇÃO CRÍTICA: Garantir que stream está definido e válido ANTES do handshake
-          if (stream) {
-            console.log('📹 CRITICAL: Setting stream in WebRTC manager before handshake');
-            console.log('📹 CRITICAL: Stream validation:', {
-              streamId: stream.id,
-              active: stream.active,
-              videoTracks: stream.getVideoTracks().length,
-              audioTracks: stream.getAudioTracks().length,
-              readyState: stream.getTracks().map(t => t.readyState)
-            });
-            
-            // CRÍTICO: Garantir que tracks estão ativos antes de passar para WebRTC
-            const activeTracks = stream.getTracks().filter(t => t.readyState === 'live');
-            if (activeTracks.length === 0) {
-              console.warn('⚠️ CRITICAL: No active tracks in stream - may cause handshake failure');
-              toast.warning('⚠️ Stream sem tracks ativos - tentando handshake mesmo assim');
-            }
-            
-            const { webrtc } = await initParticipantWebRTC(sessionId!, participantId!, stream);
-            if (webrtc) {
-              // CRÍTICO: Definir stream IMEDIATAMENTE após criação do WebRTC
-              console.log('📹 CRITICAL: Force setting localStream IMMEDIATELY');
-              webrtc.setLocalStream(stream);
-              
-              // Aguardar um pouco para estabilização
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              
-              // ÚNICO CAMINHO: Apenas connectToHost() - sem fallbacks
-              await webrtc.connectToHost();
-              toast.success('🤝 Handshake WebRTC iniciado com sucesso!');
-            }
-          } else {
-            console.warn('⚠️ CRITICAL: No stream available for handshake');
-            toast.warning('⚠️ Sem stream disponível - handshake não será iniciado');
+          // Validar tracks ativas
+          const activeTracks = stream.getTracks().filter(t => t.readyState === 'live');
+          if (activeTracks.length === 0) {
+            console.warn(`⚠️ [PART] No active tracks in stream`);
+            toast.warning('⚠️ Stream sem tracks ativos');
           }
-        } else {
-          console.warn('⚠️ HANDSHAKE: Host não detectado - aguardando...');
+          
+          // ÚNICO CAMINHO: initParticipantWebRTC → setLocalStream → connectToHost
+          const { webrtc } = await initParticipantWebRTC(sessionId!, participantId, stream);
+          if (webrtc) {
+            webrtc.setLocalStream(stream);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await webrtc.connectToHost();
+            console.log(`✅ [PART] Handshake completed: ${participantId}`);
+            toast.success('🤝 Handshake WebRTC iniciado com sucesso!');
+          }
+        } else if (!hostId) {
+          console.warn(`⚠️ [PART] Host not detected for: ${participantId}`);
           toast.info('⏳ Aguardando host ficar disponível...');
+        } else {
+          console.warn(`⚠️ [PART] No stream available for handshake: ${participantId}`);
+          toast.warning('⚠️ Sem stream disponível');
         }
       } catch (error) {
-        console.error('❌ HANDSHAKE: Failed to complete WebRTC handshake:', error);
+        console.error(`❌ [PART] Handshake failed for ${participantId}:`, error);
         toast.error(`❌ Falha no handshake: ${error instanceof Error ? error.message : String(error)}`);
       }
       
     } catch (error) {
-      console.error('❌ PARTICIPANT: Mobile auto-connection failed:', error);
+      console.error(`❌ [PART] Auto-connection failed for ${participantId}:`, error);
       streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
       const errorMsg = error instanceof Error ? error.message : String(error);
       toast.error(`❌ Falha na conexão móvel: ${errorMsg}`);
@@ -364,7 +348,7 @@ const ParticipantPage = () => {
 
   const handleConnect = async () => {
     if (isBlocked) {
-      console.log('🚫 PARTICIPANT: Connection blocked - mobile validation failed');
+      console.log(`🚫 [PART] Connection blocked for: ${participantId}`);
       streamLogger.log(
         'STREAM_ERROR' as any,
         participantId,
