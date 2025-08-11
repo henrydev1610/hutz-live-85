@@ -9,22 +9,26 @@ export class WebRTCCallbacks {
   private connectionHandler: ConnectionHandler | null = null;
 
   constructor() {
-    console.log('🔄 WebRTCCallbacks: Initialized');
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('🔄 [WRTC] Callbacks initialized');
   }
 
   setConnectionHandler(handler: ConnectionHandler) {
     this.connectionHandler = handler;
-    console.log('🔄 WebRTCCallbacks: Connection handler set');
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('🔄 [WRTC] Connection handler set');
   }
 
   setOnStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
     this.onStreamCallback = callback;
-    console.log('📞 Stream callback set');
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('📞 [WRTC] Stream callback set');
   }
 
   setOnParticipantJoinCallback(callback: (participantId: string) => void) {
     this.onParticipantJoinCallback = callback;
-    console.log('👤 Participant join callback set');
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('👤 [WRTC] Participant callback set');
   }
 
   setupHostCallbacks(
@@ -35,7 +39,8 @@ export class WebRTCCallbacks {
     onAnswer: (data: any) => void,
     onIceCandidate: (data: any) => void
   ) {
-    console.log('🎯 Setting up HOST callbacks with stream event listeners');
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('🎯 [HOST] Setting up callbacks');
     
     unifiedWebSocketService.setCallbacks({
       onUserConnected,
@@ -46,21 +51,18 @@ export class WebRTCCallbacks {
       onIceCandidate,
       // Stream event callbacks
       onStreamStarted: (participantId, streamInfo) => {
-        console.log('🎥 HOST: Stream started event received:', participantId);
-        console.log('🎥 HOST: Stream info:', streamInfo);
+        console.log(`🎥 [HOST] Stream started: ${participantId}`);
+        const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+        if (DEBUG) console.log('🎥 [HOST] Stream info:', streamInfo);
         
-        // HOST APENAS RECEBE - não inicia handshake
-        console.log('✅ HOST: Stream event received, aguardando offer do participante');
-        
-        // Apenas disparar callbacks de notificação
+        // Notificar novo participante
         if (this.onParticipantJoinCallback) {
-          console.log(`👤 HOST: Notificando novo participante: ${participantId}`);
           this.onParticipantJoinCallback(participantId);
         }
       },
       onError: (error) => {
-        console.error('❌ Signaling error:', error);
         if (!error.message?.includes('TypeID') && !error.message?.includes('UserMessageID')) {
+          console.error('❌ [HOST] Signaling error:', error.message);
           toast.error(`Erro de sinalização: ${error.message}`);
         }
       }
@@ -75,7 +77,8 @@ export class WebRTCCallbacks {
     onAnswer: (data: any) => void,
     onIceCandidate: (data: any) => void
   ) {
-    console.log('🎯 Setting up PARTICIPANT callbacks for:', participantId);
+    console.log(`🎯 [PART] Setting up callbacks: ${participantId}`);
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
     
     unifiedWebSocketService.setCallbacks({
       onUserConnected,
@@ -85,21 +88,24 @@ export class WebRTCCallbacks {
       onIceCandidate,
       // Stream event callbacks for participants
       onStreamStarted: (participantId, streamInfo) => {
-        console.log('🎥 PARTICIPANT: Stream started event received:', participantId, streamInfo);
-        // Participante não inicia handshake aqui - isso é feito via connectToHost()
+        if (DEBUG) console.log(`🎥 [PART] Stream started: ${participantId}`);
       },
       onError: (error) => {
-        console.error('❌ Participant signaling error:', error);
+        console.error('❌ [PART] Signaling error:', error.message);
       }
     });
   }
 
   triggerStreamCallback(participantId: string, stream: MediaStream) {
-    console.log('🚀 TRIGGERING stream callback for:', participantId, {
-      streamId: stream.id,
-      tracks: stream.getTracks().length,
-      active: stream.active
-    });
+    console.log(`🚀 [WRTC] Stream callback: ${participantId}`);
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) {
+      console.log('🚀 [WRTC] Stream details:', {
+        streamId: stream.id,
+        tracks: stream.getTracks().length,
+        active: stream.active
+      });
+    }
     
     if (this.onStreamCallback) {
       this.onStreamCallback(participantId, stream);
@@ -112,7 +118,7 @@ export class WebRTCCallbacks {
         hasAudio: stream.getAudioTracks().length > 0
       });
     } else {
-      console.warn('⚠️ No stream callback set when trying to trigger');
+      console.warn('⚠️ [WRTC] No stream callback set');
     }
   }
 

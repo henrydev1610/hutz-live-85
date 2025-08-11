@@ -61,7 +61,8 @@ export class UnifiedWebRTCManager {
   private connectionMetrics: Map<string, any> = new Map();
 
   constructor() {
-    console.log('🔧 UNIFIED WebRTC Manager initialized');
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('🔧 [WRTC] Manager initialized');
     this.detectMobile();
     this.initializeComponents();
     this.setupHealthMonitoring();
@@ -70,7 +71,8 @@ export class UnifiedWebRTCManager {
 
   private detectMobile() {
     this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    console.log(`📱 Device type: ${this.isMobile ? 'Mobile' : 'Desktop'}`);
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log(`📱 [WRTC] Device: ${this.isMobile ? 'Mobile' : 'Desktop'}`);
   }
 
   private initializeComponents() {
@@ -83,60 +85,56 @@ export class UnifiedWebRTCManager {
     this.callbacksManager.setConnectionHandler(this.connectionHandler);
 
     this.connectionHandler.setStreamCallback((participantId, stream) => {
-      console.log(`🎥 FASE 3: Stream received from ${participantId}`);
+      const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+      console.log(`🎥 [WRTC] Stream received: ${participantId}`);
+      if (DEBUG) {
+        console.log(`🎥 [WRTC] Stream details:`, {
+          streamId: stream.id,
+          tracks: stream.getTracks().length,
+          timestamp: Date.now()
+        });
+      }
+      
       this.updateConnectionMetrics(participantId, { streamReceived: true });
       this.updateConnectionState('webrtc', 'connected');
       this.callbacksManager.triggerStreamCallback(participantId, stream);
       
-      // 🚀 PONTE STREAM-TO-COMPONENT: Disparar evento customizado
-      console.log(`🌉 FASE 3: Dispatching stream-received event for ${participantId}`);
       window.dispatchEvent(new CustomEvent(`stream-received-${participantId}`, {
-        detail: { 
-          participantId, 
-          stream,
-          timestamp: Date.now(),
-          streamId: stream.id,
-          tracks: stream.getTracks().length
-        }
+        detail: { participantId, stream, timestamp: Date.now() }
       }));
     });
 
     this.connectionHandler.setParticipantJoinCallback((participantId) => {
-      console.log(`👤 FASE 3: Participant ${participantId} joined`);
+      console.log(`👤 [WRTC] Participant joined: ${participantId}`);
       this.updateConnectionMetrics(participantId, { joined: true });
       this.callbacksManager.triggerParticipantJoinCallback(participantId);
-      
-      //  Remover auto-handshake para evitar loops
-      // Auto-handshake removido para prevenir loops infinitos
     });
   }
 
   async initializeAsParticipant(sessionId: string, participantId: string, stream?: MediaStream): Promise<void> {
-    console.log(`👤 UNIFIED: Initializing as participant ${participantId} for session ${sessionId}`);
+    console.log(`👤 [PART] Initializing ${participantId}`);
     this.cleanup();
 
     this.roomId = sessionId;
     this.participantId = participantId;
     this.isHost = false;
 
-    // FASE 1: Connect to WebSocket FIRST
-    console.log('🔗 PARTICIPANT: Connecting to WebSocket...');
+    // Connect to WebSocket
     await unifiedWebSocketService.connect();
-    
-    // FASE 2: Setup callbacks BEFORE joining room and setting stream
-    console.log('📞 CRÍTICO: Registrando callbacks ANTES de definir stream');
     this.setupWebSocketCallbacks();
 
     try {
       if (stream) {
-        console.log(`📹 CALLBACK-CRÍTICO: Definindo stream local ANTES de callbacks`);
         this.localStream = stream;
-        const inactiveTracks = stream.getTracks().filter(track => track.readyState !== 'live');
-        if (inactiveTracks.length > 0) {
-          console.warn(`⚠️ CALLBACK-CRÍTICO: Tracks inativos encontrados:`, inactiveTracks);
+        const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+        if (DEBUG) {
+          const inactiveTracks = stream.getTracks().filter(track => track.readyState !== 'live');
+          if (inactiveTracks.length > 0) {
+            console.warn(`⚠️ [PART] Inactive tracks found:`, inactiveTracks.length);
+          }
         }
       } else {
-        throw new Error('Stream é obrigatório para inicialização WebRTC do participante');
+        throw new Error('Stream required for participant initialization');
       }
 
       // FASE 1: REGISTRAR CALLBACKS ANTES DE QUALQUER HANDSHAKE
@@ -248,7 +246,7 @@ export class UnifiedWebRTCManager {
   }
 
   async initializeAsHost(sessionId: string): Promise<void> {
-    console.log(`🖥️ UNIFIED: Initializing as host for session ${sessionId}`);
+    console.log(`🖥️ [HOST] Initializing session ${sessionId}`);
     this.cleanup();
 
     this.roomId = sessionId;

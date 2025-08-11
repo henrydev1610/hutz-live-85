@@ -58,7 +58,8 @@ class UnifiedWebSocketService {
   private isConnectingFlag = false; // Flag para prevenir conexões simultâneas
 
   constructor() {
-    console.log('🔧 UNIFIED WebSocket Service initialized with enhanced stability');
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('🔧 [WS] Service initialized');
     this.detectNetworkQuality();
   }
 
@@ -66,7 +67,8 @@ class UnifiedWebSocketService {
   private detectNetworkQuality(): void {
     const isSlowNetwork = detectSlowNetwork();
     this.metrics.networkQuality = isSlowNetwork ? 'slow' : 'fast';
-    console.log(`📶 NETWORK QUALITY: ${this.metrics.networkQuality}`);
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log(`📶 [WS] Network: ${this.metrics.networkQuality}`);
     
     // Adjust settings based on network quality
     if (isSlowNetwork) {

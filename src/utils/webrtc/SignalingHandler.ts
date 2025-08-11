@@ -20,95 +20,92 @@ export class SignalingHandler {
   }
 
   async handleOffer(data: any) {
-    console.log('📤 HOST: Handling offer from:', data.fromUserId || data.fromSocketId);
-    console.log('🔍 HOST: Offer data structure:', { hasOffer: !!data.offer, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
+    console.log(`📤 [SIG] Offer from: ${data.fromUserId || data.fromSocketId}`);
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('🔍 [SIG] Offer data:', { hasOffer: !!data.offer, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
     
     const participantId = data.fromUserId || data.fromSocketId;
     const targetUserId = data.targetUserId;
     
-    console.log('🎯 HOST: Detectando tipo de receptor:', {
-      participantId,
-      targetUserId,
-      isForHost: targetUserId === 'host'
-    });
+    if (DEBUG) {
+      console.log('🎯 [SIG] Target detection:', {
+        participantId,
+        targetUserId,
+        isForHost: targetUserId === 'host'
+      });
+    }
     
     // CORREÇÃO: SEMPRE usar ConnectionHandler para garantir ontrack
     if (!this.connectionHandler) {
-      console.error('❌ HOST: ConnectionHandler não disponível - não é possível processar offer');
+      console.error('❌ [SIG] ConnectionHandler não disponível');
       return;
     }
     
-    console.log('✅ HOST: Usando ConnectionHandler para criar PeerConnection');
+    console.log('✅ [SIG] Using ConnectionHandler for PeerConnection');
     const peerConnection = this.connectionHandler.createPeerConnection(participantId);
     
     try {
-      // HOST: Transceivers já configurados no ConnectionHandler
-      if (targetUserId === 'host') {
-        console.log('🖥️ HOST: PeerConnection já configurado como receive-only pelo ConnectionHandler');
+      if (targetUserId === 'host' && DEBUG) {
+        console.log('🖥️ [SIG] Host PeerConnection configured as receive-only');
       }
       
-      console.log('📋 HOST: Setting remote description for offer');
       await peerConnection.setRemoteDescription(data.offer);
-      
-      console.log('🔄 HOST: Creating answer');
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       
-      // HOST: Verificar se answer contém receive-only
-      if (answer.sdp) {
-        const hasRecvOnlyVideo = answer.sdp.includes('a=recvonly') || answer.sdp.includes('a=inactive');
-        console.log('🔍 HOST: Answer SDP analysis:', {
+      console.log(`📤 [SIG] Answer sent to: ${participantId}`);
+      if (DEBUG && answer.sdp) {
+        const hasRecvOnlyVideo = answer.sdp.includes('a=recvonly');
+        console.log('🔍 [SIG] Answer SDP:', {
           hasRecvOnlyVideo,
           sdpLength: answer.sdp.length,
           containsVideo: answer.sdp.includes('m=video')
         });
       }
       
-      console.log('📤 HOST: Sending answer to:', participantId);
       unifiedWebSocketService.sendAnswer(participantId, answer);
-      console.log('✅ HOST: Answer sent successfully to:', participantId);
     } catch (error) {
-      console.error('❌ HOST: Failed to handle offer:', error);
+      console.error('❌ [SIG] Failed to handle offer:', error);
     }
   }
 
   async handleAnswer(data: any) {
-    console.log('📥 HOST: Handling answer from:', data.fromUserId || data.fromSocketId);
-    console.log('🔍 HOST: Answer data structure:', { hasAnswer: !!data.answer, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
+    console.log(`📥 [SIG] Answer from: ${data.fromUserId || data.fromSocketId}`);
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('🔍 [SIG] Answer data:', { hasAnswer: !!data.answer, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
     
     const participantId = data.fromUserId || data.fromSocketId;
     const peerConnection = this.peerConnections.get(participantId);
     
     if (peerConnection) {
       try {
-        console.log('📋 HOST: Setting remote description for answer');
         await peerConnection.setRemoteDescription(data.answer);
-        console.log('✅ HOST: Answer processed successfully for:', participantId);
+        if (DEBUG) console.log(`✅ [SIG] Answer processed: ${participantId}`);
       } catch (error) {
-        console.error('❌ HOST: Failed to handle answer:', error);
+        console.error(`❌ [SIG] Failed to handle answer: ${error}`);
       }
     } else {
-      console.warn('⚠️ HOST: No peer connection found for participant:', participantId);
+      console.warn(`⚠️ [SIG] No peer connection for: ${participantId}`);
     }
   }
 
   async handleIceCandidate(data: any) {
-    console.log('🧊 HOST: Handling ICE candidate from:', data.fromUserId || data.fromSocketId);
-    console.log('🔍 HOST: ICE candidate data structure:', { hasCandidate: !!data.candidate, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
+    console.log(`🧊 [SIG] ICE from: ${data.fromUserId || data.fromSocketId}`);
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('🔍 [SIG] ICE data:', { hasCandidate: !!data.candidate, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
     
     const participantId = data.fromUserId || data.fromSocketId;
     const peerConnection = this.peerConnections.get(participantId);
     
     if (peerConnection) {
       try {
-        console.log('🧊 HOST: Adding ICE candidate');
         await peerConnection.addIceCandidate(data.candidate);
-        console.log('✅ HOST: ICE candidate added successfully for:', participantId);
+        if (DEBUG) console.log(`✅ [SIG] ICE added: ${participantId}`);
       } catch (error) {
-        console.error('❌ HOST: Failed to add ICE candidate:', error);
+        console.error(`❌ [SIG] Failed to add ICE: ${error}`);
       }
     } else {
-      console.warn('⚠️ HOST: No peer connection found for ICE candidate from:', participantId);
+      console.warn(`⚠️ [SIG] No peer connection for ICE: ${participantId}`);
     }
   }
 
