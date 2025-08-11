@@ -1,6 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 import { getWebSocketURL, detectSlowNetwork } from '@/utils/connectionUtils';
 import { setDynamicIceServers } from '@/utils/webrtc/WebRTCConfig';
+import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
+import { OfflineFallback } from '@/utils/fallback/OfflineFallback';
 
 export interface UnifiedSignalingCallbacks {
   onConnected?: () => void;
@@ -85,15 +87,14 @@ class UnifiedWebSocketService {
   }
 
   async connect(serverUrl?: string): Promise<void> {
-    // FASE 3: Circuit breaker check
-    if (this.isCircuitOpen) {
-      console.log('🚫 CIRCUIT BREAKER: Connection blocked due to repeated failures');
-      throw new Error('Circuit breaker open - too many connection failures');
+    // Log do ambiente antes de conectar
+    if (this.metrics.attemptCount === 0) {
+      WebSocketDiagnostics.logEnvironmentInfo();
     }
 
-    // CORREÇÃO: Prevenir múltiplas tentativas simultâneas
+    // Prevenir múltiplas tentativas simultâneas
     if (this.isConnectingFlag || this.isConnecting || this.isConnected()) {
-      console.log('📡 CONNECTION: Already connected, connecting, or blocked');
+      console.log('📡 [WS] Already connected, connecting, or blocked');
       return;
     }
 
@@ -103,10 +104,25 @@ class UnifiedWebSocketService {
     this.metrics.attemptCount++;
     this.metrics.lastAttempt = Date.now();
 
-    console.log(`🔄 CONNECTION ATTEMPT ${this.metrics.attemptCount}/${this.maxReconnectAttempts} (Network: ${this.metrics.networkQuality})`);
+    console.log(`🔄 [WS] CONNECTION ATTEMPT ${this.metrics.attemptCount}/${this.maxReconnectAttempts}`);
 
     try {
+      // Primeiro diagnóstico crítico se for primeira tentativa ou múltiplas falhas
+      if (this.metrics.attemptCount === 1 || this.metrics.consecutiveFailures > 2) {
+        console.log('🔧 [WS] Running connection diagnostics...');
+        const diagnostics = await WebSocketDiagnostics.runDiagnostics();
+        console.log('📊 [WS] Diagnostics result:', diagnostics);
+        
+        if (!diagnostics.success && !diagnostics.details.hostReachable) {
+          // Criar alerta para o usuário e sugerir soluções
+          OfflineFallback.createOfflineAlert();
+          OfflineFallback.checkServerAfterDelay(30000);
+          throw new Error(`Backend not reachable: ${diagnostics.error}`);
+        }
+      }
+
       await this._doConnect(serverUrl);
+      
       this.metrics.lastSuccess = Date.now();
       this.metrics.status = 'connected';
       this.metrics.errorCount = 0;
@@ -116,14 +132,14 @@ class UnifiedWebSocketService {
       this.startHeartbeat();
       this.callbacks.onConnected?.();
       
-      console.log('✅ CONNECTION: Successfully connected to WebSocket');
+      console.log('✅ [WS] CONNECTION SUCCESS: WebSocket connected and ready');
     } catch (error) {
-      console.error('❌ CONNECTION: Failed to connect:', error);
+      console.error('❌ [WS] CONNECTION FAILED:', error);
       this.metrics.status = 'failed';
       this.metrics.errorCount++;
       this.metrics.consecutiveFailures++;
       
-      // FASE 3: Circuit breaker logic
+      // Circuit breaker simplificado
       if (this.metrics.consecutiveFailures >= this.circuitBreakerThreshold) {
         this.openCircuitBreaker();
       }
@@ -132,6 +148,8 @@ class UnifiedWebSocketService {
       
       if (this.shouldReconnect && this.metrics.attemptCount < this.maxReconnectAttempts && !this.isCircuitOpen) {
         this.scheduleReconnect();
+      } else {
+        console.error(`🛑 [WS] Max attempts reached or circuit open. Connection abandoned.`);
       }
     } finally {
       this.isConnecting = false;
@@ -141,8 +159,26 @@ class UnifiedWebSocketService {
 
   private async _doConnect(serverUrl?: string): Promise<void> {
     const url = serverUrl || getWebSocketURL();
-    console.log(`🔗 CONNECTION: Attempting to connect to ${url}`);
-    console.log(`📊 CONNECTION METRICS:`, {
+    
+    // DIAGNÓSTICO CRÍTICO: Log detalhado da URL
+    console.log(`🔗 [WS] CONNECTION ATTEMPT: ${url}`);
+    console.log(`🔍 [WS] URL BREAKDOWN:`, {
+      original: url,
+      protocol: new URL(url).protocol,
+      host: new URL(url).host,
+      port: new URL(url).port,
+      origin: new URL(url).origin
+    });
+    
+    // Validar se a URL está bem formada
+    try {
+      new URL(url);
+    } catch (error) {
+      console.error(`❌ [WS] INVALID URL:`, url, error);
+      throw new Error(`Invalid WebSocket URL: ${url}`);
+    }
+
+    console.log(`📊 [WS] CONNECTION METRICS:`, {
       attempt: this.metrics.attemptCount,
       consecutiveFailures: this.metrics.consecutiveFailures,
       networkQuality: this.metrics.networkQuality,
@@ -150,53 +186,47 @@ class UnifiedWebSocketService {
     });
 
     return new Promise((resolve, reject) => {
-      // FASE 2: Progressive timeouts com fallback melhorado
-      const isMobile = this.isMobileDevice();
-      const isSlowNetwork = this.metrics.networkQuality === 'slow';
+      // SIMPLIFICAÇÃO: Timeout fixo mais generoso
+      const connectionTimeout = 20000; // 20s fixo para simplicidade
       
-      let connectionTimeout;
-      if (isMobile && isSlowNetwork) {
-        connectionTimeout = 60000; // Aumentado para 60s em mobile + rede lenta
-      } else if (isMobile || isSlowNetwork) {
-        connectionTimeout = 45000; // Aumentado para 45s
-      } else {
-        connectionTimeout = 30000; // Aumentado para 30s em desktop + rede rápida
-      }
-      
-      console.log(`⏱️ CONNECTION TIMEOUT: ${connectionTimeout}ms (Mobile: ${isMobile}, Slow: ${isSlowNetwork})`);
+      console.log(`⏱️ [WS] CONNECTION TIMEOUT: ${connectionTimeout}ms`);
 
       const timeout = setTimeout(() => {
+        console.error(`❌ [WS] CONNECTION TIMEOUT after ${connectionTimeout}ms`);
         this.disconnect();
         reject(new Error(`Connection timeout after ${connectionTimeout}ms`));
       }, connectionTimeout);
 
+      // SIMPLIFICAÇÃO: Configuração mínima para debug
+      console.log(`🚀 [WS] Creating socket.io connection...`);
       this.socket = io(url, {
-        transports: ['websocket', 'polling'],
-        timeout: Math.min(connectionTimeout - 5000, 25000), // Socket timeout slightly less than connection timeout
-        reconnection: false, // We handle reconnection ourselves
+        transports: ['polling', 'websocket'], // Polling primeiro para maior compatibilidade
+        timeout: 15000,
+        reconnection: false,
         forceNew: true,
-        upgrade: true,
-        rememberUpgrade: true,
-        extraHeaders: isMobile ? {
-          'User-Agent': 'MobileWebRTCClient/1.0',
-          'X-Network-Quality': this.metrics.networkQuality
-        } : {
-          'X-Network-Quality': this.metrics.networkQuality
-        }
+        autoConnect: true
       });
 
       this.socket.on('connect', () => {
         clearTimeout(timeout);
-        console.log('✅ CONNECTION: WebSocket connected successfully');
-        console.log(`📈 CONNECTION SUCCESS: Attempt ${this.metrics.attemptCount}, Network: ${this.metrics.networkQuality}`);
+        console.log('✅ [WS] CONNECTION SUCCESS: WebSocket connected');
+        console.log(`📈 [WS] Socket ID: ${this.socket?.id}`);
+        console.log(`🔗 [WS] Connected to: ${url}`);
+        console.log(`📊 [WS] Connection attempt ${this.metrics.attemptCount} succeeded`);
         this.setupEventListeners();
         resolve();
       });
 
-      this.socket.on('connect_error', (error) => {
+      this.socket.on('connect_error', (error: any) => {
         clearTimeout(timeout);
-        console.error('❌ CONNECTION: Connection error:', error);
-        console.error(`📉 CONNECTION FAILED: Attempt ${this.metrics.attemptCount}, Error: ${error.message}`);
+        console.error('❌ [WS] CONNECTION ERROR:', error);
+        console.error(`📉 [WS] Failed on attempt ${this.metrics.attemptCount}`);
+        console.error(`🔍 [WS] Error details:`, {
+          message: error.message,
+          description: error.description || 'No description',
+          context: error.context || 'No context',
+          type: error.type || 'Unknown type'
+        });
         reject(error);
       });
 

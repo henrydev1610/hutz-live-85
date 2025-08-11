@@ -36,14 +36,20 @@ const getICEServers = () => {
     }
   }
 
-  // Log seguro (evita expor credenciais em produção)
+  // MELHORIA: Log aprimorado para melhor diagnóstico
   const toLog = servers.map(s => ({
     urls: s.urls,
     username: s.username,
     hasCredential: !!s.credential
   }));
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('ICE servers carregados:', JSON.stringify(toLog));
+  
+  console.log('🧊 [SERVER] ICE servers configurados:', {
+    count: servers.length,
+    servers: toLog
+  });
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔧 [SERVER] ICE servers detalhados:', JSON.stringify(toLog, null, 2));
   }
 
   return servers;
@@ -172,8 +178,8 @@ const initializeSocketHandlers = (io) => {
         // Entrar na sala do Socket.IO
         socket.join(roomId);
 
-        // FASE 1: Enviar configuração dos servidores ICE
-        socket.emit('ice-servers', { iceServers: getICEServers() });
+        // ENVIO ÚNICO: Configuração dos servidores ICE
+        socket.emit('ice-servers', { iceServers });
 
         // Notificar outros participantes
         socket.to(roomId).emit('user-connected', {

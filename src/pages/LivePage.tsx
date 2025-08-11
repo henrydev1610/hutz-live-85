@@ -14,6 +14,8 @@ import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessa
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
+import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
+import { ServerConnectivityTest } from '@/utils/debug/ServerConnectivityTest';
 
 const LivePage: React.FC = () => {
   const { toast } = useToast();
@@ -40,7 +42,34 @@ const LivePage: React.FC = () => {
     console.log('🧹 LIVE PAGE: Initial cache clear');
     clearConnectionCache();
     clearDeviceCache();
-  }, []);
+
+    // Executar diagnósticos críticos na primeira carga
+    const runInitialDiagnostics = async () => {
+      console.log('🔧 LIVE PAGE: Running initial connectivity diagnostics...');
+      
+      try {
+        // Teste de conectividade do servidor
+        await ServerConnectivityTest.runComprehensiveTest();
+        
+        // Diagnósticos de WebSocket
+        const wsResult = await WebSocketDiagnostics.runDiagnostics();
+        
+        if (!wsResult.success) {
+          console.warn('⚠️ LIVE PAGE: WebSocket diagnostics failed:', wsResult.error);
+          toast({
+            title: "Problema de Conectividade",
+            description: "Detectamos problemas de conexão. Verifique sua internet.",
+            variant: "destructive",
+          });
+        }
+        
+      } catch (error) {
+        console.error('❌ LIVE PAGE: Diagnostics failed:', error);
+      }
+    };
+
+    runInitialDiagnostics();
+  }, [toast]);
 
   // ENHANCED: Transmission participants update with debugging and cache management
   const updateTransmissionParticipants = () => {

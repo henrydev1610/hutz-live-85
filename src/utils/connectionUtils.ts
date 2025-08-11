@@ -7,7 +7,7 @@ const CONNECTION_VERSION = Date.now().toString();
 
 export const clearConnectionCache = (): void => {
   console.log('🧹 CONNECTION CACHE: Clearing all connection-related cache');
-  localStorage.removeItem('connecction cache')
+  localStorage.removeItem('connectionCache');
   localStorage.removeItem('lastConnectionCheck');
   sessionStorage.removeItem('accessedViaQR');
   sessionStorage.removeItem('currentSessionId');
