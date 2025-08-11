@@ -122,6 +122,23 @@ const initializeSocketHandlers = (io) => {
           return;
         }
 
+         // adicioando log para controle de servido ICE
+    const iceServers = getICEServers();
+
+    // Log “seguro” (não imprime credential em produção)
+    const safeIceLog = iceServers.map(s => ({
+      urls: s.urls,
+      username: s.username,
+      hasCredential: Boolean(s.credential),
+    }));
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`🧊 ICE (join-room): user=${userId} room=${roomId}`, safeIceLog);
+    }
+
+    // Se você já tinha esse emit mais abaixo, pode mover para cá
+    socket.emit('ice-servers', { iceServers });
+
         console.log(`👤 JOIN REQUEST: User ${userId} joining room ${roomId} (Network: ${networkQuality || 'unknown'})`);
 
         // Verificar se já está em uma sala

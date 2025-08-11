@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { getWebSocketURL, detectSlowNetwork } from '@/utils/connectionUtils';
+import { setDynamicIceServers } from '@/utils/webrtc/WebRTCConfig';
 
 export interface UnifiedSignalingCallbacks {
   onConnected?: () => void;
@@ -291,14 +292,22 @@ class UnifiedWebSocketService {
     });
 
     // FASE 1: Receber configuração ICE servers do backend
-    this.socket.on('ice-servers', (data) => {
-      console.log('🧊 ICE Servers received from backend:', data);
-      
-      // Atualizar configuração global
-      window.dispatchEvent(new CustomEvent('ice-servers-updated', {
-        detail: { iceServers: data.iceServers }
-      }));
-    });
+this.socket.on('ice-servers', (data) => {
+  console.log('🧊 ICE Servers received from backend:', {
+    count: data?.iceServers?.length,
+    preview: (data?.iceServers || []).map((s: any) => ({
+      urls: s.urls, username: s.username, hasCredential: !!s.credential
+    }))
+  });
+
+  // aplica no config dinâmico usado pelo RTCPeerConnection
+  setDynamicIceServers(data.iceServers);
+
+  // mantém o evento para quem ouve no front
+  window.dispatchEvent(new CustomEvent('ice-servers-updated', {
+    detail: { iceServers: data.iceServers }
+  }));
+});
 
     this.socket.on('offer', (data: { offer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
       console.log('📞 OFFER received from:', data.fromUserId || data.fromSocketId);
