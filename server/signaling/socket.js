@@ -474,6 +474,22 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
+    // WebRTC signaling handlers
+    socket.on('webrtc-offer', ({ to, sdp, type }) => {
+      console.log(`🎯 [SERVER] Roteando offer: ${socket.id} -> ${to}`);
+      io.to(to).emit('webrtc-offer', { from: socket.id, sdp, type });
+    });
+
+    socket.on('webrtc-answer', ({ to, sdp, type }) => {
+      console.log(`🎯 [SERVER] Roteando answer: ${socket.id} -> ${to}`);
+      io.to(to).emit('webrtc-answer', { from: socket.id, sdp, type });
+    });
+
+    socket.on('webrtc-candidate', ({ to, candidate }) => {
+      console.log(`🧊 [SERVER] Roteando ICE candidate: ${socket.id} -> ${to}`);
+      io.to(to).emit('webrtc-candidate', { from: socket.id, candidate });
+    });
+
     socket.on('disconnect', () => {
       try {
         const connection = connections.get(socket.id);

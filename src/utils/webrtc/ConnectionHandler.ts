@@ -122,7 +122,15 @@ export class ConnectionHandler {
     }
 
     // Criar nome único para o relay baseado na sessão e timestamp
-    const uniqueId = `relay-${participantId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const baseId = `relay-${participantId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${performance.now()}`;
+    
+    // Guard global para evitar duplicatas
+    if (!(window as any).__relayIds) (window as any).__relayIds = new Set();
+    let uniqueId = baseId;
+    if ((window as any).__relayIds.has(uniqueId)) {
+      uniqueId += `-fallback-${Math.random().toString(36).substr(2, 5)}`;
+    }
+    (window as any).__relayIds.add(uniqueId);
     
     // FASE 1: Usar configuração ativa de STUN/TURN (dinâmica ou fallback)
     const config = getActiveWebRTCConfig();

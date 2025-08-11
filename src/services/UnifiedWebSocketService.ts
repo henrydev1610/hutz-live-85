@@ -324,6 +324,16 @@ class UnifiedWebSocketService {
       const { userId } = data;
       console.log('🔍 CRÍTICO: Disparando eventos de descoberta para:', userId);
       
+      // NOVO: Disparar handshake WebRTC automático do host
+      if (typeof window !== 'undefined' && window.location.pathname.includes('/live/')) {
+        import('@/webrtc/handshake/HostHandshake').then(({ startHostHandshakeFor }) => {
+          console.log('🚀 HOST: Iniciando handshake automático para:', userId);
+          startHostHandshakeFor(userId);
+        }).catch(err => {
+          console.warn('⚠️ HOST: Erro ao importar HostHandshake:', err);
+        });
+      }
+      
       // Disparar múltiplos eventos para garantir detecção
       setTimeout(() => {
         console.log('🔄 DISCOVERY: Enviando participant-joined via callback');
@@ -629,6 +639,16 @@ this.socket.on('ice-servers', (data) => {
 
     console.log(`📡 WEBSOCKET: Emitting ${event}:`, data);
     this.socket?.emit(event, data);
+  }
+
+  on(event: string, callback: (...args: any[]) => void): void {
+    if (!this.socket) {
+      console.error(`Cannot listen to ${event}: not connected`);
+      return;
+    }
+
+    console.log(`👂 WEBSOCKET: Listening to ${event}`);
+    this.socket.on(event, callback);
   }
 
   // FASE 1: Utilities

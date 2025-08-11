@@ -46,6 +46,10 @@ export function getWebRTCConfig(): RTCConfiguration {
     iceCandidatePoolSize: 10,
   };
   if (relayOnly) cfg.iceTransportPolicy = 'relay';
+  
+  // TEMPORÁRIO: Forçar TURN para validação do Metered
+  cfg.iceTransportPolicy = 'relay';
+  
   return cfg;
 }
 

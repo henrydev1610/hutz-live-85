@@ -4,6 +4,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
 import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
 import { useMobileOnlyGuard } from '@/hooks/useMobileOnlyGuard';
+
+// Importar handshake do participante para registrar listeners
+import '@/webrtc/handshake/ParticipantHandshake';
 import ParticipantHeader from '@/components/participant/ParticipantHeader';
 import ParticipantErrorDisplay from '@/components/participant/ParticipantErrorDisplay';
 import ParticipantConnectionStatus from '@/components/participant/ParticipantConnectionStatus';
