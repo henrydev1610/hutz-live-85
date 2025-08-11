@@ -327,6 +327,8 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
+    // ICE legacy - mantido apenas para compatibilidade (não usado no fluxo principal)
+    /*
     socket.on('ice', (data) => {
       try {
         const { roomId, targetSocketId, candidate } = data;
@@ -358,6 +360,7 @@ const initializeSocketHandlers = (io) => {
         socket.emit('error', { message: 'Failed to send ICE candidate' });
       }
     });
+    */
 
     socket.on('ice-candidate', (data) => {
       try {
@@ -371,7 +374,7 @@ const initializeSocketHandlers = (io) => {
 
         connection.lastSeen = Date.now();
 
-        console.log(`🧊 ICE candidate from ${fromUserId || connection.userId} to ${targetUserId}`);
+        console.log(`🧊 [SERVER] ICE candidate: ${fromUserId || connection.userId} -> ${targetUserId}`);
 
         let targetSocketId = null;
         const roomSockets = rooms.get(roomId);
@@ -392,7 +395,7 @@ const initializeSocketHandlers = (io) => {
             fromUserId: connection.userId
           });
         } else {
-          console.warn(`Target user ${targetUserId} not found in room ${roomId}`);
+          console.warn(`⚠️ [SERVER] Target user ${targetUserId} not found in room ${roomId}`);
         }
 
       } catch (error) {

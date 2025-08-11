@@ -311,7 +311,7 @@ class UnifiedWebSocketService {
     });
 
     this.socket.on('ice-candidate', (data: { candidate: RTCIceCandidate, fromUserId: string, fromSocketId: string }) => {
-      console.log('🧊 ICE CANDIDATE received from:', data.fromUserId || data.fromSocketId);
+      console.log(`🧊 [WS] ICE candidate from: ${data.fromUserId || data.fromSocketId}`);
       this.callbacks.onIceCandidate?.(data);
     });
 
@@ -562,14 +562,17 @@ class UnifiedWebSocketService {
       fromUserId: this.currentUserId
     };
 
-    console.log(`🧊 FASE 4: Sending ICE candidate to ${targetUserId}`);
-    console.log('📊 FASE 4: ICE CANDIDATE PAYLOAD:', {
-      type: candidate.type,
-      protocol: candidate.protocol,
-      targetUserId,
-      roomId: this.currentRoomId,
-      fromUserId: this.currentUserId
-    });
+    console.log(`🧊 [WS] Sending ICE candidate to: ${targetUserId}`);
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) {
+      console.log('📊 [WS] ICE payload:', {
+        type: candidate.type,
+        protocol: candidate.protocol,
+        targetUserId,
+        roomId: this.currentRoomId,
+        fromUserId: this.currentUserId
+      });
+    }
 
     this.socket!.emit('ice-candidate', payload);
   }
