@@ -13,19 +13,11 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 
-// Configurar CORS com múltiplos origins
-const allowedOrigins = [
-  process.env.FRONTEND_URL || "http://localhost:5173",
-  "http://localhost:8080", // Lovable preview
-  "http://172.26.204.230:8080", // Rede local - IP da máquina detectado pelo Vite
-  "https://id-preview--f728da22-f48a-45b2-91e9-28492d654d7f.lovable.app", // Lovable staging
-  "https://server-hutz-live.onrender.com", // Backend do Render
-  "https://hutz-live-85.onrender.com", // pega o front do render
-  /^https:\/\/.*\.lovableproject\.com$/, // Qualquer subdomínio lovableproject.com
-  /^https:\/\/.*\.lovable\.app$/, // Qualquer subdomínio lovable.app
-  /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/, // UUIDs do Lovable
-  /^https:\/\/.*\.onrender\.com$/ // Qualquer subdomínio onrender.com
-];
+// Sanitiza ALLOWED_ORIGINS do env (separado por vírgulas, sem colchetes/aspas)
+const raw = process.env.ALLOWED_ORIGINS || '';
+const allowedOrigins = raw.split(',').map(s => s.trim()).filter(Boolean);
+
+console.log('✅ Allowed origins (sanitized):', allowedOrigins);
 
 const corsOptions = {
   origin: function (origin, callback) {
