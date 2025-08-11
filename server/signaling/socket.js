@@ -10,37 +10,45 @@ const STALE_CONNECTION_TIMEOUT = 120000; // 2 minutes
 const getICEServers = () => {
   const servers = [];
 
-  // Servidores STUN
+  // STUN
   if (process.env.STUN_SERVERS) {
     try {
       const stunServers = JSON.parse(process.env.STUN_SERVERS);
-      stunServers.forEach(url => {
-        servers.push({ urls: url });
-      });
-    } catch (error) {
+      stunServers.forEach(url => servers.push({ urls: url }));
+    } catch {
       console.warn('Invalid STUN_SERVERS format, using defaults');
       servers.push({ urls: 'stun:stun.l.google.com:19302' });
     }
   } else {
-    // Servidores STUN padrão
     servers.push(
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun1.l.google.com:19302' }
+      { urls: 'stun:stun1.l.google.com:19302' } // <— corrigido: adiciona "stun:"
     );
   }
 
-  // Servidores TURN (se configurados)
+  // TURN
   if (process.env.TURN_SERVERS) {
     try {
       const turnServers = JSON.parse(process.env.TURN_SERVERS);
       servers.push(...turnServers);
-    } catch (error) {
+    } catch {
       console.warn('Invalid TURN_SERVERS format');
     }
   }
 
+  // Log seguro (evita expor credenciais em produção)
+  const toLog = servers.map(s => ({
+    urls: s.urls,
+    username: s.username,
+    hasCredential: !!s.credential
+  }));
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('ICE servers carregados:', JSON.stringify(toLog));
+  }
+
   return servers;
 };
+
 
 // FASE 4: Enhanced connection logging
 const logConnectionMetrics = () => {
