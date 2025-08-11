@@ -28,10 +28,12 @@ export const useStreamTransmission = () => {
         }
       }
 
-      console.log('📡 CRITICAL: Stream registrado no host para:', participantId, {
+      console.log('📡 CRITICAL SUCCESS: Stream registrado no host para:', participantId, {
         tracks: stream.getTracks().length,
         video: stream.getVideoTracks().length,
-        audio: stream.getAudioTracks().length
+        audio: stream.getAudioTracks().length,
+        streamId: stream.id,
+        active: stream.active
       });
 
       // 2) NOTIFICA A POPUP (apenas metadados / sinalização)

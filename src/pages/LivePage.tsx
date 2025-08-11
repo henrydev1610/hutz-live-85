@@ -122,7 +122,8 @@ const LivePage: React.FC = () => {
     setParticipantStreams: state.setParticipantStreams,
     sessionId: state.sessionId,
     transmissionWindowRef,
-    updateTransmissionParticipants
+    updateTransmissionParticipants,
+    isHost: true // CORREÇÃO CRÍTICA: Forçar papel de host na rota /live
   });
 
   // Use the effects hook

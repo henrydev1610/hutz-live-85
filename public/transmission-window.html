@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transmission Window</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        .video-container {
+            position: relative;
+            width: 90vw;
+            height: 90vh;
+            background: #111;
+            border: 2px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .video-element {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+        }
+        .status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .debug {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: #0f0;
+            background: rgba(0,0,0,0.8);
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            max-width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <div class="video-container">
+        <video id="participantVideo" class="video-element" autoplay playsinline muted></video>
+        <div class="status" id="status">Aguardando stream...</div>
+        <div class="debug" id="debug">Debug: Inicializado</div>
+    </div>
+
+    <script>
+        const video = document.getElementById('participantVideo');
+        const status = document.getElementById('status');
+        const debug = document.getElementById('debug');
+        
+        let currentParticipant = null;
+        let currentStream = null;
+
+        function updateDebug(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            debug.textContent = `[${timestamp}] ${message}`;
+            console.log(`🎬 POPUP DEBUG: ${message}`);
+        }
+
+        function updateStatus(message) {
+            status.textContent = message;
+            updateDebug(`Status: ${message}`);
+        }
+
+        // FASE 2: Função para buscar stream do host
+        function getStreamFromHost(participantId) {
+            try {
+                if (window.opener && window.opener.getParticipantStream) {
+                    const stream = window.opener.getParticipantStream(participantId);
+                    if (stream) {
+                        updateDebug(`Stream encontrado no host para ${participantId}`);
+                        return stream;
+                    } else {
+                        updateDebug(`Stream não encontrado no host para ${participantId}`);
+                        return null;
+                    }
+                } else {
+                    updateDebug('Host window ou getParticipantStream não disponível');
+                    return null;
+                }
+            } catch (error) {
+                updateDebug(`Erro ao buscar stream: ${error.message}`);
+                return null;
+            }
+        }
+
+        // FASE 2: Atribuir stream ao vídeo
+        function assignStreamToVideo(participantId, stream) {
+            try {
+                if (!stream || !stream.getTracks().length) {
+                    throw new Error('Stream inválido');
+                }
+
+                video.srcObject = stream;
+                currentStream = stream;
+                currentParticipant = participantId;
+                
+                updateStatus(`Reproduzindo: ${participantId}`);
+                updateDebug(`✅ CRITICAL SUCCESS: Remote stream assigned para ${participantId}`);
+                
+                // Verificar se o vídeo está reproduzindo
+                video.addEventListener('loadedmetadata', () => {
+                    updateDebug(`Vídeo metadata carregado - ${video.videoWidth}x${video.videoHeight}`);
+                });
+                
+                video.addEventListener('playing', () => {
+                    updateDebug(`✅ Vídeo reproduzindo corretamente`);
+                });
+                
+                video.addEventListener('error', (e) => {
+                    updateDebug(`❌ Erro no vídeo: ${e.message}`);
+                });
+
+            } catch (error) {
+                updateDebug(`❌ Erro ao atribuir stream: ${error.message}`);
+                updateStatus(`Erro: ${error.message}`);
+            }
+        }
+
+        // Listener para mensagens do host
+        window.addEventListener('message', (event) => {
+            try {
+                const { type, participantId, streamInfo } = event.data;
+                
+                updateDebug(`Mensagem recebida: ${type} para ${participantId}`);
+
+                // FASE 2: Responder ao participant-stream-ready
+                if (type === 'participant-stream-ready' && participantId) {
+                    updateDebug(`Processando stream-ready para ${participantId}`);
+                    
+                    // Buscar o stream real do host
+                    const stream = getStreamFromHost(participantId);
+                    
+                    if (stream) {
+                        assignStreamToVideo(participantId, stream);
+                    } else {
+                        updateStatus(`Stream não disponível para ${participantId}`);
+                        updateDebug(`❌ Stream não encontrado para ${participantId}`);
+                    }
+                }
+                
+                // Fallback para outros eventos
+                else if (type === 'update-participants') {
+                    updateDebug(`Participants update recebido`);
+                }
+
+            } catch (error) {
+                updateDebug(`❌ Erro ao processar mensagem: ${error.message}`);
+            }
+        });
+
+        // Inicialização
+        updateDebug('Popup inicializada, aguardando streams...');
+        updateStatus('Conectado - Aguardando participantes');
+
+    </script>
+</body>
+</html>

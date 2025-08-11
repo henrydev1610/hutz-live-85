@@ -504,6 +504,136 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
+    // FASE 3: Handlers WebRTC críticos para handshake
+    socket.on('webrtc-offer', (data) => {
+      try {
+        const { roomId, targetUserId, offer, fromUserId } = data;
+        const connection = connections.get(socket.id);
+
+        if (!connection || connection.roomId !== roomId) {
+          socket.emit('error', { message: 'Not in room for WebRTC offer' });
+          return;
+        }
+
+        connection.lastSeen = Date.now();
+        console.log(`🎯 WEBRTC-OFFER: ${fromUserId || connection.userId} -> ${targetUserId}`);
+
+        // Encontrar socket do participante alvo
+        let targetSocketId = null;
+        const roomSockets = rooms.get(roomId);
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const conn = connections.get(socketId);
+            if (conn && conn.userId === targetUserId) {
+              targetSocketId = socketId;
+              break;
+            }
+          }
+        }
+
+        if (targetSocketId) {
+          socket.to(targetSocketId).emit('webrtc-offer', {
+            offer,
+            fromSocketId: socket.id,
+            fromUserId: connection.userId
+          });
+          console.log(`✅ WEBRTC-OFFER: Encaminhado para ${targetUserId}`);
+        } else {
+          console.warn(`❌ WEBRTC-OFFER: Target ${targetUserId} não encontrado`);
+        }
+
+      } catch (error) {
+        console.error('Error in webrtc-offer:', error);
+        socket.emit('error', { message: 'Failed to send WebRTC offer' });
+      }
+    });
+
+    socket.on('webrtc-answer', (data) => {
+      try {
+        const { roomId, targetUserId, answer, fromUserId } = data;
+        const connection = connections.get(socket.id);
+
+        if (!connection || connection.roomId !== roomId) {
+          socket.emit('error', { message: 'Not in room for WebRTC answer' });
+          return;
+        }
+
+        connection.lastSeen = Date.now();
+        console.log(`🎯 WEBRTC-ANSWER: ${fromUserId || connection.userId} -> ${targetUserId}`);
+
+        // Encontrar socket do participante alvo
+        let targetSocketId = null;
+        const roomSockets = rooms.get(roomId);
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const conn = connections.get(socketId);
+            if (conn && conn.userId === targetUserId) {
+              targetSocketId = socketId;
+              break;
+            }
+          }
+        }
+
+        if (targetSocketId) {
+          socket.to(targetSocketId).emit('webrtc-answer', {
+            answer,
+            fromSocketId: socket.id,
+            fromUserId: connection.userId
+          });
+          console.log(`✅ WEBRTC-ANSWER: Encaminhado para ${targetUserId}`);
+        } else {
+          console.warn(`❌ WEBRTC-ANSWER: Target ${targetUserId} não encontrado`);
+        }
+
+      } catch (error) {
+        console.error('Error in webrtc-answer:', error);
+        socket.emit('error', { message: 'Failed to send WebRTC answer' });
+      }
+    });
+
+    socket.on('webrtc-candidate', (data) => {
+      try {
+        const { roomId, targetUserId, candidate, fromUserId } = data;
+        const connection = connections.get(socket.id);
+
+        if (!connection || connection.roomId !== roomId) {
+          socket.emit('error', { message: 'Not in room for WebRTC candidate' });
+          return;
+        }
+
+        connection.lastSeen = Date.now();
+        console.log(`🧊 WEBRTC-CANDIDATE: ${fromUserId || connection.userId} -> ${targetUserId}`);
+
+        // Encontrar socket do participante alvo
+        let targetSocketId = null;
+        const roomSockets = rooms.get(roomId);
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const conn = connections.get(socketId);
+            if (conn && conn.userId === targetUserId) {
+              targetSocketId = socketId;
+              break;
+            }
+          }
+        }
+
+        if (targetSocketId) {
+          socket.to(targetSocketId).emit('webrtc-candidate', {
+            candidate,
+            fromSocketId: socket.id,
+            fromUserId: connection.userId
+          });
+          console.log(`✅ WEBRTC-CANDIDATE: Encaminhado para ${targetUserId}`);
+        } else {
+          console.warn(`❌ WEBRTC-CANDIDATE: Target ${targetUserId} não encontrado`);
+        }
+
+      } catch (error) {
+        console.error('Error in webrtc-candidate:', error);
+        socket.emit('error', { message: 'Failed to send WebRTC candidate' });
+      }
+    });
+
     socket.on('leave-room', () => {
       const connection = connections.get(socket.id);
       if (connection) {

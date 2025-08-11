@@ -2,6 +2,7 @@
 import { useCallback, useRef } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
 import { detectMobileAggressively } from '@/utils/media/deviceDetection';
+import { useStreamTransmission } from './useStreamTransmission';
 
 interface StreamInfo {
   stream: MediaStream;
@@ -24,6 +25,9 @@ export const useCleanStreamManagement = ({
 }) => {
   const streamBufferRef = useRef<Map<string, StreamInfo>>(new Map());
   const processingRef = useRef<Set<string>>(new Set());
+  
+  // FASE 2: Integração do sistema de transmissão de streams
+  const { sendStreamToTransmission } = useStreamTransmission();
 
   const handleParticipantStream = useCallback(async (participantId: string, stream: MediaStream) => {
     if (!participantId || !stream) {
@@ -82,21 +86,11 @@ export const useCleanStreamManagement = ({
       // Process video creation immediately
       await updateVideoElementsImmediately(participantId, stream, transmissionWindowRef);
 
-      // Send to transmission window
-      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-        transmissionWindowRef.current.postMessage({
-          type: 'stream_ready',
-          participantId,
-          streamId: stream.id,
-          hasVideo: stream.getVideoTracks().length > 0,
-          hasAudio: stream.getAudioTracks().length > 0,
-          isMobile,
-          active: stream.active,
-          timestamp: Date.now()
-        }, '*');
-        
-        console.log(`📡 CLEAN STREAM: Stream sent to transmission window for ${participantId}`);
-      }
+      // FASE 2: Registrar stream globalmente e notificar popup
+      console.log('📡 CRITICAL: Registrando stream no host para:', participantId);
+      sendStreamToTransmission(participantId, stream, transmissionWindowRef);
+      
+      console.log(`✅ CLEAN STREAM: Stream registrado e notificado para ${participantId}`);
 
       // Mark as processed
       const streamInfo = streamBufferRef.current.get(participantId);

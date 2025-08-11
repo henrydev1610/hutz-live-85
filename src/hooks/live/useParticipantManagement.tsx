@@ -154,6 +154,13 @@ export const useParticipantManagement = ({
     console.log('🔧 WEBRTC DEBUG: SessionId:', sessionId);
     console.log('🔧 WEBRTC DEBUG: IsHost:', isHost);
     
+    // FASE 5: Logs críticos de validação
+    if (isHost) {
+      console.log('✅ CRITICAL SUCCESS: Host role confirmed - IsHost: true');
+    } else {
+      console.log('❌ CRITICAL ERROR: Host role incorrect - IsHost: false');
+    }
+    
     // Clear cache on session change
     if (sessionId) {
       console.log('🧹 WEBRTC DEBUG: Limpando cache para nova sessão');

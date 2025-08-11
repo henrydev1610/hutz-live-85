@@ -489,28 +489,25 @@ export const useTransmissionWindow = () => {
       return;
     }
 
+    console.log('🎬 FASE 1: Opening simplified transmission window...');
+
     const width = window.innerWidth * 0.9;
     const height = window.innerHeight * 0.9;
     const left = (window.screen.width - width) / 2;
     const top = (window.screen.height - height) / 2;
 
+    // FASE 1: Usar HTML estático ao invés de blob
     const newWindow = window.open(
-      '',
+      '/transmission-window.html',
       'LiveTransmissionWindow',
       `width=${width},height=${height},left=${left},top=${top}`
     );
 
     if (newWindow) {
       transmissionWindowRef.current = newWindow;
-
-      const html = createTransmissionHTML(state);
-
-      newWindow.document.open();
-      newWindow.document.write(html);
-      newWindow.document.close();
       state.setTransmissionOpen(true);
 
-      console.log('✅ TRANSMISSION: Window opened and configured');
+      console.log('✅ FASE 1: Transmission window opened successfully');
 
       // Handler de mensagens vindas da popup
       const handleTransmissionMessage = (event: MessageEvent) => {
