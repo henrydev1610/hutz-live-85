@@ -231,48 +231,10 @@ export class UnifiedWebRTCManager {
         }
         
         if (this.webrtcReady) {
-          console.log(`🤝 TRACK ORDER FIX: Iniciando handshake WebRTC controlado manualmente`);
-          
-          // 🚨 CORREÇÃO CRÍTICA: Controle manual do handshake para garantir ordem
-          try {
-            // Criar PeerConnection diretamente com tracks já adicionadas
-            const peerConnection = this.connectionHandler.createPeerConnection('host');
-            
-            // Verificar se tracks foram adicionadas corretamente
-            const senders = peerConnection.getSenders();
-            console.log(`🔍 TRACK ORDER FIX: PeerConnection criado com ${senders.length} senders`);
-            
-            if (senders.length === 0) {
-              throw new Error('PeerConnection criado sem tracks - falha crítica');
-            }
-            
-            // Criar offer manualmente APÓS tracks estarem adicionadas
-            const offer = await peerConnection.createOffer();
-            console.log(`📄 TRACK ORDER FIX: Offer manual criado - SDP length: ${offer.sdp?.length}`);
-            
-            // Verificar se SDP contém tracks de vídeo
-            if (offer.sdp && offer.sdp.includes('m=video')) {
-              console.log(`✅ TRACK ORDER FIX: SDP contém m=video - sucesso!`);
-            } else {
-              console.error(`❌ TRACK ORDER FIX: SDP sem m=video - falha crítica`);
-              throw new Error('SDP inválido - sem tracks de vídeo');
-            }
-            
-            await peerConnection.setLocalDescription(offer);
-            
-            // FASE 3: Garantir que offer é enviada para "host" com dados corretos
-            console.log('📤 FASE 3: Enviando offer para host com dados completos');
-            unifiedWebSocketService.sendOffer('host', offer);
-            
-            this.updateConnectionState('webrtc', 'connecting');
-            console.log(`✅ TRACK ORDER FIX: Handshake manual com ordem correta de tracks`);
-            
-          } catch (handshakeError) {
-            console.error(`❌ TRACK ORDER FIX: Falha no handshake manual:`, handshakeError);
-            throw handshakeError;
-          }
+          console.log(`🤝 PARTICIPANT: WebRTC pronto, aguardando connectToHost() ser chamado`);
+          // Não iniciar handshake automaticamente aqui - será feito via connectToHost()
         } else {
-          console.warn(`⚠️ TRACK ORDER FIX: WebRTC não pode ser iniciado - não confirmado na sala`);
+          console.warn(`⚠️ PARTICIPANT: WebRTC não pode ser iniciado - não confirmado na sala`);
         }
       } else {
         throw new Error('Stream foi perdido durante inicialização WebRTC');

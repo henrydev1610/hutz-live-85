@@ -345,55 +345,24 @@ const ParticipantPage = () => {
             
             const { webrtc } = await initParticipantWebRTC(sessionId!, participantId!, stream);
             if (webrtc) {
-              try {
-                // CRÍTICO: Definir stream IMEDIATAMENTE após criação do WebRTC
-                console.log('📹 CRITICAL: Force setting localStream IMMEDIATELY');
-                webrtc.setLocalStream(stream);
-                
-                // Aguardar um pouco para estabilização
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                
-                await webrtc.connectToHost();
-                toast.success('🤝 Handshake WebRTC iniciado com sucesso!');
-              } catch (error) {
-                console.warn('⚠️ HANDSHAKE: Falhou via connectToHost, tentando call direto');
-                await connection.initiateCallWithRetry(hostId, 3);
-              }
-            }
-          } else {
-            console.warn('⚠️ CRITICAL: No stream available for handshake - this will likely fail');
-            toast.warning('⚠️ Sem stream disponível - handshake pode falhar');
-            
-            // Fallback without stream
-            const success = await connection.initiateCallWithRetry(hostId, 3);
-            if (success) {
+              // CRÍTICO: Definir stream IMEDIATAMENTE após criação do WebRTC
+              console.log('📹 CRITICAL: Force setting localStream IMMEDIATELY');
+              webrtc.setLocalStream(stream);
+              
+              // Aguardar um pouco para estabilização
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              // ÚNICO CAMINHO: Apenas connectToHost() - sem fallbacks
+              await webrtc.connectToHost();
               toast.success('🤝 Handshake WebRTC iniciado com sucesso!');
             }
+          } else {
+            console.warn('⚠️ CRITICAL: No stream available for handshake');
+            toast.warning('⚠️ Sem stream disponível - handshake não será iniciado');
           }
         } else {
-          console.warn('⚠️ HANDSHAKE: Host não detectado ainda - aguardando...');
+          console.warn('⚠️ HANDSHAKE: Host não detectado - aguardando...');
           toast.info('⏳ Aguardando host ficar disponível...');
-          
-          // Enhanced fallback with stream handling
-          setTimeout(async () => {
-            const fallbackHostId = connection.getHostId();
-            if (fallbackHostId) {
-              console.log('🤝 HANDSHAKE FALLBACK: Host detectado, iniciando call');
-              
-              if (stream) {
-                console.log('📹 HANDSHAKE FALLBACK: Re-setting stream before retry');
-                const { webrtc } = await initParticipantWebRTC(sessionId!, participantId!, stream);
-                if (webrtc) {
-                  webrtc.setLocalStream(stream);
-                  await webrtc.connectToHost();
-                }
-              } else {
-                await connection.initiateCallWithRetry(fallbackHostId, 3);
-              }
-            } else {
-              console.warn('⚠️ HANDSHAKE FALLBACK: Host ainda não disponível');
-            }
-          }, 3000);
         }
       } catch (error) {
         console.error('❌ HANDSHAKE: Failed to complete WebRTC handshake:', error);
