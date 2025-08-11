@@ -5,8 +5,8 @@ import { useTransmissionWindowDebounce } from './useTransmissionWindowDebounce';
 export const useTransmissionWindow = () => {
   const { toast } = useToast();
   const transmissionWindowRef = useRef<Window | null>(null);
-  
-  // FASE 5: Implementar debounce para evitar loops infinitos
+
+  // Mantemos disponível caso você queira deboucear futuros updates
   const { debouncedUpdate, cancelUpdate } = useTransmissionWindowDebounce({ delay: 2000 });
 
   const createTransmissionHTML = (state: any) => {
@@ -155,16 +155,16 @@ export const useTransmissionWindow = () => {
             <div class="content-wrapper">
               ${state.backgroundImage ? `<img src="${state.backgroundImage}" class="bg-image" alt="Background" />` : ''}
             
-            <div class="participants-grid" id="participants-container">
-              ${Array.from({ length: Math.min(state.participantCount, 100) }, (_, i) => `
-                <div class="participant" id="participant-slot-${i}">
-                  <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="12" cy="7" r="4"></circle>
-                  </svg>
-                </div>
-              `).join('')}
-            </div>
+              <div class="participants-grid" id="participants-container">
+                ${Array.from({ length: Math.min(state.participantCount, 100) }, (_, i) => `
+                  <div class="participant" id="participant-slot-${i}">
+                    <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                      <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                  </div>
+                `).join('')}
+              </div>
             
               <div class="qr-code">
                 ${state.qrCodeSvg ? `<img src="${state.qrCodeSvg}" alt="QR Code" />` : ''}
@@ -190,238 +190,203 @@ export const useTransmissionWindow = () => {
             
             let participantSlots = {};
             let availableSlots = Array.from({ length: Math.min(${state.participantCount}, 100) }, (_, i) => i);
-            let participantStreams = {};
             let activeVideoElements = {};
+
+            function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
             
             function keepAlive() {
               if (window.isKeepAliveActive) {
-                console.log("🔄 TRANSMISSION: Keeping window alive");
                 setTimeout(keepAlive, 1000);
               }
             }
             keepAlive();
 
-            // ENHANCED: Create video element with better error handling and stream assignment
-            async function createVideoElementFromStream(slotElement, participantId) {
+            // ====== NOVO: Anexa stream do HOST (opener) com retry ======
+            async function attachOpenerStreamToSlot(slotElement, participantId) {
               if (!slotElement) {
-                console.error("❌ TRANSMISSION: No slot element provided");
-                return;
+                console.error("❌ TRANSMISSION: Slot element inválido");
+                return false;
               }
-                
-              console.log("📹 TRANSMISSION: Creating video element for participant:", participantId);
-              
+
+              let stream = null;
+              let attempts = 0;
+              const maxAttempts = 30; // ~9s (30 * 300ms)
+
+              while (attempts < maxAttempts) {
+                try {
+                  stream = window.opener?.getParticipantStream?.(participantId);
+                  if (stream && stream.getTracks && stream.getTracks().length) break;
+                } catch (e) {
+                  console.warn("⚠️ TRANSMISSION: opener.getParticipantStream erro:", e);
+                }
+                await sleep(300);
+                attempts++;
+              }
+
               slotElement.innerHTML = '';
-              const videoElement = document.createElement('video');
-              videoElement.autoplay = true;
-              videoElement.playsInline = true;
-              videoElement.muted = true;
-              videoElement.setAttribute('playsinline', '');
-                
-              videoElement.style.width = '100%';
-              videoElement.style.height = '100%';
-              videoElement.style.objectFit = 'cover';
-              videoElement.style.transform = 'translateZ(0)';
-              videoElement.style.backfaceVisibility = 'hidden';
-              videoElement.style.webkitBackfaceVisibility = 'hidden';
-              videoElement.style.willChange = 'transform';
-              videoElement.style.transition = 'none';
-              
-              // CRITICAL: Try to get real stream from host via getUserMedia clone
-              try {
-                console.log("🎯 TRANSMISSION: Attempting to get user media for display");
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                  video: true, 
-                  audio: false 
-                });
-                
-                videoElement.srcObject = stream;
-                console.log("✅ TRANSMISSION: Video stream assigned successfully");
-                
-                videoElement.onloadedmetadata = () => {
-                  console.log("📊 TRANSMISSION: Video metadata loaded for", participantId);
-                  videoElement.play().catch(err => {
-                    console.warn("⚠️ TRANSMISSION: Video play failed:", err);
-                  });
-                };
-                
-              } catch (mediaError) {
-                console.warn("⚠️ TRANSMISSION: Cannot access media, using placeholder");
-                // Fallback to placeholder if no media access
-                if (!window.localPlaceholderStream) {
-                  window.localPlaceholderStream = createPlaceholderStream();
+              const video = document.createElement('video');
+              video.autoplay = true;
+              video.playsInline = true;
+              video.muted = true;
+              video.setAttribute('playsinline', '');
+              video.setAttribute('muted', '');
+              video.style.width = '100%';
+              video.style.height = '100%';
+              video.style.objectFit = 'cover';
+              video.style.transform = 'translateZ(0)';
+              video.style.backfaceVisibility = 'hidden';
+              video.style.webkitBackfaceVisibility = 'hidden';
+              video.style.willChange = 'transform';
+              video.style.transition = 'none';
+
+              if (stream) {
+                video.srcObject = stream;
+                console.log("✅ TRANSMISSION: Stream do host anexado para", participantId);
+                try { await video.play(); } catch (err) {
+                  console.warn("⚠️ TRANSMISSION: Falha ao dar play:", err);
+                  setTimeout(() => video.play().catch(()=>{}), 500);
                 }
-                if (window.localPlaceholderStream) {
-                  videoElement.srcObject = window.localPlaceholderStream;
-                }
+              } else {
+                console.warn("⚠️ TRANSMISSION: Stream não encontrado para", participantId, "– usando placeholder");
+                await createPlaceholderVideo(slotElement, video);
               }
-                
-              slotElement.appendChild(videoElement);
-              activeVideoElements[slotElement.id] = videoElement;
-              
-              // Force visibility
+
+              slotElement.appendChild(video);
+              activeVideoElements[slotElement.id] = video;
+
               setTimeout(() => {
                 slotElement.style.background = 'transparent';
-                videoElement.style.opacity = '1';
-                videoElement.style.visibility = 'visible';
+                video.style.opacity = '1';
+                video.style.visibility = 'visible';
               }, 100);
-              
-              return videoElement;
+
+              return true;
             }
 
-            function createPlaceholderStream() {
+            async function createPlaceholderVideo(slotElement, videoEl) {
               const canvas = document.createElement('canvas');
               canvas.width = 640;
               canvas.height = 480;
-                
               const ctx = canvas.getContext('2d');
-              ctx.fillStyle = '#1a1a1a';
-              ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-              // Draw animated participant icon
-              const drawFrame = () => {
+
+              const draw = () => {
                 ctx.fillStyle = '#1a1a1a';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                ctx.fillStyle = '#444444';
+                ctx.fillStyle = '#444';
                 ctx.beginPath();
-                ctx.arc(canvas.width / 2, canvas.height / 2 - 50, 60, 0, 2 * Math.PI);
+                ctx.arc(canvas.width/2, canvas.height/2 - 50, 60, 0, Math.PI*2);
                 ctx.fill();
-                
                 ctx.beginPath();
-                ctx.arc(canvas.width / 2, canvas.height / 2 + 90, 100, 0, Math.PI, true);
+                ctx.arc(canvas.width/2, canvas.height/2 + 90, 100, 0, Math.PI, true);
                 ctx.fill();
-                
-                ctx.fillStyle = '#666666';
+                ctx.fillStyle = '#666';
                 ctx.font = '24px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText('Aguardando...', canvas.width / 2, canvas.height - 50);
-                
-                requestAnimationFrame(drawFrame);
+                ctx.fillText('Aguardando stream...', canvas.width/2, canvas.height - 40);
+                requestAnimationFrame(draw);
               };
-              drawFrame();
-                
+              draw();
+
               try {
                 const stream = canvas.captureStream(30);
-                console.log("✅ TRANSMISSION: Created placeholder stream with", stream.getTracks().length, "tracks");
-                return stream;
-              } catch (error) {
-                console.error("❌ TRANSMISSION: Failed to create placeholder stream:", error);
-                return null;
+                videoEl.srcObject = stream;
+                try { await videoEl.play(); } catch {}
+              } catch (e) {
+                console.error("❌ TRANSMISSION: Falha ao criar placeholder:", e);
               }
             }
-            
-            // ENHANCED: Handle real participant streams
+
+            // ====== Handlers (BroadcastChannel) ======
             channel.addEventListener('message', async (event) => {
               const data = event.data;
-              console.log("📨 TRANSMISSION: Received message:", data.type, data);
-                
-              if (data.type === 'video-stream' && data.participantId && data.hasStream) {
-                console.log('🎥 TRANSMISSION: Processing video stream for participant:', data.participantId);
-                  
+              console.log("📨 TRANSMISSION: Received message:", data?.type, data);
+              
+              if (data?.type === 'video-stream' && data.participantId && data.hasStream) {
                 if (!participantSlots[data.participantId] && availableSlots.length > 0) {
                   const slotIndex = availableSlots.shift();
                   participantSlots[data.participantId] = slotIndex;
-                    
                   const slotElement = document.getElementById("participant-slot-" + slotIndex);
                   if (slotElement) {
-                    console.log("📹 TRANSMISSION: Assigning slot", slotIndex, "to participant", data.participantId);
-                    
-                    // Create video element with real stream attempt
-                    await createVideoElementFromStream(slotElement, data.participantId);
-                    
+                    console.log("📹 TRANSMISSION: Attach via opener no slot", slotIndex, "->", data.participantId);
+                    await attachOpenerStreamToSlot(slotElement, data.participantId);
                     slotElement.dataset.participantId = data.participantId;
                   }
                 } else if (participantSlots[data.participantId]) {
-                  // Update existing slot
                   const slotIndex = participantSlots[data.participantId];
                   const slotElement = document.getElementById("participant-slot-" + slotIndex);
                   if (slotElement && !slotElement.querySelector('video')) {
-                    await createVideoElementFromStream(slotElement, data.participantId);
+                    await attachOpenerStreamToSlot(slotElement, data.participantId);
                   }
                 }
               }
             });
 
-            // ENHANCED: Handle window messages from host
+            // ====== Handlers (postMessage do host) ======
             window.addEventListener('message', async (event) => {
               const data = event.data;
-              console.log("📩 TRANSMISSION: Received window message:", data.type);
+              console.log("📩 TRANSMISSION: Received window message:", data?.type);
               
-              if (data.type === 'participant-stream-ready' && data.participantId) {
-                console.log('🎯 TRANSMISSION: Stream ready for participant:', data.participantId);
-                
-                // Assign slot if not already assigned
+              if (data?.type === 'participant-stream-ready' && data.participantId) {
                 if (!participantSlots[data.participantId] && availableSlots.length > 0) {
                   const slotIndex = availableSlots.shift();
                   participantSlots[data.participantId] = slotIndex;
-                  
                   const slotElement = document.getElementById("participant-slot-" + slotIndex);
                   if (slotElement) {
-                    await createVideoElementFromStream(slotElement, data.participantId);
+                    await attachOpenerStreamToSlot(slotElement, data.participantId);
                     slotElement.dataset.participantId = data.participantId;
                   }
                 }
               }
-              else if (data.type === 'update-participants') {
-                const { participants } = data;
-                console.log('👥 TRANSMISSION: Got participants update:', participants.length);
-                  
+              else if (data?.type === 'update-participants') {
+                const { participants = [] } = data;
                 const selectedParticipants = participants.filter(p => p.selected && p.hasVideo);
-                console.log('✅ TRANSMISSION: Selected participants with video:', selectedParticipants.length);
-                
-                // Process selected participants
+
                 for (const participant of selectedParticipants) {
                   if (!participantSlots[participant.id] && availableSlots.length > 0) {
                     const slotIndex = availableSlots.shift();
                     participantSlots[participant.id] = slotIndex;
-                      
-                    console.log('📺 TRANSMISSION: Assigned slot', slotIndex, 'to selected participant', participant.id);
-                      
                     const slotElement = document.getElementById("participant-slot-" + slotIndex);
                     if (slotElement) {
-                      await createVideoElementFromStream(slotElement, participant.id);
+                      await attachOpenerStreamToSlot(slotElement, participant.id);
                       slotElement.dataset.participantId = participant.id;
                     }
                   }
                 }
-                
-                // Remove unselected participants
+
+                // Remove quem não está mais selecionado
                 Object.keys(participantSlots).forEach(participantId => {
                   const isStillSelected = participants.some(p => p.id === participantId && p.selected);
                   if (!isStillSelected) {
                     const slotIndex = participantSlots[participantId];
                     delete participantSlots[participantId];
                     availableSlots.push(slotIndex);
-                      
                     const slotElement = document.getElementById("participant-slot-" + slotIndex);
                     if (slotElement) {
-                      if (activeVideoElements[slotElement.id]) {
-                        const videoElement = activeVideoElements[slotElement.id];
-                        if (videoElement.srcObject) {
-                          const tracks = videoElement.srcObject.getTracks();
-                          tracks.forEach(track => track.stop());
-                          videoElement.srcObject = null;
-                        }
-                        delete activeVideoElements[slotElement.id];
+                      const videoElement = activeVideoElements[slotElement.id];
+                      if (videoElement?.srcObject) {
+                        try {
+                          const tracks = videoElement.srcObject.getTracks?.() || [];
+                          tracks.forEach(t => t.stop());
+                        } catch {}
+                        videoElement.srcObject = null;
                       }
-                        
+                      delete activeVideoElements[slotElement.id];
                       slotElement.innerHTML = \`
                         <svg class="participant-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                           <circle cx="12" cy="7" r="4"></circle>
                         </svg>
                       \`;
-                        
                       delete slotElement.dataset.participantId;
                     }
                   }
                 });
               }
-              else if (data.type === 'update-qr-positions') {
+              else if (data?.type === 'update-qr-positions') {
                 updateQRPositions(data);
               }
-              else if (data.type === 'keep-alive') {
-                console.log("💓 TRANSMISSION: Keep-alive received");
+              else if (data?.type === 'keep-alive') {
+                // noop
               }
             });
 
@@ -459,12 +424,10 @@ export const useTransmissionWindow = () => {
               }
             }
               
-            // Heartbeat and cleanup
+            // Heartbeat e cleanup
             setInterval(() => {
               if (window.opener && !window.opener.closed) {
                 const activeSlots = Object.keys(participantSlots);
-                console.log("💓 TRANSMISSION: Sending heartbeat for", activeSlots.length, "participants");
-                
                 window.opener.postMessage({ 
                   type: 'transmission-heartbeat', 
                   sessionId,
@@ -481,7 +444,7 @@ export const useTransmissionWindow = () => {
               
             window.isClosingIntentionally = false;
             
-            // Signal ready to host
+            // Sinaliza pronto para o host
             if (window.opener && !window.opener.closed) {
               window.opener.postMessage({ 
                 type: 'transmission-ready', 
@@ -494,16 +457,20 @@ export const useTransmissionWindow = () => {
               window.isClosingIntentionally = true;
                 
               Object.values(activeVideoElements).forEach(videoElement => {
-                if (videoElement.srcObject) {
-                  const tracks = videoElement.srcObject.getTracks();
-                  tracks.forEach(track => track.stop());
+                if (videoElement && videoElement.srcObject) {
+                  try {
+                    const tracks = videoElement.srcObject.getTracks?.() || [];
+                    tracks.forEach(track => track.stop());
+                  } catch {}
                   videoElement.srcObject = null;
                 }
               });
                 
               if (window.localPlaceholderStream) {
-                const tracks = window.localPlaceholderStream.getTracks();
-                tracks.forEach(track => track.stop());
+                try {
+                  const tracks = window.localPlaceholderStream.getTracks?.() || [];
+                  tracks.forEach(track => track.stop());
+                } catch {}
                 window.localPlaceholderStream = null;
               }
                 
@@ -521,54 +488,54 @@ export const useTransmissionWindow = () => {
       transmissionWindowRef.current.focus();
       return;
     }
-    
+
     const width = window.innerWidth * 0.9;
     const height = window.innerHeight * 0.9;
     const left = (window.screen.width - width) / 2;
     const top = (window.screen.height - height) / 2;
-    
+
     const newWindow = window.open(
       '',
       'LiveTransmissionWindow',
       `width=${width},height=${height},left=${left},top=${top}`
     );
-    
+
     if (newWindow) {
       transmissionWindowRef.current = newWindow;
-      
+
       const html = createTransmissionHTML(state);
-      
+
+      newWindow.document.open();
       newWindow.document.write(html);
       newWindow.document.close();
       state.setTransmissionOpen(true);
-      
+
       console.log('✅ TRANSMISSION: Window opened and configured');
-      
-      // Enhanced message handler for transmission window
+
+      // Handler de mensagens vindas da popup
       const handleTransmissionMessage = (event: MessageEvent) => {
         if (event.source === newWindow) {
-          console.log('📨 HOST: Received from transmission:', event.data.type);
-          
-          if (event.data.type === 'transmission-ready') {
-            console.log('🎯 HOST: Transmission window ready, updating participants');
+          const type = (event.data && event.data.type) || 'unknown';
+          if (type === 'transmission-ready') {
             setTimeout(() => {
               updateTransmissionParticipants();
             }, 500);
-          }
-          else if (event.data.type === 'transmission-heartbeat') {
-            console.log('💓 HOST: Transmission heartbeat -', event.data.activeParticipants, 'active');
+          } else if (type === 'transmission-heartbeat') {
+            // opcional: logs/metrics
           }
         }
       };
-      
+
       window.addEventListener('message', handleTransmissionMessage);
-      
-      // Cleanup on window close
-      newWindow.addEventListener('beforeunload', () => {
+
+      // Cleanup ao fechar a popup
+      const beforeUnloadHandler = () => {
         state.setTransmissionOpen(false);
         transmissionWindowRef.current = null;
         window.removeEventListener('message', handleTransmissionMessage);
-      });
+        newWindow.removeEventListener('beforeunload', beforeUnloadHandler);
+      };
+      newWindow.addEventListener('beforeunload', beforeUnloadHandler);
     }
   };
 
@@ -578,7 +545,7 @@ export const useTransmissionWindow = () => {
       transmissionWindowRef.current = null;
       state.setTransmissionOpen(false);
     }
-    
+
     if (state.finalAction !== 'none') {
       state.setFinalActionTimeLeft(20);
       state.setFinalActionOpen(true);

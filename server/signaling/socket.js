@@ -36,20 +36,14 @@ const getICEServers = () => {
     }
   }
 
-  // MELHORIA: Log aprimorado para melhor diagnóstico
+  // Log seguro (evita expor credenciais em produção)
   const toLog = servers.map(s => ({
     urls: s.urls,
     username: s.username,
     hasCredential: !!s.credential
   }));
-  
-  console.log('🧊 [SERVER] ICE servers configurados:', {
-    count: servers.length,
-    servers: toLog
-  });
-  
-  if (process.env.NODE_ENV === 'development') {
-    console.log('🔧 [SERVER] ICE servers detalhados:', JSON.stringify(toLog, null, 2));
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('ICE servers carregados:', JSON.stringify(toLog));
   }
 
   return servers;
@@ -178,8 +172,8 @@ const initializeSocketHandlers = (io) => {
         // Entrar na sala do Socket.IO
         socket.join(roomId);
 
-        // ENVIO ÚNICO: Configuração dos servidores ICE
-        socket.emit('ice-servers', { iceServers });
+        // FASE 1: Enviar configuração dos servidores ICE
+        socket.emit('ice-servers', { iceServers: getICEServers() });
 
         // Notificar outros participantes
         socket.to(roomId).emit('user-connected', {
@@ -474,22 +468,6 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
-    // WebRTC signaling handlers
-    socket.on('webrtc-offer', ({ to, sdp, type }) => {
-      console.log(`🎯 [SERVER] Roteando offer: ${socket.id} -> ${to}`);
-      io.to(to).emit('webrtc-offer', { from: socket.id, sdp, type });
-    });
-
-    socket.on('webrtc-answer', ({ to, sdp, type }) => {
-      console.log(`🎯 [SERVER] Roteando answer: ${socket.id} -> ${to}`);
-      io.to(to).emit('webrtc-answer', { from: socket.id, sdp, type });
-    });
-
-    socket.on('webrtc-candidate', ({ to, candidate }) => {
-      console.log(`🧊 [SERVER] Roteando ICE candidate: ${socket.id} -> ${to}`);
-      io.to(to).emit('webrtc-candidate', { from: socket.id, candidate });
-    });
-
     socket.on('disconnect', () => {
       try {
         const connection = connections.get(socket.id);
@@ -542,3 +520,14 @@ module.exports = {
   initializeSocketHandlers,
   getICEServers
 };
+
+
+
+
+
+
+
+
+
+
+
