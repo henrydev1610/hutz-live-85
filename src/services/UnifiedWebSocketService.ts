@@ -498,15 +498,16 @@ class UnifiedWebSocketService {
       fromUserId: this.currentUserId
     };
 
-    console.log(`📤 FASE 4: Sending offer to ${targetUserId}`);
-    console.log('📊 FASE 4: OFFER PAYLOAD:', {
-      type: offer.type,
-      sdpLength: offer.sdp?.length || 0,
-      targetUserId,
-      roomId: this.currentRoomId,
-      fromUserId: this.currentUserId,
-      hasVideoInSDP: offer.sdp?.includes('m=video') || false
-    });
+    console.log(`📤 [WS] Sending offer to: ${targetUserId}`);
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) {
+      console.log('📊 [WS] Offer payload:', {
+        type: offer.type,
+        sdpLength: offer.sdp?.length || 0,
+        targetUserId,
+        hasVideoInSDP: offer.sdp?.includes('m=video') || false
+      });
+    }
 
     this.socket!.emit('offer', payload);
   }
@@ -530,15 +531,16 @@ class UnifiedWebSocketService {
       fromUserId: this.currentUserId
     };
 
-    console.log(`📤 FASE 4: Sending answer to ${targetUserId}`);
-    console.log('📊 FASE 4: ANSWER PAYLOAD:', {
-      type: answer.type,
-      sdpLength: answer.sdp?.length || 0,
-      targetUserId,
-      roomId: this.currentRoomId,
-      fromUserId: this.currentUserId,
-      hasRecvOnly: answer.sdp?.includes('a=recvonly') || false
-    });
+    console.log(`📤 [WS] Sending answer to: ${targetUserId}`);
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) {
+      console.log('📊 [WS] Answer payload:', {
+        type: answer.type,
+        sdpLength: answer.sdp?.length || 0,
+        targetUserId,
+        hasRecvOnly: answer.sdp?.includes('a=recvonly') || false
+      });
+    }
 
     this.socket!.emit('answer', payload);
   }

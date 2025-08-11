@@ -260,23 +260,19 @@ export class UnifiedWebRTCManager {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      // FASE 5: Setup callbacks ANTES de conectar (crítico para não perder offers)
-      console.log('📞 FASE 5: Registrando callbacks ANTES de conectar ao WebSocket');
+      // Setup callbacks antes de conectar
       this.setupWebSocketCallbacks();
       
       await unifiedWebSocketService.connect();
-      
-      console.log(`🚪 Aguardando confirmação de entrada na sala como host: ${sessionId}`);
       await unifiedWebSocketService.joinRoom(sessionId, 'host');
       
-      // CORREÇÃO: Marcar como pronto para WebRTC após confirmação de entrada na sala
       this.webrtcReady = true;
-      console.log(`✅ Confirmação de entrada na sala recebida. Host WebRTC pronto.`);
+      console.log(`✅ [HOST] WebRTC ready for session: ${sessionId}`);
       this.updateConnectionState('websocket', 'connected');
 
-      console.log(`✅ Host initialized for session ${sessionId}`);
+      console.log(`✅ [HOST] Initialized: ${sessionId}`);
     } catch (error) {
-      console.error(`❌ Failed to initialize as host:`, error);
+      console.error(`❌ [HOST] Failed to initialize:`, error);
       this.updateConnectionState('websocket', 'failed');
       this.cleanup();
       throw error;
@@ -284,7 +280,7 @@ export class UnifiedWebRTCManager {
   }
 
   async connectToHost(): Promise<void> {
-    console.log('🔗 FASE 2: Attempting to connect to host with auto-handshake');
+    console.log(`🔗 [PART] Connecting to host`);
     
     if (!this.localStream) {
       throw new Error('No local stream available for host connection');
@@ -292,22 +288,21 @@ export class UnifiedWebRTCManager {
 
     try {
       const hostId = 'host';
-      console.log(`🎯 FASE 2: Initiating connection to host: ${hostId}`);
+      console.log(`🎯 [PART] Starting handshake with: ${hostId}`);
       
-      // FASE 2: Usar novo método de handshake automático
       await this.connectionHandler.initiateHandshake(hostId);
       this.updateConnectionState('webrtc', 'connecting');
       
-      console.log('✅ FASE 2: Successfully initiated handshake with host');
+      console.log(`✅ [PART] Handshake initiated successfully`);
     } catch (error) {
-      console.error('❌ FASE 2: Failed to connect to host:', error);
+      console.error(`❌ [PART] Failed to connect to host:`, error);
       this.updateConnectionState('webrtc', 'failed');
       throw error;
     }
   }
 
   setLocalStream(stream: MediaStream): void {
-    console.log('📹 UNIFIED: Setting local stream');
+    console.log(`📹 [WRTC] Setting local stream`);
     this.localStream = stream;
     
     // Update connection handler with new stream

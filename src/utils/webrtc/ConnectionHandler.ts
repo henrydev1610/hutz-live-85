@@ -31,19 +31,19 @@ export class ConnectionHandler {
 
   setStreamCallback(callback: (participantId: string, stream: MediaStream) => void) {
     this.streamCallback = callback;
-    console.log('📞 WEBRTC DEBUG: Stream callback registrado com sucesso');
-    console.log('📞 WEBRTC DEBUG: Callback é válido:', typeof callback === 'function');
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('📞 [WRTC] Stream callback set');
   }
 
   setParticipantJoinCallback(callback: (participantId: string) => void) {
     this.participantJoinCallback = callback;
-    console.log('👤 WEBRTC DEBUG: Participante registrado com sucesso');
-    console.log('👤 WEBRTC DEBUG: Callback é válido:', typeof callback === 'function');
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) console.log('👤 [WRTC] Participant callback set');
   }
 
   // FASE 2: Novo método para iniciar handshake automático
   async initiateHandshake(participantId: string): Promise<void> {
-    console.log(`🤝 FASE 2: Auto-initiating handshake with ${participantId}`);
+    console.log(`🤝 [WRTC] Initiating handshake: ${participantId}`);
     
     // FASE 4: Verificar circuit breaker
     if (this.isCircuitBreakerOpen(participantId)) {
@@ -70,12 +70,15 @@ export class ConnectionHandler {
   }
 
   createPeerConnection(participantId: string): RTCPeerConnection {
-    console.log(`🔗 WEBRTC DIAGNÓSTICO: ===== CRIANDO PEER CONNECTION =====`);
-    console.log(`🔗 WEBRTC DIAGNÓSTICO: Participante: ${participantId}`);
-    console.log(`🔗 WEBRTC DIAGNÓSTICO: Timestamp: ${new Date().toISOString()}`);
-    console.log(`🔗 WEBRTC DIAGNÓSTICO: Conexões existentes: ${this.peerConnections.size}`);
-    console.log(`🔗 WEBRTC DIAGNÓSTICO: Stream callback disponível: ${!!this.streamCallback}`);
-    console.log(`🔗 WEBRTC DIAGNÓSTICO: Join callback disponível: ${!!this.participantJoinCallback}`);
+    console.log(`🔗 [WRTC] Creating peer connection: ${participantId}`);
+    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
+    if (DEBUG) {
+      console.log('🔗 [WRTC] Debug info:', {
+        participant: participantId,
+        existingConnections: this.peerConnections.size,
+        hasStreamCallback: !!this.streamCallback
+      });
+    }
     
     // FASE 1: Detectar se é host e forçar modo receive-only
     const isHost = participantId === 'host' || this.currentParticipantId === 'host';
