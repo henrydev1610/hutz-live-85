@@ -98,7 +98,8 @@ export class LovableEnvironmentDetector {
   // Testes dinâmicos de capacidades
   public async testWebRTCCapabilities(): Promise<boolean> {
     try {
-      const pc = new RTCPeerConnection();
+      // Usar configuração básica sem credenciais para teste
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
       await pc.close();
       console.log('✅ RTCPeerConnection funcional');
       return true;

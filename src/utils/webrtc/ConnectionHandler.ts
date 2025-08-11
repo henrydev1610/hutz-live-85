@@ -1,5 +1,6 @@
 import unifiedWebSocketService from '@/services/UnifiedWebSocketService';
 import { setupOnTrackWithTimeout, setupICEGatheringTimeout, validateTransceiversPostNegotiation } from './ConnectionHandlerMethods';
+import { getActiveWebRTCConfig } from '@/utils/webrtc/WebRTCConfig';
 
 export class ConnectionHandler {
   private peerConnections: Map<string, RTCPeerConnection>;
@@ -123,17 +124,11 @@ export class ConnectionHandler {
     // Criar nome único para o relay baseado na sessão e timestamp
     const uniqueId = `relay-${participantId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // FASE 1: Usar configuração robusta de STUN/TURN
-    import('@/utils/webrtc/WebRTCConfig').then(({ WEBRTC_CONFIG }) => {
-      console.log('📡 WEBRTC CONFIG: Using enhanced STUN/TURN configuration');
-      console.log('📡 ICE SERVERS:', WEBRTC_CONFIG.iceServers.length, 'servers configured');
-    });
-    
-    const { WEBRTC_CONFIG } = require('@/utils/webrtc/WebRTCConfig');
-    const config = WEBRTC_CONFIG;
-
-    console.log(`🔧 WEBRTC DIAGNÓSTICO: Criando WebRTC connection com unique ID: ${uniqueId}`);
-    console.log(`🔧 WEBRTC DIAGNÓSTICO: ICE servers configurados:`, config.iceServers);
+    // FASE 1: Usar configuração ativa de STUN/TURN (dinâmica ou fallback)
+    const config = getActiveWebRTCConfig();
+    console.log(`🔧 [WRTC] Criando conexão ${uniqueId} com ICE servers:`,
+      (config.iceServers || []).map(s => ({ urls: (s as any).urls, hasCred: !!(s as any).credential }))
+    );
     
     const peerConnection = new RTCPeerConnection(config);
     

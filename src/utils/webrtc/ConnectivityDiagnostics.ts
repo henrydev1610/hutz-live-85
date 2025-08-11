@@ -41,6 +41,7 @@ export class ConnectivityDiagnostics {
       try {
         console.log('🔍 CONNECTIVITY TEST: Testing TURN server:', turnServer.urls);
         
+        // Usar server específico para teste TURN
         const pc = new RTCPeerConnection({
           iceServers: [turnServer],
           iceTransportPolicy: 'relay'
