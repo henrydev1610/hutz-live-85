@@ -8,7 +8,7 @@ import { streamLogger } from '@/utils/debug/StreamLogger';
 import { useMediaState } from './useMediaState';
 import { useMediaControls } from './useMediaControls';
 
-export const useParticipantMedia = () => {
+export const useParticipantMedia = (participantId: string) => {
   const mediaState = useMediaState();
   const {
     hasVideo,
@@ -38,13 +38,8 @@ export const useParticipantMedia = () => {
     setHasScreenShare
   });
 
-  const generateParticipantId = useCallback(() => {
-    return `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  }, []);
-
   const initializeMedia = useCallback(async () => {
     const isMobile = detectMobileAggressively();
-    const participantId = generateParticipantId();
     const deviceType = isMobile ? 'mobile' : 'desktop';
     
     try {
@@ -129,50 +124,7 @@ export const useParticipantMedia = () => {
       
       toast.success(`${displayType} camera connected! Video: ${videoStatus}, Audio: ${audioStatus}`);
       
-      // FASE 1: CRÍTICO - Notificar backend sobre stream ativo VIA WEBSOCKET
-      console.log('🚀 FASE 1 FIX: Notificando diretamente via WebSocket que stream está pronto');
-      
-      // CORREÇÃO: Usar unifiedWebSocketService diretamente ao invés de callback inexistente
-      try {
-        // Importar e usar o serviço unificado
-        const { default: unifiedWebSocketService } = await import('@/services/UnifiedWebSocketService');
-        
-        console.log('📡 FASE 1 FIX: Enviando stream-ready via WebSocket');
-        
-        // Notificar o host via WebSocket que o stream está pronto
-        unifiedWebSocketService.notifyStreamStarted(participantId, {
-          hasVideo: videoTracks.length > 0,
-          hasAudio: audioTracks.length > 0,
-          streamId: stream.id,
-          timestamp: Date.now()
-        });
-        
-        console.log('✅ FASE 1 FIX: Stream-ready notificado com sucesso via WebSocket');
-        
-        // FASE 2: Disparar evento para forçar handshake local também
-        window.dispatchEvent(new CustomEvent('participant-stream-ready', {
-          detail: { 
-            participantId, 
-            stream,
-            hasVideo: videoTracks.length > 0,
-            hasAudio: audioTracks.length > 0
-          }
-        }));
-        
-      } catch (error) {
-        console.error('❌ FASE 1 FIX: Erro ao notificar via WebSocket:', error);
-        // Fallback: tentar o método antigo se o WebSocket falhar
-        const streamStartedCallback = (window as any).streamStartedCallback;
-        if (streamStartedCallback && typeof streamStartedCallback === 'function') {
-          console.log('🔄 FASE 1 FALLBACK: Usando callback antigo');
-          streamStartedCallback(participantId, {
-            hasVideo: videoTracks.length > 0,
-            hasAudio: audioTracks.length > 0,
-            streamId: stream.id,
-            timestamp: Date.now()
-          });
-        }
-      }
+      // REMOÇÃO: Não emitir stream-started aqui - será feito na página
       
       return stream;
       
@@ -188,12 +140,11 @@ export const useParticipantMedia = () => {
       setHasAudio(false);
       return null;
     }
-  }, [localVideoRef, localStreamRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, generateParticipantId]);
+  }, [participantId, localVideoRef, localStreamRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled]);
 
   const retryMediaInitialization = useCallback(async () => {
     const isMobile = detectMobileAggressively();
     const deviceType = isMobile ? 'mobile' : 'desktop';
-    const participantId = generateParticipantId();
     
     console.log('🔄 MEDIA: Retrying media initialization...');
     
@@ -244,12 +195,11 @@ export const useParticipantMedia = () => {
       toast.error('Failed to retry media connection');
       throw error;
     }
-  }, [initializeMedia, localStreamRef, setHasVideo, setHasAudio, generateParticipantId]);
+  }, [participantId, initializeMedia, localStreamRef, setHasVideo, setHasAudio]);
 
   const switchCamera = useCallback(async (facing: 'user' | 'environment') => {
     const isMobile = detectMobileAggressively();
     const deviceType = isMobile ? 'mobile' : 'desktop';
-    const participantId = generateParticipantId();
     
     if (!isMobile) {
       streamLogger.log(
@@ -348,12 +298,11 @@ export const useParticipantMedia = () => {
       
       throw error;
     }
-  }, [localStreamRef, localVideoRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, retryMediaInitialization, generateParticipantId]);
+  }, [participantId, localStreamRef, localVideoRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, retryMediaInitialization]);
 
   const cleanup = useCallback(() => {
     const isMobile = detectMobileAggressively();
     const deviceType = isMobile ? 'mobile' : 'desktop';
-    const participantId = generateParticipantId();
     
     console.log('🧹 MEDIA: Cleaning up media resources...');
     
@@ -394,7 +343,7 @@ export const useParticipantMedia = () => {
     setHasScreenShare(false);
     setIsVideoEnabled(false);
     setIsAudioEnabled(false);
-  }, [localStreamRef, screenStreamRef, localVideoRef, setHasVideo, setHasAudio, setHasScreenShare, setIsVideoEnabled, setIsAudioEnabled, generateParticipantId]);
+  }, [participantId, localStreamRef, screenStreamRef, localVideoRef, setHasVideo, setHasAudio, setHasScreenShare, setIsVideoEnabled, setIsAudioEnabled]);
 
   return {
     hasVideo,

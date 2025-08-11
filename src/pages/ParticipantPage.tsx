@@ -42,7 +42,7 @@ const ParticipantPage = () => {
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
 
   const connection = useParticipantConnection(sessionId, participantId);
-  const media = useParticipantMedia();
+  const media = useParticipantMedia(participantId);
 
   // Enhanced URL consistency validation with mobile override detection
   useEffect(() => {
@@ -236,6 +236,23 @@ const ParticipantPage = () => {
       
       // Force mobile camera initialization
       const stream = await media.initializeMedia();
+      
+      // CORREÇÃO: Notificar stream-started AQUI na página com participantId unificado
+      if (stream) {
+        console.log('📡 UNIFICADO: Notificando stream-started com participantId:', participantId);
+        try {
+          const { default: unifiedWebSocketService } = await import('@/services/UnifiedWebSocketService');
+          unifiedWebSocketService.notifyStreamStarted(participantId, {
+            hasVideo: stream.getVideoTracks().length > 0,
+            hasAudio: stream.getAudioTracks().length > 0,
+            streamId: stream.id,
+            timestamp: Date.now()
+          });
+          console.log('✅ UNIFICADO: Stream-started notificado com participantId unificado');
+        } catch (error) {
+          console.error('❌ UNIFICADO: Erro ao notificar stream-started:', error);
+        }
+      }
       
       if (stream) {
         const videoTracks = stream.getVideoTracks();
