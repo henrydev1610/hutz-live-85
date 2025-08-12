@@ -138,14 +138,6 @@ export async function handleRemoteCandidate(data: any) {
 
 /** Registra listeners de sinalização no socket (uma vez) */
 function setupHostHandlers() {
-  // CORREÇÃO CRÍTICA: Verificar se service está inicializado antes de adicionar listeners
-  if (!unifiedWebSocketService || !unifiedWebSocketService.isConnected()) {
-    console.error('❌ CRITICAL: unifiedWebSocketService not initialized in setupHostHandlers');
-    return;
-  }
-  
-  console.log('📡 [HOST] Setting up handlers after WebSocket connection confirmed');
-  
   // Participante → HOST: offer
   unifiedWebSocketService.on('webrtc-offer', (payload: any) => {
     handleOfferFromParticipant(payload);
@@ -159,15 +151,11 @@ function setupHostHandlers() {
   console.log('📡 [HOST] Handlers de sinalização registrados (offer, candidate).');
 }
 
-// CORREÇÃO CRÍTICA: NÃO inicializar automaticamente
-// Handlers devem ser configurados apenas quando WebSocket estiver conectado
-// if (typeof window !== 'undefined' && !(window as any).__hostHandlersSetup) {
-//   setupHostHandlers();
-//   (window as any).__hostHandlersSetup = true;
-// }
-
-// Export função para configurar handlers quando necessário
-export { setupHostHandlers };
+// Inicializa handlers uma vez
+if (typeof window !== 'undefined' && !(window as any).__hostHandlersSetup) {
+  setupHostHandlers();
+  (window as any).__hostHandlersSetup = true;
+}
 
 /** Cleanup por participante */
 export function cleanupHostHandshake(participantId: string) {

@@ -37,14 +37,6 @@ async function ensureLocalStream(): Promise<MediaStream> {
 
 // Handlers para eventos do host
 function setupParticipantHandlers() {
-  // CORREÇÃO CRÍTICA: Verificar se service está inicializado antes de adicionar listeners
-  if (!unifiedWebSocketService || !unifiedWebSocketService.isConnected()) {
-    console.error('❌ CRITICAL: unifiedWebSocketService not initialized in setupParticipantHandlers');
-    return;
-  }
-  
-  console.log('📡 [PARTICIPANT] Setting up handlers after WebSocket connection confirmed');
-  
   // Receber offer do host
   unifiedWebSocketService.on('webrtc-offer', async (data: { from: string; sdp: string; type: string }) => {
     const { from, sdp, type } = data;
@@ -135,8 +127,12 @@ function setupParticipantHandlers() {
       console.warn('⚠️ [PARTICIPANT] Erro ao adicionar candidate de:', from, err);
     }
   });
-  
-  console.log('✅ [PARTICIPANT] Handlers registrados com sucesso');
+}
+
+// Inicializar handlers apenas uma vez
+if (!(window as any).__participantHandlersSetup) {
+  setupParticipantHandlers();
+  (window as any).__participantHandlersSetup = true;
 }
 
 // Helper para cleanup
@@ -154,6 +150,5 @@ export function cleanupParticipantHandshake() {
   console.log('🧹 [PARTICIPANT] Handshake cleanup completo');
 }
 
-// CORREÇÃO CRÍTICA: Export função para inicializar quando necessário
-// NÃO inicializar automaticamente aqui - deve ser chamado quando WebSocket estiver pronto
-export { setupParticipantHandlers, ensureLocalStream };
+// Export para uso em outros módulos
+export { ensureLocalStream };

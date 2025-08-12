@@ -725,13 +725,7 @@ this.socket.on('ice-servers', (data) => {
     this.socket?.emit(event, data);
   }
 
-  on(event: string, handler: (...args: any[]) => void) {
-  this.socket.on(event, handler);
-  return () => this.socket.off(event, handler);
-}
-
-
-  /* on(event: string, callback: (...args: any[]) => void): void {
+  on(event: string, callback: (...args: any[]) => void): void {
     if (!this.socket) {
       console.error(`Cannot listen to ${event}: not connected`);
       return;
@@ -739,7 +733,7 @@ this.socket.on('ice-servers', (data) => {
 
     console.log(`👂 WEBSOCKET: Listening to ${event}`);
     this.socket.on(event, callback);
-  } */
+  }
 
   // FASE 1: Utilities
   private isMobileDevice(): boolean {
