@@ -172,9 +172,19 @@ export const useLivePageEffects = ({
 
       // FASE 1: Initialize WebRTC with enhanced debug logging
       console.log('🚀 FASE 1: HOST EFFECTS: Starting WebRTC initialization...');
-      initHostWebRTC(sessionId).then(result => {
+      initHostWebRTC(sessionId).then(async result => {
         if (result && result.webrtc) {
           console.log('✅ FASE 1: HOST EFFECTS: WebRTC initialized successfully');
+          
+          // CORREÇÃO CRÍTICA: Configurar handlers WebRTC após WebSocket estar conectado
+          console.log('🔧 HOST EFFECTS: Setting up WebRTC handlers after initialization...');
+          try {
+            const { setupHostHandlers } = await import('@/webrtc/handshake/HostHandshake');
+            setupHostHandlers();
+            console.log('✅ HOST EFFECTS: Host handlers configured successfully');
+          } catch (error) {
+            console.error('❌ HOST EFFECTS: Failed to setup host handlers:', error);
+          }
           
           // FASE 1: Verificar se o manager está disponível via getWebRTCManager
           const verifyManager = () => {
