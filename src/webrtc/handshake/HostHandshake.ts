@@ -45,10 +45,7 @@ export async function startHostHandshakeFor(participantId: string) {
       const candidateType = /typ (\w+)/.exec(event.candidate.candidate)?.[1];
       console.log(`🧊 [HOST] ICE candidate tipo: ${candidateType}`, event.candidate.candidate);
       
-      unifiedWebSocketService.emit('webrtc-candidate', {
-        to: participantId,
-        candidate: event.candidate
-      });
+      unifiedWebSocketService.sendWebRTCCandidate(participantId, event.candidate);
     } else {
       console.log('🧊 [HOST] ICE gathering completo para:', participantId);
     }
@@ -90,11 +87,7 @@ export async function startHostHandshakeFor(participantId: string) {
     await pc.setLocalDescription(offer);
     console.log('📤 [HOST] Local description definida, enviando offer para:', participantId);
 
-    unifiedWebSocketService.emit('webrtc-offer', {
-      to: participantId,
-      sdp: offer.sdp,
-      type: offer.type
-    });
+    unifiedWebSocketService.sendWebRTCOffer(participantId, offer.sdp!, offer.type);
     
     console.log('✅ [HOST] Offer enviado para:', participantId);
   } catch (err) {

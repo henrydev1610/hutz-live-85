@@ -161,6 +161,20 @@ export const useParticipantManagement = ({
       console.log('❌ CRITICAL ERROR: Host role incorrect - IsHost: false');
     }
     
+    // FASE 2: Implementar window.hostStreamCallback
+    if (isHost && typeof window !== 'undefined') {
+      console.log('📡 CRITICAL: Registering window.hostStreamCallback');
+      window.hostStreamCallback = (participantId: string, stream: MediaStream) => {
+        console.log('🎥 HOST CALLBACK: Stream received from participant:', participantId);
+        enhancedHandleParticipantStream(participantId, stream);
+      };
+      
+      // FASE 3: Log critical validation
+      import('@/utils/webrtc/ProtocolValidationLogger').then(({ ProtocolValidationLogger }) => {
+        ProtocolValidationLogger.logHostCallbackRegistration(true);
+      });
+    }
+    
     // Clear cache on session change
     if (sessionId) {
       console.log('🧹 WEBRTC DEBUG: Limpando cache para nova sessão');
@@ -181,8 +195,11 @@ export const useParticipantManagement = ({
     
     return () => {
       console.log('🧹 WEBRTC DEBUG: Limpando callbacks WebRTC');
+      if (typeof window !== 'undefined') {
+        window.hostStreamCallback = undefined;
+      }
     };
-  }, [sessionId, handleParticipantJoin, debugCurrentState]);
+  }, [sessionId, handleParticipantJoin, debugCurrentState, isHost]);
 
   const testConnection = () => {
     console.log('🧪 ENHANCED MANAGEMENT: Testing connection with cache clearing...');

@@ -597,6 +597,90 @@ this.socket.on('ice-servers', (data) => {
     });
   }
 
+  // FASE 1: New WebRTC methods with protocol conversion
+  sendWebRTCOffer(targetUserId: string, sdp: string, type: string): void {
+    if (!this.isConnected()) {
+      console.warn('📤 Cannot send WebRTC offer: WebSocket not connected');
+      return;
+    }
+
+    if (!this.currentRoomId || !this.currentUserId) {
+      console.error('❌ Cannot send WebRTC offer: Room or User context missing');
+      return;
+    }
+
+    const legacyMessage = {
+      roomId: this.currentRoomId,
+      targetUserId,
+      offer: { type: type as RTCSdpType, sdp },
+      fromUserId: this.currentUserId
+    };
+
+    console.log('📤 [WS] Sending WebRTC offer (converted):', {
+      targetUserId,
+      roomId: this.currentRoomId,
+      fromUserId: this.currentUserId
+    });
+
+    this.socket?.emit('offer', legacyMessage);
+  }
+
+  sendWebRTCAnswer(targetUserId: string, sdp: string, type: string): void {
+    if (!this.isConnected()) {
+      console.warn('📤 Cannot send WebRTC answer: WebSocket not connected');
+      return;
+    }
+
+    if (!this.currentRoomId || !this.currentUserId) {
+      console.error('❌ Cannot send WebRTC answer: Room or User context missing');
+      return;
+    }
+
+    const legacyMessage = {
+      roomId: this.currentRoomId,
+      targetUserId,
+      answer: { type: type as RTCSdpType, sdp },
+      fromUserId: this.currentUserId
+    };
+
+    console.log('📤 [WS] Sending WebRTC answer (converted):', {
+      targetUserId,
+      roomId: this.currentRoomId,
+      fromUserId: this.currentUserId
+    });
+
+    this.socket?.emit('answer', legacyMessage);
+  }
+
+  sendWebRTCCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
+    if (!this.isConnected()) {
+      console.warn('📤 Cannot send WebRTC candidate: WebSocket not connected');
+      return;
+    }
+
+    if (!this.currentRoomId || !this.currentUserId) {
+      console.error('❌ Cannot send WebRTC candidate: Room or User context missing');
+      return;
+    }
+
+    const legacyMessage = {
+      roomId: this.currentRoomId,
+      targetUserId,
+      candidate,
+      fromUserId: this.currentUserId
+    };
+
+    const candidateType = /typ (\w+)/.exec(candidate.candidate)?.[1];
+    console.log('📤 [WS] Sending WebRTC candidate (converted):', {
+      targetUserId,
+      roomId: this.currentRoomId,
+      fromUserId: this.currentUserId,
+      candidateType
+    });
+
+    this.socket?.emit('ice-candidate', legacyMessage);
+  }
+
   isConnected(): boolean {
     return this.socket?.connected || false;
   }

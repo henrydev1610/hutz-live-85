@@ -78,10 +78,7 @@ function setupParticipantHandlers() {
           const candidateType = /typ (\w+)/.exec(event.candidate.candidate)?.[1];
           console.log(`🧊 [PARTICIPANT] ICE candidate tipo: ${candidateType}`, event.candidate.candidate);
           
-          unifiedWebSocketService.emit('webrtc-candidate', {
-            to: from,
-            candidate: event.candidate
-          });
+          unifiedWebSocketService.sendWebRTCCandidate(from, event.candidate);
         } else {
           console.log('🧊 [PARTICIPANT] ICE gathering completo');
         }
@@ -104,11 +101,7 @@ function setupParticipantHandlers() {
       await participantPC.setLocalDescription(answer);
       console.log('📤 [PARTICIPANT] Local description definida, enviando answer');
 
-      unifiedWebSocketService.emit('webrtc-answer', {
-        to: from,
-        sdp: answer.sdp,
-        type: answer.type
-      });
+      unifiedWebSocketService.sendWebRTCAnswer(from, answer.sdp!, answer.type);
       
       console.log('✅ [PARTICIPANT] Answer enviado para:', from);
 

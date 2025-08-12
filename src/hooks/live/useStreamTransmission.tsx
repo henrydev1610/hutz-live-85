@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { MutableRefObject } from 'react';
+import { ProtocolValidationLogger } from '@/utils/webrtc/ProtocolValidationLogger';
 
 declare global {
   interface Window {
@@ -7,6 +8,8 @@ declare global {
     __mlStreams__?: Map<string, MediaStream>;
     /** Exposição para a popup buscar o stream pelo id */
     getParticipantStream?: (participantId: string) => MediaStream | null | undefined;
+    /** Callback do host para receber streams via WebRTC */
+    hostStreamCallback?: (participantId: string, stream: MediaStream) => void;
   }
 }
 
@@ -22,9 +25,18 @@ export const useStreamTransmission = () => {
         if (!window.__mlStreams__) window.__mlStreams__ = new Map();
         window.__mlStreams__.set(participantId, stream);
 
+        // FASE 2: Implementar window.getParticipantStream()
         if (typeof window.getParticipantStream !== 'function') {
-          window.getParticipantStream = (id: string) =>
-            window.__mlStreams__?.get(id) ?? null;
+          window.getParticipantStream = (id: string) => {
+            const stream = window.__mlStreams__?.get(id) ?? null;
+            console.log('🔍 CRITICAL: getParticipantStream called for:', id, {
+              found: !!stream,
+              mapSize: window.__mlStreams__?.size || 0,
+              availableIds: Array.from(window.__mlStreams__?.keys() || [])
+            });
+            return stream;
+          };
+          console.log('✅ CRITICAL: window.getParticipantStream registered globally');
         }
       }
 
@@ -35,6 +47,9 @@ export const useStreamTransmission = () => {
         streamId: stream.id,
         active: stream.active
       });
+
+      // FASE 3: Critical validation logging
+      ProtocolValidationLogger.logStreamRegistration(participantId, stream);
 
       // 2) NOTIFICA A POPUP (apenas metadados / sinalização)
       if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
