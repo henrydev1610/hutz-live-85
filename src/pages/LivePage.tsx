@@ -15,6 +15,7 @@ import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
+import { useHostSignaling } from '@/hooks/live/useHostSignaling';
 import { ServerConnectivityTest } from '@/utils/debug/ServerConnectivityTest';
 
 const LivePage: React.FC = () => {
@@ -23,7 +24,7 @@ const LivePage: React.FC = () => {
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
-  
+
   const { closeFinalAction } = useFinalAction({
     finalActionOpen: state.finalActionOpen,
     finalActionTimeLeft: state.finalActionTimeLeft,
@@ -37,7 +38,7 @@ const LivePage: React.FC = () => {
   useEffect(() => {
     const envInfo = getEnvironmentInfo();
     console.log('🌍 LIVE PAGE: Environment detected:', envInfo);
-    
+
     // Clear cache on first load to ensure fresh state
     console.log('🧹 LIVE PAGE: Initial cache clear');
     clearConnectionCache();
@@ -46,14 +47,14 @@ const LivePage: React.FC = () => {
     // Executar diagnósticos críticos na primeira carga
     const runInitialDiagnostics = async () => {
       console.log('🔧 LIVE PAGE: Running initial connectivity diagnostics...');
-      
+
       try {
         // Teste de conectividade do servidor
         await ServerConnectivityTest.runComprehensiveTest();
-        
+
         // Diagnósticos de WebSocket
         const wsResult = await WebSocketDiagnostics.runDiagnostics();
-        
+
         if (!wsResult.success) {
           console.warn('⚠️ LIVE PAGE: WebSocket diagnostics failed:', wsResult.error);
           toast({
@@ -62,7 +63,7 @@ const LivePage: React.FC = () => {
             variant: "destructive",
           });
         }
-        
+
       } catch (error) {
         console.error('❌ LIVE PAGE: Diagnostics failed:', error);
       }
@@ -74,22 +75,22 @@ const LivePage: React.FC = () => {
   // ENHANCED: Transmission participants update with debugging and cache management
   const updateTransmissionParticipants = () => {
     console.log('🔄 HOST: Updating transmission participants with cache awareness');
-    
+
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
       const participantsWithStreams = state.participantList.map(p => ({
         ...p,
         hasStream: p.active && p.hasVideo
       }));
-      
+
       const selectedParticipants = participantsWithStreams.filter(p => p.selected);
-      
+
       console.log('📊 HOST: Transmission update with environment info:', {
         totalParticipants: participantsWithStreams.length,
         selectedParticipants: selectedParticipants.length,
         activeStreams: Object.keys(state.participantStreams).length,
         environment: getEnvironmentInfo()
       });
-      
+
       try {
         transmissionWindowRef.current.postMessage({
           type: 'update-participants',
@@ -98,11 +99,11 @@ const LivePage: React.FC = () => {
           timestamp: Date.now(),
           cacheVersion: Date.now() // Force cache refresh
         }, '*');
-        
+
         console.log('✅ HOST: Participants sent to transmission window with cache busting');
       } catch (error) {
         console.error('❌ HOST: Failed to send participants to transmission:', error);
-        
+
         // Retry with cache clear
         console.log('🔄 HOST: Retrying with cache clear');
         clearConnectionCache();
@@ -125,6 +126,20 @@ const LivePage: React.FC = () => {
     updateTransmissionParticipants,
     isHost: true // CORREÇÃO CRÍTICA: Forçar papel de host na rota /live
   });
+  // Use the host signaling hook
+  // quando o host receber ontrack, injeta no estado + manda p/ popup
+  useHostSignaling({
+    sessionId: state.sessionId,
+    onRemoteTrack: (participantId, stream) => {
+      // Atualiza estado central
+      state.setParticipantStreams(prev => ({ ...prev, [participantId]: stream }));
+      // Notifica popup (usa seu fluxo já existente)
+      if (participantManagement?.transferStreamToTransmission) {
+        participantManagement.transferStreamToTransmission(participantId, stream);
+      }
+    }
+  });
+
 
   // Use the effects hook
   useLivePageEffects({
@@ -195,10 +210,10 @@ const LivePage: React.FC = () => {
       }
     }
   }, [
-    state.qrCodePosition, 
-    state.qrDescriptionPosition, 
-    state.qrCodeVisible, 
-    state.qrCodeSvg, 
+    state.qrCodePosition,
+    state.qrDescriptionPosition,
+    state.qrCodeVisible,
+    state.qrCodeSvg,
     state.qrCodeDescription,
     state.selectedFont,
     state.selectedTextColor,
@@ -220,13 +235,13 @@ const LivePage: React.FC = () => {
         onQRCodeToTransmission={() => handleQRCodeToTransmission(state.setQrCodeVisible)}
         closeFinalAction={closeFinalAction}
       />
-      
+
       {/* Health Monitor */}
-      <ConnectionHealthMonitor 
+      <ConnectionHealthMonitor
         isVisible={showHealthMonitor}
         onClose={() => setShowHealthMonitor(false)}
       />
-      
+
       {/* Enhanced Debug Controls */}
       <div className="fixed bottom-4 left-4 flex flex-col gap-2 z-50">
         <button
@@ -236,7 +251,7 @@ const LivePage: React.FC = () => {
         >
           🔧 Debug
         </button>
-        
+
         <button
           onClick={() => {
             const envInfo = getEnvironmentInfo();
@@ -254,7 +269,7 @@ const LivePage: React.FC = () => {
       </div>
 
       <WebRTCDebugToasts />
-      
+
       {/* FASE 5: Painel de Debug Lovable */}
       <LovableDebugPanel sessionId={state.sessionId} />
     </div>
