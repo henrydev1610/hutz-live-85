@@ -207,6 +207,10 @@ const LivePage: React.FC = () => {
     state.qrDescriptionFontSize
   ]);
 
+  console.log('🎬 LIVE PAGE: Rendering LivePage component');
+  console.log('🎬 LIVE PAGE: State sessionId:', state.sessionId);
+  console.log('🎬 LIVE PAGE: ParticipantManagement available:', !!participantManagement);
+
   return (
     <div className="relative">
       <LivePageContainer

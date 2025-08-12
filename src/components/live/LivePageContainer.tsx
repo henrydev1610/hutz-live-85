@@ -78,8 +78,21 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
     }
   }, [sessionId]);
 
+  console.log('🏠 LIVE CONTAINER: Rendering LivePageContainer');
+  console.log('🏠 LIVE CONTAINER: Props check:', {
+    hasState: !!state,
+    hasParticipantManagement: !!participantManagement,
+    sessionId,
+    transmissionOpen
+  });
+
   return (
     <div className="min-h-screen container mx-auto py-8 px-4 relative">
+      {/* TESTE: Header básico sempre visível */}
+      <div className="bg-red-500 text-white p-4 text-center mb-4 rounded">
+        🔴 TESTE: LivePageContainer carregado! SessionId: {sessionId || 'null'}
+      </div>
+      
       <LivePageHeader />
       
       <LivePageContent
