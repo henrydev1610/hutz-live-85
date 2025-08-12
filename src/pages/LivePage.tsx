@@ -15,7 +15,7 @@ import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
-import { useHostSignaling } from '@/hooks/live/useHostSignaling';
+
 import { ServerConnectivityTest } from '@/utils/debug/ServerConnectivityTest';
 
 const LivePage: React.FC = () => {
@@ -125,19 +125,6 @@ const LivePage: React.FC = () => {
     transmissionWindowRef,
     updateTransmissionParticipants,
     isHost: true // CORREÇÃO CRÍTICA: Forçar papel de host na rota /live
-  });
-  // Use the host signaling hook
-  // quando o host receber ontrack, injeta no estado + manda p/ popup
-  useHostSignaling({
-    sessionId: state.sessionId,
-    onRemoteTrack: (participantId, stream) => {
-      // Atualiza estado central
-      state.setParticipantStreams(prev => ({ ...prev, [participantId]: stream }));
-      // Notifica popup (usa seu fluxo já existente)
-      if (participantManagement?.transferStreamToTransmission) {
-        participantManagement.transferStreamToTransmission(participantId, stream);
-      }
-    }
   });
 
 

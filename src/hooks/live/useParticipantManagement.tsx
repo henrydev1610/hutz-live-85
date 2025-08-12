@@ -161,17 +161,21 @@ export const useParticipantManagement = ({
       console.log('❌ CRITICAL ERROR: Host role incorrect - IsHost: false');
     }
     
-    // FASE 2: Implementar window.hostStreamCallback
+    // FASE 2: Implementar window.hostStreamCallback ANTES dos handlers WebRTC
     if (isHost && typeof window !== 'undefined') {
-      console.log('📡 CRITICAL: Registering window.hostStreamCallback');
+      console.log('📡 CRITICAL: Registering window.hostStreamCallback FIRST');
       window.hostStreamCallback = (participantId: string, stream: MediaStream) => {
         console.log('🎥 HOST CALLBACK: Stream received from participant:', participantId);
-        enhancedHandleParticipantStream(participantId, stream);
+        // CORREÇÃO: Atualizar estado central diretamente  
+        setParticipantStreams(prev => ({ ...prev, [participantId]: stream }));
+        // Transferir para popup via hook existente
+        transferStreamToTransmission(participantId, stream);
       };
       
       // FASE 3: Log critical validation
       import('@/utils/webrtc/ProtocolValidationLogger').then(({ ProtocolValidationLogger }) => {
         ProtocolValidationLogger.logHostCallbackRegistration(true);
+        ProtocolValidationLogger.runFullValidation();
       });
     }
     
