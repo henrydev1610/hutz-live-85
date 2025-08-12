@@ -1,36 +1,28 @@
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { getActiveWebRTCConfig } from '@/utils/webrtc/WebRTCConfig';
-import { ConnectionHandler } from '@/utils/webrtc/ConnectionHandler';
 
 const hostPeerConnections = new Map<string, RTCPeerConnection>();
 
-export async function startHostHandshakeFor(participantId: string) {
-  console.log('🎯 [HOST] Iniciando handshake para:', participantId);
-  
-  // Limpar conexão anterior se existir
-  const existingPC = hostPeerConnections.get(participantId);
-  if (existingPC) {
-    existingPC.close();
-    hostPeerConnections.delete(participantId);
-  }
+function logIceType(prefix: string, cand?: string) {
+  if (!cand) return;
+  const typ = /typ (\w+)/.exec(cand)?.[1];
+  console.log(`${prefix} ICE typ: ${typ} | ${cand}`);
+}
 
-  const config = getActiveWebRTCConfig();
-  
-  // FORÇAR TURN para validação (temporário)
-  const testConfig = {
-    ...config,
-    iceTransportPolicy: 'relay' as RTCIceTransportPolicy
-  };
-  
-  console.log('🧊 [HOST] Configuração ICE para teste TURN:', {
-    iceServers: testConfig.iceServers?.length,
-    iceTransportPolicy: testConfig.iceTransportPolicy
-  });
+function getOrCreatePC(participantId: string) {
+  let pc = hostPeerConnections.get(participantId);
+  if (pc) return pc;
 
-  const pc = new RTCPeerConnection(testConfig);
+  const base = getActiveWebRTCConfig();
+
+  // Se quiser forçar TURN (enquanto valida): descomente a linha abaixo
+  // const config = { ...base, iceTransportPolicy: 'relay' as RTCIceTransportPolicy };
+  const config = { ...base };
+
+  pc = new RTCPeerConnection(config);
   hostPeerConnections.set(participantId, pc);
 
-  // Host só recebe mídia - adicionar transceivers recvonly
+  // HOST só recebe mídia
   try {
     pc.addTransceiver('video', { direction: 'recvonly' });
     pc.addTransceiver('audio', { direction: 'recvonly' });
@@ -39,122 +31,155 @@ export async function startHostHandshakeFor(participantId: string) {
     console.warn('⚠️ [HOST] Erro ao adicionar transceivers:', err);
   }
 
-  // ICE candidates com logs de tipo
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      const candidateType = /typ (\w+)/.exec(event.candidate.candidate)?.[1];
-      console.log(`🧊 [HOST] ICE candidate tipo: ${candidateType}`, event.candidate.candidate);
-      
+      logIceType('🧊 [HOST→PART]', event.candidate.candidate);
       unifiedWebSocketService.sendWebRTCCandidate(participantId, event.candidate);
     } else {
       console.log('🧊 [HOST] ICE gathering completo para:', participantId);
     }
   };
 
-  // Receber stream do participante
   pc.ontrack = (event) => {
     const [stream] = event.streams;
-    console.log('🎥 [HOST] ONTRACK recebido de:', participantId, 'streamId:', stream?.id);
-    console.log('🎥 [HOST] Stream tracks:', stream?.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled })));
-    
-    // Notificar sistema de gerenciamento de streams
-    if (stream && window.hostStreamCallback) {
+    console.log('🎥 [HOST] ontrack de', participantId, 'streamId:', stream?.id, {
+      tracks: stream?.getTracks().length,
+    });
+
+    if (stream && typeof window !== 'undefined' && window.hostStreamCallback) {
+      // Entrega o stream para o hook do host (atualiza estado + envia para popup)
       window.hostStreamCallback(participantId, stream);
     }
-    
-    // Trigger evento customizado
-    window.dispatchEvent(new CustomEvent('host-stream-received', {
-      detail: { participantId, stream }
-    }));
+
+    // Evento opcional para outros listeners
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('host-stream-received', { detail: { participantId, stream } })
+      );
+    }
   };
 
-  // Estados da conexão
   pc.onconnectionstatechange = () => {
-    console.log(`🔄 [HOST] Connection state (${participantId}):`, pc.connectionState);
+    console.log(`🔌 [HOST] PC(${participantId}) state:`, pc.connectionState);
   };
-
   pc.oniceconnectionstatechange = () => {
-    console.log(`🧊 [HOST] ICE connection state (${participantId}):`, pc.iceConnectionState);
+    console.log(`🧊 [HOST] ICE state(${participantId}):`, pc.iceConnectionState);
   };
 
-  // Criar e enviar offer
-  try {
-    const offer = await pc.createOffer({
-      offerToReceiveVideo: true,
-      offerToReceiveAudio: true
-    });
-    
-    await pc.setLocalDescription(offer);
-    console.log('📤 [HOST] Local description definida, enviando offer para:', participantId);
+  return pc;
+}
 
-    unifiedWebSocketService.sendWebRTCOffer(participantId, offer.sdp!, offer.type);
-    
-    console.log('✅ [HOST] Offer enviado para:', participantId);
+/**
+ * Host recebe OFFER do participante, responde com ANSWER.
+ * Aceita payloads nos formatos:
+ *  - { from: string, sdp: string, type: string }
+ *  - { fromUserId: string, offer: { sdp, type } }
+ *  - { from: string, offer: { sdp, type } }
+ */
+export async function handleOfferFromParticipant(data: any) {
+  const participantId = data?.fromUserId || data?.from;
+  const offer: RTCSessionDescriptionInit =
+    data?.offer || (data?.sdp && data?.type ? { sdp: data.sdp, type: data.type } : null);
+
+  if (!participantId || !offer?.sdp || !offer?.type) {
+    console.warn('⚠️ [HOST] Offer inválido:', data);
+    return;
+  }
+
+  console.log('📩 [HOST] Offer recebido de', participantId, offer.type);
+
+  const pc = getOrCreatePC(participantId);
+
+  if (pc.signalingState !== 'stable') {
+    console.warn('⚠️ [HOST] signalingState != stable:', pc.signalingState);
+  }
+
+  try {
+    await pc.setRemoteDescription(offer);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    unifiedWebSocketService.sendWebRTCAnswer(participantId, answer.sdp!, answer.type);
+    console.log('✅ [HOST] Answer enviada para', participantId);
   } catch (err) {
-    console.error('❌ [HOST] Erro ao criar/enviar offer:', err);
+    console.error('❌ [HOST] Erro processando offer de', participantId, err);
   }
 }
 
-// Handlers para resposta do participante
-function setupHostHandlers() {
-  // Receber answer do participante
-  unifiedWebSocketService.on('webrtc-answer', async (data: { from: string; sdp: string; type: string }) => {
-    const { from, sdp, type } = data;
-    console.log('📥 [HOST] Answer recebido de:', from);
-    
-    const pc = hostPeerConnections.get(from);
-    if (!pc) {
-      console.warn('⚠️ [HOST] PeerConnection não encontrada para:', from);
-      return;
-    }
+/**
+ * Host recebe CANDIDATE do participante.
+ * Aceita payloads nos formatos:
+ *  - { from: string, candidate: RTCIceCandidateInit }
+ *  - { fromUserId: string, candidate: RTCIceCandidateInit }
+ *  - { from: string, iceCandidate: RTCIceCandidateInit }
+ */
+export async function handleRemoteCandidate(data: any) {
+  const participantId = data?.fromUserId || data?.from;
+  const candidate: RTCIceCandidateInit = data?.candidate || data?.iceCandidate;
 
-    try {
-      await pc.setRemoteDescription({ sdp, type } as RTCSessionDescriptionInit);
-      console.log('✅ [HOST] Answer aplicado de:', from);
-    } catch (err) {
-      console.error('❌ [HOST] Erro ao aplicar answer de:', from, err);
-    }
-  });
+  if (!participantId || !candidate) {
+    console.warn('⚠️ [HOST] Candidate inválido:', data);
+    return;
+  }
 
-  // Receber ICE candidates do participante
-  unifiedWebSocketService.on('webrtc-candidate', async (data: { from: string; candidate: RTCIceCandidate }) => {
-    const { from, candidate } = data;
-    const pc = hostPeerConnections.get(from);
-    
-    if (!pc || !candidate) {
-      console.warn('⚠️ [HOST] PC ou candidate inválido de:', from);
-      return;
-    }
+  const pc = hostPeerConnections.get(participantId);
+  if (!pc) {
+    console.warn('⚠️ [HOST] Candidate recebido sem PC para', participantId);
+    return;
+  }
 
-    try {
-      await pc.addIceCandidate(candidate);
-      const candidateType = /typ (\w+)/.exec(candidate.candidate)?.[1];
-      console.log(`🧊 [HOST] ICE candidate adicionado de ${from}, tipo: ${candidateType}`);
-    } catch (err) {
-      console.warn('⚠️ [HOST] Erro ao adicionar candidate de:', from, err);
-    }
-  });
+  try {
+    logIceType('🧊 [PART→HOST]', candidate.candidate);
+    await pc.addIceCandidate(candidate);
+  } catch (err) {
+    console.error('❌ [HOST] addIceCandidate falhou para', participantId, err);
+  }
 }
 
-// Inicializar handlers apenas uma vez
-if (!(window as any).__hostHandlersSetup) {
+/** Registra listeners de sinalização no socket (uma vez) */
+function setupHostHandlers() {
+  // Participante → HOST: offer
+  unifiedWebSocketService.on('webrtc-offer', (payload: any) => {
+    handleOfferFromParticipant(payload);
+  });
+
+  // Participante → HOST: candidate
+  unifiedWebSocketService.on('webrtc-candidate', (payload: any) => {
+    handleRemoteCandidate(payload);
+  });
+
+  console.log('📡 [HOST] Handlers de sinalização registrados (offer, candidate).');
+}
+
+// Inicializa handlers uma vez
+if (typeof window !== 'undefined' && !(window as any).__hostHandlersSetup) {
   setupHostHandlers();
   (window as any).__hostHandlersSetup = true;
 }
 
-// Helper para cleanup
+/** Cleanup por participante */
 export function cleanupHostHandshake(participantId: string) {
   const pc = hostPeerConnections.get(participantId);
   if (pc) {
-    pc.close();
+    try {
+      pc.ontrack = null;
+      pc.onicecandidate = null;
+      pc.close();
+    } catch {}
     hostPeerConnections.delete(participantId);
-    console.log('🧹 [HOST] Handshake cleanup para:', participantId);
+    console.log('🧹 [HOST] Cleanup PC de', participantId);
   }
 }
 
-// Global types para callback
+/** Mantido para compatibilidade: não deve mais ser usado (host não inicia offer) */
+export async function startHostHandshakeFor(_participantId: string) {
+  console.warn('⚠️ [HOST] startHostHandshakeFor() está obsoleto. O host agora só responde a offers.');
+}
+
+// Tipagem global
 declare global {
   interface Window {
     hostStreamCallback?: (participantId: string, stream: MediaStream) => void;
+    __hostHandlersSetup?: boolean;
   }
 }
