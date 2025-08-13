@@ -152,7 +152,7 @@ export const useParticipantManagement = ({
   // ETAPA 1: Registrar window.hostStreamCallback ANTES de qualquer setup WebRTC
   useEffect(() => {
     if (isHost && typeof window !== 'undefined') {
-      console.log('[HOST-CALLBACK-REGISTERED] Starting callback registration process');
+      console.log('HOST-CALLBACK-REGISTERED');
       
       // CRÍTICO: Inicializar registro de streams global como Map (consistente)
       if (!window.__mlStreams__) {
@@ -245,8 +245,7 @@ export const useParticipantManagement = ({
     
     return () => {
       console.log('🧹 WEBRTC DEBUG: Limpando callbacks WebRTC');
-      // CRÍTICO: NÃO remover window.hostStreamCallback - deve sobreviver ao ciclo da página
-      // window.hostStreamCallback e window.getParticipantStream devem persistir
+      // CRÍTICO: window.hostStreamCallback deve persistir - NUNCA limpar
     };
   }, [sessionId, handleParticipantJoin, debugCurrentState, isHost]);
 

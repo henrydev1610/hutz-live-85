@@ -52,7 +52,7 @@ function getOrCreatePC(participantId: string) {
     const videoTracks = stream?.getVideoTracks().length || 0;
     const audioTracks = stream?.getAudioTracks().length || 0;
     
-    console.log(`[HOST-ONTRACK] participantId=${participantId} streamId=${stream?.id}`);
+    console.log(`HOST-ONTRACK {participantId=${participantId}, streamId=${stream?.id}}`);
 
     if (stream) {
       try {
@@ -68,6 +68,7 @@ function getOrCreatePC(participantId: string) {
         // FAILSAFE: Sempre invocar callback se existir
         if (typeof window !== 'undefined' && window.hostStreamCallback) {
           window.hostStreamCallback(participantId, stream);
+          console.log(`HOST-CALLBACK-READY {participantId=${participantId}, streamId=${stream.id}}`);
         }
 
         // FAILSAFE: Sempre fazer postMessage para popup
@@ -110,6 +111,7 @@ export async function handleOfferFromParticipant(data: any) {
     return;
   }
 
+  console.log('HOST-OFFER-RECEIVED');
   console.log(`[HOST-RECV] webrtc-offer from=${participantId} sdpLen=${offer.sdp?.length || 0} signalingState=checking...`);
   console.log('📩 [HOST] Offer PADRONIZADO recebido de', participantId, {
     roomId: data.roomId,
@@ -164,6 +166,7 @@ export async function handleOfferFromParticipant(data: any) {
     }
 
     unifiedWebSocketService.sendWebRTCAnswer(participantId, answer.sdp!, answer.type);
+    console.log('HOST-ANSWER-SENT');
     console.log(`[HOST-ANSWER] sent to=${participantId} sdpLen=${answer.sdp?.length || 0}`);
     console.log('✅ [HOST] Answer PADRONIZADA enviada para', participantId);
   } catch (err) {

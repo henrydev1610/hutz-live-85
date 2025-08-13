@@ -72,7 +72,7 @@ function setupParticipantHandlers() {
   // FASE F: Receber solicitação de offer do host com GUARD
   unifiedWebSocketService.on('request-offer', async (data: any) => {
     const hostId = data?.fromUserId;
-    console.log('[PART-REQUEST-OFFER-RECEIVED] fromUserId=' + hostId);
+    console.log('PART-REQUEST-OFFER-RECEIVED');
     
     if (!hostId) {
       console.warn('⚠️ [PARTICIPANT] Solicitação de offer inválida:', data);
@@ -199,7 +199,7 @@ async function createAndSendOffer(hostId: string): Promise<void> {
     const stream = await ensureLocalStream();
     const videoTracks = stream.getVideoTracks().length;
     const audioTracks = stream.getAudioTracks().length;
-    console.log(`[PART-GUM-OK] v=${videoTracks} a=${audioTracks}`);
+    console.log(`PART-GUM-OK {v=${videoTracks}, a=${audioTracks}}`);
     
     // Adicionar tracks aos transceivers existentes
     const transceivers = participantPC.getTransceivers();
@@ -246,7 +246,7 @@ async function createAndSendOffer(hostId: string): Promise<void> {
     const offer = await participantPC.createOffer();
     await participantPC.setLocalDescription(offer);
     
-    console.log(`[PART-OFFER-CREATED] sdpLen=${offer.sdp?.length || 0}`);
+    console.log(`PART-OFFER-CREATED {sdpLen=${offer.sdp?.length || 0}}`);
     console.log('✅ [PARTICIPANT] Local description definida, novo state:', participantPC.signalingState);
     
     console.log('📤 [PARTICIPANT] Offer PADRONIZADA criada, enviando para host:', hostId);
@@ -255,6 +255,7 @@ async function createAndSendOffer(hostId: string): Promise<void> {
     const participantId = (unifiedWebSocketService as any).currentUserId;
     console.log(`[WS-SEND] webrtc-offer roomId=${roomId} from=${participantId} to=${hostId} sdpLen=${offer.sdp?.length || 0}`);
     unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type);
+    console.log('PART-OFFER-SENT');
 
   } catch (err) {
     console.error('❌ [PARTICIPANT] Erro criando offer:', err);

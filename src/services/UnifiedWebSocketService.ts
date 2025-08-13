@@ -34,6 +34,7 @@ class UnifiedWebSocketService {
   private currentRoomId: string | null = null;
   private currentUserId: string | null = null;
   private isConnecting: boolean = false;
+  private eventEmitter = new EventTarget();
   private metrics: ConnectionMetrics = {
     attemptCount: 0,
     lastAttempt: 0,
@@ -375,15 +376,25 @@ this.socket.on('ice-servers', (data) => {
   }));
 });
 
+    // CRITICAL: Add missing request-offer handler
+    this.socket.on('request-offer', (data: any) => {
+      console.log('🚀 [WS] Request-offer received:', data);
+      this.eventEmitter.dispatchEvent(new CustomEvent('request-offer', { detail: data }));
+    });
+
     this.socket.on('offer', (data: { offer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
       console.log('📞 OFFER received from:', data.fromUserId || data.fromSocketId);
       console.log(`[WS-RECV] webrtc-offer roomId=${this.currentRoomId || 'unknown'} from=${data.fromUserId || 'unknown'} to=${this.currentUserId || 'unknown'}`);
+      // CRITICAL: Map to expected event name
+      this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-offer', { detail: data }));
       this.callbacks.onOffer?.(data);
     });
 
     this.socket.on('answer', (data: { answer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
       console.log('✅ ANSWER received from:', data.fromUserId || data.fromSocketId);
       console.log(`[WS-RECV] webrtc-answer roomId=${this.currentRoomId || 'unknown'} from=${data.fromUserId || 'unknown'} to=${this.currentUserId || 'unknown'}`);
+      // CRITICAL: Map to expected event name
+      this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-answer', { detail: data }));
       this.callbacks.onAnswer?.(data);
     });
 
@@ -750,14 +761,11 @@ this.socket.on('ice-servers', (data) => {
     this.socket?.emit(event, data);
   }
 
-  on(event: string, callback: (...args: any[]) => void): void {
-    if (!this.socket) {
-      console.error(`Cannot listen to ${event}: not connected`);
-      return;
-    }
-
+  on(event: string, callback: (data: any) => void): void {
     console.log(`👂 WEBSOCKET: Listening to ${event}`);
-    this.socket.on(event, callback);
+    this.eventEmitter.addEventListener(event, (e: any) => {
+      callback(e.detail);
+    });
   }
 
   // FASE 1: Utilities
