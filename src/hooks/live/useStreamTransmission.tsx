@@ -20,23 +20,31 @@ export const useStreamTransmission = () => {
     transmissionWindowRef: MutableRefObject<Window | null>
   ) => {
     try {
-      // 1) GUARDA O STREAM NO HOST (janela atual)
+      // FASE C: Garantir ponte Host → Popup
       if (typeof window !== 'undefined') {
         if (!window.__mlStreams__) window.__mlStreams__ = new Map();
         window.__mlStreams__.set(participantId, stream);
 
-        // FASE 2: Implementar window.getParticipantStream()
+        // FASE C: Implementar window.getParticipantStream() de forma robusta
         if (typeof window.getParticipantStream !== 'function') {
           window.getParticipantStream = (id: string) => {
             const stream = window.__mlStreams__?.get(id) ?? null;
-            console.log('🔍 CRITICAL: getParticipantStream called for:', id, {
+            console.log('🔍 PONTE HOST→POPUP: getParticipantStream solicitado para:', id, {
               found: !!stream,
+              streamActive: stream?.active,
+              videoTracks: stream?.getVideoTracks().length || 0,
+              audioTracks: stream?.getAudioTracks().length || 0,
               mapSize: window.__mlStreams__?.size || 0,
               availableIds: Array.from(window.__mlStreams__?.keys() || [])
             });
             return stream;
           };
-          console.log('✅ CRITICAL: window.getParticipantStream registered globally');
+          console.log('✅ PONTE HOST→POPUP: window.getParticipantStream registrado globalmente');
+        }
+
+        // FASE C: Garantir que hostStreamCallback é ativo
+        if (typeof window.hostStreamCallback !== 'function') {
+          console.warn('⚠️ PONTE HOST→POPUP: window.hostStreamCallback não definido ainda');
         }
       }
 

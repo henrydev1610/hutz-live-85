@@ -88,22 +88,22 @@ export const useLivePageEffects = ({
           const { userId } = data;
           console.log('🎯 CRÍTICO: Processando conexão de participante:', userId);
           
-          // Verificar se é um participante válido
+          // FASE F: Verificar se é um participante válido e implementar fluxo determinístico
           if (userId && typeof userId === 'string' && userId.includes('participant-')) {
-            console.log('✅ PARTICIPANTE DETECTADO: Iniciando processo de conexão');
+            console.log('✅ PARTICIPANTE DETECTADO: Iniciando fluxo determinístico');
             
-            // Chamar handleParticipantJoin com forçar seleção
+            // Chamar handleParticipantJoin
             handleParticipantJoin(userId, {
               isMobile: true,
               selected: true,
               connectedAt: Date.now()
             });
             
-            // Forçar atualização da lista de participantes
+            // Atualizar lista de participantes
             setParticipantList(prev => {
               const existing = prev.find(p => p.id === userId);
               if (!existing) {
-                console.log('🆕 ADICIONANDO PARTICIPANTE:', userId);
+                console.log('🆕 FLUXO DETERMINÍSTICO: Adicionando participante:', userId);
                 return [...prev, {
                   id: userId,
                   name: `Mobile-${userId.substring(0, 8)}`,
@@ -122,6 +122,17 @@ export const useLivePageEffects = ({
                   : p
               );
             });
+
+            // FASE F: Solicitar offer após participante conectar (fluxo determinístico)
+            setTimeout(() => {
+              import('@/webrtc/handshake/HostHandshake').then(({ requestOfferFromParticipant }) => {
+                console.log('🚀 FLUXO DETERMINÍSTICO: Solicitando offer do participante:', userId);
+                requestOfferFromParticipant(userId);
+              }).catch(err => {
+                console.warn('⚠️ HOST: Erro ao solicitar offer:', err);
+              });
+            }, 1000); // Delay para garantir que o participante está pronto
+
           } else {
             console.log('ℹ️ HOST DETECTADO:', userId);
             handleParticipantJoin(userId);
@@ -170,11 +181,16 @@ export const useLivePageEffects = ({
         }
       });
 
-      // FASE 1: Initialize WebRTC with enhanced debug logging
-      console.log('🚀 FASE 1: HOST EFFECTS: Starting WebRTC initialization...');
+      // FASE D: Initialize WebRTC com handlers padronizados
+      console.log('🚀 WEBRTC INIT: Starting WebRTC initialization...');
       initHostWebRTC(sessionId).then(result => {
         if (result && result.webrtc) {
-          console.log('✅ FASE 1: HOST EFFECTS: WebRTC initialized successfully');
+          console.log('✅ WEBRTC INIT: WebRTC initialized successfully');
+
+          // FASE D: Garantir que os handlers WebRTC estão configurados
+          import('@/webrtc/handshake/HostHandshake').then(() => {
+            console.log('✅ HOST HANDSHAKE: Handlers padronizados carregados');
+          });
           
           // FASE 1: Verificar se o manager está disponível via getWebRTCManager
           const verifyManager = () => {
@@ -189,11 +205,34 @@ export const useLivePageEffects = ({
             throw new Error('WebRTC manager not accessible after initialization');
           }
           
-          // CORREÇÃO CRÍTICA: Registrar callbacks ANTES de qualquer inicialização
-          console.log(`🎯 HOST-CRITICAL-SEQUENCE: Registrando callbacks ANTES da inicialização WebRTC`);
+          // FASE C: Registrar window.hostStreamCallback para ponte host→popup
+          console.log(`🎯 PONTE HOST→POPUP: Registrando callbacks WebRTC`);
+          
+          // FASE C: Garantir que window.hostStreamCallback está ativo
+          if (typeof window !== 'undefined') {
+            window.hostStreamCallback = (participantId, stream) => {
+              console.log('🎥 PONTE HOST→POPUP: hostStreamCallback executado para:', participantId, {
+                streamId: stream.id,
+                trackCount: stream.getTracks().length,
+                videoTracks: stream.getVideoTracks().length,
+                active: stream.active,
+                timestamp: Date.now()
+              });
+              
+              // Processar no hook
+              handleParticipantStream(participantId, stream);
+              
+              // Atualizar transmissão
+              setTimeout(() => {
+                console.log('🔄 PONTE HOST→POPUP: Atualizando transmissão após stream');
+                updateTransmissionParticipants();
+              }, 300);
+            };
+            console.log('✅ PONTE HOST→POPUP: window.hostStreamCallback registrado');
+          }
           
           result.webrtc.setOnStreamCallback((participantId, stream) => {
-            console.log('🎥 HOST-CRÍTICO: STREAM callback executado para:', participantId, {
+            console.log('🎥 WEBRTC CALLBACK: Stream callback executado para:', participantId, {
               streamId: stream.id,
               trackCount: stream.getTracks().length,
               videoTracks: stream.getVideoTracks().length,
@@ -201,37 +240,20 @@ export const useLivePageEffects = ({
               timestamp: Date.now()
             });
             
-            // VISUAL LOG: Toast para stream recebido no host
+            // FASE E: Toast de validação
             toast({
-              title: "🎥 Host Stream Callback",
+              title: "🎥 Stream Recebido",
               description: `${participantId.substring(0, 8)} - ${stream.getTracks().length} tracks`,
             });
             
-            // VISUAL LOG: Evento customizado para debug
-            if (typeof window !== 'undefined' && window.dispatchEvent) {
-              window.dispatchEvent(new CustomEvent('host-stream-received', {
-                detail: { 
-                  participantId, 
-                  streamId: stream.id,
-                  trackCount: stream.getTracks().length,
-                  timestamp: Date.now()
-                }
-              }));
+            // FASE C: Chamar window.hostStreamCallback se definido
+            if (typeof window !== 'undefined' && window.hostStreamCallback) {
+              window.hostStreamCallback(participantId, stream);
+            } else {
+              // Fallback direto
+              handleParticipantStream(participantId, stream);
+              setTimeout(() => updateTransmissionParticipants(), 300);
             }
-            
-            handleParticipantStream(participantId, stream);
-            
-            // Atualizar transmissão imediatamente
-            setTimeout(() => {
-              console.log('🔄 HOST-CRÍTICO: Atualizando transmissão após receber stream');
-              updateTransmissionParticipants();
-              
-              // VISUAL LOG: Toast para atualização de transmissão
-              toast({
-                title: "📡 Transmissão Atualizada",
-                description: `Participante ${participantId.substring(0, 8)} adicionado à transmissão`,
-              });
-            }, 200);
           });
           
           result.webrtc.setOnParticipantJoinCallback((participantId) => {

@@ -681,6 +681,29 @@ this.socket.on('ice-servers', (data) => {
     this.socket?.emit('ice-candidate', legacyMessage);
   }
 
+  // FASE F: Solicitar offer do participante
+  requestOfferFromParticipant(participantId: string): void {
+    if (!this.isConnected()) {
+      console.error('Cannot request offer: not connected');
+      return;
+    }
+
+    if (!this.currentRoomId || !this.currentUserId) {
+      console.error('❌ Cannot request offer: Room or User context missing');
+      return;
+    }
+
+    const message = {
+      roomId: this.currentRoomId,
+      fromUserId: this.currentUserId,
+      targetUserId: participantId,
+      timestamp: Date.now()
+    };
+
+    console.log(`🚀 REQUESTING OFFER from participant: ${participantId}`);
+    this.socket?.emit('request-offer', message);
+  }
+
   isConnected(): boolean {
     return this.socket?.connected || false;
   }

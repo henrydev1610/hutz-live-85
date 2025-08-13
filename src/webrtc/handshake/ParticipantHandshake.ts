@@ -35,105 +35,132 @@ async function ensureLocalStream(): Promise<MediaStream> {
   return localStream;
 }
 
-// Handlers para eventos do host
+// FASE B: Participante como OFFERER - aguarda solicitação do host
 function setupParticipantHandlers() {
-  // Receber offer do host
-  unifiedWebSocketService.on('webrtc-offer', async (data: { from: string; sdp: string; type: string }) => {
-    const { from, sdp, type } = data;
-    console.log('📥 [PARTICIPANT] Offer recebido de:', from);
+  if (!unifiedWebSocketService) {
+    console.error('❌ [PARTICIPANT] unifiedWebSocketService não inicializado');
+    return;
+  }
+
+  // FASE F: Receber solicitação de offer do host
+  unifiedWebSocketService.on('request-offer', async (data: any) => {
+    const hostId = data?.fromUserId;
+    if (!hostId) {
+      console.warn('⚠️ [PARTICIPANT] Solicitação de offer inválida:', data);
+      return;
+    }
+
+    console.log('🚀 [PARTICIPANT] Solicitação de offer recebida do host:', hostId);
+    await createAndSendOffer(hostId);
+  });
+
+  // Receber answer do host
+  unifiedWebSocketService.on('webrtc-answer', async (data: any) => {
+    const hostId = data?.fromUserId;
+    const answer = data?.answer;
+
+    if (!hostId || !answer?.sdp || !answer?.type) {
+      console.warn('⚠️ [PARTICIPANT] Answer inválido - formato esperado: {fromUserId, answer:{sdp,type}}:', data);
+      return;
+    }
+
+    console.log('📥 [PARTICIPANT] Answer PADRONIZADO recebido do host:', hostId);
+
+    if (!participantPC) {
+      console.warn('⚠️ [PARTICIPANT] Answer recebido sem PC ativo');
+      return;
+    }
 
     try {
-      // Fechar conexão anterior se existir
-      if (participantPC) {
-        participantPC.close();
-      }
-
-      const config = getActiveWebRTCConfig();
-      
-      // FORÇAR TURN para validação (temporário)
-      const testConfig = {
-        ...config,
-        iceTransportPolicy: 'relay' as RTCIceTransportPolicy
-      };
-      
-      console.log('🧊 [PARTICIPANT] Configuração ICE para teste TURN:', {
-        iceServers: testConfig.iceServers?.length,
-        iceTransportPolicy: testConfig.iceTransportPolicy
-      });
-
-      participantPC = new RTCPeerConnection(testConfig);
-
-      // Obter stream local
-      const stream = await ensureLocalStream();
-      
-      // Adicionar tracks à conexão
-      stream.getTracks().forEach(track => {
-        console.log(`📡 [PARTICIPANT] Adicionando track ${track.kind} ao PC`);
-        participantPC!.addTrack(track, stream);
-      });
-
-      // ICE candidates com logs de tipo
-      participantPC.onicecandidate = (event) => {
-        if (event.candidate) {
-          const candidateType = /typ (\w+)/.exec(event.candidate.candidate)?.[1];
-          console.log(`🧊 [PARTICIPANT] ICE candidate tipo: ${candidateType}`, event.candidate.candidate);
-          
-          unifiedWebSocketService.sendWebRTCCandidate(from, event.candidate);
-        } else {
-          console.log('🧊 [PARTICIPANT] ICE gathering completo');
-        }
-      };
-
-      // Estados da conexão
-      participantPC.onconnectionstatechange = () => {
-        console.log('🔄 [PARTICIPANT] Connection state:', participantPC?.connectionState);
-      };
-
-      participantPC.oniceconnectionstatechange = () => {
-        console.log('🧊 [PARTICIPANT] ICE connection state:', participantPC?.iceConnectionState);
-      };
-
-      // Aplicar offer e criar answer
-      await participantPC.setRemoteDescription({ sdp, type } as RTCSessionDescriptionInit);
-      console.log('✅ [PARTICIPANT] Offer aplicado');
-
-      const answer = await participantPC.createAnswer();
-      await participantPC.setLocalDescription(answer);
-      console.log('📤 [PARTICIPANT] Local description definida, enviando answer');
-
-      unifiedWebSocketService.sendWebRTCAnswer(from, answer.sdp!, answer.type);
-      
-      console.log('✅ [PARTICIPANT] Answer enviado para:', from);
-
+      await participantPC.setRemoteDescription(answer);
+      console.log('✅ [PARTICIPANT] Answer aplicado, conexão estabelecida');
     } catch (err) {
-      console.error('❌ [PARTICIPANT] Erro no handshake:', err);
+      console.error('❌ [PARTICIPANT] Erro aplicando answer:', err);
     }
   });
 
   // Receber ICE candidates do host
-  unifiedWebSocketService.on('webrtc-candidate', async (data: { from: string; candidate: RTCIceCandidate }) => {
-    const { from, candidate } = data;
+  unifiedWebSocketService.on('webrtc-candidate', async (data: any) => {
+    const hostId = data?.fromUserId;
+    const candidate = data?.candidate;
     
     if (!participantPC || !candidate) {
-      console.warn('⚠️ [PARTICIPANT] PC ou candidate inválido de:', from);
+      console.warn('⚠️ [PARTICIPANT] PC ou candidate inválido de:', hostId);
       return;
     }
 
     try {
       await participantPC.addIceCandidate(candidate);
       const candidateType = /typ (\w+)/.exec(candidate.candidate)?.[1];
-      console.log(`🧊 [PARTICIPANT] ICE candidate adicionado de ${from}, tipo: ${candidateType}`);
+      console.log(`🧊 [PARTICIPANT] ICE candidate PADRONIZADO adicionado de ${hostId}, tipo: ${candidateType}`);
     } catch (err) {
-      console.warn('⚠️ [PARTICIPANT] Erro ao adicionar candidate de:', from, err);
+      console.warn('⚠️ [PARTICIPANT] Erro ao adicionar candidate de:', hostId, err);
     }
   });
 }
 
-// Inicializar handlers apenas uma vez
-if (!(window as any).__participantHandlersSetup) {
+// FASE B: Criar offer e enviar para o host
+async function createAndSendOffer(hostId: string): Promise<void> {
+  try {
+    // Fechar conexão anterior se existir
+    if (participantPC) {
+      participantPC.close();
+    }
+
+    const config = getActiveWebRTCConfig();
+    participantPC = new RTCPeerConnection(config);
+
+    // Obter stream local
+    const stream = await ensureLocalStream();
+    
+    // Adicionar tracks à conexão
+    stream.getTracks().forEach(track => {
+      console.log(`📡 [PARTICIPANT] Adicionando track ${track.kind} ao PC`);
+      participantPC!.addTrack(track, stream);
+    });
+
+    // ICE candidates
+    participantPC.onicecandidate = (event) => {
+      if (event.candidate) {
+        const candidateType = /typ (\w+)/.exec(event.candidate.candidate)?.[1];
+        console.log(`🧊 [PARTICIPANT] ICE candidate tipo: ${candidateType}`);
+        
+        unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
+      } else {
+        console.log('🧊 [PARTICIPANT] ICE gathering completo');
+      }
+    };
+
+    // Estados da conexão
+    participantPC.onconnectionstatechange = () => {
+      console.log('🔄 [PARTICIPANT] Connection state:', participantPC?.connectionState);
+    };
+
+    participantPC.oniceconnectionstatechange = () => {
+      console.log('🧊 [PARTICIPANT] ICE connection state:', participantPC?.iceConnectionState);
+    };
+
+    // Criar e enviar offer
+    const offer = await participantPC.createOffer();
+    await participantPC.setLocalDescription(offer);
+    
+    console.log('📤 [PARTICIPANT] Offer PADRONIZADA criada, enviando para host:', hostId);
+    unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type);
+
+  } catch (err) {
+    console.error('❌ [PARTICIPANT] Erro criando offer:', err);
+  }
+}
+
+// FASE D: Inicializar handlers apenas uma vez
+if (typeof window !== 'undefined' && !(window as any).__participantHandlersSetup) {
   setupParticipantHandlers();
   (window as any).__participantHandlersSetup = true;
+  console.log('✅ [PARTICIPANT] Handlers PADRONIZADOS inicializados');
 }
+
+// FASE F: Export para uso manual
+export { setupParticipantHandlers };
 
 // Helper para cleanup
 export function cleanupParticipantHandshake() {

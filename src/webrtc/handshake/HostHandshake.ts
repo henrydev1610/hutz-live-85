@@ -70,23 +70,23 @@ function getOrCreatePC(participantId: string) {
 }
 
 /**
- * Host recebe OFFER do participante, responde com ANSWER.
- * Aceita payloads nos formatos:
- *  - { from: string, sdp: string, type: string }
- *  - { fromUserId: string, offer: { sdp, type } }
- *  - { from: string, offer: { sdp, type } }
+ * FASE B: Host recebe OFFER do participante e responde com ANSWER
+ * Protocolo padronizado: { roomId, fromUserId, targetUserId, offer, timestamp }
  */
 export async function handleOfferFromParticipant(data: any) {
-  const participantId = data?.fromUserId || data?.from;
-  const offer: RTCSessionDescriptionInit =
-    data?.offer || (data?.sdp && data?.type ? { sdp: data.sdp, type: data.type } : null);
+  const participantId = data?.fromUserId;
+  const offer = data?.offer;
 
   if (!participantId || !offer?.sdp || !offer?.type) {
-    console.warn('⚠️ [HOST] Offer inválido:', data);
+    console.warn('⚠️ [HOST] Offer inválido - formato esperado: {fromUserId, offer:{sdp,type}}:', data);
     return;
   }
 
-  console.log('📩 [HOST] Offer recebido de', participantId, offer.type);
+  console.log('📩 [HOST] Offer PADRONIZADO recebido de', participantId, {
+    roomId: data.roomId,
+    offerType: offer.type,
+    timestamp: data.timestamp
+  });
 
   const pc = getOrCreatePC(participantId);
 
@@ -96,29 +96,29 @@ export async function handleOfferFromParticipant(data: any) {
 
   try {
     await pc.setRemoteDescription(offer);
+    console.log('✅ [HOST] Remote description aplicada');
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
+    console.log('✅ [HOST] Local description definida');
 
     unifiedWebSocketService.sendWebRTCAnswer(participantId, answer.sdp!, answer.type);
-    console.log('✅ [HOST] Answer enviada para', participantId);
+    console.log('✅ [HOST] Answer PADRONIZADA enviada para', participantId);
   } catch (err) {
     console.error('❌ [HOST] Erro processando offer de', participantId, err);
   }
 }
 
 /**
- * Host recebe CANDIDATE do participante.
- * Aceita payloads nos formatos:
- *  - { from: string, candidate: RTCIceCandidateInit }
- *  - { fromUserId: string, candidate: RTCIceCandidateInit }
- *  - { from: string, iceCandidate: RTCIceCandidateInit }
+ * FASE B: Host recebe CANDIDATE do participante
+ * Protocolo padronizado: { roomId, fromUserId, targetUserId, candidate, timestamp }
  */
 export async function handleRemoteCandidate(data: any) {
-  const participantId = data?.fromUserId || data?.from;
-  const candidate: RTCIceCandidateInit = data?.candidate || data?.iceCandidate;
+  const participantId = data?.fromUserId;
+  const candidate = data?.candidate;
 
   if (!participantId || !candidate) {
-    console.warn('⚠️ [HOST] Candidate inválido:', data);
+    console.warn('⚠️ [HOST] Candidate inválido - formato esperado: {fromUserId, candidate}:', data);
     return;
   }
 
@@ -131,24 +131,43 @@ export async function handleRemoteCandidate(data: any) {
   try {
     logIceType('🧊 [PART→HOST]', candidate.candidate);
     await pc.addIceCandidate(candidate);
+    console.log('✅ [HOST] ICE candidate PADRONIZADO adicionado de', participantId);
   } catch (err) {
     console.error('❌ [HOST] addIceCandidate falhou para', participantId, err);
   }
 }
 
-/** Registra listeners de sinalização no socket (uma vez) */
+/** FASE D: Registra listeners de sinalização no socket (uma vez) */
 function setupHostHandlers() {
+  if (!unifiedWebSocketService) {
+    console.error('❌ [HOST] unifiedWebSocketService não inicializado');
+    return;
+  }
+
   // Participante → HOST: offer
   unifiedWebSocketService.on('webrtc-offer', (payload: any) => {
+    console.log('📥 [HOST] Recebendo webrtc-offer:', payload);
     handleOfferFromParticipant(payload);
   });
 
   // Participante → HOST: candidate
   unifiedWebSocketService.on('webrtc-candidate', (payload: any) => {
+    console.log('📥 [HOST] Recebendo webrtc-candidate:', payload);
     handleRemoteCandidate(payload);
   });
 
-  console.log('📡 [HOST] Handlers de sinalização registrados (offer, candidate).');
+  console.log('📡 [HOST] Handlers de sinalização PADRONIZADOS registrados');
+}
+
+/** FASE F: Solicitar offer de um participante específico */
+export function requestOfferFromParticipant(participantId: string) {
+  if (!unifiedWebSocketService) {
+    console.error('❌ [HOST] unifiedWebSocketService não disponível');
+    return;
+  }
+
+  console.log('🚀 [HOST] Solicitando offer do participante:', participantId);
+  unifiedWebSocketService.requestOfferFromParticipant(participantId);
 }
 
 // Inicializa handlers uma vez

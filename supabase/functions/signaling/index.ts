@@ -233,11 +233,84 @@ serve(async (req) => {
           timestamp: Date.now()
         }));
         break;
+
+      // FASE A: Protocolo WebRTC Padronizado
+      case 'webrtc-offer':
+        if (message.targetUserId && room.connections.has(message.targetUserId)) {
+          const targetConnection = room.connections.get(message.targetUserId);
+          if (targetConnection && targetConnection.readyState === WebSocket.OPEN) {
+            const forwardedMessage = {
+              type: 'webrtc-offer',
+              roomId: message.roomId,
+              fromUserId: message.fromUserId || peerId,
+              targetUserId: message.targetUserId,
+              offer: message.offer,
+              timestamp: message.timestamp || Date.now()
+            };
+            console.log(`📞 [SERVER] Forwarding webrtc-offer: ${peerId} → ${message.targetUserId}`);
+            targetConnection.send(JSON.stringify(forwardedMessage));
+          }
+        }
+        break;
+
+      case 'webrtc-answer':
+        if (message.targetUserId && room.connections.has(message.targetUserId)) {
+          const targetConnection = room.connections.get(message.targetUserId);
+          if (targetConnection && targetConnection.readyState === WebSocket.OPEN) {
+            const forwardedMessage = {
+              type: 'webrtc-answer',
+              roomId: message.roomId,
+              fromUserId: message.fromUserId || peerId,
+              targetUserId: message.targetUserId,
+              answer: message.answer,
+              timestamp: message.timestamp || Date.now()
+            };
+            console.log(`✅ [SERVER] Forwarding webrtc-answer: ${peerId} → ${message.targetUserId}`);
+            targetConnection.send(JSON.stringify(forwardedMessage));
+          }
+        }
+        break;
+
+      case 'webrtc-candidate':
+        if (message.targetUserId && room.connections.has(message.targetUserId)) {
+          const targetConnection = room.connections.get(message.targetUserId);
+          if (targetConnection && targetConnection.readyState === WebSocket.OPEN) {
+            const forwardedMessage = {
+              type: 'webrtc-candidate',
+              roomId: message.roomId,
+              fromUserId: message.fromUserId || peerId,
+              targetUserId: message.targetUserId,
+              candidate: message.candidate,
+              timestamp: message.timestamp || Date.now()
+            };
+            console.log(`🧊 [SERVER] Forwarding webrtc-candidate: ${peerId} → ${message.targetUserId}`);
+            targetConnection.send(JSON.stringify(forwardedMessage));
+          }
+        }
+        break;
+
+      // FASE F: Solicitação de offer
+      case 'request-offer':
+        if (message.targetUserId && room.connections.has(message.targetUserId)) {
+          const targetConnection = room.connections.get(message.targetUserId);
+          if (targetConnection && targetConnection.readyState === WebSocket.OPEN) {
+            const forwardedMessage = {
+              type: 'request-offer',
+              roomId: message.roomId,
+              fromUserId: message.fromUserId || peerId,
+              targetUserId: message.targetUserId,
+              timestamp: message.timestamp || Date.now()
+            };
+            console.log(`🚀 [SERVER] Forwarding request-offer: ${peerId} → ${message.targetUserId}`);
+            targetConnection.send(JSON.stringify(forwardedMessage));
+          }
+        }
+        break;
         
       case 'offer':
       case 'answer':
       case 'candidate':
-        // Forward signaling messages to the target peer
+        // Forward signaling messages to the target peer (legacy support)
         if (message.targetId && room.connections.has(message.targetId)) {
           const targetConnection = room.connections.get(message.targetId);
           if (targetConnection && targetConnection.readyState === WebSocket.OPEN) {
