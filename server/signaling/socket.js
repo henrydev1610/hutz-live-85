@@ -1,4 +1,9 @@
-// Armazenamento das conexões e salas
+// New WebRTC routing maps for direct connections
+const hostByRoom = new Map(); // roomId → hostSocketId
+const participantSocket = new Map(); // participantId → socketId
+const socketToUser = new Map(); // socketId → {roomId, userId, role, joinedAt}
+
+// Legacy maps for compatibility
 const connections = new Map(); // socketId -> { roomId, userId, socketRef }
 const rooms = new Map(); // roomId -> Set of socketIds
 
@@ -153,7 +158,36 @@ const initializeSocketHandlers = (io) => {
           }
         }
 
-        // Armazenar conexão com enhanced metadata
+        // Detect role: host vs participant based on userId
+        const isHost = userId.includes('host') || userId.startsWith('host-');
+        const role = isHost ? 'host' : 'participant';
+
+        // Update new routing maps for direct WebRTC routing
+        if (isHost) {
+          const oldHostSocketId = hostByRoom.get(roomId);
+          if (oldHostSocketId && oldHostSocketId !== socket.id) {
+            console.log(`⚠️ HOST-REPLACE: Room ${roomId} old=${oldHostSocketId} new=${socket.id}`);
+          }
+          hostByRoom.set(roomId, socket.id);
+          console.log(`SERVER-HOST-SOCKET-SET roomId=${roomId} socketId=${socket.id}`);
+        } else {
+          const oldSocketId = participantSocket.get(userId);
+          if (oldSocketId && oldSocketId !== socket.id) {
+            console.log(`PARTICIPANT-REJOIN ${userId} oldSocket=${oldSocketId} newSocket=${socket.id}`);
+          }
+          participantSocket.set(userId, socket.id);
+          console.log(`SERVER-PARTICIPANT-SOCKET-SET participantId=${userId} socketId=${socket.id}`);
+        }
+
+        // Update socketToUser mapping
+        socketToUser.set(socket.id, {
+          roomId,
+          userId,
+          role,
+          joinedAt: Date.now()
+        });
+
+        // Legacy connections (keep for compatibility)
         connections.set(socket.id, {
           roomId,
           userId,
@@ -468,15 +502,35 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
       try {
         const connection = connections.get(socket.id);
+        const userInfo = socketToUser.get(socket.id);
 
-        if (connection) {
-          const { roomId, userId } = connection;
+        if (connection || userInfo) {
+          const roomId = connection?.roomId || userInfo?.roomId;
+          const userId = connection?.userId || userInfo?.userId;
+          const role = userInfo?.role || 'unknown';
 
-          console.log(`🔌 User ${userId} disconnecting from room ${roomId}`);
+          console.log(`🔌 User ${userId} disconnecting from room ${roomId} (reason: ${reason})`);
 
+          // Clean up new routing maps
+          if (userInfo) {
+            if (userInfo.role === 'host') {
+              if (hostByRoom.get(roomId) === socket.id) {
+                hostByRoom.delete(roomId);
+                console.log(`HOST-SOCKET-DISCONNECTED roomId=${roomId} socketId=${socket.id} reason=${reason}`);
+              }
+            } else {
+              if (participantSocket.get(userId) === socket.id) {
+                participantSocket.delete(userId);
+                console.log(`PARTICIPANT-SOCKET-DISCONNECTED participantId=${userId} socketId=${socket.id} reason=${reason}`);
+              }
+            }
+            socketToUser.delete(socket.id);
+          }
+
+          // Legacy cleanup
           const roomSockets = rooms.get(roomId);
           if (roomSockets) {
             roomSockets.delete(socket.id);
@@ -490,12 +544,20 @@ const initializeSocketHandlers = (io) => {
           socket.to(roomId).emit('user-disconnected', {
             userId,
             socketId: socket.id,
+            timestamp: Date.now(),
+            reason
+          });
+
+          // Emit participant-left with detailed info
+          socket.to(roomId).emit('participant-left', {
+            participantId: userId,
+            reason,
             timestamp: Date.now()
           });
 
           connections.delete(socket.id);
 
-          console.log(`❌ User ${userId} disconnected from room ${roomId}`);
+          console.log(`SERVER-DISCONNECT userId=${userId} roomId=${roomId} role=${role} reason=${reason}`);
           logConnectionMetrics();
         }
 
@@ -504,42 +566,66 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
-    // FASE 3: Handlers WebRTC críticos para handshake
+    // LEGACY: Keep old handlers for backward compatibility (simplified)
+
+    // NEW: Direct WebRTC routing with in-memory maps
+    socket.on('webrtc-request-offer', (data) => {
+      try {
+        const { roomId, participantId } = data;
+        const userInfo = socketToUser.get(socket.id);
+
+        if (!userInfo || userInfo.roomId !== roomId) {
+          socket.emit('error', { message: 'Not in room for WebRTC request-offer' });
+          return;
+        }
+
+        // Direct participant lookup via map
+        const targetSocketId = participantSocket.get(participantId);
+        
+        if (targetSocketId) {
+          console.log(`SERVER-REQUEST-OFFER-ROUTED roomId=${roomId} participantId=${participantId} socketId=${targetSocketId}`);
+          socket.to(targetSocketId).emit('webrtc-request-offer', {
+            fromSocketId: socket.id,
+            fromUserId: userInfo.userId,
+            roomId
+          });
+        } else {
+          console.log(`SERVER-MISSING-PARTICIPANT roomId=${roomId} participantId=${participantId}`);
+          socket.emit('webrtc-participant-missing', { roomId, participantId });
+        }
+
+      } catch (error) {
+        console.error('Error in webrtc-request-offer:', error);
+        socket.emit('error', { message: 'Failed to send webrtc-request-offer' });
+      }
+    });
+
+    // NEW: Direct offer routing from participant to host
     socket.on('webrtc-offer', (data) => {
       try {
-        const { roomId, targetUserId, offer, fromUserId } = data;
-        const connection = connections.get(socket.id);
+        const { roomId, offer } = data;
+        const userInfo = socketToUser.get(socket.id);
 
-        if (!connection || connection.roomId !== roomId) {
+        if (!userInfo || userInfo.roomId !== roomId) {
           socket.emit('error', { message: 'Not in room for WebRTC offer' });
           return;
         }
 
-        connection.lastSeen = Date.now();
-        console.log(`🎯 WEBRTC-OFFER: ${fromUserId || connection.userId} -> ${targetUserId}`);
-
-        // Encontrar socket do participante alvo
-        let targetSocketId = null;
-        const roomSockets = rooms.get(roomId);
-        if (roomSockets) {
-          for (const socketId of roomSockets) {
-            const conn = connections.get(socketId);
-            if (conn && conn.userId === targetUserId) {
-              targetSocketId = socketId;
-              break;
-            }
-          }
-        }
-
-        if (targetSocketId) {
-          socket.to(targetSocketId).emit('webrtc-offer', {
+        // Direct host lookup via map
+        const hostSocketId = hostByRoom.get(roomId);
+        const sdpLen = offer?.sdp?.length || 0;
+        
+        if (hostSocketId) {
+          console.log(`SERVER-FWD-OFFER roomId=${roomId} participantId=${userInfo.userId} hostSocketId=${hostSocketId} sdpLen=${sdpLen}`);
+          socket.to(hostSocketId).emit('webrtc-offer', {
             offer,
             fromSocketId: socket.id,
-            fromUserId: connection.userId
+            fromUserId: userInfo.userId,
+            participantId: userInfo.userId
           });
-          console.log(`✅ WEBRTC-OFFER: Encaminhado para ${targetUserId}`);
         } else {
-          console.warn(`❌ WEBRTC-OFFER: Target ${targetUserId} não encontrado`);
+          console.log(`SERVER-MISSING-HOST roomId=${roomId} participantId=${userInfo.userId}`);
+          socket.emit('webrtc-host-missing', { roomId, participantId: userInfo.userId });
         }
 
       } catch (error) {
@@ -548,41 +634,30 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
+    // NEW: Direct answer routing from host to participant
     socket.on('webrtc-answer', (data) => {
       try {
-        const { roomId, targetUserId, answer, fromUserId } = data;
-        const connection = connections.get(socket.id);
+        const { roomId, participantId, answer } = data;
+        const userInfo = socketToUser.get(socket.id);
 
-        if (!connection || connection.roomId !== roomId) {
+        if (!userInfo || userInfo.roomId !== roomId) {
           socket.emit('error', { message: 'Not in room for WebRTC answer' });
           return;
         }
 
-        connection.lastSeen = Date.now();
-        console.log(`🎯 WEBRTC-ANSWER: ${fromUserId || connection.userId} -> ${targetUserId}`);
-
-        // Encontrar socket do participante alvo
-        let targetSocketId = null;
-        const roomSockets = rooms.get(roomId);
-        if (roomSockets) {
-          for (const socketId of roomSockets) {
-            const conn = connections.get(socketId);
-            if (conn && conn.userId === targetUserId) {
-              targetSocketId = socketId;
-              break;
-            }
-          }
-        }
-
+        // Direct participant lookup via map
+        const targetSocketId = participantSocket.get(participantId);
+        
         if (targetSocketId) {
+          console.log(`SERVER-FWD-ANSWER roomId=${roomId} participantId=${participantId} socketId=${targetSocketId}`);
           socket.to(targetSocketId).emit('webrtc-answer', {
             answer,
             fromSocketId: socket.id,
-            fromUserId: connection.userId
+            fromUserId: userInfo.userId
           });
-          console.log(`✅ WEBRTC-ANSWER: Encaminhado para ${targetUserId}`);
         } else {
-          console.warn(`❌ WEBRTC-ANSWER: Target ${targetUserId} não encontrado`);
+          console.log(`SERVER-MISSING-PARTICIPANT roomId=${roomId} participantId=${participantId}`);
+          socket.emit('webrtc-participant-missing', { roomId, participantId });
         }
 
       } catch (error) {
@@ -591,41 +666,39 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
+    // NEW: Direct ICE candidate routing
     socket.on('webrtc-candidate', (data) => {
       try {
-        const { roomId, targetUserId, candidate, fromUserId } = data;
-        const connection = connections.get(socket.id);
+        const { roomId, targetUserId, candidate } = data;
+        const userInfo = socketToUser.get(socket.id);
 
-        if (!connection || connection.roomId !== roomId) {
+        if (!userInfo || userInfo.roomId !== roomId) {
           socket.emit('error', { message: 'Not in room for WebRTC candidate' });
           return;
         }
 
-        connection.lastSeen = Date.now();
-        console.log(`🧊 WEBRTC-CANDIDATE: ${fromUserId || connection.userId} -> ${targetUserId}`);
+        const candidateType = candidate?.candidate?.includes('typ') ? 
+          candidate.candidate.split(' ').find(part => part.startsWith('typ'))?.split(' ')[1] || 'unknown' : 'unknown';
 
-        // Encontrar socket do participante alvo
+        // Route to target via direct lookup
         let targetSocketId = null;
-        const roomSockets = rooms.get(roomId);
-        if (roomSockets) {
-          for (const socketId of roomSockets) {
-            const conn = connections.get(socketId);
-            if (conn && conn.userId === targetUserId) {
-              targetSocketId = socketId;
-              break;
-            }
-          }
+        if (userInfo.role === 'host') {
+          // Host sending to participant
+          targetSocketId = participantSocket.get(targetUserId);
+        } else {
+          // Participant sending to host
+          targetSocketId = hostByRoom.get(roomId);
         }
-
+        
         if (targetSocketId) {
+          console.log(`ICE-CANDIDATE-SENT roomId=${roomId} from=${userInfo.userId} to=${targetUserId} type=${candidateType}`);
           socket.to(targetSocketId).emit('webrtc-candidate', {
             candidate,
             fromSocketId: socket.id,
-            fromUserId: connection.userId
+            fromUserId: userInfo.userId
           });
-          console.log(`✅ WEBRTC-CANDIDATE: Encaminhado para ${targetUserId}`);
         } else {
-          console.warn(`❌ WEBRTC-CANDIDATE: Target ${targetUserId} não encontrado`);
+          console.log(`SERVER-MISSING-TARGET roomId=${roomId} targetUserId=${targetUserId}`);
         }
 
       } catch (error) {
@@ -634,7 +707,7 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
-    // CRÍTICO: Handler para request-offer (host solicita offer do participante)
+    // LEGACY: Keep old handlers for backward compatibility
     socket.on('request-offer', (data) => {
       try {
         const { roomId, targetUserId, fromUserId } = data;

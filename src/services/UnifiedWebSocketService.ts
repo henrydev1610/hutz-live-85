@@ -381,10 +381,27 @@ this.socket.on('ice-servers', (data) => {
   }));
 });
 
-    // CRITICAL: Add missing request-offer handler
+    // NEW: WebRTC request-offer handler for direct routing
+    this.socket.on('webrtc-request-offer', (data: any) => {
+      console.log('🚀 [WS] WebRTC request-offer received:', data);
+      this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-request-offer', { detail: data }));
+    });
+
+    // LEGACY: Keep old handler for backward compatibility
     this.socket.on('request-offer', (data: any) => {
-      console.log('🚀 [WS] Request-offer received:', data);
-      this.eventEmitter.dispatchEvent(new CustomEvent('request-offer', { detail: data }));
+      console.log('🚀 [WS] Legacy request-offer received:', data);
+      this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-request-offer', { detail: data }));
+    });
+
+    // NEW: Handle missing participant/host events for UI resilience
+    this.socket.on('webrtc-participant-missing', (data: any) => {
+      console.log(`⚠️ [WS] Participant missing: ${data.participantId} in room ${data.roomId}`);
+      this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-participant-missing', { detail: data }));
+    });
+
+    this.socket.on('webrtc-host-missing', (data: any) => {
+      console.log(`⚠️ [WS] Host missing in room ${data.roomId} for participant ${data.participantId}`);
+      this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-host-missing', { detail: data }));
     });
 
     this.socket.on('offer', (data: { offer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
@@ -712,15 +729,22 @@ this.socket.on('ice-servers', (data) => {
       timestamp: Date.now()
     };
     
-    this.socket!.emit('request-offer', requestData);
-    console.log('✅ [WS] Solicitação de offer enviada para:', participantId);
+    // NEW: Use new direct routing event 
+    const newRequestData = {
+      roomId: this.currentRoomId,
+      participantId,
+      timestamp: Date.now()
+    };
+    
+    this.socket!.emit('webrtc-request-offer', newRequestData);
+    console.log('HOST-REQUEST-OFFER-SENT');
     console.log(`[WS-SEND] webrtc-request-offer roomId=${this.currentRoomId} from=${this.currentUserId} to=${participantId}`);
     
     // ETAPA 3: Implementar timeout e retry para offer request
     setTimeout(() => {
       console.log('🔄 [WS] Retry: Reenviando solicitação de offer para:', participantId);
       if (this.socket?.connected) {
-        this.socket.emit('request-offer', requestData);
+        this.socket.emit('webrtc-request-offer', newRequestData);
       }
     }, 5000); // Retry após 5s se não receber offer
   }

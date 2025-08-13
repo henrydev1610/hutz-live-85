@@ -68,8 +68,8 @@ function setupParticipantHandlers() {
     return;
   }
 
-  // FASE F: Receber solicitação de offer do host com GUARD
-  unifiedWebSocketService.on('request-offer', async (data: any) => {
+  // NEW: Listen for direct WebRTC request-offer
+  unifiedWebSocketService.on('webrtc-request-offer', async (data: any) => {
     const hostId = data?.fromUserId;
     console.log('PART-REQUEST-OFFER-RECEIVED');
     
