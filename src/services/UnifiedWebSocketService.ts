@@ -324,32 +324,27 @@ class UnifiedWebSocketService {
       const { userId } = data;
       console.log('🔍 CRÍTICO: Disparando eventos de descoberta para:', userId);
       
-      // ETAPA 1: REMOVIDO - Host não deve iniciar handshake automaticamente
-      // O host deve apenas aguardar e responder ofertas do participant
+      // ETAPA 3: Disparar evento de descoberta para que host solicite offer IMEDIATAMENTE
+      console.log('🔄 DISCOVERY: Enviando participant-joined via callback');
+      this.callbacks.onUserConnected?.(data);
       
-      // Disparar múltiplos eventos para garantir detecção
-      setTimeout(() => {
-        console.log('🔄 DISCOVERY: Enviando participant-joined via callback');
-        this.callbacks.onUserConnected?.(data);
-        
-        // Disparar evento customizado também
-        window.dispatchEvent(new CustomEvent('participant-discovered', {
-          detail: { participantId: userId, timestamp: data.timestamp }
-        }));
-        
-        // BroadcastChannel para comunicação cross-tab
-        try {
-          const bc = new BroadcastChannel('participant-discovery');
-          bc.postMessage({
-            type: 'participant-joined',
-            participantId: userId,
-            timestamp: data.timestamp
-          });
-          bc.close();
-        } catch (error) {
-          console.warn('⚠️ BroadcastChannel não disponível:', error);
-        }
-      }, 100);
+      // CRÍTICO: Disparar evento customizado IMEDIATAMENTE (sem timeout)
+      window.dispatchEvent(new CustomEvent('participant-discovered', {
+        detail: { participantId: userId, timestamp: data.timestamp }
+      }));
+      
+      // BroadcastChannel para comunicação cross-tab
+      try {
+        const bc = new BroadcastChannel('participant-discovery');
+        bc.postMessage({
+          type: 'participant-joined',
+          participantId: userId,
+          timestamp: data.timestamp
+        });
+        bc.close();
+      } catch (error) {
+        console.warn('⚠️ BroadcastChannel não disponível:', error);
+      }
     });
 
     this.socket.on('user-disconnected', (userId: string) => {
@@ -668,10 +663,11 @@ this.socket.on('ice-servers', (data) => {
     this.socket?.emit('ice-candidate', legacyMessage);
   }
 
-  // FASE F: Solicitar offer do participante
+  // FASE F: Solicitar offer do participante com RETRY
   requestOfferFromParticipant(participantId: string): void {
+    console.log('🚀 [WS] Solicitando offer do participante:', participantId);
     if (!this.isConnected()) {
-      console.error('Cannot request offer: not connected');
+      console.error('❌ [WS] Socket não conectado para solicitar offer');
       return;
     }
 
@@ -680,15 +676,24 @@ this.socket.on('ice-servers', (data) => {
       return;
     }
 
-    const message = {
-      roomId: this.currentRoomId,
-      fromUserId: this.currentUserId,
+    // Enviar solicitação de offer para participante específico
+    const requestData = {
       targetUserId: participantId,
+      fromUserId: this.currentUserId || 'host',
+      roomId: this.currentRoomId,
       timestamp: Date.now()
     };
-
-    console.log(`🚀 REQUESTING OFFER from participant: ${participantId}`);
-    this.socket?.emit('request-offer', message);
+    
+    this.socket!.emit('request-offer', requestData);
+    console.log('✅ [WS] Solicitação de offer enviada para:', participantId);
+    
+    // ETAPA 3: Implementar timeout e retry para offer request
+    setTimeout(() => {
+      console.log('🔄 [WS] Retry: Reenviando solicitação de offer para:', participantId);
+      if (this.socket?.connected) {
+        this.socket.emit('request-offer', requestData);
+      }
+    }, 5000); // Retry após 5s se não receber offer
   }
 
   isConnected(): boolean {

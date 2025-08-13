@@ -11,6 +11,7 @@ import { useWebRTCBridge } from './useWebRTCBridge';
 import { useWebRTCDebugLogger } from './useWebRTCDebugLogger';
 import { useWebRTCConnectionBridge } from './useWebRTCConnectionBridge';
 import { useWebRTCAutoRetry } from './useWebRTCAutoRetry';
+import { useConnectionHealthMonitor } from './useConnectionHealthMonitor';
 import { clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
@@ -55,6 +56,14 @@ export const useParticipantManagement = ({
     sessionId,
     participantStreams,
     participantList
+  });
+
+  // ETAPA 4: Monitor de saúde da conexão
+  const { getConnectionHealth, forceConnectionRecovery, checkConnectionHealth } = useConnectionHealthMonitor({
+    sessionId,
+    participantStreams,
+    participantList,
+    isHost
   });
   
   // DEBUG LOGGER: Monitoramento WebRTC
@@ -179,6 +188,32 @@ export const useParticipantManagement = ({
     }
   }, [isHost]);
 
+  // ETAPA 3: Lidar com detecção de participantes e solicitar offer IMEDIATAMENTE
+  useEffect(() => {
+    if (!isHost) return;
+
+    const handleParticipantDiscovered = (event: CustomEvent) => {
+      const { participantId } = event.detail;
+      console.log('🔍 DETECÇÃO: Participante descoberto:', participantId);
+      
+      // ETAPA 3: Solicitar offer IMEDIATAMENTE
+      setTimeout(() => {
+        console.log('🚀 CRÍTICO: Solicitando offer do participante:', participantId);
+        
+        // Importar e usar HostHandshake
+        import('@/webrtc/handshake/HostHandshake').then(({ requestOfferFromParticipant }) => {
+          requestOfferFromParticipant(participantId);
+        });
+      }, 100); // Delay mínimo de 100ms
+    };
+
+    window.addEventListener('participant-discovered', handleParticipantDiscovered as EventListener);
+    
+    return () => {
+      window.removeEventListener('participant-discovered', handleParticipantDiscovered as EventListener);
+    };
+  }, [isHost]);
+
   // Set up WebRTC callbacks APÓS o registro da ponte
   useEffect(() => {
     console.log('🔧 WEBRTC DEBUG: ===== CONFIGURANDO CALLBACKS =====');
@@ -274,6 +309,11 @@ export const useParticipantManagement = ({
     debugConnectionBridge,
     debugAutoRetry,
     forceRetry,
-    scheduleRetry
+    scheduleRetry,
+    
+    // ETAPA 4: Health monitoring
+    getConnectionHealth,
+    forceConnectionRecovery,
+    checkConnectionHealth
   };
 };

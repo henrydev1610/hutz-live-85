@@ -237,11 +237,8 @@ export function cleanupHostHandshake(participantId: string) {
   }
 }
 
-/** ETAPA 2: REMOVIDO - Host nunca cria offers */
-export async function startHostHandshakeFor(_participantId: string) {
-  console.error('❌ [HOST] startHostHandshakeFor() REMOVIDO - Host nunca deve criar offers!');
-  throw new Error('HOST NUNCA DEVE CRIAR OFFERS - Use requestOfferFromParticipant()');
-}
+/** ETAPA 2: REMOVIDO DEFINITIVAMENTE - Host nunca cria offers */
+// export async function startHostHandshakeFor() - FUNÇÃO REMOVIDA PERMANENTEMENTE
 
 // Tipagem global
 declare global {

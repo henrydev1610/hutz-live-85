@@ -291,4 +291,35 @@ export const useLivePageEffects = ({
       }, 300);
     }
   }, [participantStreams, participantList, transmissionOpen]);
+
+  // ETAPA 5: Logs de validação contínuos
+  useEffect(() => {
+    const logInterval = setInterval(() => {
+      const diagnosticLogs = {
+        timestamp: new Date().toISOString(),
+        sessionId: sessionId?.substring(0, 8) + '...',
+        participantCount: participantList.length,
+        streamCount: Object.keys(participantStreams).length,
+        hostCallbackRegistered: typeof (window as any).hostStreamCallback === 'function',
+        getParticipantStreamRegistered: typeof (window as any).getParticipantStream === 'function',
+        mlStreamsCache: Object.keys((window as any).__mlStreams__ || {}).length,
+        webSocketConnected: unifiedWebSocketService?.isConnected() || false,
+        activePeerConnections: Object.keys((window as any).__activePeerConnections__ || {}).length
+      };
+      
+      console.log('📊 DIAGNÓSTICO CONTÍNUO:', diagnosticLogs);
+      
+      // Alert em caso de problemas críticos
+      if (participantList.length > 0 && Object.keys(participantStreams).length === 0) {
+        console.warn('⚠️ PROBLEMA CRÍTICO: Participantes conectados mas sem streams!');
+      }
+      
+      if (sessionId && !unifiedWebSocketService?.isConnected()) {
+        console.warn('⚠️ PROBLEMA CRÍTICO: WebSocket desconectado!');
+      }
+      
+    }, 30000); // Log a cada 30s
+    
+    return () => clearInterval(logInterval);
+  }, [sessionId, participantList, participantStreams]);
 };
