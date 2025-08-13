@@ -62,13 +62,34 @@ function getOrCreatePC(participantId: string) {
             window.__mlStreams__ = new Map();
           }
           window.__mlStreams__.set(participantId, stream);
-          console.log(`[HOST-ONTRACK] stream saved to __mlStreams__ participantId=${participantId} mapSize=${window.__mlStreams__.size}`);
+          console.log(`HOST-STREAM-SAVED {id=${participantId}, streamId=${stream.id}, tracks=${stream.getTracks().length}}`);
+        }
+
+        // Setup track health monitoring and end tracking
+        if (stream.getVideoTracks().length > 0) {
+          const videoTrack = stream.getVideoTracks()[0];
+          videoTrack.onended = () => {
+            console.log(`HOST-TRACK-ENDED {id=${participantId}}`);
+          };
+          
+          // Start periodic health monitoring
+          const healthInterval = setInterval(() => {
+            const videoElement = document.querySelector(`[data-participant-id="${participantId}"] video`) as HTMLVideoElement;
+            if (videoElement && !videoTrack.muted && videoTrack.readyState) {
+              console.log(`HOST-STREAM-HEALTH {id=${participantId}, videoReady=${videoElement.readyState}, trackState=${videoTrack.readyState}, muted=${videoTrack.muted}, enabled=${videoTrack.enabled}}`);
+            }
+          }, 5000);
+          
+          // Clean up interval when track ends
+          videoTrack.addEventListener('ended', () => {
+            clearInterval(healthInterval);
+          });
         }
 
         // FAILSAFE: Sempre invocar callback se existir
         if (typeof window !== 'undefined' && window.hostStreamCallback) {
           window.hostStreamCallback(participantId, stream);
-          console.log(`HOST-CALLBACK-READY {participantId=${participantId}, streamId=${stream.id}}`);
+          console.log(`HOST-CALLBACK-CALLED {id=${participantId}, streamId=${stream.id}}`);
         }
 
         // FAILSAFE: Sempre fazer postMessage para popup

@@ -73,8 +73,13 @@ export const useUnifiedVideoCreation = () => {
     // Add to DOM first
     container.appendChild(videoElement);
     
-    // Set stream
+    // Set stream with instrumentation
+    const elId = videoElement.id || `video-${participantId}`;
+    videoElement.id = elId;
+    
+    console.log(`HOST-UI-ATTACH-START {id=${participantId}, elId=${elId}}`);
     videoElement.srcObject = stream;
+    console.log(`HOST-UI-ATTACH-DONE {id=${participantId}, elId=${elId}, readyState=${videoElement.readyState}}`);
 
     // Unified event handling
     return new Promise((resolve) => {
@@ -99,18 +104,33 @@ export const useUnifiedVideoCreation = () => {
       // Event listeners
       videoElement.addEventListener('loadedmetadata', () => {
         console.log(`📺 UNIFIED VIDEO: Metadata loaded for ${participantId}`);
-        videoElement.play().then(handleSuccess).catch(handleError);
+        videoElement.play().then(() => {
+          console.log(`HOST-UI-PLAY-OK {id=${participantId}, elId=${elId}, muted=${videoElement.muted}, autoplay=${videoElement.autoplay}}`);
+          handleSuccess();
+        }).catch(error => {
+          console.log(`HOST-UI-PLAY-ERR {id=${participantId}, elId=${elId}, name=${error.name}, message=${error.message}}`);
+          handleError(error);
+        });
       });
 
       videoElement.addEventListener('canplay', () => {
         if (!videoElement.paused) return;
-        videoElement.play().then(handleSuccess).catch(handleError);
+        videoElement.play().then(() => {
+          console.log(`HOST-UI-PLAY-OK {id=${participantId}, elId=${elId}, muted=${videoElement.muted}, autoplay=${videoElement.autoplay}}`);
+          handleSuccess();
+        }).catch(error => {
+          console.log(`HOST-UI-PLAY-ERR {id=${participantId}, elId=${elId}, name=${error.name}, message=${error.message}}`);
+          handleError(error);
+        });
       });
 
       videoElement.addEventListener('error', handleError);
 
       // Immediate play attempt
-      videoElement.play().then(handleSuccess).catch(() => {
+      videoElement.play().then(() => {
+        console.log(`HOST-UI-PLAY-OK {id=${participantId}, elId=${elId}, muted=${videoElement.muted}, autoplay=${videoElement.autoplay}}`);
+        handleSuccess();
+      }).catch(() => {
         // Fallback: wait for metadata
         console.log(`⏳ UNIFIED VIDEO: Waiting for metadata for ${participantId}`);
       });

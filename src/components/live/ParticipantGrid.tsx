@@ -144,51 +144,57 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   // 🌉 PONTE STREAM-TO-COMPONENT: Listeners para eventos de stream
   useEffect(() => {
     const handleStreamReceived = (event: CustomEvent) => {
-      const { participantId: receivedParticipantId, stream: receivedStream } = event.detail;
-      
-      console.log(`🌉 PARTICIPANT GRID: Stream event received for ${receivedParticipantId}`, {
-        hasStream: !!receivedStream,
-        streamId: receivedStream?.id,
-        tracks: receivedStream?.getTracks().length
-      });
-      
-      if (receivedParticipantId && receivedStream) {
-        const container = videoRefs.current[receivedParticipantId];
-        if (container) {
-          console.log(`🎯 GRID BRIDGE: Applying stream directly to container for ${receivedParticipantId}`);
-          
-          // Remover vídeo existente
-          const existingVideo = container.querySelector('video');
-          if (existingVideo) {
-            existingVideo.remove();
+        const { participantId: receivedParticipantId, stream: receivedStream } = event.detail;
+        
+        console.log(`🌉 PARTICIPANT GRID: Stream event received for ${receivedParticipantId}`, {
+          hasStream: !!receivedStream,
+          streamId: receivedStream?.id,
+          tracks: receivedStream?.getTracks().length
+        });
+        
+        if (receivedParticipantId && receivedStream) {
+          const container = videoRefs.current[receivedParticipantId];
+          if (container) {
+            console.log(`🎯 GRID BRIDGE: Applying stream directly to container for ${receivedParticipantId}`);
+            
+            // Remover vídeo existente
+            const existingVideo = container.querySelector('video');
+            if (existingVideo) {
+              existingVideo.remove();
+            }
+            
+            // Criar novo elemento de vídeo
+            const video = document.createElement('video');
+            video.autoplay = true;
+            video.playsInline = true;
+            video.muted = true;
+            video.controls = false;
+            video.className = 'w-full h-full object-cover';
+            video.style.cssText = `
+              display: block !important;
+              width: 100% !important;
+              height: 100% !important;
+              object-fit: cover !important;
+            `;
+            
+            const elId = video.id || `grid-video-${receivedParticipantId}`;
+            video.id = elId;
+            
+            const hasVideoTrack = receivedStream.getVideoTracks().length > 0;
+            console.log(`GRID-STREAM-BOUND {id=${receivedParticipantId}, elId=${elId}, hasVideoTrack=${hasVideoTrack}, readyState=${video.readyState}}`);
+            
+            video.srcObject = receivedStream;
+            container.appendChild(video);
+            
+            // Tentar reproduzir
+            video.play().then(() => {
+              console.log(`✅ GRID BRIDGE: Video playing via event for ${receivedParticipantId}`);
+              forceGridUpdate(); // Forçar re-render após sucesso
+            }).catch(err => {
+              console.log(`⚠️ GRID BRIDGE: Play failed via event for ${receivedParticipantId}:`, err);
+            });
           }
-          
-          // Criar novo elemento de vídeo
-          const video = document.createElement('video');
-          video.autoplay = true;
-          video.playsInline = true;
-          video.muted = true;
-          video.controls = false;
-          video.className = 'w-full h-full object-cover';
-          video.style.cssText = `
-            display: block !important;
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: cover !important;
-          `;
-          
-          video.srcObject = receivedStream;
-          container.appendChild(video);
-          
-          // Tentar reproduzir
-          video.play().then(() => {
-            console.log(`✅ GRID BRIDGE: Video playing via event for ${receivedParticipantId}`);
-            forceGridUpdate(); // Forçar re-render após sucesso
-          }).catch(err => {
-            console.log(`⚠️ GRID BRIDGE: Play failed via event for ${receivedParticipantId}:`, err);
-          });
         }
-      }
     };
 
     // Escutar eventos de stream para todos os participantes
@@ -1103,6 +1109,11 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
       </Card>
     );
   };
+
+  // Log grid render
+  const totalShown = participants.length;
+  const streamsCount = Object.keys(participantStreams).length;
+  console.log(`GRID-RENDER {totalShown=${totalShown}, streams=${streamsCount}}`);
 
   return (
     <div className="space-y-4">

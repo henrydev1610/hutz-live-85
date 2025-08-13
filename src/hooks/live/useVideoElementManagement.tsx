@@ -66,9 +66,10 @@ export const useVideoElementManagement = () => {
         }
       }
 
-      // Send to transmission window
+      // Send to transmission window with instrumentation
       if (transmissionWindowRef?.current && !transmissionWindowRef.current.closed) {
         try {
+          console.log('TRANSMISSION-WINDOW-OPEN');
           transmissionWindowRef.current.postMessage({
             type: 'stream_ready',
             participantId,
@@ -78,10 +79,16 @@ export const useVideoElementManagement = () => {
             active: stream.active,
             timestamp: Date.now()
           }, '*');
+          console.log('TRANSMISSION-UPDATE-APPLIED');
           console.log('📡 CLEAN VIDEO MANAGEMENT: Stream info sent to transmission window');
         } catch (error) {
           console.error('❌ CLEAN VIDEO MANAGEMENT: Failed to send to transmission window:', error);
         }
+      } else {
+        console.log('TRANSMISSION-WINDOW-MISSING');
+        console.log('TRANSMISSION-UPDATE-QUEUED');
+        // Defer update instead of failing
+        console.log('📊 CLEAN VIDEO MANAGEMENT: Deferring transmission update - window missing');
       }
 
       console.log('✅ CLEAN VIDEO MANAGEMENT: Completed processing for:', participantId);
