@@ -47,6 +47,9 @@ export const useParticipantMedia = (participantId: string) => {
       console.log(`🔒 HTTPS Check: ${window.location.protocol}`);
       console.log(`📱 User Agent: ${navigator.userAgent}`);
       
+      // [P-MEDIA] request getUserMedia (antes de chamar)
+      console.log('[P-MEDIA] request getUserMedia');
+      
       // Log início via StreamLogger
       streamLogger.log(
         'STREAM_START' as any,
@@ -62,6 +65,7 @@ export const useParticipantMedia = (participantId: string) => {
       
       if (!checkMediaDevicesSupport()) {
         const error = new Error('getUserMedia not supported');
+        console.log(`[P-MEDIA] error name=${error.name} message=${error.message}`);
         streamLogger.logStreamError(participantId, isMobile, deviceType, error, 0);
         throw error;
       }
@@ -70,6 +74,7 @@ export const useParticipantMedia = (participantId: string) => {
 
       if (!stream) {
         console.log(`⚠️ MEDIA: No stream obtained, entering degraded mode`);
+        console.log('[P-MEDIA] error name=NO_STREAM message=No stream obtained, entering degraded mode');
         
         streamLogger.log(
           'STREAM_ERROR' as any,
@@ -92,6 +97,12 @@ export const useParticipantMedia = (participantId: string) => {
       
       const videoTracks = stream.getVideoTracks();
       const audioTracks = stream.getAudioTracks();
+      
+      // [P-MEDIA] success tracks={video:<n>, audio:<n>} streamId=<id>
+      console.log(`[P-MEDIA] success tracks={video:${videoTracks.length}, audio:${audioTracks.length}} streamId=${stream.id}`);
+      
+      // Persistir stream na window para diagnóstico
+      (window as any).__participantLocalStream = stream;
       
       console.log(`✅ MEDIA: Stream obtained:`, {
         videoTracks: videoTracks.length,
@@ -131,7 +142,10 @@ export const useParticipantMedia = (participantId: string) => {
     } catch (error) {
       console.error(`❌ MEDIA: Failed to initialize ${isMobile ? 'mobile' : 'desktop'} camera:`, error);
       
-      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
+      const err = error as Error;
+      console.log(`[P-MEDIA] error name=${err.name} message=${err.message}`);
+      
+      streamLogger.logStreamError(participantId, isMobile, deviceType, err, 0);
       
       const errorMsg = error instanceof Error ? error.message : String(error);
       toast.error(`Camera initialization failed: ${errorMsg}`);

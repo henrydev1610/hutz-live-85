@@ -86,6 +86,7 @@ export async function handleOfferFromParticipant(data: any) {
     return;
   }
 
+  console.log(`[HOST-RECV] webrtc-offer from=${participantId} sdpLen=${offer.sdp?.length || 0}`);
   console.log('📩 [HOST] Offer PADRONIZADO recebido de', participantId, {
     roomId: data.roomId,
     offerType: offer.type,
@@ -114,6 +115,7 @@ export async function handleOfferFromParticipant(data: any) {
   try {
     console.log('🔄 [HOST] Aplicando setRemoteDescription, state atual:', finalPc.signalingState);
     await finalPc.setRemoteDescription(offer);
+    console.log(`[HOST-APPLY] setRemoteDescription ok`);
     console.log('✅ [HOST] Remote description aplicada, novo state:', finalPc.signalingState);
 
     console.log('🔄 [HOST] Criando answer...');
@@ -136,6 +138,7 @@ export async function handleOfferFromParticipant(data: any) {
     }
 
     unifiedWebSocketService.sendWebRTCAnswer(participantId, answer.sdp!, answer.type);
+    console.log(`[HOST-ANSWER] sent to=${participantId} sdpLen=${answer.sdp?.length || 0}`);
     console.log('✅ [HOST] Answer PADRONIZADA enviada para', participantId);
   } catch (err) {
     console.error('❌ [HOST] Erro processando offer de', participantId, err);

@@ -377,6 +377,7 @@ this.socket.on('ice-servers', (data) => {
 
     this.socket.on('offer', (data: { offer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
       console.log('📞 OFFER received from:', data.fromUserId || data.fromSocketId);
+      console.log(`[WS-RECV] webrtc-offer roomId=${this.currentRoomId} from=${data.fromUserId} to=${this.currentUserId}`);
       this.callbacks.onOffer?.(data);
     });
 

@@ -9,6 +9,7 @@ let pendingCandidates: RTCIceCandidate[] = [];
 async function ensureLocalStream(): Promise<MediaStream> {
   if (!localStream || !localStream.active) {
     console.log('📹 [PARTICIPANT] Obtendo stream local...');
+    console.log('[P-MEDIA] request getUserMedia');
     
     try {
       // Tentar câmera traseira primeiro
@@ -16,16 +17,40 @@ async function ensureLocalStream(): Promise<MediaStream> {
         video: { facingMode: 'environment' },
         audio: true
       });
+      
+      const videoTracks = localStream.getVideoTracks();
+      const audioTracks = localStream.getAudioTracks();
+      console.log(`[P-MEDIA] success tracks={video:${videoTracks.length}, audio:${audioTracks.length}} streamId=${localStream.id}`);
       console.log('📹 [PARTICIPANT] Stream traseira obtida');
+      
+      // Persistir na window para diagnóstico
+      (window as any).__participantLocalStream = localStream;
+      
     } catch (err) {
+      const error = err as Error;
+      console.log(`[P-MEDIA] error name=${error.name} message=${error.message}`);
       console.warn('⚠️ [PARTICIPANT] Câmera traseira falhou, tentando frontal:', err);
       
       // Fallback para câmera frontal
-      localStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
-        audio: true
-      });
-      console.log('📹 [PARTICIPANT] Stream frontal obtida');
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' },
+          audio: true
+        });
+        
+        const videoTracks = localStream.getVideoTracks();
+        const audioTracks = localStream.getAudioTracks();
+        console.log(`[P-MEDIA] success tracks={video:${videoTracks.length}, audio:${audioTracks.length}} streamId=${localStream.id}`);
+        console.log('📹 [PARTICIPANT] Stream frontal obtida');
+        
+        // Persistir na window para diagnóstico
+        (window as any).__participantLocalStream = localStream;
+        
+      } catch (fallbackErr) {
+        const fallbackError = fallbackErr as Error;
+        console.log(`[P-MEDIA] error name=${fallbackError.name} message=${fallbackError.message}`);
+        throw fallbackError;
+      }
     }
     
     console.log('📹 [PARTICIPANT] Stream local configurada:', {
@@ -150,6 +175,8 @@ async function createAndSendOffer(hostId: string): Promise<void> {
   isMakingOffer = true;
   
   try {
+    console.log('[P-OFFER] creating offer');
+    
     // Fechar conexão anterior se existir
     if (participantPC) {
       participantPC.close();
@@ -192,25 +219,37 @@ async function createAndSendOffer(hostId: string): Promise<void> {
         unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
       } else {
         console.log('🧊 [PARTICIPANT] ICE gathering completo');
+        console.log('[P-ICE] gathering=complete');
       }
     };
 
     // Estados da conexão
     participantPC.onconnectionstatechange = () => {
       console.log('🔄 [PARTICIPANT] Connection state:', participantPC?.connectionState);
+      console.log(`[P-ICE] connection=${participantPC?.connectionState}`);
     };
 
     participantPC.oniceconnectionstatechange = () => {
       console.log('🧊 [PARTICIPANT] ICE connection state:', participantPC?.iceConnectionState);
     };
 
+    participantPC.onicegatheringstatechange = () => {
+      console.log(`[P-ICE] gathering=${participantPC?.iceGatheringState}`);
+    };
+
     // Criar e enviar offer
     console.log('🔄 [PARTICIPANT] Criando offer, state atual:', participantPC.signalingState);
     const offer = await participantPC.createOffer();
     await participantPC.setLocalDescription(offer);
+    
+    console.log(`[P-OFFER] setLocalDescription ok type=${offer.type} sdpLen=${offer.sdp?.length || 0}`);
     console.log('✅ [PARTICIPANT] Local description definida, novo state:', participantPC.signalingState);
     
     console.log('📤 [PARTICIPANT] Offer PADRONIZADA criada, enviando para host:', hostId);
+    // Usar propriedades privadas diretamente através do serviço
+    const roomId = (unifiedWebSocketService as any).currentRoomId;
+    const participantId = (unifiedWebSocketService as any).currentUserId;
+    console.log(`[WS-SEND] webrtc-offer roomId=${roomId} from=${participantId} to=${hostId} sdpLen=${offer.sdp?.length || 0}`);
     unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type);
 
   } catch (err) {
