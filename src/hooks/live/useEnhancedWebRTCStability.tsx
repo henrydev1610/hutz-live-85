@@ -230,11 +230,10 @@ export const useEnhancedWebRTCStability = (
     } catch (error) {
       console.error(`❌ STABILITY: Recovery failed for ${participantId || 'websocket'}:`, error);
       
-      // Schedule retry with exponential backoff
-      const delay = 1000 * Math.pow(finalConfig.reconnectDelayMultiplier, currentAttempts);
-      setTimeout(() => {
-        handleConnectionRecovery(participantId);
-      }, Math.min(delay, 30000)); // Max 30s delay
+      // CORREÇÃO: Não fazer retry automático - evita loop infinito
+      if (isMobile) {
+        toast.error('❌ Connection recovery failed. Please try reconnecting manually.');
+      }
       
       return false;
     }

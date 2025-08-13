@@ -422,16 +422,14 @@ export class UnifiedWebRTCManager {
     
     // FASE 2: Lógica específica para hosts vs participantes
     if (this.isHost) {
-      // Para host: conectado se WebSocket conectado
-      if (this.connectionState.websocket === 'connected') {
-        this.connectionState.overall = 'connected';
-        // WebRTC para host é "aguardando participantes" ou "conectado"
-        if (this.connectionState.webrtc === 'disconnected' && this.webrtcReady) {
-          this.connectionState.webrtc = 'connecting'; // Aguardando participantes
+        // Para host: conectado se WebSocket conectado
+        if (this.connectionState.websocket === 'connected') {
+          this.connectionState.overall = 'connected';
+          // CORREÇÃO: WebRTC só muda para "connecting" quando há handshake ativo
+          // Não forçar "connecting" automaticamente para evitar loop
+        } else {
+          this.updateOverallState();
         }
-      } else {
-        this.updateOverallState();
-      }
     } else {
       // Para participante: precisa WebSocket + WebRTC
       this.updateOverallState();
