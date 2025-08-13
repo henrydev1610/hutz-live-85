@@ -418,24 +418,42 @@ export class UnifiedWebRTCManager {
   }
 
   private updateConnectionState(type: keyof ConnectionState, state: ConnectionState[keyof ConnectionState]): void {
+    const previousState = { ...this.connectionState };
     this.connectionState[type] = state;
     
-    // FASE 2: Lógica específica para hosts vs participantes
+    // SOLUÇÃO: Lógica aprimorada para evitar loops de "connecting"
     if (this.isHost) {
-        // Para host: conectado se WebSocket conectado
-        if (this.connectionState.websocket === 'connected') {
-          this.connectionState.overall = 'connected';
-          // CORREÇÃO: WebRTC só muda para "connecting" quando há handshake ativo
-          // Não forçar "connecting" automaticamente para evitar loop
-        } else {
-          this.updateOverallState();
+      // Para host: conectado se WebSocket conectado
+      if (this.connectionState.websocket === 'connected') {
+        this.connectionState.overall = 'connected';
+        
+        // CORREÇÃO CRÍTICA: WebRTC para host depende de participantes reais
+        if (type === 'webrtc') {
+          // Só considerar "connecting" se há handshakes ativos
+          const hasActiveHandshakes = this.peerConnections.size > 0;
+          const hasCompletedConnections = Array.from(this.peerConnections.values())
+            .some(pc => pc.connectionState === 'connected');
+          
+          if (hasCompletedConnections) {
+            this.connectionState.webrtc = 'connected';
+          } else if (hasActiveHandshakes && state === 'connecting') {
+            this.connectionState.webrtc = 'connecting';
+          } else if (!hasActiveHandshakes) {
+            this.connectionState.webrtc = 'disconnected'; // Sem participantes = disconnected
+          }
         }
+      } else {
+        this.updateOverallState();
+      }
     } else {
       // Para participante: precisa WebSocket + WebRTC
       this.updateOverallState();
     }
 
-    console.log(`🔄 FASE 2: State updated: ${type} = ${state}, overall = ${this.connectionState.overall} (Host: ${this.isHost})`);
+    // NOVO: Log apenas se o estado mudou para evitar spam
+    if (JSON.stringify(previousState) !== JSON.stringify(this.connectionState)) {
+      console.log(`🔄 CONNECTION STATE: ${type} = ${previousState[type]} → ${state}, overall = ${previousState.overall} → ${this.connectionState.overall} (Host: ${this.isHost})`);
+    }
   }
 
   private updateConnectionMetrics(participantId: string, metrics: any): void {

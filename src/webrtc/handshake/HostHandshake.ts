@@ -3,6 +3,7 @@ import { getActiveWebRTCConfig } from '@/utils/webrtc/WebRTCConfig';
 
 const hostPeerConnections = new Map<string, RTCPeerConnection>();
 const pendingCandidates = new Map<string, RTCIceCandidate[]>();
+const handshakeTimeouts = new Map<string, NodeJS.Timeout>(); // NOVO: Tracking de timeouts
 
 function logIceType(prefix: string, cand?: string) {
   if (!cand) return;
@@ -34,6 +35,15 @@ function getOrCreatePC(participantId: string) {
 
   // Inicializar buffer de candidates
   pendingCandidates.set(participantId, []);
+
+  // SOLUÇÃO: Timeout para handshake
+  const handshakeTimeout = setTimeout(() => {
+    console.log(`⏰ [HOST] Handshake timeout for ${participantId} - cleaning up`);
+    if (pc.connectionState !== 'connected') {
+      cleanupHostHandshake(participantId);
+    }
+  }, 30000); // 30s timeout
+  handshakeTimeouts.set(participantId, handshakeTimeout);
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
@@ -110,10 +120,32 @@ function getOrCreatePC(participantId: string) {
   pc.onconnectionstatechange = () => {
     console.log(`🔌 [HOST] PC(${participantId}) state:`, pc.connectionState);
     console.log(`[HOST-ICE] connection=${pc.connectionState}`);
+    
+    // SOLUÇÃO: Limpar timeout quando conectado ou failed
+    if (pc.connectionState === 'connected' || pc.connectionState === 'failed') {
+      const timeout = handshakeTimeouts.get(participantId);
+      if (timeout) {
+        clearTimeout(timeout);
+        handshakeTimeouts.delete(participantId);
+      }
+    }
+    
+    // SOLUÇÃO: Auto-cleanup conexões failed
+    if (pc.connectionState === 'failed') {
+      console.log(`❌ [HOST] Auto-cleaning failed connection for ${participantId}`);
+      setTimeout(() => cleanupHostHandshake(participantId), 5000);
+    }
   };
+  
   pc.oniceconnectionstatechange = () => {
     console.log(`🧊 [HOST] ICE state(${participantId}):`, pc.iceConnectionState);
     console.log(`[HOST-ICE] iceConnectionState=${pc.iceConnectionState}`);
+    
+    // SOLUÇÃO: Auto-cleanup ICE failed
+    if (pc.iceConnectionState === 'failed') {
+      console.log(`❌ [HOST] ICE failed for ${participantId} - scheduling cleanup`);
+      setTimeout(() => cleanupHostHandshake(participantId), 3000);
+    }
   };
 
   return pc;
@@ -276,18 +308,30 @@ if (typeof window !== 'undefined' && !(window as any).__hostHandlersSetup) {
   (window as any).__hostHandlersSetup = true;
 }
 
-/** Cleanup por participante */
+/** SOLUÇÃO: Cleanup aprimorado por participante */
 export function cleanupHostHandshake(participantId: string) {
   const pc = hostPeerConnections.get(participantId);
   if (pc) {
     try {
       pc.ontrack = null;
       pc.onicecandidate = null;
+      pc.onconnectionstatechange = null;
+      pc.oniceconnectionstatechange = null;
       pc.close();
     } catch {}
     hostPeerConnections.delete(participantId);
     console.log('🧹 [HOST] Cleanup PC de', participantId);
   }
+  
+  // Limpar timeout se existe
+  const timeout = handshakeTimeouts.get(participantId);
+  if (timeout) {
+    clearTimeout(timeout);
+    handshakeTimeouts.delete(participantId);
+  }
+  
+  // Limpar pending candidates
+  pendingCandidates.delete(participantId);
 }
 
 /** ETAPA 2: REMOVIDO DEFINITIVAMENTE - Host nunca cria offers */

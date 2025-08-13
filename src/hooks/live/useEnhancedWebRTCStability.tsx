@@ -11,8 +11,12 @@ interface WebRTCStabilityMetrics {
   participantConnections: Map<string, {
     state: RTCPeerConnectionState;
     iceState: RTCIceConnectionState;
+    signalingState?: RTCSignalingState;
     lastHeartbeat: number;
     reconnectAttempts: number;
+    connectingStartTime?: number;
+    isStuckConnecting?: boolean;
+    isStalledHeartbeat?: boolean;
   }>;
   websocketPingLatency: number;
   lastWebSocketPing: number;
@@ -110,50 +114,88 @@ export const useEnhancedWebRTCStability = (
     }
   }, [isMobile, finalConfig.aggressiveModeForMobile]);
 
-  // Comprehensive peer connection health assessment
+  // SOLUÇÃO: Avaliação aprimorada de saúde com timeouts e limpeza
   const assessPeerConnectionHealth = useCallback(() => {
     const now = Date.now();
+    const CONNECTING_TIMEOUT = 30000; // 30s timeout para conexões "connecting"
+    const STALLED_HEARTBEAT_TIMEOUT = 15000; // 15s sem heartbeat
+    
     const updatedConnections = new Map();
     let hasActiveConnections = false;
     let hasFailedConnections = false;
+    let hasStuckConnections = false;
 
     peerConnections.forEach((pc, participantId) => {
       const state = pc.connectionState;
       const iceState = pc.iceConnectionState;
+      const signalingState = pc.signalingState;
+      
       const currentData = metrics.participantConnections.get(participantId) || {
         state: 'new' as RTCPeerConnectionState,
         iceState: 'new' as RTCIceConnectionState,
         lastHeartbeat: now,
-        reconnectAttempts: 0
+        reconnectAttempts: 0,
+        connectingStartTime: now
       };
 
-      // Check for connection degradation
+      // CORREÇÃO 1: Detectar conexões "stuck" em connecting por muito tempo
+      const isStuckConnecting = (state === 'connecting' || iceState === 'checking' || signalingState === 'have-remote-offer') &&
+                               (now - (currentData.connectingStartTime || now)) > CONNECTING_TIMEOUT;
+      
+      // CORREÇÃO 2: Detectar stalled heartbeat
+      const isStalledHeartbeat = (now - currentData.lastHeartbeat) > STALLED_HEARTBEAT_TIMEOUT;
+
+      // CORREÇÃO 3: Lógica de saúde mais rigorosa
       const isHealthy = state === 'connected' && 
-                       (iceState === 'connected' || iceState === 'completed');
+                       iceState === 'connected' &&
+                       signalingState === 'stable' &&
+                       !isStalledHeartbeat;
+      
+      const isDefinitelyFailed = state === 'failed' || 
+                                iceState === 'failed' || 
+                                isStuckConnecting ||
+                                isStalledHeartbeat;
       
       if (isHealthy) {
         hasActiveConnections = true;
-      } else if (state === 'failed' || iceState === 'failed') {
+      } else if (isDefinitelyFailed) {
         hasFailedConnections = true;
-        console.warn(`⚠️ STABILITY: Connection failed for ${participantId}: ${state}/${iceState}`);
+        console.warn(`⚠️ STABILITY: Connection failed/stuck for ${participantId}:`, {
+          state, iceState, signalingState, isStuckConnecting, isStalledHeartbeat
+        });
+        
+        // CORREÇÃO 4: Limpeza automática de conexões failed/stuck
+        setTimeout(() => {
+          console.log(`🧹 STABILITY: Auto-cleaning stuck connection for ${participantId}`);
+          pc.close();
+          peerConnections.delete(participantId);
+        }, 1000);
+      } else if (state === 'connecting' || iceState === 'checking') {
+        hasStuckConnections = true;
       }
 
       updatedConnections.set(participantId, {
         state,
         iceState,
+        signalingState,
         lastHeartbeat: isHealthy ? now : currentData.lastHeartbeat,
-        reconnectAttempts: currentData.reconnectAttempts
+        reconnectAttempts: currentData.reconnectAttempts,
+        connectingStartTime: (state === 'connecting' && !currentData.connectingStartTime) ? now : currentData.connectingStartTime,
+        isStuckConnecting,
+        isStalledHeartbeat
       });
     });
 
-    // Update WebRTC connection state
+    // CORREÇÃO 5: Estado WebRTC mais preciso
     let webrtcState: 'disconnected' | 'connecting' | 'connected' | 'failed';
-    if (hasActiveConnections && !hasFailedConnections) {
+    if (hasActiveConnections && !hasFailedConnections && !hasStuckConnections) {
       webrtcState = 'connected';
     } else if (hasFailedConnections) {
       webrtcState = 'failed';
-    } else if (peerConnections.size > 0) {
+    } else if (peerConnections.size > 0 && !hasStuckConnections) {
       webrtcState = 'connecting';
+    } else if (hasStuckConnections && !hasActiveConnections) {
+      webrtcState = 'failed'; // Stuck connections são consideradas failed
     } else {
       webrtcState = 'disconnected';
     }
@@ -164,13 +206,16 @@ export const useEnhancedWebRTCStability = (
         webrtc: webrtcState
       };
       
-      // Calculate overall state
+      // CORREÇÃO 6: Overall state não fica stuck em "connecting"
       const overall = newConnectionState.websocket === 'connected' && 
-                     (newConnectionState.webrtc === 'connected' || peerConnections.size === 0)
+                     newConnectionState.webrtc === 'connected'
                      ? 'connected'
                      : newConnectionState.websocket === 'failed' || newConnectionState.webrtc === 'failed'
                      ? 'failed'
-                     : 'connecting';
+                     : newConnectionState.websocket === 'connecting' || 
+                       (newConnectionState.webrtc === 'connecting' && !hasStuckConnections)
+                     ? 'connecting'
+                     : 'disconnected';
 
       newConnectionState.overall = overall;
 
@@ -178,7 +223,7 @@ export const useEnhancedWebRTCStability = (
         ...prev,
         connectionState: newConnectionState,
         participantConnections: updatedConnections,
-        isStable: overall === 'connected' && (now - lastStabilityCheckRef.current) > 10000 // Stable for 10s
+        isStable: overall === 'connected' && (now - lastStabilityCheckRef.current) > 10000
       };
     });
 
@@ -275,31 +320,107 @@ export const useEnhancedWebRTCStability = (
     }
   }, []);
 
-  // Force full recovery
+  // SOLUÇÃO: Force full recovery com limpeza completa
   const forceFullRecovery = useCallback(async () => {
     console.log('💪 STABILITY: Force full recovery initiated');
     toast.info('🔄 Forcing full connection recovery...');
     
     stopStabilityMonitoring();
     
-    // Clear all reconnection attempts
+    // CORREÇÃO 7: Limpeza completa de conexões stuck
+    peerConnections.forEach((pc, participantId) => {
+      console.log(`🧹 STABILITY: Force closing connection for ${participantId}`);
+      try {
+        pc.close();
+      } catch (err) {
+        console.warn(`⚠️ STABILITY: Error closing PC for ${participantId}:`, err);
+      }
+    });
+    
+    // Clear all maps and attempts
+    peerConnections.clear();
     reconnectAttemptsRef.current.clear();
+    
+    // Reset metrics to clean state
+    setMetrics(prev => ({
+      ...prev,
+      participantConnections: new Map(),
+      connectionState: {
+        ...prev.connectionState,
+        webrtc: 'disconnected',
+        overall: prev.connectionState.websocket === 'connected' ? 'connected' : 'disconnected'
+      },
+      isStable: false
+    }));
     
     try {
       // Force WebSocket reconnection
       await handleConnectionRecovery();
       
-      // Restart monitoring
+      // Restart monitoring after delay
       setTimeout(() => {
         startStabilityMonitoring();
       }, 2000);
       
-      toast.success('✅ Full recovery completed!');
+      toast.success('✅ Full recovery completed - connections reset!');
     } catch (error) {
       console.error('❌ STABILITY: Force recovery failed:', error);
       toast.error('❌ Force recovery failed');
     }
-  }, [stopStabilityMonitoring, handleConnectionRecovery, startStabilityMonitoring]);
+  }, [stopStabilityMonitoring, handleConnectionRecovery, startStabilityMonitoring, peerConnections]);
+
+  // SOLUÇÃO: Novo método para reset específico de WebRTC loop
+  const breakWebRTCLoop = useCallback(() => {
+    console.log('🔄 STABILITY: Breaking WebRTC connecting loop');
+    toast.info('🔄 Breaking connection loop...');
+    
+    // Identificar e limpar conexões stuck em "connecting"
+    const stuckConnections: string[] = [];
+    peerConnections.forEach((pc, participantId) => {
+      const isStuck = pc.connectionState === 'connecting' || 
+                     pc.iceConnectionState === 'checking' ||
+                     pc.signalingState === 'have-remote-offer';
+      
+      if (isStuck) {
+        stuckConnections.push(participantId);
+        console.log(`🧹 STABILITY: Closing stuck connection for ${participantId}`);
+        pc.close();
+      }
+    });
+    
+    // Remove stuck connections
+    stuckConnections.forEach(participantId => {
+      peerConnections.delete(participantId);
+    });
+    
+    // Update metrics to reflect cleanup
+    setMetrics(prev => {
+      const updatedConnections = new Map(prev.participantConnections);
+      stuckConnections.forEach(participantId => {
+        updatedConnections.delete(participantId);
+      });
+      
+      return {
+        ...prev,
+        participantConnections: updatedConnections,
+        connectionState: {
+          ...prev.connectionState,
+          webrtc: peerConnections.size === 0 ? 'disconnected' : 'connecting',
+          overall: prev.connectionState.websocket === 'connected' && peerConnections.size === 0 
+                   ? 'connected' 
+                   : prev.connectionState.websocket === 'connected' 
+                   ? 'connecting' 
+                   : 'disconnected'
+        }
+      };
+    });
+    
+    if (stuckConnections.length > 0) {
+      toast.success(`✅ Cleared ${stuckConnections.length} stuck connections`);
+    } else {
+      toast.info('ℹ️ No stuck connections found');
+    }
+  }, [peerConnections]);
 
   // Auto-start monitoring
   useEffect(() => {
@@ -312,6 +433,7 @@ export const useEnhancedWebRTCStability = (
     startStabilityMonitoring,
     stopStabilityMonitoring,
     forceFullRecovery,
+    breakWebRTCLoop, // NOVO: Método específico para quebrar loops
     handleConnectionRecovery,
     isMobile,
     config: finalConfig

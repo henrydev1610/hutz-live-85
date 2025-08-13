@@ -24,6 +24,7 @@ interface ConnectionStabilityIndicatorProps {
   mobileStability?: MobileStabilityData;
   participantCount: number;
   onForceReconnect?: () => void;
+  onBreakLoop?: () => void; // NOVO: Função para quebrar loops
   onDiagnostics?: () => void;
   className?: string;
 }
@@ -76,12 +77,15 @@ export const ConnectionStabilityIndicator: React.FC<ConnectionStabilityIndicator
   mobileStability,
   participantCount,
   onForceReconnect,
+  onBreakLoop,
   onDiagnostics,
   className = ''
 }) => {
   const overallColor = getStatusColor(connectionStatus.overall);
   const isHealthy = connectionStatus.overall === 'connected';
+  const isStuckConnecting = connectionStatus.webrtc === 'connecting' && connectionStatus.overall === 'connecting';
   const hasIssues = connectionStatus.overall === 'failed' || 
+                   isStuckConnecting ||
                    (mobileStability && (!mobileStability.isStable || mobileStability.error));
 
   return (
@@ -167,6 +171,17 @@ export const ConnectionStabilityIndicator: React.FC<ConnectionStabilityIndicator
         {/* Action Buttons */}
         {hasIssues && (
           <div className="flex gap-2 pt-2">
+            {isStuckConnecting && onBreakLoop && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onBreakLoop}
+                className="flex-1 text-xs bg-yellow-50 border-yellow-200 text-yellow-700 hover:bg-yellow-100"
+              >
+                ⚡ Break Loop
+              </Button>
+            )}
+            
             {onForceReconnect && (
               <Button
                 variant="outline"
@@ -195,9 +210,16 @@ export const ConnectionStabilityIndicator: React.FC<ConnectionStabilityIndicator
         <div className={`text-center text-xs p-2 rounded ${
           isHealthy 
             ? 'bg-green-50 text-green-700' 
+            : isStuckConnecting
+            ? 'bg-yellow-50 text-yellow-700'
             : 'bg-red-50 text-red-700'
         }`}>
-          {isHealthy ? '✅ All systems operational' : '⚠️ Connection issues detected'}
+          {isHealthy 
+            ? '✅ All systems operational' 
+            : isStuckConnecting
+            ? '🔄 WebRTC connecting loop detected'
+            : '⚠️ Connection issues detected'
+          }
         </div>
       </CardContent>
     </Card>
