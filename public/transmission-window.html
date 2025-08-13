@@ -83,21 +83,30 @@
         function getStreamFromHost(participantId) {
             try {
                 console.log(`[POPUP-REQUEST] window.opener.getParticipantStream(${participantId})`);
-                if (window.opener && window.opener.getParticipantStream) {
-                    const stream = window.opener.getParticipantStream(participantId);
-                    if (stream) {
-                        updateDebug(`Stream encontrado no host para ${participantId}`);
-                        return stream;
-                    } else {
-                        updateDebug(`Stream não encontrado no host para ${participantId}`);
-                        return null;
-                    }
+                
+                if (!window.opener) {
+                    updateDebug('❌ window.opener não disponível');
+                    return null;
+                }
+                
+                if (typeof window.opener.getParticipantStream !== 'function') {
+                    updateDebug('❌ window.opener.getParticipantStream não é função');
+                    return null;
+                }
+                
+                const stream = window.opener.getParticipantStream(participantId);
+                console.log(`[POPUP-REQUEST] result participantId=${participantId} found=${!!stream}`);
+                
+                if (stream) {
+                    updateDebug(`✅ Stream encontrado no host para ${participantId} - streamId=${stream.id} tracks=${stream.getTracks().length}`);
+                    return stream;
                 } else {
-                    updateDebug('Host window ou getParticipantStream não disponível');
+                    updateDebug(`❌ Stream não encontrado no host para ${participantId}`);
                     return null;
                 }
             } catch (error) {
-                updateDebug(`Erro ao buscar stream: ${error.message}`);
+                updateDebug(`❌ Erro ao buscar stream: ${error.message}`);
+                console.error(`[POPUP-REQUEST] error:`, error);
                 return null;
             }
         }
@@ -139,9 +148,15 @@
         // Listener para mensagens do host
         window.addEventListener('message', (event) => {
             try {
-                const { type, participantId, streamInfo } = event.data;
+                console.log(`[POPUP-BRIDGE] received message:`, event.data);
+                const { type, participantId, streamInfo } = event.data || {};
                 
-                updateDebug(`Mensagem recebida: ${type} para ${participantId}`);
+                if (!type) {
+                    updateDebug(`❌ Mensagem inválida recebida (type undefined)`);
+                    return;
+                }
+                
+                updateDebug(`Mensagem recebida: ${type} para ${participantId || 'undefined'}`);
 
                 // FASE 2: Responder ao participant-stream-ready
                 if (type === 'participant-stream-ready' && participantId) {

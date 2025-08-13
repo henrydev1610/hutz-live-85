@@ -154,10 +154,11 @@ export const useParticipantManagement = ({
     if (isHost && typeof window !== 'undefined') {
       console.log('🔧 CRÍTICO: Registrando window.hostStreamCallback PRIMEIRO');
       
-      // Inicializar registro de streams global
-      if (!(window as any).__mlStreams__) {
-        (window as any).__mlStreams__ = {};
+      // CRÍTICO: Inicializar registro de streams global como Map (consistente)
+      if (!window.__mlStreams__) {
+        window.__mlStreams__ = new Map();
       }
+      console.log(`[HOST-BRIDGE] __mlStreams__ initialized as Map, size=${window.__mlStreams__.size}`);
       
       // PONTE HOST → POPUP: Registrar callback ANTES de WebRTC
       window.hostStreamCallback = (participantId: string, stream: MediaStream) => {
@@ -170,19 +171,20 @@ export const useParticipantManagement = ({
         });
         console.log(`[HOST-BRIDGE] participantId=${participantId} streamId=${stream.id} tracks=${stream.getTracks().length}`);
         
-        // CRÍTICO: Registrar stream IMEDIATAMENTE em __mlStreams__
-        (window as any).__mlStreams__[participantId] = stream;
+        // CRÍTICO: Registrar stream IMEDIATAMENTE em __mlStreams__ (Map)
+        window.__mlStreams__.set(participantId, stream);
         console.log('✅ HOST BRIDGE: Stream registrado para popup em __mlStreams__');
-        console.log(`[HOST-BRIDGE] stream saved to window.__mlStreams__ participantId=${participantId} streamId=${stream.id}`);
+        console.log(`[HOST-BRIDGE] stream saved to window.__mlStreams__ participantId=${participantId} streamId=${stream.id} mapSize=${window.__mlStreams__.size}`);
         
         // Processar no React
         enhancedHandleParticipantStream(participantId, stream);
       };
       
-      // Getter para popup acessar o stream
-      (window as any).getParticipantStream = (participantId: string) => {
-        const stream = (window as any).__mlStreams__[participantId];
+      // Getter para popup acessar o stream (Map)
+      window.getParticipantStream = (participantId: string) => {
+        const stream = window.__mlStreams__?.get(participantId) ?? null;
         console.log('🔍 POPUP ACCESS: Stream solicitado para', participantId, 'encontrado:', !!stream);
+        console.log(`[HOST-BRIDGE] getParticipantStream participantId=${participantId} found=${!!stream} mapSize=${window.__mlStreams__?.size || 0}`);
         return stream;
       };
       
