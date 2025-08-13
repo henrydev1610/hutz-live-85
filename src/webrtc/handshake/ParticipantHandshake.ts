@@ -8,8 +8,8 @@ let pendingCandidates: RTCIceCandidate[] = [];
 
 async function ensureLocalStream(): Promise<MediaStream> {
   if (!localStream || !localStream.active) {
+    console.log('PART-GUM-START');
     console.log('📹 [PARTICIPANT] Obtendo stream local...');
-    console.log('[P-MEDIA] request getUserMedia');
     
     try {
       // Tentar câmera traseira primeiro
@@ -20,7 +20,7 @@ async function ensureLocalStream(): Promise<MediaStream> {
       
       const videoTracks = localStream.getVideoTracks();
       const audioTracks = localStream.getAudioTracks();
-      console.log(`[P-MEDIA] success tracks={video:${videoTracks.length}, audio:${audioTracks.length}} streamId=${localStream.id}`);
+      console.log(`PART-GUM-OK {v=${videoTracks.length},a=${audioTracks.length}}`);
       console.log('📹 [PARTICIPANT] Stream traseira obtida');
       
       // Persistir na window para diagnóstico
@@ -28,7 +28,6 @@ async function ensureLocalStream(): Promise<MediaStream> {
       
     } catch (err) {
       const error = err as Error;
-      console.log(`[P-MEDIA] error name=${error.name} message=${error.message}`);
       console.warn('⚠️ [PARTICIPANT] Câmera traseira falhou, tentando frontal:', err);
       
       // Fallback para câmera frontal
@@ -40,7 +39,7 @@ async function ensureLocalStream(): Promise<MediaStream> {
         
         const videoTracks = localStream.getVideoTracks();
         const audioTracks = localStream.getAudioTracks();
-        console.log(`[P-MEDIA] success tracks={video:${videoTracks.length}, audio:${audioTracks.length}} streamId=${localStream.id}`);
+        console.log(`PART-GUM-OK {v=${videoTracks.length},a=${audioTracks.length}}`);
         console.log('📹 [PARTICIPANT] Stream frontal obtida');
         
         // Persistir na window para diagnóstico
@@ -48,7 +47,7 @@ async function ensureLocalStream(): Promise<MediaStream> {
         
       } catch (fallbackErr) {
         const fallbackError = fallbackErr as Error;
-        console.log(`[P-MEDIA] error name=${fallbackError.name} message=${fallbackError.message}`);
+        console.log(`PART-GUM-ERROR {name=${fallbackError.name}, message=${fallbackError.message}}`);
         throw fallbackError;
       }
     }
@@ -197,22 +196,25 @@ async function createAndSendOffer(hostId: string): Promise<void> {
 
     // Obter stream local
     const stream = await ensureLocalStream();
-    const videoTracks = stream.getVideoTracks().length;
-    const audioTracks = stream.getAudioTracks().length;
-    console.log(`PART-GUM-OK {v=${videoTracks}, a=${audioTracks}}`);
     
     // Adicionar tracks aos transceivers existentes
     const transceivers = participantPC.getTransceivers();
+    let tracksAdded = 0;
     stream.getTracks().forEach(track => {
       console.log(`📡 [PARTICIPANT] Configurando track ${track.kind} no transceiver`);
       const transceiver = transceivers.find(t => t.receiver.track?.kind === track.kind);
       if (transceiver && transceiver.sender) {
         transceiver.sender.replaceTrack(track);
+        tracksAdded++;
       } else {
         // Fallback se transceivers não funcionaram
         participantPC!.addTrack(track, stream);
+        tracksAdded++;
       }
     });
+    
+    console.log(`PART-TRACKS-ADDED {count=${tracksAdded}}`);
+    console.log(`📡 [PARTICIPANT] Total tracks adicionados: ${tracksAdded}`);
 
     // ICE candidates
     participantPC.onicecandidate = (event) => {
@@ -244,9 +246,11 @@ async function createAndSendOffer(hostId: string): Promise<void> {
     // Criar e enviar offer
     console.log('🔄 [PARTICIPANT] Criando offer, state atual:', participantPC.signalingState);
     const offer = await participantPC.createOffer();
-    await participantPC.setLocalDescription(offer);
     
     console.log(`PART-OFFER-CREATED {sdpLen=${offer.sdp?.length || 0}}`);
+    
+    await participantPC.setLocalDescription(offer);
+    console.log('PART-LOCAL-SET');
     console.log('✅ [PARTICIPANT] Local description definida, novo state:', participantPC.signalingState);
     
     console.log('📤 [PARTICIPANT] Offer PADRONIZADA criada, enviando para host:', hostId);

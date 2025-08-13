@@ -269,16 +269,21 @@ class UnifiedWebSocketService {
         reject(error);
       });
 
-      this.socket.on('disconnect', (reason) => {
-        console.log('🔄 CONNECTION: Disconnected:', reason);
-        this.metrics.status = 'disconnected';
-        this.stopHeartbeat();
-        this.callbacks.onDisconnected?.();
+    this.socket.on('disconnect', (reason) => {
+      if (this.currentUserId?.includes('host')) {
+        console.log(`HOST-SOCKET-DISCONNECTED {reason=${reason}}`);
+      } else {
+        console.log(`PARTICIPANT-SOCKET-DISCONNECTED {reason=${reason}}`);
+      }
+      console.log('🔄 CONNECTION: Disconnected:', reason);
+      this.metrics.status = 'disconnected';
+      this.stopHeartbeat();
+      this.callbacks.onDisconnected?.();
 
-        if (this.shouldReconnect && reason !== 'io client disconnect') {
-          this.scheduleReconnect();
-        }
-      });
+      if (this.shouldReconnect && reason !== 'io client disconnect') {
+        this.scheduleReconnect();
+      }
+    });
 
       this.socket.on('error', (error) => {
         console.error('❌ CONNECTION: Socket error:', error);
@@ -399,8 +404,11 @@ this.socket.on('ice-servers', (data) => {
     });
 
     this.socket.on('ice-candidate', (data: { candidate: RTCIceCandidate, fromUserId: string, fromSocketId: string }) => {
+      const candidateType = /typ (\w+)/.exec(data?.candidate?.candidate)?.[1] || 'unknown';
+      console.log(`ICE-CANDIDATE-RECV {type=${candidateType}}`);
       console.log(`🧊 [WS] ICE candidate from: ${data.fromUserId || data.fromSocketId}`);
       console.log(`[WS-RECV] webrtc-candidate roomId=${this.currentRoomId || 'unknown'} from=${data.fromUserId || 'unknown'} to=${this.currentUserId || 'unknown'}`);
+      this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-candidate', { detail: data }));
       this.callbacks.onIceCandidate?.(data);
     });
 

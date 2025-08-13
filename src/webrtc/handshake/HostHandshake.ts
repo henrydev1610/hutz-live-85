@@ -111,7 +111,7 @@ export async function handleOfferFromParticipant(data: any) {
     return;
   }
 
-  console.log('HOST-OFFER-RECEIVED');
+  console.log(`HOST-OFFER-RECEIVED {sdpLen=${offer.sdp?.length || 0}}`);
   console.log(`[HOST-RECV] webrtc-offer from=${participantId} sdpLen=${offer.sdp?.length || 0} signalingState=checking...`);
   console.log('📩 [HOST] Offer PADRONIZADO recebido de', participantId, {
     roomId: data.roomId,
@@ -145,9 +145,9 @@ export async function handleOfferFromParticipant(data: any) {
     console.log('✅ [HOST] Remote description aplicada, novo state:', finalPc.signalingState);
 
     console.log('🔄 [HOST] Criando answer...');
-    console.log('[HOST-ANSWER] creating answer');
     const answer = await finalPc.createAnswer();
-    console.log(`[HOST-ANSWER] setLocalDescription ok type=${answer.type} sdpLen=${answer.sdp?.length || 0}`);
+    console.log(`HOST-ANSWER-CREATED {sdpLen=${answer.sdp?.length || 0}}`);
+    
     await finalPc.setLocalDescription(answer);
     console.log('✅ [HOST] Local description definida, state final:', finalPc.signalingState);
 

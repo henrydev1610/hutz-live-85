@@ -646,9 +646,7 @@ const initializeSocketHandlers = (io) => {
         }
 
         connection.lastSeen = Date.now();
-        console.log(`[SERVER-REQUEST-OFFER] to ${targetUserId} from ${fromUserId || connection.userId}`);
-
-        // Encontrar socket do participante alvo
+         // Encontrar socket do participante alvo
         let targetSocketId = null;
         const roomSockets = rooms.get(roomId);
         if (roomSockets) {
@@ -662,14 +660,14 @@ const initializeSocketHandlers = (io) => {
         }
 
         if (targetSocketId) {
+          console.log(`SERVER-REQUEST-OFFER-ROUTED to=${targetSocketId}`);
           socket.to(targetSocketId).emit('request-offer', {
             fromSocketId: socket.id,
             fromUserId: connection.userId,
             roomId
           });
-          console.log(`[SERVER-REQUEST-OFFER] forwarded to ${targetUserId} socketId=${targetSocketId}`);
         } else {
-          console.warn(`❌ REQUEST-OFFER: Target ${targetUserId} não encontrado`);
+          console.log(`SERVER-REQUEST-OFFER-OFFLINE user=${targetUserId} roomId=${roomId}`);
         }
 
       } catch (error) {
