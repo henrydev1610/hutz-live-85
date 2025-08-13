@@ -215,28 +215,8 @@ export const useLivePageEffects = ({
           // FASE C: Registrar window.hostStreamCallback para ponte host→popup
           console.log(`🎯 PONTE HOST→POPUP: Registrando callbacks WebRTC`);
           
-          // FASE C: Garantir que window.hostStreamCallback está ativo
-          if (typeof window !== 'undefined') {
-            window.hostStreamCallback = (participantId, stream) => {
-              console.log('🎥 PONTE HOST→POPUP: hostStreamCallback executado para:', participantId, {
-                streamId: stream.id,
-                trackCount: stream.getTracks().length,
-                videoTracks: stream.getVideoTracks().length,
-                active: stream.active,
-                timestamp: Date.now()
-              });
-              
-              // Processar no hook
-              handleParticipantStream(participantId, stream);
-              
-              // Atualizar transmissão
-              setTimeout(() => {
-                console.log('🔄 PONTE HOST→POPUP: Atualizando transmissão após stream');
-                updateTransmissionParticipants();
-              }, 300);
-            };
-            console.log('✅ PONTE HOST→POPUP: window.hostStreamCallback registrado');
-          }
+          // REMOVIDO: window.hostStreamCallback duplicado
+          // Já registrado em useParticipantManagement ANTES do WebRTC setup
           
           result.webrtc.setOnStreamCallback((participantId, stream) => {
             console.log('🎥 WEBRTC CALLBACK: Stream callback executado para:', participantId, {
@@ -247,17 +227,11 @@ export const useLivePageEffects = ({
               timestamp: Date.now()
             });
             
-            // FASE E: Toast de validação
-            toast({
-              title: "🎥 Stream Recebido",
-              description: `${participantId.substring(0, 8)} - ${stream.getTracks().length} tracks`,
-            });
-            
-            // FASE C: Chamar window.hostStreamCallback se definido
+            // FLUXO ÚNICO: Usar window.hostStreamCallback se disponível
             if (typeof window !== 'undefined' && window.hostStreamCallback) {
               window.hostStreamCallback(participantId, stream);
             } else {
-              // Fallback direto
+              console.warn('⚠️ window.hostStreamCallback não disponível, usando fallback');
               handleParticipantStream(participantId, stream);
               setTimeout(() => updateTransmissionParticipants(), 300);
             }

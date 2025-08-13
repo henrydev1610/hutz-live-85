@@ -6,7 +6,7 @@ import { useVideoElementManagement } from './useVideoElementManagement';
 import { useCleanStreamManagement } from './useCleanStreamManagement';
 import { useParticipantLifecycle } from './useParticipantLifecycle';
 import { useParticipantAutoSelection } from './useParticipantAutoSelection';
-import { useAutoHandshake } from './useAutoHandshake';
+// REMOVIDO: import { useAutoHandshake } from './useAutoHandshake';
 import { useWebRTCBridge } from './useWebRTCBridge';
 import { useWebRTCDebugLogger } from './useWebRTCDebugLogger';
 import { useWebRTCConnectionBridge } from './useWebRTCConnectionBridge';
@@ -101,15 +101,7 @@ export const useParticipantManagement = ({
     updateTransmissionParticipants
   });
 
-  // CORREÇÃO 3: Hook para auto-handshake do host
-  useAutoHandshake({
-    isHost,
-    sessionId,
-    onHandshakeRequest: (participantId: string) => {
-      console.log('🤝 CRÍTICO: Iniciando handshake automático com', participantId);
-      handleParticipantJoin(participantId);
-    }
-  });
+  // REMOVIDO: Auto-handshake conflitante - Host só responde, nunca inicia
 
   // Enhanced stream handling with retry and cache busting
   const enhancedHandleParticipantStream = async (participantId: string, stream: MediaStream) => {
