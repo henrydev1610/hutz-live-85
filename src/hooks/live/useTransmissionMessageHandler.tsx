@@ -24,6 +24,7 @@ export const useTransmissionMessageHandler = ({
   
   const handleTransmissionMessage = (event: MessageEvent) => {
     console.log('📨 HOST: Received message from transmission:', event.data.type);
+    console.log(`[POPUP-BRIDGE] received message type=${event.data.type} participantId=${event.data.participantId || 'none'}`);
     
     if (event.data.type === 'transmission-ready' && event.data.sessionId === sessionId) {
       console.log('🎯 HOST: Transmission ready, sending initial data');

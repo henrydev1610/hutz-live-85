@@ -38,17 +38,23 @@ function getOrCreatePC(participantId: string) {
   pc.onicecandidate = (event) => {
     if (event.candidate) {
       logIceType('🧊 [HOST→PART]', event.candidate.candidate);
+      const candidateType = /typ (\w+)/.exec(event.candidate.candidate)?.[1] || 'unknown';
+      console.log(`[HOST-ICE] candidateType=${candidateType} iceConnectionState=${pc.iceConnectionState}`);
       unifiedWebSocketService.sendWebRTCCandidate(participantId, event.candidate);
     } else {
       console.log('🧊 [HOST] ICE gathering completo para:', participantId);
+      console.log(`[HOST-ICE] gathering=complete iceConnectionState=${pc.iceConnectionState}`);
     }
   };
 
   pc.ontrack = (event) => {
     const [stream] = event.streams;
+    const videoTracks = stream?.getVideoTracks().length || 0;
+    const audioTracks = stream?.getAudioTracks().length || 0;
     console.log('🎥 [HOST] ontrack de', participantId, 'streamId:', stream?.id, {
       tracks: stream?.getTracks().length,
     });
+    console.log(`[HOST-TRACK] participantId=${participantId} streamId=${stream?.id} tracks={video:${videoTracks},audio:${audioTracks}}`);
 
     if (stream && typeof window !== 'undefined' && window.hostStreamCallback) {
       // Entrega o stream para o hook do host (atualiza estado + envia para popup)
@@ -65,9 +71,11 @@ function getOrCreatePC(participantId: string) {
 
   pc.onconnectionstatechange = () => {
     console.log(`🔌 [HOST] PC(${participantId}) state:`, pc.connectionState);
+    console.log(`[HOST-ICE] connection=${pc.connectionState}`);
   };
   pc.oniceconnectionstatechange = () => {
     console.log(`🧊 [HOST] ICE state(${participantId}):`, pc.iceConnectionState);
+    console.log(`[HOST-ICE] iceConnectionState=${pc.iceConnectionState}`);
   };
 
   return pc;
@@ -86,7 +94,7 @@ export async function handleOfferFromParticipant(data: any) {
     return;
   }
 
-  console.log(`[HOST-RECV] webrtc-offer from=${participantId} sdpLen=${offer.sdp?.length || 0}`);
+  console.log(`[HOST-RECV] webrtc-offer from=${participantId} sdpLen=${offer.sdp?.length || 0} signalingState=checking...`);
   console.log('📩 [HOST] Offer PADRONIZADO recebido de', participantId, {
     roomId: data.roomId,
     offerType: offer.type,
@@ -115,11 +123,13 @@ export async function handleOfferFromParticipant(data: any) {
   try {
     console.log('🔄 [HOST] Aplicando setRemoteDescription, state atual:', finalPc.signalingState);
     await finalPc.setRemoteDescription(offer);
-    console.log(`[HOST-APPLY] setRemoteDescription ok`);
+    console.log(`[HOST-APPLY] setRemoteDescription ok signalingState=${finalPc.signalingState}`);
     console.log('✅ [HOST] Remote description aplicada, novo state:', finalPc.signalingState);
 
     console.log('🔄 [HOST] Criando answer...');
+    console.log('[HOST-ANSWER] creating answer');
     const answer = await finalPc.createAnswer();
+    console.log(`[HOST-ANSWER] setLocalDescription ok type=${answer.type} sdpLen=${answer.sdp?.length || 0}`);
     await finalPc.setLocalDescription(answer);
     console.log('✅ [HOST] Local description definida, state final:', finalPc.signalingState);
 

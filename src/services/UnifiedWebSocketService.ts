@@ -377,17 +377,19 @@ this.socket.on('ice-servers', (data) => {
 
     this.socket.on('offer', (data: { offer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
       console.log('📞 OFFER received from:', data.fromUserId || data.fromSocketId);
-      console.log(`[WS-RECV] webrtc-offer roomId=${this.currentRoomId} from=${data.fromUserId} to=${this.currentUserId}`);
+      console.log(`[WS-RECV] webrtc-offer roomId=${this.currentRoomId || 'unknown'} from=${data.fromUserId || 'unknown'} to=${this.currentUserId || 'unknown'}`);
       this.callbacks.onOffer?.(data);
     });
 
     this.socket.on('answer', (data: { answer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
       console.log('✅ ANSWER received from:', data.fromUserId || data.fromSocketId);
+      console.log(`[WS-RECV] webrtc-answer roomId=${this.currentRoomId || 'unknown'} from=${data.fromUserId || 'unknown'} to=${this.currentUserId || 'unknown'}`);
       this.callbacks.onAnswer?.(data);
     });
 
     this.socket.on('ice-candidate', (data: { candidate: RTCIceCandidate, fromUserId: string, fromSocketId: string }) => {
       console.log(`🧊 [WS] ICE candidate from: ${data.fromUserId || data.fromSocketId}`);
+      console.log(`[WS-RECV] webrtc-candidate roomId=${this.currentRoomId || 'unknown'} from=${data.fromUserId || 'unknown'} to=${this.currentUserId || 'unknown'}`);
       this.callbacks.onIceCandidate?.(data);
     });
 
@@ -528,6 +530,7 @@ this.socket.on('ice-servers', (data) => {
     }
 
     console.log(`📞 WEBSOCKET: Sending offer to ${targetUserId}`);
+    console.log(`[WS-SEND] webrtc-offer roomId=${this.currentRoomId || 'unknown'} from=${this.currentUserId || 'unknown'} to=${targetUserId} sdpLen=${offer.sdp?.length || 0}`);
     this.socket?.emit('offer', {
       offer,
       targetUserId,
@@ -543,6 +546,7 @@ this.socket.on('ice-servers', (data) => {
     }
 
     console.log(`✅ WEBSOCKET: Sending answer to ${targetUserId}`);
+    console.log(`[WS-SEND] webrtc-answer roomId=${this.currentRoomId || 'unknown'} from=${this.currentUserId || 'unknown'} to=${targetUserId} sdpLen=${answer.sdp?.length || 0}`);
     this.socket?.emit('answer', {
       answer,
       targetUserId,
@@ -558,6 +562,7 @@ this.socket.on('ice-servers', (data) => {
     }
 
     console.log(`🧊 WEBSOCKET: Sending ICE candidate to ${targetUserId}`);
+    console.log(`[WS-SEND] webrtc-candidate roomId=${this.currentRoomId || 'unknown'} from=${this.currentUserId || 'unknown'} to=${targetUserId}`);
     this.socket?.emit('ice-candidate', {
       candidate,
       targetUserId,
@@ -604,6 +609,7 @@ this.socket.on('ice-servers', (data) => {
       roomId: this.currentRoomId,
       fromUserId: this.currentUserId
     });
+    console.log(`[WS-SEND] webrtc-offer roomId=${this.currentRoomId} from=${this.currentUserId} to=${targetUserId} sdpLen=${sdp?.length || 0}`);
 
     this.socket?.emit('offer', legacyMessage);
   }
@@ -631,6 +637,7 @@ this.socket.on('ice-servers', (data) => {
       roomId: this.currentRoomId,
       fromUserId: this.currentUserId
     });
+    console.log(`[WS-SEND] webrtc-answer roomId=${this.currentRoomId} from=${this.currentUserId} to=${targetUserId} sdpLen=${sdp?.length || 0}`);
 
     this.socket?.emit('answer', legacyMessage);
   }
@@ -660,6 +667,7 @@ this.socket.on('ice-servers', (data) => {
       fromUserId: this.currentUserId,
       candidateType
     });
+    console.log(`[WS-SEND] webrtc-candidate roomId=${this.currentRoomId} from=${this.currentUserId} to=${targetUserId}`);
 
     this.socket?.emit('ice-candidate', legacyMessage);
   }
@@ -687,6 +695,7 @@ this.socket.on('ice-servers', (data) => {
     
     this.socket!.emit('request-offer', requestData);
     console.log('✅ [WS] Solicitação de offer enviada para:', participantId);
+    console.log(`[WS-SEND] webrtc-request-offer roomId=${this.currentRoomId} from=${this.currentUserId} to=${participantId}`);
     
     // ETAPA 3: Implementar timeout e retry para offer request
     setTimeout(() => {

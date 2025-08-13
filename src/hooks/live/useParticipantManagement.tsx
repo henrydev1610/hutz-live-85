@@ -168,10 +168,12 @@ export const useParticipantManagement = ({
           audioTracks: stream.getAudioTracks().length,
           active: stream.active
         });
+        console.log(`[HOST-BRIDGE] participantId=${participantId} streamId=${stream.id} tracks=${stream.getTracks().length}`);
         
         // CRÍTICO: Registrar stream IMEDIATAMENTE em __mlStreams__
         (window as any).__mlStreams__[participantId] = stream;
         console.log('✅ HOST BRIDGE: Stream registrado para popup em __mlStreams__');
+        console.log(`[HOST-BRIDGE] stream saved to window.__mlStreams__ participantId=${participantId} streamId=${stream.id}`);
         
         // Processar no React
         enhancedHandleParticipantStream(participantId, stream);

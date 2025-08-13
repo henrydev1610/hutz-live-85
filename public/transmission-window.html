@@ -82,6 +82,7 @@
         // FASE 2: Função para buscar stream do host
         function getStreamFromHost(participantId) {
             try {
+                console.log(`[POPUP-REQUEST] window.opener.getParticipantStream(${participantId})`);
                 if (window.opener && window.opener.getParticipantStream) {
                     const stream = window.opener.getParticipantStream(participantId);
                     if (stream) {
@@ -112,6 +113,7 @@
                 currentStream = stream;
                 currentParticipant = participantId;
                 
+                console.log(`[POPUP-ASSIGN] video.srcObject=stream participantId=${participantId} streamId=${stream.id}`);
                 updateStatus(`Reproduzindo: ${participantId}`);
                 updateDebug(`✅ CRITICAL SUCCESS: Remote stream assigned para ${participantId}`);
                 

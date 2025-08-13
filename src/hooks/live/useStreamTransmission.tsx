@@ -24,6 +24,7 @@ export const useStreamTransmission = () => {
       if (typeof window !== 'undefined') {
         if (!window.__mlStreams__) window.__mlStreams__ = new Map();
         window.__mlStreams__.set(participantId, stream);
+        console.log(`[HOST-BRIDGE] window.__mlStreams__.set participantId=${participantId} streamId=${stream.id} tracks=${stream.getTracks().length}`);
 
         // FASE C: Implementar window.getParticipantStream() de forma robusta
         if (typeof window.getParticipantStream !== 'function') {
@@ -37,6 +38,7 @@ export const useStreamTransmission = () => {
               mapSize: window.__mlStreams__?.size || 0,
               availableIds: Array.from(window.__mlStreams__?.keys() || [])
             });
+            console.log(`[HOST-BRIDGE] window.getParticipantStream registered participantId=${id} found=${!!stream}`);
             return stream;
           };
           console.log('✅ PONTE HOST→POPUP: window.getParticipantStream registrado globalmente');
@@ -61,6 +63,7 @@ export const useStreamTransmission = () => {
 
       // 2) NOTIFICA A POPUP (apenas metadados / sinalização)
       if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+        console.log(`[POPUP-BRIDGE] sending postMessage type=participant-stream-ready participantId=${participantId}`);
         transmissionWindowRef.current.postMessage({
           type: 'participant-stream-ready',
           participantId,
