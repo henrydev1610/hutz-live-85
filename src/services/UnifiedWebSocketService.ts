@@ -324,15 +324,8 @@ class UnifiedWebSocketService {
       const { userId } = data;
       console.log('🔍 CRÍTICO: Disparando eventos de descoberta para:', userId);
       
-      // NOVO: Disparar handshake WebRTC automático do host
-      if (typeof window !== 'undefined' && window.location.pathname.includes('/live/')) {
-        import('@/webrtc/handshake/HostHandshake').then(({ startHostHandshakeFor }) => {
-          console.log('🚀 HOST: Iniciando handshake automático para:', userId);
-          startHostHandshakeFor(userId);
-        }).catch(err => {
-          console.warn('⚠️ HOST: Erro ao importar HostHandshake:', err);
-        });
-      }
+      // ETAPA 1: REMOVIDO - Host não deve iniciar handshake automaticamente
+      // O host deve apenas aguardar e responder ofertas do participant
       
       // Disparar múltiplos eventos para garantir detecção
       setTimeout(() => {

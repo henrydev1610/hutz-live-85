@@ -123,15 +123,22 @@ export const useLivePageEffects = ({
               );
             });
 
-            // FASE F: Solicitar offer após participante conectar (fluxo determinístico)
+            // ETAPA 3: Solicitar offer IMEDIATAMENTE após detecção do participante
             setTimeout(() => {
               import('@/webrtc/handshake/HostHandshake').then(({ requestOfferFromParticipant }) => {
-                console.log('🚀 FLUXO DETERMINÍSTICO: Solicitando offer do participante:', userId);
+                console.log('🚀 CRÍTICO: HOST solicitando offer IMEDIATO do participante:', userId);
                 requestOfferFromParticipant(userId);
+                
+                // TIMEOUT: Se não receber offer em 10s, tentar novamente
+                setTimeout(() => {
+                  console.log('⚠️ TIMEOUT: Reenvindo solicitação de offer para:', userId);
+                  requestOfferFromParticipant(userId);
+                }, 10000);
+                
               }).catch(err => {
-                console.warn('⚠️ HOST: Erro ao solicitar offer:', err);
+                console.error('❌ HOST: Erro crítico ao solicitar offer:', err);
               });
-            }, 1000); // Delay para garantir que o participante está pronto
+            }, 500); // Reduzido para resposta mais rápida
 
           } else {
             console.log('ℹ️ HOST DETECTADO:', userId);

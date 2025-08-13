@@ -237,9 +237,10 @@ export function cleanupHostHandshake(participantId: string) {
   }
 }
 
-/** Mantido para compatibilidade: não deve mais ser usado (host não inicia offer) */
+/** ETAPA 2: REMOVIDO - Host nunca cria offers */
 export async function startHostHandshakeFor(_participantId: string) {
-  console.warn('⚠️ [HOST] startHostHandshakeFor() está obsoleto. O host agora só responde a offers.');
+  console.error('❌ [HOST] startHostHandshakeFor() REMOVIDO - Host nunca deve criar offers!');
+  throw new Error('HOST NUNCA DEVE CRIAR OFFERS - Use requestOfferFromParticipant()');
 }
 
 // Tipagem global
