@@ -369,58 +369,99 @@ export const useEnhancedWebRTCStability = (
     }
   }, [stopStabilityMonitoring, handleConnectionRecovery, startStabilityMonitoring, peerConnections]);
 
-  // SOLUÇÃO: Novo método para reset específico de WebRTC loop
+  // SOLUÇÃO APRIMORADA: Loop detection e breaking mais inteligente
   const breakWebRTCLoop = useCallback(() => {
-    console.log('🔄 STABILITY: Breaking WebRTC connecting loop');
+    console.log('🔄 STABILITY: Breaking WebRTC connecting loop - Enhanced');
     toast.info('🔄 Breaking connection loop...');
     
-    // Identificar e limpar conexões stuck em "connecting"
-    const stuckConnections: string[] = [];
+    const now = Date.now();
+    const LOOP_DETECTION_THRESHOLD = 45000; // 45s in connecting = loop
+    let loopDetected = false;
+    let stuckConnections: string[] = [];
+    
+    // DETECÇÃO AVANÇADA: Verificar conexões em loop por tempo
     peerConnections.forEach((pc, participantId) => {
-      const isStuck = pc.connectionState === 'connecting' || 
-                     pc.iceConnectionState === 'checking' ||
-                     pc.signalingState === 'have-remote-offer';
+      const currentData = metrics.participantConnections.get(participantId);
+      const connectingTime = currentData?.connectingStartTime || now;
+      const timeInConnecting = now - connectingTime;
       
-      if (isStuck) {
+      const isDefinitelyStuck = (
+        pc.connectionState === 'connecting' || 
+        pc.iceConnectionState === 'checking' ||
+        pc.signalingState === 'have-remote-offer'
+      ) && timeInConnecting > LOOP_DETECTION_THRESHOLD;
+      
+      if (isDefinitelyStuck) {
+        loopDetected = true;
         stuckConnections.push(participantId);
-        console.log(`🧹 STABILITY: Closing stuck connection for ${participantId}`);
-        pc.close();
+        console.log(`🔍 LOOP DETECTED: ${participantId} stuck for ${timeInConnecting}ms`);
+        
+        try {
+          pc.close();
+        } catch (err) {
+          console.warn(`⚠️ Error closing stuck PC for ${participantId}:`, err);
+        }
       }
     });
     
-    // Remove stuck connections
+    // Cleanup stuck connections
     stuckConnections.forEach(participantId => {
       peerConnections.delete(participantId);
     });
     
-    // Update metrics to reflect cleanup
+    // RESET TOTAL se loop detectado mas sem conexões específicas
+    if (!loopDetected && peerConnections.size > 0) {
+      console.log('🔄 FORCE RESET: No specific loops but general WebRTC stuck');
+      peerConnections.forEach((pc, participantId) => {
+        try {
+          pc.close();
+          stuckConnections.push(participantId);
+        } catch (err) {
+          console.warn(`⚠️ Error in force reset for ${participantId}:`, err);
+        }
+      });
+      peerConnections.clear();
+      loopDetected = true;
+    }
+    
+    // Update metrics with cleaned state
     setMetrics(prev => {
       const updatedConnections = new Map(prev.participantConnections);
       stuckConnections.forEach(participantId => {
         updatedConnections.delete(participantId);
       });
       
+      const newWebRTCState = peerConnections.size === 0 ? 'disconnected' : 'connecting';
+      const newOverallState = prev.connectionState.websocket === 'connected' && newWebRTCState !== 'connecting'
+                             ? 'connected' 
+                             : prev.connectionState.websocket === 'connected' && newWebRTCState === 'connecting'
+                             ? 'connecting'
+                             : 'disconnected';
+      
       return {
         ...prev,
         participantConnections: updatedConnections,
         connectionState: {
           ...prev.connectionState,
-          webrtc: peerConnections.size === 0 ? 'disconnected' : 'connecting',
-          overall: prev.connectionState.websocket === 'connected' && peerConnections.size === 0 
-                   ? 'connected' 
-                   : prev.connectionState.websocket === 'connected' 
-                   ? 'connecting' 
-                   : 'disconnected'
-        }
+          webrtc: newWebRTCState,
+          overall: newOverallState
+        },
+        isStable: newOverallState === 'connected'
       };
     });
     
-    if (stuckConnections.length > 0) {
-      toast.success(`✅ Cleared ${stuckConnections.length} stuck connections`);
+    if (loopDetected) {
+      toast.success(`✅ Loop broken! Cleared ${stuckConnections.length} stuck connections`);
+      console.log('✅ LOOP BROKEN: WebRTC state reset successfully');
     } else {
-      toast.info('ℹ️ No stuck connections found');
+      toast.info('ℹ️ No connecting loops detected');
     }
-  }, [peerConnections]);
+    
+    // Trigger global loop break event for external handlers
+    window.dispatchEvent(new CustomEvent('webrtc-loop-broken', {
+      detail: { clearedConnections: stuckConnections.length, timestamp: Date.now() }
+    }));
+  }, [peerConnections, metrics.participantConnections]);
 
   // Auto-start monitoring
   useEffect(() => {

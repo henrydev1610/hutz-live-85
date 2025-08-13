@@ -381,6 +381,10 @@ export class UnifiedWebRTCManager {
   cleanup(): void {
     console.log('🧹 UNIFIED: Cleaning up WebRTC manager');
 
+    // Clear connection timeouts
+    this.connectionTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.connectionTimeouts.clear();
+
     // Clear retry timeouts
     this.retryTimeouts.forEach(timeout => clearTimeout(timeout));
     this.retryTimeouts.clear();
@@ -407,8 +411,6 @@ export class UnifiedWebRTCManager {
     this.roomId = null;
     this.participantId = null;
     this.isHost = false;
-    
-    // CORREÇÃO: Reset do estado WebRTC ready
     this.webrtcReady = false;
 
     // Disconnect WebSocket
@@ -417,42 +419,98 @@ export class UnifiedWebRTCManager {
     }
   }
 
+  // NOVO: Método público para quebrar loops de conexão
+  public breakConnectionLoop(): void {
+    console.log('🔄 BREAK LOOP: User requested connection loop break');
+    this.forceCleanupStuckConnections();
+  }
+
+  // NOVO: Sistema de timeouts para quebrar loops
+  private connectionTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private readonly CONNECTION_TIMEOUT = 30000; // 30s timeout for connections
+
   private updateConnectionState(type: keyof ConnectionState, state: ConnectionState[keyof ConnectionState]): void {
     const previousState = { ...this.connectionState };
     this.connectionState[type] = state;
     
-    // SOLUÇÃO: Lógica aprimorada para evitar loops de "connecting"
+    // SOLUÇÃO DEFINITIVA: Estado host/participant específico
     if (this.isHost) {
-      // Para host: conectado se WebSocket conectado
-      if (this.connectionState.websocket === 'connected') {
-        this.connectionState.overall = 'connected';
+      // HOST: WebSocket = overall, WebRTC depende de participantes ativos
+      this.connectionState.overall = this.connectionState.websocket;
+      
+      if (type === 'webrtc') {
+        const activeConnections = Array.from(this.peerConnections.values())
+          .filter(pc => pc.connectionState === 'connected');
+        const connectingConnections = Array.from(this.peerConnections.values())
+          .filter(pc => pc.connectionState === 'connecting');
         
-        // CORREÇÃO CRÍTICA: WebRTC para host depende de participantes reais
-        if (type === 'webrtc') {
-          // Só considerar "connecting" se há handshakes ativos
-          const hasActiveHandshakes = this.peerConnections.size > 0;
-          const hasCompletedConnections = Array.from(this.peerConnections.values())
-            .some(pc => pc.connectionState === 'connected');
-          
-          if (hasCompletedConnections) {
-            this.connectionState.webrtc = 'connected';
-          } else if (hasActiveHandshakes && state === 'connecting') {
-            this.connectionState.webrtc = 'connecting';
-          } else if (!hasActiveHandshakes) {
-            this.connectionState.webrtc = 'disconnected'; // Sem participantes = disconnected
-          }
+        if (activeConnections.length > 0) {
+          this.connectionState.webrtc = 'connected';
+        } else if (connectingConnections.length > 0) {
+          this.connectionState.webrtc = 'connecting';
+          // TIMEOUT: Forçar falha se connecting por muito tempo
+          this.setConnectionTimeout('webrtc-host');
+        } else {
+          this.connectionState.webrtc = 'disconnected';
+          this.clearConnectionTimeout('webrtc-host');
         }
-      } else {
-        this.updateOverallState();
       }
     } else {
-      // Para participante: precisa WebSocket + WebRTC
+      // PARTICIPANT: WebSocket + WebRTC necessários
+      if (type === 'webrtc' && state === 'connecting') {
+        this.setConnectionTimeout('webrtc-participant');
+      } else if (type === 'webrtc' && (state === 'connected' || state === 'disconnected')) {
+        this.clearConnectionTimeout('webrtc-participant');
+      }
       this.updateOverallState();
     }
 
-    // NOVO: Log apenas se o estado mudou para evitar spam
+    // Log only if state changed
     if (JSON.stringify(previousState) !== JSON.stringify(this.connectionState)) {
-      console.log(`🔄 CONNECTION STATE: ${type} = ${previousState[type]} → ${state}, overall = ${previousState.overall} → ${this.connectionState.overall} (Host: ${this.isHost})`);
+      console.log(`🔄 CONNECTION STATE: ${type} = ${previousState[type]} → ${state}, overall = ${previousState.overall} → ${this.connectionState.overall} (Host: ${this.isHost}, PeerConnections: ${this.peerConnections.size})`);
+    }
+  }
+
+  private setConnectionTimeout(key: string): void {
+    this.clearConnectionTimeout(key);
+    this.connectionTimeouts.set(key, setTimeout(() => {
+      console.warn(`⏰ CONNECTION TIMEOUT: Breaking ${key} loop after ${this.CONNECTION_TIMEOUT}ms`);
+      if (key.includes('webrtc')) {
+        this.connectionState.webrtc = 'failed';
+        this.forceCleanupStuckConnections();
+      }
+    }, this.CONNECTION_TIMEOUT));
+  }
+
+  private clearConnectionTimeout(key: string): void {
+    const timeout = this.connectionTimeouts.get(key);
+    if (timeout) {
+      clearTimeout(timeout);
+      this.connectionTimeouts.delete(key);
+    }
+  }
+
+  private forceCleanupStuckConnections(): void {
+    console.log('🧹 FORCE CLEANUP: Removing all stuck connections');
+    const stuckCount = this.peerConnections.size;
+    
+    this.peerConnections.forEach((pc, participantId) => {
+      if (pc.connectionState === 'connecting' || pc.iceConnectionState === 'checking') {
+        console.log(`🧹 FORCE CLEANUP: Closing stuck connection for ${participantId}`);
+        pc.close();
+      }
+    });
+    
+    this.peerConnections.clear();
+    
+    if (stuckCount > 0) {
+      this.connectionState.webrtc = 'disconnected';
+      if (this.isHost) {
+        this.connectionState.overall = this.connectionState.websocket;
+      } else {
+        this.updateOverallState();
+      }
+      console.log(`✅ FORCE CLEANUP: Cleared ${stuckCount} stuck connections`);
     }
   }
 

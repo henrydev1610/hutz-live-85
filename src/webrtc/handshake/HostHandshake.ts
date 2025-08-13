@@ -36,11 +36,18 @@ function getOrCreatePC(participantId: string) {
   // Inicializar buffer de candidates
   pendingCandidates.set(participantId, []);
 
-  // SOLUÇÃO: Timeout para handshake
+  // SOLUÇÃO APRIMORADA: Timeout com stages específicos
   const handshakeTimeout = setTimeout(() => {
-    console.log(`⏰ [HOST] Handshake timeout for ${participantId} - cleaning up`);
+    console.log(`⏰ [HOST] Handshake timeout for ${participantId} - cleaning up stuck connection`);
+    console.log(`🔍 [HOST] Connection state at timeout: ${pc.connectionState}, ICE: ${pc.iceConnectionState}, Signaling: ${pc.signalingState}`);
     if (pc.connectionState !== 'connected') {
       cleanupHostHandshake(participantId);
+      // Disparar evento global para notificar sobre cleanup
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('webrtc-timeout-cleanup', {
+          detail: { participantId, reason: 'handshake-timeout' }
+        }));
+      }
     }
   }, 30000); // 30s timeout
   handshakeTimeouts.set(participantId, handshakeTimeout);
@@ -121,8 +128,15 @@ function getOrCreatePC(participantId: string) {
     console.log(`🔌 [HOST] PC(${participantId}) state:`, pc.connectionState);
     console.log(`[HOST-ICE] connection=${pc.connectionState}`);
     
-    // SOLUÇÃO: Limpar timeout quando conectado ou failed
-    if (pc.connectionState === 'connected' || pc.connectionState === 'failed') {
+    // SOLUÇÃO APRIMORADA: Limpar timeout e notificar estado
+    if (pc.connectionState === 'connected') {
+      const timeout = handshakeTimeouts.get(participantId);
+      if (timeout) {
+        clearTimeout(timeout);
+        handshakeTimeouts.delete(participantId);
+        console.log(`✅ [HOST] Connection established for ${participantId} - timeout cleared`);
+      }
+    } else if (pc.connectionState === 'failed') {
       const timeout = handshakeTimeouts.get(participantId);
       if (timeout) {
         clearTimeout(timeout);
@@ -308,19 +322,22 @@ if (typeof window !== 'undefined' && !(window as any).__hostHandlersSetup) {
   (window as any).__hostHandlersSetup = true;
 }
 
-/** SOLUÇÃO: Cleanup aprimorado por participante */
+/** SOLUÇÃO DEFINITIVA: Cleanup com detecção de loops */
 export function cleanupHostHandshake(participantId: string) {
   const pc = hostPeerConnections.get(participantId);
   if (pc) {
+    const wasStuck = pc.connectionState === 'connecting' || pc.iceConnectionState === 'checking';
     try {
       pc.ontrack = null;
       pc.onicecandidate = null;
       pc.onconnectionstatechange = null;
       pc.oniceconnectionstatechange = null;
       pc.close();
-    } catch {}
+    } catch (err) {
+      console.warn(`⚠️ [HOST] Error during PC cleanup for ${participantId}:`, err);
+    }
     hostPeerConnections.delete(participantId);
-    console.log('🧹 [HOST] Cleanup PC de', participantId);
+    console.log(`🧹 [HOST] Cleanup PC for ${participantId} ${wasStuck ? '(was stuck in connecting)' : ''}`);
   }
   
   // Limpar timeout se existe
@@ -332,6 +349,46 @@ export function cleanupHostHandshake(participantId: string) {
   
   // Limpar pending candidates
   pendingCandidates.delete(participantId);
+  
+  // Remover streams salvos
+  if (typeof window !== 'undefined' && window.__mlStreams__) {
+    window.__mlStreams__.delete(participantId);
+  }
+}
+
+/** NOVO: Função para limpar todas as conexões stuck */
+export function cleanupAllStuckConnections() {
+  console.log('🧹 [HOST] Cleaning up ALL stuck connections');
+  let cleanedCount = 0;
+  
+  hostPeerConnections.forEach((pc, participantId) => {
+    const isStuck = pc.connectionState === 'connecting' || 
+                   pc.iceConnectionState === 'checking' ||
+                   pc.signalingState === 'have-remote-offer';
+    
+    if (isStuck) {
+      cleanupHostHandshake(participantId);
+      cleanedCount++;
+    }
+  });
+  
+  console.log(`✅ [HOST] Cleaned ${cleanedCount} stuck connections`);
+  return cleanedCount;
+}
+
+/** NOVO: Função para obter estado de todas as conexões */
+export function getHostConnectionsState() {
+  const connections: any[] = [];
+  hostPeerConnections.forEach((pc, participantId) => {
+    connections.push({
+      participantId,
+      connectionState: pc.connectionState,
+      iceConnectionState: pc.iceConnectionState,
+      signalingState: pc.signalingState,
+      hasTimeout: handshakeTimeouts.has(participantId)
+    });
+  });
+  return connections;
 }
 
 /** ETAPA 2: REMOVIDO DEFINITIVAMENTE - Host nunca cria offers */

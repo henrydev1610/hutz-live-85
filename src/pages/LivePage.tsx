@@ -33,7 +33,7 @@ const LivePage: React.FC = () => {
     setFinalActionOpen: state.setFinalActionOpen
   });
 
-  // Environment detection and cache management
+  // Environment detection and WebRTC management
   useEffect(() => {
     const envInfo = getEnvironmentInfo();
     console.log('🌍 LIVE PAGE: Environment detected:', envInfo);
@@ -42,6 +42,47 @@ const LivePage: React.FC = () => {
     console.log('🧹 LIVE PAGE: Initial cache clear');
     clearConnectionCache();
     clearDeviceCache();
+
+    // HOST-SPECIFIC: Setup WebRTC loop breaking listeners
+    const handleForceReset = () => {
+      console.log('🔄 LIVE PAGE HOST: Force WebRTC reset requested');
+      try {
+        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
+          const manager = getWebRTCManager();
+          if (manager) {
+            manager.cleanup();
+            toast({
+              title: "Conexão Resetada",
+              description: "WebRTC foi reinicializado com sucesso.",
+            });
+          }
+        });
+      } catch (error) {
+        console.error('❌ LIVE PAGE: Reset failed:', error);
+      }
+    };
+
+    const handleLoopBreak = () => {
+      console.log('⚡ LIVE PAGE HOST: Break WebRTC loop requested');
+      try {
+        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
+          const manager = getWebRTCManager();
+          if (manager && typeof manager.breakConnectionLoop === 'function') {
+            manager.breakConnectionLoop();
+            toast({
+              title: "Loop Quebrado",
+              description: "Conexões em loop foram limpas.",
+            });
+          }
+        });
+      } catch (error) {
+        console.error('❌ LIVE PAGE: Loop break failed:', error);
+      }
+    };
+
+    // Add event listeners for WebRTC control
+    window.addEventListener('force-webrtc-reset', handleForceReset);
+    window.addEventListener('break-webrtc-loop', handleLoopBreak);
 
     // Executar diagnósticos críticos na primeira carga
     const runInitialDiagnostics = async () => {
@@ -69,6 +110,12 @@ const LivePage: React.FC = () => {
     };
 
     runInitialDiagnostics();
+
+    // Cleanup listeners on unmount
+    return () => {
+      window.removeEventListener('force-webrtc-reset', handleForceReset);
+      window.removeEventListener('break-webrtc-loop', handleLoopBreak);
+    };
   }, [toast]);
 
   // ENHANCED: Transmission participants update with debugging and cache management
