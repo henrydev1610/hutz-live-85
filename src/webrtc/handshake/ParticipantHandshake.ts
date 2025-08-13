@@ -3,6 +3,8 @@ import { getActiveWebRTCConfig } from '@/utils/webrtc/WebRTCConfig';
 
 let participantPC: RTCPeerConnection | null = null;
 let localStream: MediaStream | null = null;
+let isMakingOffer = false;
+let pendingCandidates: RTCIceCandidate[] = [];
 
 async function ensureLocalStream(): Promise<MediaStream> {
   if (!localStream || !localStream.active) {
@@ -42,11 +44,22 @@ function setupParticipantHandlers() {
     return;
   }
 
-  // FASE F: Receber solicitação de offer do host
+  // FASE F: Receber solicitação de offer do host com GUARD
   unifiedWebSocketService.on('request-offer', async (data: any) => {
     const hostId = data?.fromUserId;
     if (!hostId) {
       console.warn('⚠️ [PARTICIPANT] Solicitação de offer inválida:', data);
+      return;
+    }
+
+    // GUARD: Evitar ofertas concorrentes
+    if (isMakingOffer) {
+      console.warn('⚠️ [PARTICIPANT] Já fazendo offer, ignorando nova solicitação de:', hostId);
+      return;
+    }
+
+    if (participantPC && participantPC.signalingState !== 'stable') {
+      console.warn('⚠️ [PARTICIPANT] PC não stable:', participantPC.signalingState, '- ignorando solicitação');
       return;
     }
 
@@ -72,35 +85,70 @@ function setupParticipantHandlers() {
     }
 
     try {
+      console.log('🔄 [PARTICIPANT] Aplicando setRemoteDescription, state atual:', participantPC.signalingState);
       await participantPC.setRemoteDescription(answer);
-      console.log('✅ [PARTICIPANT] Answer aplicado, conexão estabelecida');
+      console.log('✅ [PARTICIPANT] Answer aplicado, novo state:', participantPC.signalingState);
+
+      // Aplicar candidates em buffer
+      if (pendingCandidates.length > 0) {
+        console.log(`🧊 [PARTICIPANT] Aplicando ${pendingCandidates.length} candidates em buffer`);
+        for (const candidate of pendingCandidates) {
+          try {
+            await participantPC.addIceCandidate(candidate);
+          } catch (err) {
+            console.warn('⚠️ [PARTICIPANT] Erro aplicando candidate em buffer:', err);
+          }
+        }
+        pendingCandidates = [];
+      }
+      
+      console.log('✅ [PARTICIPANT] Conexão estabelecida com sucesso');
     } catch (err) {
       console.error('❌ [PARTICIPANT] Erro aplicando answer:', err);
     }
   });
 
-  // Receber ICE candidates do host
+  // Receber ICE candidates do host com BUFFER
   unifiedWebSocketService.on('webrtc-candidate', async (data: any) => {
     const hostId = data?.fromUserId;
     const candidate = data?.candidate;
     
-    if (!participantPC || !candidate) {
-      console.warn('⚠️ [PARTICIPANT] PC ou candidate inválido de:', hostId);
+    if (!candidate) {
+      console.warn('⚠️ [PARTICIPANT] Candidate inválido de:', hostId);
       return;
     }
 
-    try {
-      await participantPC.addIceCandidate(candidate);
-      const candidateType = /typ (\w+)/.exec(candidate.candidate)?.[1];
-      console.log(`🧊 [PARTICIPANT] ICE candidate PADRONIZADO adicionado de ${hostId}, tipo: ${candidateType}`);
-    } catch (err) {
-      console.warn('⚠️ [PARTICIPANT] Erro ao adicionar candidate de:', hostId, err);
+    if (!participantPC) {
+      console.warn('⚠️ [PARTICIPANT] PC não existe, bufferizando candidate de:', hostId);
+      pendingCandidates.push(candidate);
+      return;
+    }
+
+    // BUFFER ICE: Aplicar apenas após setRemoteDescription
+    if (participantPC.remoteDescription) {
+      try {
+        await participantPC.addIceCandidate(candidate);
+        const candidateType = /typ (\w+)/.exec(candidate.candidate)?.[1];
+        console.log(`🧊 [PARTICIPANT] ICE candidate PADRONIZADO adicionado de ${hostId}, tipo: ${candidateType}`);
+      } catch (err) {
+        console.warn('⚠️ [PARTICIPANT] Erro ao adicionar candidate de:', hostId, err);
+      }
+    } else {
+      console.log(`📦 [PARTICIPANT] Bufferizando candidate de ${hostId} (total: ${pendingCandidates.length + 1})`);
+      pendingCandidates.push(candidate);
     }
   });
 }
 
 // FASE B: Criar offer e enviar para o host
 async function createAndSendOffer(hostId: string): Promise<void> {
+  if (isMakingOffer) {
+    console.warn('⚠️ [PARTICIPANT] Já fazendo offer, abortando');
+    return;
+  }
+
+  isMakingOffer = true;
+  
   try {
     // Fechar conexão anterior se existir
     if (participantPC) {
@@ -110,13 +158,29 @@ async function createAndSendOffer(hostId: string): Promise<void> {
     const config = getActiveWebRTCConfig();
     participantPC = new RTCPeerConnection(config);
 
+    // CRÍTICO: Adicionar transceivers sendonly ANTES de adicionar tracks
+    try {
+      participantPC.addTransceiver('video', { direction: 'sendonly' });
+      participantPC.addTransceiver('audio', { direction: 'sendonly' });
+      console.log('📡 [PARTICIPANT] Transceivers sendonly adicionados ANTES dos tracks');
+    } catch (err) {
+      console.warn('⚠️ [PARTICIPANT] Erro ao adicionar transceivers:', err);
+    }
+
     // Obter stream local
     const stream = await ensureLocalStream();
     
-    // Adicionar tracks à conexão
+    // Adicionar tracks aos transceivers existentes
+    const transceivers = participantPC.getTransceivers();
     stream.getTracks().forEach(track => {
-      console.log(`📡 [PARTICIPANT] Adicionando track ${track.kind} ao PC`);
-      participantPC!.addTrack(track, stream);
+      console.log(`📡 [PARTICIPANT] Configurando track ${track.kind} no transceiver`);
+      const transceiver = transceivers.find(t => t.receiver.track?.kind === track.kind);
+      if (transceiver && transceiver.sender) {
+        transceiver.sender.replaceTrack(track);
+      } else {
+        // Fallback se transceivers não funcionaram
+        participantPC!.addTrack(track, stream);
+      }
     });
 
     // ICE candidates
@@ -141,14 +205,22 @@ async function createAndSendOffer(hostId: string): Promise<void> {
     };
 
     // Criar e enviar offer
+    console.log('🔄 [PARTICIPANT] Criando offer, state atual:', participantPC.signalingState);
     const offer = await participantPC.createOffer();
     await participantPC.setLocalDescription(offer);
+    console.log('✅ [PARTICIPANT] Local description definida, novo state:', participantPC.signalingState);
     
     console.log('📤 [PARTICIPANT] Offer PADRONIZADA criada, enviando para host:', hostId);
     unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type);
 
   } catch (err) {
     console.error('❌ [PARTICIPANT] Erro criando offer:', err);
+    // Log específico para erro de m-lines
+    if (err instanceof Error && err.message.includes('m-lines')) {
+      console.error('🚨 [PARTICIPANT] ERRO M-LINES DETECTADO - Problema na ordem dos transceivers');
+    }
+  } finally {
+    isMakingOffer = false;
   }
 }
 

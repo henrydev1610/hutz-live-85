@@ -2,6 +2,7 @@ import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { getActiveWebRTCConfig } from '@/utils/webrtc/WebRTCConfig';
 
 const hostPeerConnections = new Map<string, RTCPeerConnection>();
+const pendingCandidates = new Map<string, RTCIceCandidate[]>();
 
 function logIceType(prefix: string, cand?: string) {
   if (!cand) return;
@@ -11,25 +12,28 @@ function logIceType(prefix: string, cand?: string) {
 
 function getOrCreatePC(participantId: string) {
   let pc = hostPeerConnections.get(participantId);
-  if (pc) return pc;
+  if (pc) {
+    console.log('📡 [HOST] Reutilizando PC existente para:', participantId, 'state:', pc.signalingState);
+    return pc;
+  }
 
   const base = getActiveWebRTCConfig();
-
-  // Se quiser forçar TURN (enquanto valida): descomente a linha abaixo
-  // const config = { ...base, iceTransportPolicy: 'relay' as RTCIceTransportPolicy };
   const config = { ...base };
 
   pc = new RTCPeerConnection(config);
   hostPeerConnections.set(participantId, pc);
 
-  // HOST só recebe mídia
+  // CRÍTICO: HOST só recebe mídia - transceivers ANTES de qualquer descrição
   try {
     pc.addTransceiver('video', { direction: 'recvonly' });
     pc.addTransceiver('audio', { direction: 'recvonly' });
-    console.log('📡 [HOST] Transceivers recvonly adicionados');
+    console.log('📡 [HOST] Transceivers recvonly adicionados ANTES das descrições');
   } catch (err) {
     console.warn('⚠️ [HOST] Erro ao adicionar transceivers:', err);
   }
+
+  // Inicializar buffer de candidates
+  pendingCandidates.set(participantId, []);
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
@@ -85,27 +89,60 @@ export async function handleOfferFromParticipant(data: any) {
   console.log('📩 [HOST] Offer PADRONIZADO recebido de', participantId, {
     roomId: data.roomId,
     offerType: offer.type,
-    timestamp: data.timestamp
+    timestamp: data.timestamp,
+    signalingState: 'checking...'
   });
 
   const pc = getOrCreatePC(participantId);
 
+  // CRÍTICO: Verificar estado antes de aplicar offer
   if (pc.signalingState !== 'stable') {
-    console.warn('⚠️ [HOST] signalingState != stable:', pc.signalingState);
+    console.warn('⚠️ [HOST] signalingState != stable:', pc.signalingState, '- Forçando reset');
+    try {
+      pc.close();
+      hostPeerConnections.delete(participantId);
+      const newPc = getOrCreatePC(participantId);
+      console.log('✅ [HOST] PC resetado, novo state:', newPc.signalingState);
+    } catch (resetErr) {
+      console.error('❌ [HOST] Erro no reset do PC:', resetErr);
+      return;
+    }
   }
 
-  try {
-    await pc.setRemoteDescription(offer);
-    console.log('✅ [HOST] Remote description aplicada');
+  const finalPc = hostPeerConnections.get(participantId)!;
 
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    console.log('✅ [HOST] Local description definida');
+  try {
+    console.log('🔄 [HOST] Aplicando setRemoteDescription, state atual:', finalPc.signalingState);
+    await finalPc.setRemoteDescription(offer);
+    console.log('✅ [HOST] Remote description aplicada, novo state:', finalPc.signalingState);
+
+    console.log('🔄 [HOST] Criando answer...');
+    const answer = await finalPc.createAnswer();
+    await finalPc.setLocalDescription(answer);
+    console.log('✅ [HOST] Local description definida, state final:', finalPc.signalingState);
+
+    // Aplicar candidates em buffer
+    const buffered = pendingCandidates.get(participantId) || [];
+    if (buffered.length > 0) {
+      console.log(`🧊 [HOST] Aplicando ${buffered.length} candidates em buffer`);
+      for (const candidate of buffered) {
+        try {
+          await finalPc.addIceCandidate(candidate);
+        } catch (err) {
+          console.warn('⚠️ [HOST] Erro aplicando candidate em buffer:', err);
+        }
+      }
+      pendingCandidates.set(participantId, []);
+    }
 
     unifiedWebSocketService.sendWebRTCAnswer(participantId, answer.sdp!, answer.type);
     console.log('✅ [HOST] Answer PADRONIZADA enviada para', participantId);
   } catch (err) {
     console.error('❌ [HOST] Erro processando offer de', participantId, err);
+    // Log específico para erro de m-lines
+    if (err instanceof Error && err.message.includes('m-lines')) {
+      console.error('🚨 [HOST] ERRO M-LINES DETECTADO - Problema na ordem dos transceivers');
+    }
   }
 }
 
@@ -128,12 +165,22 @@ export async function handleRemoteCandidate(data: any) {
     return;
   }
 
-  try {
-    logIceType('🧊 [PART→HOST]', candidate.candidate);
-    await pc.addIceCandidate(candidate);
-    console.log('✅ [HOST] ICE candidate PADRONIZADO adicionado de', participantId);
-  } catch (err) {
-    console.error('❌ [HOST] addIceCandidate falhou para', participantId, err);
+  // BUFFER ICE: Aplicar apenas após setRemoteDescription
+  if (pc.remoteDescription) {
+    try {
+      logIceType('🧊 [PART→HOST]', candidate.candidate);
+      await pc.addIceCandidate(candidate);
+      console.log('✅ [HOST] ICE candidate PADRONIZADO adicionado de', participantId);
+    } catch (err) {
+      console.error('❌ [HOST] addIceCandidate falhou para', participantId, err);
+    }
+  } else {
+    // Buffer para aplicar depois do setRemoteDescription
+    const buffer = pendingCandidates.get(participantId) || [];
+    buffer.push(candidate);
+    pendingCandidates.set(participantId, buffer);
+    logIceType('🧊 [PART→HOST] BUFFERED', candidate.candidate);
+    console.log(`📦 [HOST] Candidate bufferizado para ${participantId} (total: ${buffer.length})`);
   }
 }
 

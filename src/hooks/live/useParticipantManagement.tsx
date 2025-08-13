@@ -161,13 +161,38 @@ export const useParticipantManagement = ({
       console.log('❌ CRITICAL ERROR: Host role incorrect - IsHost: false');
     }
     
-    // FASE 2: Implementar window.hostStreamCallback
+    // FASE 2: Implementar window.hostStreamCallback E window.getParticipantStream
     if (isHost && typeof window !== 'undefined') {
       console.log('📡 CRITICAL: Registering window.hostStreamCallback');
+      
+      // Inicializar registro de streams
+      if (!(window as any).__mlStreams__) {
+        (window as any).__mlStreams__ = {};
+      }
+      
       window.hostStreamCallback = (participantId: string, stream: MediaStream) => {
-        console.log('🎥 HOST CALLBACK: Stream received from participant:', participantId);
+        console.log('🎥 HOST CALLBACK: Stream received from participant:', participantId, {
+          streamId: stream.id,
+          tracks: stream.getTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length
+        });
+        
+        // Registrar stream para popup
+        (window as any).__mlStreams__[participantId] = stream;
+        console.log('✅ HOST CALLBACK: Stream registrado em __mlStreams__');
+        
         enhancedHandleParticipantStream(participantId, stream);
       };
+      
+      // Getter para popup
+      (window as any).getParticipantStream = (participantId: string) => {
+        const stream = (window as any).__mlStreams__[participantId];
+        console.log('🔍 HOST GETTER: Solicitado stream para', participantId, 'found:', !!stream);
+        return stream;
+      };
+      
+      console.log('✅ HOST: Callback registration: ✅');
       
       // FASE 3: Log critical validation
       import('@/utils/webrtc/ProtocolValidationLogger').then(({ ProtocolValidationLogger }) => {
