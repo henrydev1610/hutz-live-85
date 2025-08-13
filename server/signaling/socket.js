@@ -634,6 +634,50 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
+    // CRÍTICO: Handler para request-offer (host solicita offer do participante)
+    socket.on('request-offer', (data) => {
+      try {
+        const { roomId, targetUserId, fromUserId } = data;
+        const connection = connections.get(socket.id);
+
+        if (!connection || connection.roomId !== roomId) {
+          socket.emit('error', { message: 'Not in room for request-offer' });
+          return;
+        }
+
+        connection.lastSeen = Date.now();
+        console.log(`[SERVER-REQUEST-OFFER] to ${targetUserId} from ${fromUserId || connection.userId}`);
+
+        // Encontrar socket do participante alvo
+        let targetSocketId = null;
+        const roomSockets = rooms.get(roomId);
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const conn = connections.get(socketId);
+            if (conn && conn.userId === targetUserId) {
+              targetSocketId = socketId;
+              break;
+            }
+          }
+        }
+
+        if (targetSocketId) {
+          socket.to(targetSocketId).emit('request-offer', {
+            fromSocketId: socket.id,
+            fromUserId: connection.userId,
+            roomId
+          });
+          console.log(`[SERVER-REQUEST-OFFER] forwarded to ${targetUserId} socketId=${targetSocketId}`);
+        } else {
+          console.warn(`❌ REQUEST-OFFER: Target ${targetUserId} não encontrado`);
+        }
+
+      } catch (error) {
+        console.error('Error in request-offer:', error);
+        socket.emit('error', { message: 'Failed to send request-offer' });
+      }
+    });
+
     socket.on('leave-room', () => {
       const connection = connections.get(socket.id);
       if (connection) {

@@ -149,14 +149,21 @@
         window.addEventListener('message', (event) => {
             try {
                 console.log(`[POPUP-BRIDGE] received message:`, event.data);
-                const { type, participantId, streamInfo } = event.data || {};
                 
-                if (!type) {
-                    updateDebug(`❌ Mensagem inválida recebida (type undefined)`);
+                // Validação melhorada para evitar "undefined"
+                if (!event.data || typeof event.data !== 'object') {
+                    updateDebug(`❌ Mensagem inválida recebida (não é objeto)`);
                     return;
                 }
                 
-                updateDebug(`Mensagem recebida: ${type} para ${participantId || 'undefined'}`);
+                const { type, participantId, sessionId } = event.data;
+                
+                if (!type) {
+                    updateDebug(`❌ Mensagem sem type`);
+                    return;
+                }
+                
+                updateDebug(`Mensagem válida: ${type} para ${participantId || 'N/A'}`);
 
                 // FASE 2: Responder ao participant-stream-ready
                 if (type === 'participant-stream-ready' && participantId) {
@@ -173,9 +180,9 @@
                     }
                 }
                 
-                // Fallback para outros eventos
-                else if (type === 'update-participants') {
-                    updateDebug(`Participants update recebido`);
+                // Responder a transmission-ready do host
+                else if (type === 'transmission-ready' && sessionId) {
+                    updateDebug(`Host pronto para sessão: ${sessionId}`);
                 }
 
             } catch (error) {
@@ -183,9 +190,28 @@
             }
         });
 
-        // Inicialização
-        updateDebug('Popup inicializada, aguardando streams...');
-        updateStatus('Conectado - Aguardando participantes');
+        // Inicialização com handshake
+        function initializePopup() {
+            updateDebug('Popup inicializada');
+            updateStatus('Conectado - Aguardando participantes');
+            
+            // Enviar sinal de que popup está pronta
+            if (window.opener) {
+                try {
+                    const sessionId = new URLSearchParams(window.location.search).get('sessionId') || 'unknown';
+                    window.opener.postMessage({
+                        type: 'transmission-ready',
+                        sessionId: sessionId
+                    }, '*');
+                    updateDebug(`Handshake enviado para host: sessionId=${sessionId}`);
+                } catch (error) {
+                    updateDebug(`❌ Erro no handshake: ${error.message}`);
+                }
+            }
+        }
+        
+        // Inicializar
+        initializePopup();
 
     </script>
 </body>

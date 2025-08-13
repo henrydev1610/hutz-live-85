@@ -152,28 +152,23 @@ export const useParticipantManagement = ({
   // ETAPA 1: Registrar window.hostStreamCallback ANTES de qualquer setup WebRTC
   useEffect(() => {
     if (isHost && typeof window !== 'undefined') {
-      console.log('🔧 CRÍTICO: Registrando window.hostStreamCallback PRIMEIRO');
+      console.log('[HOST-CALLBACK-REGISTERED] Starting callback registration process');
       
       // CRÍTICO: Inicializar registro de streams global como Map (consistente)
       if (!window.__mlStreams__) {
         window.__mlStreams__ = new Map();
       }
-      console.log(`[HOST-BRIDGE] __mlStreams__ initialized as Map, size=${window.__mlStreams__.size}`);
+      console.log(`[HOST-CALLBACK-REGISTERED] __mlStreams__ initialized as Map, size=${window.__mlStreams__.size}`);
       
       // PONTE HOST → POPUP: Registrar callback ANTES de WebRTC
       window.hostStreamCallback = (participantId: string, stream: MediaStream) => {
-        console.log('🎥 HOST CALLBACK: Stream REAL recebido:', participantId, {
-          streamId: stream.id,
-          tracks: stream.getTracks().length,
-          videoTracks: stream.getVideoTracks().length,
-          audioTracks: stream.getAudioTracks().length,
-          active: stream.active
-        });
-        console.log(`[HOST-BRIDGE] participantId=${participantId} streamId=${stream.id} tracks=${stream.getTracks().length}`);
+        const videoTracks = stream.getVideoTracks().length;
+        const audioTracks = stream.getAudioTracks().length;
+        
+        console.log(`[HOST-CALLBACK-READY] participantId=${participantId} streamId=${stream.id} v=${videoTracks} a=${audioTracks}`);
         
         // CRÍTICO: Registrar stream IMEDIATAMENTE em __mlStreams__ (Map)
         window.__mlStreams__.set(participantId, stream);
-        console.log('✅ HOST BRIDGE: Stream registrado para popup em __mlStreams__');
         console.log(`[HOST-BRIDGE] stream saved to window.__mlStreams__ participantId=${participantId} streamId=${stream.id} mapSize=${window.__mlStreams__.size}`);
         
         // Processar no React
@@ -183,12 +178,11 @@ export const useParticipantManagement = ({
       // Getter para popup acessar o stream (Map)
       window.getParticipantStream = (participantId: string) => {
         const stream = window.__mlStreams__?.get(participantId) ?? null;
-        console.log('🔍 POPUP ACCESS: Stream solicitado para', participantId, 'encontrado:', !!stream);
         console.log(`[HOST-BRIDGE] getParticipantStream participantId=${participantId} found=${!!stream} mapSize=${window.__mlStreams__?.size || 0}`);
         return stream;
       };
       
-      console.log('✅ CRÍTICO: window.hostStreamCallback registrado ANTES de WebRTC setup');
+      console.log('[HOST-CALLBACK-REGISTERED] Registration complete - callback will survive page lifecycle');
     }
   }, [isHost]);
 
@@ -251,10 +245,8 @@ export const useParticipantManagement = ({
     
     return () => {
       console.log('🧹 WEBRTC DEBUG: Limpando callbacks WebRTC');
-      if (typeof window !== 'undefined') {
-        window.hostStreamCallback = undefined;
-        (window as any).getParticipantStream = undefined;
-      }
+      // CRÍTICO: NÃO remover window.hostStreamCallback - deve sobreviver ao ciclo da página
+      // window.hostStreamCallback e window.getParticipantStream devem persistir
     };
   }, [sessionId, handleParticipantJoin, debugCurrentState, isHost]);
 

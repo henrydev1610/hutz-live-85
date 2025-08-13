@@ -51,21 +51,37 @@ function getOrCreatePC(participantId: string) {
     const [stream] = event.streams;
     const videoTracks = stream?.getVideoTracks().length || 0;
     const audioTracks = stream?.getAudioTracks().length || 0;
-    console.log('🎥 [HOST] ontrack de', participantId, 'streamId:', stream?.id, {
-      tracks: stream?.getTracks().length,
-    });
-    console.log(`[HOST-TRACK] participantId=${participantId} streamId=${stream?.id} tracks={video:${videoTracks},audio:${audioTracks}}`);
+    
+    console.log(`[HOST-ONTRACK] participantId=${participantId} streamId=${stream?.id}`);
 
-    if (stream && typeof window !== 'undefined' && window.hostStreamCallback) {
-      // Entrega o stream para o hook do host (atualiza estado + envia para popup)
-      window.hostStreamCallback(participantId, stream);
-    }
+    if (stream) {
+      try {
+        // FAILSAFE: Sempre salvar stream em __mlStreams__
+        if (typeof window !== 'undefined') {
+          if (!window.__mlStreams__) {
+            window.__mlStreams__ = new Map();
+          }
+          window.__mlStreams__.set(participantId, stream);
+          console.log(`[HOST-ONTRACK] stream saved to __mlStreams__ participantId=${participantId} mapSize=${window.__mlStreams__.size}`);
+        }
 
-    // Evento opcional para outros listeners
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('host-stream-received', { detail: { participantId, stream } })
-      );
+        // FAILSAFE: Sempre invocar callback se existir
+        if (typeof window !== 'undefined' && window.hostStreamCallback) {
+          window.hostStreamCallback(participantId, stream);
+        }
+
+        // FAILSAFE: Sempre fazer postMessage para popup
+        if (typeof window !== 'undefined') {
+          window.postMessage({
+            type: 'participant-stream-ready',
+            participantId: participantId
+          }, '*');
+          console.log(`[HOST-ONTRACK] postMessage sent participantId=${participantId}`);
+        }
+
+      } catch (error) {
+        console.error(`[HOST-ONTRACK] error participantId=${participantId}:`, error);
+      }
     }
   };
 
