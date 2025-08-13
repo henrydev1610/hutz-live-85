@@ -600,32 +600,80 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
-    // NEW: Direct offer routing from participant to host
+    // NEW: Enhanced offer routing from participant to host with timeout and validation
     socket.on('webrtc-offer', (data) => {
       try {
         const { roomId, offer } = data;
         const userInfo = socketToUser.get(socket.id);
 
         if (!userInfo || userInfo.roomId !== roomId) {
+          console.log(`SERVER-OFFER-REJECTED roomId=${roomId} reason=not-in-room`);
           socket.emit('error', { message: 'Not in room for WebRTC offer' });
           return;
         }
 
-        // Direct host lookup via map
-        const hostSocketId = hostByRoom.get(roomId);
-        const sdpLen = offer?.sdp?.length || 0;
+        // Validar offer
+        if (!offer || !offer.sdp || !offer.type) {
+          console.log(`SERVER-OFFER-INVALID roomId=${roomId} participantId=${userInfo.userId} reason=missing-sdp`);
+          socket.emit('webrtc-error', { 
+            message: 'Invalid offer format',
+            expectedFormat: '{offer: {sdp, type}}'
+          });
+          return;
+        }
+
+        // Direct host lookup via map with fallback
+        let hostSocketId = hostByRoom.get(roomId);
+        
+        // Fallback: buscar host na conexões
+        if (!hostSocketId) {
+          connections.forEach((conn, sockId) => {
+            if (conn.roomId === roomId && conn.userId.includes('host')) {
+              hostSocketId = sockId;
+              hostByRoom.set(roomId, sockId); // Atualizar cache
+            }
+          });
+        }
+        
+        const sdpLen = offer.sdp.length;
         
         if (hostSocketId) {
           console.log(`SERVER-FWD-OFFER roomId=${roomId} participantId=${userInfo.userId} hostSocketId=${hostSocketId} sdpLen=${sdpLen}`);
+          
+          // Configurar timeout para offer sem resposta
+          const offerTimeoutId = setTimeout(() => {
+            console.warn(`SERVER-OFFER-TIMEOUT roomId=${roomId} participantId=${userInfo.userId} timeout=10s`);
+            socket.emit('webrtc-offer-timeout', {
+              roomId,
+              participantId: userInfo.userId,
+              timeoutMs: 10000
+            });
+          }, 10000);
+          
+          // Armazenar timeout para cleanup
+          const connection = connections.get(socket.id);
+          if (connection) {
+            connection.offerTimeout = offerTimeoutId;
+          }
+          
           socket.to(hostSocketId).emit('webrtc-offer', {
             offer,
             fromSocketId: socket.id,
             fromUserId: userInfo.userId,
-            participantId: userInfo.userId
+            participantId: userInfo.userId,
+            timestamp: Date.now(),
+            roomId
           });
+          
+          console.log(`SERVER-OFFER-SENT roomId=${roomId} from=${userInfo.userId} to=host`);
         } else {
           console.log(`SERVER-MISSING-HOST roomId=${roomId} participantId=${userInfo.userId}`);
-          socket.emit('webrtc-host-missing', { roomId, participantId: userInfo.userId });
+          socket.emit('webrtc-host-missing', { 
+            roomId, 
+            participantId: userInfo.userId,
+            suggestRetry: true,
+            retryDelay: 3000
+          });
         }
 
       } catch (error) {
@@ -634,30 +682,67 @@ const initializeSocketHandlers = (io) => {
       }
     });
 
-    // NEW: Direct answer routing from host to participant
+    // NEW: Enhanced answer routing from host to participant with timeout cleanup
     socket.on('webrtc-answer', (data) => {
       try {
         const { roomId, participantId, answer } = data;
         const userInfo = socketToUser.get(socket.id);
 
         if (!userInfo || userInfo.roomId !== roomId) {
+          console.log(`SERVER-ANSWER-REJECTED roomId=${roomId} reason=not-in-room`);
           socket.emit('error', { message: 'Not in room for WebRTC answer' });
           return;
         }
 
-        // Direct participant lookup via map
-        const targetSocketId = participantSocket.get(participantId);
+        // Validar answer
+        if (!answer || !answer.sdp || !answer.type) {
+          console.log(`SERVER-ANSWER-INVALID roomId=${roomId} participantId=${participantId} reason=missing-sdp`);
+          socket.emit('webrtc-error', { 
+            message: 'Invalid answer format',
+            expectedFormat: '{answer: {sdp, type}}'
+          });
+          return;
+        }
+
+        // Direct participant lookup via map with fallback
+        let targetSocketId = participantSocket.get(participantId);
+        
+        if (!targetSocketId) {
+          connections.forEach((conn, sockId) => {
+            if (conn.userId === participantId && conn.roomId === roomId) {
+              targetSocketId = sockId;
+              participantSocket.set(participantId, sockId); // Atualizar cache
+            }
+          });
+        }
         
         if (targetSocketId) {
+          // Limpar timeout do offer correspondente
+          const targetConnection = connections.get(targetSocketId);
+          if (targetConnection && targetConnection.offerTimeout) {
+            clearTimeout(targetConnection.offerTimeout);
+            delete targetConnection.offerTimeout;
+            console.log(`SERVER-ANSWER-TIMEOUT-CLEARED roomId=${roomId} participantId=${participantId}`);
+          }
+          
           console.log(`SERVER-FWD-ANSWER roomId=${roomId} participantId=${participantId} socketId=${targetSocketId}`);
           socket.to(targetSocketId).emit('webrtc-answer', {
             answer,
             fromSocketId: socket.id,
-            fromUserId: userInfo.userId
+            fromUserId: userInfo.userId,
+            timestamp: Date.now(),
+            roomId
           });
+          
+          console.log(`SERVER-ANSWER-SENT roomId=${roomId} from=host to=${participantId}`);
         } else {
           console.log(`SERVER-MISSING-PARTICIPANT roomId=${roomId} participantId=${participantId}`);
-          socket.emit('webrtc-participant-missing', { roomId, participantId });
+          socket.emit('webrtc-participant-missing', { 
+            roomId, 
+            participantId,
+            suggestRetry: true,
+            retryDelay: 2000
+          });
         }
 
       } catch (error) {

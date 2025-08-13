@@ -52,6 +52,9 @@ async function ensureLocalStream(): Promise<MediaStream> {
       }
     }
     
+    // Configurar monitoramento de saúde do stream
+    setupStreamHealthMonitoring(localStream);
+    
     console.log('📹 [PARTICIPANT] Stream local configurada:', {
       id: localStream.id,
       tracks: localStream.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled }))
@@ -59,6 +62,43 @@ async function ensureLocalStream(): Promise<MediaStream> {
   }
   
   return localStream;
+}
+
+// Adicionar monitoramento de saúde do stream
+function setupStreamHealthMonitoring(stream: MediaStream) {
+  const videoTrack = stream.getVideoTracks()[0];
+  
+  if (videoTrack) {
+    // Monitorar track ended
+    videoTrack.addEventListener('ended', () => {
+      console.log('PART-TRACK-ENDED {reason=video-track-ended}');
+    });
+    
+    // Monitorar mudanças de estado
+    videoTrack.addEventListener('mute', () => {
+      console.log('PART-TRACK-MUTED {track=video}');
+    });
+    
+    videoTrack.addEventListener('unmute', () => {
+      console.log('PART-TRACK-UNMUTED {track=video}');
+    });
+  }
+  
+  // Health check periódico
+  const healthInterval = setInterval(() => {
+    const vt = stream.getVideoTracks()[0];
+    if (vt) {
+      console.log(`PART-STREAM-HEALTH {videoReady=${vt.readyState}, trackState=${vt.readyState}, muted=${vt.muted}, enabled=${vt.enabled}}`);
+    } else {
+      console.log('PART-STREAM-HEALTH {videoReady=no-track, trackState=no-track}');
+      clearInterval(healthInterval);
+    }
+  }, 5000);
+  
+  // Limpar interval quando stream for removido
+  stream.addEventListener('removetrack', () => {
+    clearInterval(healthInterval);
+  });
 }
 
 // FASE B: Participante como OFFERER - aguarda solicitação do host
@@ -71,10 +111,22 @@ function setupParticipantHandlers() {
   // NEW: Listen for direct WebRTC request-offer
   unifiedWebSocketService.on('webrtc-request-offer', async (data: any) => {
     const hostId = data?.fromUserId;
-    console.log('PART-REQUEST-OFFER-RECEIVED');
+    console.log('PART-REQUEST-OFFER-RECEIVED {hostId=' + hostId + '}');
     
     if (!hostId) {
       console.warn('⚠️ [PARTICIPANT] Solicitação de offer inválida:', data);
+      return;
+    }
+
+    // Verificar se host está pronto
+    const hostReadiness = await checkHostReadiness(hostId);
+    if (!hostReadiness.ready) {
+      console.log(`PART-HOST-NOT-READY {hostId=${hostId}, reason=${hostReadiness.reason}}`);
+      // Implementar retry automático
+      setTimeout(() => {
+        console.log(`PART-RETRY-OFFER {hostId=${hostId}}`);
+        createAndSendOffer(hostId);
+      }, 2000);
       return;
     }
 
@@ -194,8 +246,13 @@ async function createAndSendOffer(hostId: string): Promise<void> {
       console.warn('⚠️ [PARTICIPANT] Erro ao adicionar transceivers:', err);
     }
 
-    // Obter stream local
+    // Obter stream local e validar estado
     const stream = await ensureLocalStream();
+    
+    // Validar stream ativo antes de usar
+    if (!validateActiveStream(stream)) {
+      throw new Error('Stream não está ativo para transmissão');
+    }
     
     // Adicionar tracks aos transceivers existentes
     const transceivers = participantPC.getTransceivers();
@@ -229,14 +286,27 @@ async function createAndSendOffer(hostId: string): Promise<void> {
       }
     };
 
-    // Estados da conexão
+    // Estados da conexão com monitoramento aprimorado
     participantPC.onconnectionstatechange = () => {
       console.log('🔄 [PARTICIPANT] Connection state:', participantPC?.connectionState);
       console.log(`[P-ICE] connection=${participantPC?.connectionState}`);
+      
+      // Monitorar falhas de conexão
+      if (participantPC?.connectionState === 'failed') {
+        console.log('PART-CONNECTION-FAILED {reason=connection-state-failed}');
+        handleConnectionFailure(hostId);
+      } else if (participantPC?.connectionState === 'connected') {
+        console.log('PART-CONNECTION-SUCCESS {time=' + Date.now() + '}');
+      }
     };
 
     participantPC.oniceconnectionstatechange = () => {
       console.log('🧊 [PARTICIPANT] ICE connection state:', participantPC?.iceConnectionState);
+      
+      if (participantPC?.iceConnectionState === 'failed') {
+        console.log('PART-ICE-FAILED {reason=ice-connection-failed}');
+        handleConnectionFailure(hostId);
+      }
     };
 
     participantPC.onicegatheringstatechange = () => {
@@ -295,6 +365,61 @@ export function cleanupParticipantHandshake() {
   }
   
   console.log('🧹 [PARTICIPANT] Handshake cleanup completo');
+}
+
+// Funções auxiliares para validação e recuperação
+function validateActiveStream(stream: MediaStream): boolean {
+  if (!stream || !stream.active) {
+    console.log('PART-STREAM-INVALID {reason=inactive-stream}');
+    return false;
+  }
+  
+  const videoTracks = stream.getVideoTracks().filter(t => t.readyState === 'live');
+  const audioTracks = stream.getAudioTracks().filter(t => t.readyState === 'live');
+  
+  if (videoTracks.length === 0) {
+    console.log('PART-STREAM-INVALID {reason=no-live-video-tracks}');
+    return false;
+  }
+  
+  console.log(`PART-STREAM-VALID {videoTracks=${videoTracks.length}, audioTracks=${audioTracks.length}}`);
+  return true;
+}
+
+async function checkHostReadiness(hostId: string): Promise<{ready: boolean, reason?: string}> {
+  try {
+    // Simular verificação de estado do host
+    // Na implementação real, seria uma consulta via WebSocket
+    console.log(`PART-HOST-CHECK {hostId=${hostId}}`);
+    
+    // Por enquanto, assumir que host está sempre pronto após 1s
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    return { ready: true };
+  } catch (error) {
+    console.log(`PART-HOST-CHECK-FAILED {hostId=${hostId}, error=${error}}`);
+    return { ready: false, reason: 'check-failed' };
+  }
+}
+
+async function handleConnectionFailure(hostId: string) {
+  console.log(`PART-RECOVERY-START {hostId=${hostId}}`);
+  
+  // Implementar retry automático
+  if (participantPC) {
+    participantPC.close();
+    participantPC = null;
+  }
+  
+  // Tentar recriar conexão após delay
+  setTimeout(async () => {
+    try {
+      console.log(`PART-RECOVERY-RETRY {hostId=${hostId}}`);
+      await createAndSendOffer(hostId);
+    } catch (error) {
+      console.log(`PART-RECOVERY-FAILED {hostId=${hostId}, error=${error}}`);
+    }
+  }, 3000);
 }
 
 // Export para uso em outros módulos

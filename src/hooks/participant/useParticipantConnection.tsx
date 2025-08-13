@@ -12,6 +12,25 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
   const isMobile = useIsMobile();
+  
+  // Função para validar stream para transmissão
+  const validateStreamForTransmission = (stream: MediaStream): boolean => {
+    if (!stream || !stream.active) {
+      console.log('CONN-STREAM-INVALID {reason=inactive}');
+      return false;
+    }
+    
+    const videoTracks = stream.getVideoTracks();
+    const liveVideoTracks = videoTracks.filter(t => t.readyState === 'live' && t.enabled);
+    
+    if (liveVideoTracks.length === 0) {
+      console.log('CONN-STREAM-INVALID {reason=no-live-video}');
+      return false;
+    }
+    
+    console.log(`CONN-STREAM-VALID {videoTracks=${liveVideoTracks.length}, streamId=${stream.id}}`);
+    return true;
+  };
 
   const connectToSession = useCallback(async (stream?: MediaStream | null) => {
     if (!sessionId) {
@@ -22,6 +41,12 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     console.log(`🔗 PARTICIPANT CONNECTION: Starting enhanced connection process for ${participantId}`);
     console.log(`📱 PARTICIPANT CONNECTION: Mobile device: ${isMobile}`);
     console.log(`🎥 PARTICIPANT CONNECTION: Has stream: ${!!stream}`);
+    
+    // Validar stream antes de prosseguir
+    if (stream && !validateStreamForTransmission(stream)) {
+      console.warn('⚠️ PARTICIPANT CONNECTION: Stream validation failed');
+      toast.warning('⚠️ Stream não está adequado para transmissão');
+    }
     
     // FASE 4: Debug and environment validation
     const envInfo = getEnvironmentInfo();

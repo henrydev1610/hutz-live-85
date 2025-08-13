@@ -30,6 +30,54 @@ const ParticipantPage = () => {
   // Debug panel state
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   
+  // Função para validar saúde do stream
+  const validateStreamHealth = (stream: MediaStream): boolean => {
+    if (!stream || !stream.active) return false;
+    
+    const videoTracks = stream.getVideoTracks();
+    const audioTracks = stream.getAudioTracks();
+    
+    const liveVideoTracks = videoTracks.filter(t => t.readyState === 'live' && t.enabled);
+    const liveAudioTracks = audioTracks.filter(t => t.readyState === 'live' && t.enabled);
+    
+    return liveVideoTracks.length > 0; // Pelo menos um track de vídeo ativo
+  };
+  
+  // Função para monitorar transmissão do stream
+  const setupStreamTransmissionMonitoring = (stream: MediaStream, pId: string) => {
+    console.log(`PART-TRANSMISSION-MONITOR-START {participantId=${pId}, streamId=${stream.id}}`);
+    
+    // Monitorar tracks individuais
+    stream.getTracks().forEach(track => {
+      track.addEventListener('ended', () => {
+        console.log(`PART-TRACK-ENDED {participantId=${pId}, trackKind=${track.kind}, trackId=${track.id}}`);
+        toast.warning(`Track ${track.kind} finalizado`);
+      });
+      
+      track.addEventListener('mute', () => {
+        console.log(`PART-TRACK-MUTED {participantId=${pId}, trackKind=${track.kind}}`);
+      });
+      
+      track.addEventListener('unmute', () => {
+        console.log(`PART-TRACK-UNMUTED {participantId=${pId}, trackKind=${track.kind}}`);
+      });
+    });
+    
+    // Health check periódico
+    const healthInterval = setInterval(() => {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        console.log(`PART-STREAM-HEALTH {participantId=${pId}, videoReady=${videoTrack.readyState}, trackState=${videoTrack.readyState}, muted=${videoTrack.muted}, enabled=${videoTrack.enabled}}`);
+      } else {
+        console.log(`PART-STREAM-HEALTH {participantId=${pId}, videoReady=no-track}`);
+        clearInterval(healthInterval);
+      }
+    }, 3000);
+    
+    // Limpar quando stream for removido
+    setTimeout(() => clearInterval(healthInterval), 60000); // 1 minuto máximo
+  };
+  
   // ENHANCED: Mobile-only guard with FORCE OVERRIDE support
   const { isMobile, isValidated, isBlocked } = useMobileOnlyGuard({
     redirectTo: '/',
@@ -239,8 +287,19 @@ const ParticipantPage = () => {
         toast.warning('⚠️ Validação de câmera inconclusiva - tentando conectar');
       }
       
-      // Force mobile camera initialization
+      // Force mobile camera initialization with enhanced monitoring
       const stream = await media.initializeMedia();
+      
+      // Validar stream após obtenção
+      if (stream) {
+        const isStreamValid = validateStreamHealth(stream);
+        console.log(`PART-STREAM-VALIDATION {valid=${isStreamValid}, streamId=${stream.id}}`);
+        
+        if (!isStreamValid) {
+          console.warn('⚠️ PARTICIPANT: Stream health validation failed');
+          toast.warning('⚠️ Stream obtido mas com problemas de saúde');
+        }
+      }
       
       // ÚNICO PONTO: notifyStreamStarted será chamado pelo UnifiedWebRTCManager
       
@@ -313,11 +372,13 @@ const ParticipantPage = () => {
         if (hostId && stream) {
           console.log(`🎯 [PART] Host detected: ${hostId}, starting handshake`);
           
-          // Validar tracks ativas
+          // Validar tracks ativas e configurar monitoramento
           const activeTracks = stream.getTracks().filter(t => t.readyState === 'live');
           if (activeTracks.length === 0) {
             console.warn(`⚠️ [PART] No active tracks in stream`);
             toast.warning('⚠️ Stream sem tracks ativos');
+          } else {
+            setupStreamTransmissionMonitoring(stream, participantId);
           }
           
           // ÚNICO CAMINHO: initParticipantWebRTC → setLocalStream → connectToHost
