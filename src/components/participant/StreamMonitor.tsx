@@ -31,15 +31,17 @@ export const StreamMonitor: React.FC<StreamMonitorProps> = ({
         const videoTracks = stream.getVideoTracks();
         const audioTracks = stream.getAudioTracks();
         
+        // CORRIGIR REGRA DO MONITOR: Simplificar condições de health
         const videoHealthy = videoTracks.length > 0 && videoTracks.some(t => 
-          t.readyState === 'live' && t.enabled && !t.muted
+          t.readyState === 'live' && !t.muted
         );
         
         const audioHealthy = audioTracks.length > 0 && audioTracks.some(t => 
-          t.readyState === 'live' && t.enabled
+          t.readyState === 'live'
         );
         
         const streamActive = stream.active;
+        // REGRA SIMPLIFICADA: Stream healthy se ativo E tem pelo menos um track válido
         const overallHealthy = streamActive && (videoHealthy || audioHealthy);
         
         console.log(`🩺 STREAM MONITOR: Health check for ${participantId}:`, {

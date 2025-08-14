@@ -237,40 +237,26 @@ async function createAndSendOffer(hostId: string): Promise<void> {
     const config = getActiveWebRTCConfig();
     participantPC = new RTCPeerConnection(config);
 
-    // CRÍTICO: Adicionar transceivers sendonly ANTES de adicionar tracks
-    try {
-      participantPC.addTransceiver('video', { direction: 'sendonly' });
-      participantPC.addTransceiver('audio', { direction: 'sendonly' });
-      console.log('📡 [PARTICIPANT] Transceivers sendonly adicionados ANTES dos tracks');
-    } catch (err) {
-      console.warn('⚠️ [PARTICIPANT] Erro ao adicionar transceivers:', err);
-    }
-
-    // Obter stream local e validar estado
+    // SEQUÊNCIA CORRETA: 1. getUserMedia → 2. addTrack → 3. createOffer
+    
+    // 1. Obter stream local primeiro
     const stream = await ensureLocalStream();
+    console.log('PART-SEQUENCE-1 {getUserMedia=ok}');
     
     // Validar stream ativo antes de usar
     if (!validateActiveStream(stream)) {
       throw new Error('Stream não está ativo para transmissão');
     }
     
-    // Adicionar tracks aos transceivers existentes
-    const transceivers = participantPC.getTransceivers();
+    // 2. Adicionar tracks diretamente (sem transceivers pré-criados)
     let tracksAdded = 0;
     stream.getTracks().forEach(track => {
-      console.log(`📡 [PARTICIPANT] Configurando track ${track.kind} no transceiver`);
-      const transceiver = transceivers.find(t => t.receiver.track?.kind === track.kind);
-      if (transceiver && transceiver.sender) {
-        transceiver.sender.replaceTrack(track);
-        tracksAdded++;
-      } else {
-        // Fallback se transceivers não funcionaram
-        participantPC!.addTrack(track, stream);
-        tracksAdded++;
-      }
+      console.log(`PART-TRACK-ADD {kind=${track.kind}, readyState=${track.readyState}}`);
+      participantPC!.addTrack(track, stream);
+      tracksAdded++;
     });
     
-    console.log(`PART-TRACKS-ADDED {count=${tracksAdded}}`);
+    console.log(`PART-SEQUENCE-2 {addTrack=ok, count=${tracksAdded}}`);
     console.log(`📡 [PARTICIPANT] Total tracks adicionados: ${tracksAdded}`);
 
     // ICE candidates
@@ -313,17 +299,17 @@ async function createAndSendOffer(hostId: string): Promise<void> {
       console.log(`[P-ICE] gathering=${participantPC?.iceGatheringState}`);
     };
 
-    // Criar e enviar offer
-    console.log('🔄 [PARTICIPANT] Criando offer, state atual:', participantPC.signalingState);
+    // 3. Criar e enviar offer APÓS adicionar tracks
+    console.log('🔄 [PARTICIPANT] Criando offer APÓS adicionar tracks, state atual:', participantPC.signalingState);
     const offer = await participantPC.createOffer();
     
-    console.log(`PART-OFFER-CREATED {sdpLen=${offer.sdp?.length || 0}}`);
+    console.log(`PART-SEQUENCE-3 {createOffer=ok, sdpLen=${offer.sdp?.length || 0}}`);
     
     await participantPC.setLocalDescription(offer);
     console.log('PART-LOCAL-SET');
     console.log('✅ [PARTICIPANT] Local description definida, novo state:', participantPC.signalingState);
     
-    console.log('📤 [PARTICIPANT] Offer PADRONIZADA criada, enviando para host:', hostId);
+    console.log('📤 [PARTICIPANT] Offer SEQUENCIAL criada, enviando para host:', hostId);
     // Usar propriedades privadas diretamente através do serviço
     const roomId = (unifiedWebSocketService as any).currentRoomId;
     const participantId = (unifiedWebSocketService as any).currentUserId;

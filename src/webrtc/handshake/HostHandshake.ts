@@ -180,7 +180,7 @@ export async function handleOfferFromParticipant(data: any) {
 
   console.log(`HOST-OFFER-RECEIVED {sdpLen=${offer.sdp?.length || 0}}`);
   console.log(`[HOST-RECV] webrtc-offer from=${participantId} sdpLen=${offer.sdp?.length || 0} signalingState=checking...`);
-  console.log('📩 [HOST] Offer PADRONIZADO recebido de', participantId, {
+  console.log('📩 [HOST] Offer SEQUENCIAL recebido de', participantId, {
     roomId: data.roomId,
     offerType: offer.type,
     timestamp: data.timestamp,
@@ -188,6 +188,51 @@ export async function handleOfferFromParticipant(data: any) {
   });
 
   const pc = getOrCreatePC(participantId);
+  
+  // CORRIGIR SEQUÊNCIA: Registrar ontrack IMEDIATAMENTE antes de setRemoteDescription
+  console.log('HOST-SEQUENCE-SETUP {ontrack=registering}');
+  pc.ontrack = (event) => {
+    const [stream] = event.streams;
+    const videoTracks = stream?.getVideoTracks().length || 0;
+    const audioTracks = stream?.getAudioTracks().length || 0;
+    
+    console.log(`HOST-ONTRACK-FIRED {participantId=${participantId}, streamId=${stream?.id}, videoTracks=${videoTracks}, audioTracks=${audioTracks}}`);
+
+    if (stream) {
+      try {
+        // Reconciliar com getReceivers()
+        const receivers = pc.getReceivers();
+        console.log(`HOST-RECONCILE {receivers=${receivers.length}, streamTracks=${stream.getTracks().length}}`);
+        
+        // FAILSAFE: Sempre salvar stream em __mlStreams__
+        if (typeof window !== 'undefined') {
+          if (!window.__mlStreams__) {
+            window.__mlStreams__ = new Map();
+          }
+          window.__mlStreams__.set(participantId, stream);
+          console.log(`HOST-STREAM-SAVED {id=${participantId}, streamId=${stream.id}, tracks=${stream.getTracks().length}}`);
+        }
+
+        // FAILSAFE: Sempre invocar callback se existir
+        if (typeof window !== 'undefined' && window.hostStreamCallback) {
+          window.hostStreamCallback(participantId, stream);
+          console.log(`HOST-CALLBACK-CALLED {id=${participantId}, streamId=${stream.id}}`);
+        }
+
+        // FAILSAFE: Sempre fazer postMessage para popup
+        if (typeof window !== 'undefined') {
+          window.postMessage({
+            type: 'participant-stream-ready',
+            participantId: participantId
+          }, '*');
+          console.log(`[HOST-ONTRACK] postMessage sent participantId=${participantId}`);
+        }
+
+      } catch (error) {
+        console.error(`[HOST-ONTRACK] error participantId=${participantId}:`, error);
+      }
+    }
+  };
 
   // CRÍTICO: Verificar estado antes de aplicar offer
   if (pc.signalingState !== 'stable') {
@@ -206,21 +251,24 @@ export async function handleOfferFromParticipant(data: any) {
   const finalPc = hostPeerConnections.get(participantId)!;
 
   try {
+    console.log('HOST-SEQUENCE-1 {setRemoteDescription=starting}');
     console.log('🔄 [HOST] Aplicando setRemoteDescription, state atual:', finalPc.signalingState);
     await finalPc.setRemoteDescription(offer);
-    console.log(`[HOST-APPLY] setRemoteDescription ok signalingState=${finalPc.signalingState}`);
+    console.log(`HOST-SEQUENCE-2 {setRemoteDescription=ok, signalingState=${finalPc.signalingState}}`);
     console.log('✅ [HOST] Remote description aplicada, novo state:', finalPc.signalingState);
 
     console.log('🔄 [HOST] Criando answer...');
     const answer = await finalPc.createAnswer();
-    console.log(`HOST-ANSWER-CREATED {sdpLen=${answer.sdp?.length || 0}}`);
+    console.log(`HOST-SEQUENCE-3 {createAnswer=ok, sdpLen=${answer.sdp?.length || 0}}`);
     
     await finalPc.setLocalDescription(answer);
+    console.log('HOST-SEQUENCE-4 {setLocalDescription=ok}');
     console.log('✅ [HOST] Local description definida, state final:', finalPc.signalingState);
 
-    // Aplicar candidates em buffer
+    // CORRIGIR ICE BUFFER: Aplicar todos candidates bufferizados IMEDIATAMENTE
     const buffered = pendingCandidates.get(participantId) || [];
     if (buffered.length > 0) {
+      console.log(`HOST-ICE-BUFFER-APPLY {count=${buffered.length}}`);
       console.log(`🧊 [HOST] Aplicando ${buffered.length} candidates em buffer`);
       for (const candidate of buffered) {
         try {
@@ -229,7 +277,9 @@ export async function handleOfferFromParticipant(data: any) {
           console.warn('⚠️ [HOST] Erro aplicando candidate em buffer:', err);
         }
       }
+      // LIMPAR buffer após aplicação
       pendingCandidates.set(participantId, []);
+      console.log('HOST-ICE-BUFFER-CLEARED');
     }
 
     unifiedWebSocketService.sendWebRTCAnswer(participantId, answer.sdp!, answer.type);
@@ -264,12 +314,13 @@ export async function handleRemoteCandidate(data: any) {
     return;
   }
 
-  // BUFFER ICE: Aplicar apenas após setRemoteDescription
+  // CORRIGIR ICE BUFFER: Aplicar imediatamente se remoteDescription estiver pronta
   if (pc.remoteDescription) {
     try {
       logIceType('🧊 [PART→HOST]', candidate.candidate);
       await pc.addIceCandidate(candidate);
-      console.log('✅ [HOST] ICE candidate PADRONIZADO adicionado de', participantId);
+      console.log('HOST-ICE-APPLIED {participantId=' + participantId + '}');
+      console.log('✅ [HOST] ICE candidate SEQUENCIAL adicionado de', participantId);
     } catch (err) {
       console.error('❌ [HOST] addIceCandidate falhou para', participantId, err);
     }
@@ -279,6 +330,7 @@ export async function handleRemoteCandidate(data: any) {
     buffer.push(candidate);
     pendingCandidates.set(participantId, buffer);
     logIceType('🧊 [PART→HOST] BUFFERED', candidate.candidate);
+    console.log(`HOST-ICE-BUFFERED {participantId=${participantId}, bufferSize=${buffer.length}}`);
     console.log(`📦 [HOST] Candidate bufferizado para ${participantId} (total: ${buffer.length})`);
   }
 }
