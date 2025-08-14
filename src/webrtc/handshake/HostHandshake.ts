@@ -36,6 +36,52 @@ function getOrCreatePC(participantId: string) {
   // Inicializar buffer de candidates
   pendingCandidates.set(participantId, []);
 
+  // CORRIGIR LATE ONTRACK: Registrar ontrack IMEDIATAMENTE após criação do PC
+  console.log('HOST-SETUP-ONTRACK-EARLY {participantId=' + participantId + '}');
+  pc.ontrack = (event) => {
+    const [stream] = event.streams;
+    const videoTracks = stream?.getVideoTracks().length || 0;
+    const audioTracks = stream?.getAudioTracks().length || 0;
+    
+    console.log(`HOST-ONTRACK-EARLY {participantId=${participantId}, streamId=${stream?.id}, videoTracks=${videoTracks}, audioTracks=${audioTracks}}`);
+
+    if (stream) {
+      try {
+        // TRACK RECONCILIATION: Comparar com receivers
+        const receivers = pc.getReceivers();
+        const activeReceivers = receivers.filter(r => r.track && r.track.readyState === 'live');
+        console.log(`HOST-TRACK-RECONCILE {receivers=${receivers.length}, active=${activeReceivers.length}, streamTracks=${stream.getTracks().length}}`);
+        
+        // FAILSAFE: Sempre salvar stream em __mlStreams__
+        if (typeof window !== 'undefined') {
+          if (!window.__mlStreams__) {
+            window.__mlStreams__ = new Map();
+          }
+          window.__mlStreams__.set(participantId, stream);
+          console.log(`HOST-STREAM-SAVED-EARLY {id=${participantId}, streamId=${stream.id}, tracks=${stream.getTracks().length}}`);
+        }
+
+        // FAILSAFE: Sempre invocar callback se existir
+        if (typeof window !== 'undefined' && window.hostStreamCallback) {
+          window.hostStreamCallback(participantId, stream);
+          console.log(`HOST-CALLBACK-CALLED-EARLY {id=${participantId}, streamId=${stream.id}}`);
+        }
+
+        // FAILSAFE: Sempre fazer postMessage para popup
+        if (typeof window !== 'undefined') {
+          window.postMessage({
+            type: 'participant-stream-ready',
+            participantId: participantId
+          }, '*');
+          console.log(`HOST-POSTMESSAGE-EARLY {participantId=${participantId}}`);
+        }
+
+      } catch (error) {
+        console.error(`HOST-ONTRACK-ERROR-EARLY {participantId=${participantId}}:`, error);
+      }
+    }
+  };
+
   // SOLUÇÃO APRIMORADA: Timeout com stages específicos
   const handshakeTimeout = setTimeout(() => {
     console.log(`⏰ [HOST] Handshake timeout for ${participantId} - cleaning up stuck connection`);

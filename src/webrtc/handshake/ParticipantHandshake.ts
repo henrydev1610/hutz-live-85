@@ -154,7 +154,7 @@ function setupParticipantHandlers() {
       return;
     }
 
-    console.log('📥 [PARTICIPANT] Answer PADRONIZADO recebido do host:', hostId);
+    console.log('📥 [PARTICIPANT] Answer SEQUENCIAL recebido do host:', hostId);
 
     if (!participantPC) {
       console.warn('⚠️ [PARTICIPANT] Answer recebido sem PC ativo');
@@ -166,17 +166,23 @@ function setupParticipantHandlers() {
       await participantPC.setRemoteDescription(answer);
       console.log('✅ [PARTICIPANT] Answer aplicado, novo state:', participantPC.signalingState);
 
-      // Aplicar candidates em buffer
+      // CORRIGIR ICE BUFFER: Drenar TODOS os candidates pendentes imediatamente
       if (pendingCandidates.length > 0) {
-        console.log(`🧊 [PARTICIPANT] Aplicando ${pendingCandidates.length} candidates em buffer`);
-        for (const candidate of pendingCandidates) {
+        console.log(`PART-ICE-DRAIN-START {count=${pendingCandidates.length}}`);
+        console.log(`🧊 [PARTICIPANT] Drenando ${pendingCandidates.length} candidates em buffer`);
+        
+        const candidatesToDrain = [...pendingCandidates];
+        pendingCandidates = []; // Limpar buffer imediatamente
+        
+        for (const candidate of candidatesToDrain) {
           try {
             await participantPC.addIceCandidate(candidate);
+            console.log('PART-ICE-DRAINED {ok=true}');
           } catch (err) {
-            console.warn('⚠️ [PARTICIPANT] Erro aplicando candidate em buffer:', err);
+            console.warn('⚠️ [PARTICIPANT] Erro drenando candidate:', err);
           }
         }
-        pendingCandidates = [];
+        console.log('PART-ICE-DRAIN-COMPLETE');
       }
       
       console.log('✅ [PARTICIPANT] Conexão estabelecida com sucesso');
@@ -185,7 +191,7 @@ function setupParticipantHandlers() {
     }
   });
 
-  // Receber ICE candidates do host com BUFFER
+  // Receber ICE candidates do host com BUFFER CONSISTENTE
   unifiedWebSocketService.on('webrtc-candidate', async (data: any) => {
     const hostId = data?.fromUserId;
     const candidate = data?.candidate;
@@ -201,23 +207,26 @@ function setupParticipantHandlers() {
       return;
     }
 
-    // BUFFER ICE: Aplicar apenas após setRemoteDescription
-    if (participantPC.remoteDescription) {
+    // CORRIGIR ICE BUFFER: Aplicar imediatamente OU bufferizar consistentemente
+    if (participantPC.remoteDescription && participantPC.remoteDescription.type) {
       try {
         await participantPC.addIceCandidate(candidate);
         const candidateType = /typ (\w+)/.exec(candidate.candidate)?.[1];
-        console.log(`🧊 [PARTICIPANT] ICE candidate PADRONIZADO adicionado de ${hostId}, tipo: ${candidateType}`);
+        console.log(`PART-ICE-IMMEDIATE {type=${candidateType}, from=${hostId}}`);
+        console.log(`🧊 [PARTICIPANT] ICE candidate IMEDIATO adicionado de ${hostId}, tipo: ${candidateType}`);
       } catch (err) {
         console.warn('⚠️ [PARTICIPANT] Erro ao adicionar candidate de:', hostId, err);
       }
     } else {
-      console.log(`📦 [PARTICIPANT] Bufferizando candidate de ${hostId} (total: ${pendingCandidates.length + 1})`);
       pendingCandidates.push(candidate);
+      console.log(`PART-ICE-BUFFERED {from=${hostId}, bufferSize=${pendingCandidates.length}}`);
+      console.log(`📦 [PARTICIPANT] Bufferizando candidate de ${hostId} (total: ${pendingCandidates.length})`);
     }
   });
 }
 
 // FASE B: Criar offer e enviar para o host
+// CORRIGIR HANDSHAKE ORDER: Garantir mídia ANTES de criar offer
 async function createAndSendOffer(hostId: string): Promise<void> {
   if (isMakingOffer) {
     console.warn('⚠️ [PARTICIPANT] Já fazendo offer, abortando');
@@ -227,37 +236,37 @@ async function createAndSendOffer(hostId: string): Promise<void> {
   isMakingOffer = true;
   
   try {
-    console.log('[P-OFFER] creating offer');
+    console.log('[P-OFFER] creating offer WITH MEDIA');
     
-    // Fechar conexão anterior se existir
+    // RESET PC: Fechar conexão anterior e criar nova
     if (participantPC) {
       participantPC.close();
+      participantPC = null;
     }
 
-    const config = getActiveWebRTCConfig();
-    participantPC = new RTCPeerConnection(config);
-
-    // SEQUÊNCIA CORRETA: 1. getUserMedia → 2. addTrack → 3. createOffer
-    
-    // 1. Obter stream local primeiro
+    // STEP 1: GARANTIR stream de mídia PRIMEIRO
     const stream = await ensureLocalStream();
-    console.log('PART-SEQUENCE-1 {getUserMedia=ok}');
+    console.log('PART-MEDIA-FIRST {getUserMedia=ok}');
     
-    // Validar stream ativo antes de usar
+    // Validar stream ativo antes de criar PC
     if (!validateActiveStream(stream)) {
       throw new Error('Stream não está ativo para transmissão');
     }
     
-    // 2. Adicionar tracks diretamente (sem transceivers pré-criados)
+    // STEP 2: Criar PC com configuração limpa
+    const config = getActiveWebRTCConfig();
+    participantPC = new RTCPeerConnection(config);
+    
+    // STEP 3: Adicionar tracks ANTES de qualquer descrição
     let tracksAdded = 0;
     stream.getTracks().forEach(track => {
-      console.log(`PART-TRACK-ADD {kind=${track.kind}, readyState=${track.readyState}}`);
+      console.log(`PART-TRACK-ADD-FIRST {kind=${track.kind}, readyState=${track.readyState}}`);
       participantPC!.addTrack(track, stream);
       tracksAdded++;
     });
     
-    console.log(`PART-SEQUENCE-2 {addTrack=ok, count=${tracksAdded}}`);
-    console.log(`📡 [PARTICIPANT] Total tracks adicionados: ${tracksAdded}`);
+    console.log(`PART-MEDIA-ATTACHED {tracksAdded=${tracksAdded}}`);
+    console.log(`📡 [PARTICIPANT] Mídia anexada ANTES do offer: ${tracksAdded} tracks`);
 
     // ICE candidates
     participantPC.onicecandidate = (event) => {
@@ -272,25 +281,37 @@ async function createAndSendOffer(hostId: string): Promise<void> {
       }
     };
 
-    // Estados da conexão com monitoramento aprimorado
+    // CORRIGIR STATUS MONITOR: Evitar loops de "connecting"
     participantPC.onconnectionstatechange = () => {
-      console.log('🔄 [PARTICIPANT] Connection state:', participantPC?.connectionState);
-      console.log(`[P-ICE] connection=${participantPC?.connectionState}`);
+      const state = participantPC?.connectionState;
+      console.log('🔄 [PARTICIPANT] Connection state:', state);
+      console.log(`[P-CONN] state=${state}`);
       
-      // Monitorar falhas de conexão
-      if (participantPC?.connectionState === 'failed') {
+      if (state === 'failed') {
         console.log('PART-CONNECTION-FAILED {reason=connection-state-failed}');
+        // RESET CRITERIA: Limpar PC em failure
+        if (participantPC) {
+          participantPC.close();
+          participantPC = null;
+        }
         handleConnectionFailure(hostId);
-      } else if (participantPC?.connectionState === 'connected') {
+      } else if (state === 'connected') {
         console.log('PART-CONNECTION-SUCCESS {time=' + Date.now() + '}');
+        // STOP MONITORING LOOPS aqui se necessário
       }
     };
 
     participantPC.oniceconnectionstatechange = () => {
-      console.log('🧊 [PARTICIPANT] ICE connection state:', participantPC?.iceConnectionState);
+      const iceState = participantPC?.iceConnectionState;
+      console.log('🧊 [PARTICIPANT] ICE connection state:', iceState);
       
-      if (participantPC?.iceConnectionState === 'failed') {
+      if (iceState === 'failed') {
         console.log('PART-ICE-FAILED {reason=ice-connection-failed}');
+        // RESET CRITERIA: Limpar PC em ICE failure
+        if (participantPC) {
+          participantPC.close();
+          participantPC = null;
+        }
         handleConnectionFailure(hostId);
       }
     };
@@ -299,17 +320,17 @@ async function createAndSendOffer(hostId: string): Promise<void> {
       console.log(`[P-ICE] gathering=${participantPC?.iceGatheringState}`);
     };
 
-    // 3. Criar e enviar offer APÓS adicionar tracks
-    console.log('🔄 [PARTICIPANT] Criando offer APÓS adicionar tracks, state atual:', participantPC.signalingState);
+    // STEP 4: Criar offer APÓS anexar mídia
+    console.log('🔄 [PARTICIPANT] Criando offer COM MÍDIA, state atual:', participantPC.signalingState);
     const offer = await participantPC.createOffer();
     
-    console.log(`PART-SEQUENCE-3 {createOffer=ok, sdpLen=${offer.sdp?.length || 0}}`);
+    console.log(`PART-OFFER-WITH-MEDIA {sdpLen=${offer.sdp?.length || 0}}`);
     
     await participantPC.setLocalDescription(offer);
     console.log('PART-LOCAL-SET');
     console.log('✅ [PARTICIPANT] Local description definida, novo state:', participantPC.signalingState);
     
-    console.log('📤 [PARTICIPANT] Offer SEQUENCIAL criada, enviando para host:', hostId);
+    console.log('📤 [PARTICIPANT] Offer COM MÍDIA criada, enviando para host:', hostId);
     // Usar propriedades privadas diretamente através do serviço
     const roomId = (unifiedWebSocketService as any).currentRoomId;
     const participantId = (unifiedWebSocketService as any).currentUserId;
@@ -322,6 +343,11 @@ async function createAndSendOffer(hostId: string): Promise<void> {
     // Log específico para erro de m-lines
     if (err instanceof Error && err.message.includes('m-lines')) {
       console.error('🚨 [PARTICIPANT] ERRO M-LINES DETECTADO - Problema na ordem dos transceivers');
+    }
+    // RESET CRITERIA: Limpar estado em erro
+    if (participantPC) {
+      participantPC.close();
+      participantPC = null;
     }
   } finally {
     isMakingOffer = false;
@@ -388,24 +414,37 @@ async function checkHostReadiness(hostId: string): Promise<{ready: boolean, reas
   }
 }
 
+// CORRIGIR RE-OFFERS: Adicionar timeout/reset criteria
 async function handleConnectionFailure(hostId: string) {
   console.log(`PART-RECOVERY-START {hostId=${hostId}}`);
   
-  // Implementar retry automático
+  // TIMEOUT/RESET CRITERIA: Limpar completamente estado anterior
   if (participantPC) {
     participantPC.close();
     participantPC = null;
   }
   
-  // Tentar recriar conexão após delay
-  setTimeout(async () => {
-    try {
-      console.log(`PART-RECOVERY-RETRY {hostId=${hostId}}`);
-      await createAndSendOffer(hostId);
-    } catch (error) {
-      console.log(`PART-RECOVERY-FAILED {hostId=${hostId}, error=${error}}`);
-    }
-  }, 3000);
+  // Limpar candidates pendentes
+  pendingCandidates = [];
+  
+  // PREVENT LOOPING: Só tentar recriar SE não estiver fazendo offer
+  if (!isMakingOffer) {
+    // Tentar recriar conexão após delay com backoff
+    setTimeout(async () => {
+      try {
+        console.log(`PART-RECOVERY-RETRY {hostId=${hostId}}`);
+        await createAndSendOffer(hostId);
+      } catch (error) {
+        console.log(`PART-RECOVERY-FAILED {hostId=${hostId}, error=${error}}`);
+        // STOP LOOPING: Não tentar novamente por um tempo maior
+        setTimeout(() => {
+          console.log(`PART-RECOVERY-FINAL-ATTEMPT {hostId=${hostId}}`);
+        }, 10000);
+      }
+    }, 5000); // Aumentar delay para evitar loops
+  } else {
+    console.log(`PART-RECOVERY-SKIPPED {hostId=${hostId}, reason=already-making-offer}`);
+  }
 }
 
 // Export para uso em outros módulos
