@@ -189,60 +189,82 @@ export const useEnhancedWebRTCStability = (
 
       console.log(`🔍 HEALTH: Checking ${participantId} - State: ${state}, ICE: ${iceState}, Signaling: ${signalingState}`);
 
-      // Check for ontrack event reception
+      // Check for ontrack event reception - immediate connection marker
       const ontrackReceived = ontrackEventRef.current.get(participantId) || currentData.ontrackReceived || false;
       
-      // Check for active tracks via receivers (fallback)
+      // Check for active tracks via receivers (fallback for audio-only or delayed video)
       const receivers = pc.getReceivers();
-      const hasActiveVideoTrack = receivers.some(receiver => 
-        receiver.track && receiver.track.kind === 'video' && receiver.track.readyState === 'live'
+      const videoReceivers = receivers.filter(r => r.track && r.track.kind === 'video');
+      const audioReceivers = receivers.filter(r => r.track && r.track.kind === 'audio');
+      
+      const hasActiveVideoTrack = videoReceivers.some(receiver => 
+        receiver.track && receiver.track.readyState === 'live'
       );
-      const hasActiveAudioTrack = receivers.some(receiver => 
-        receiver.track && receiver.track.kind === 'audio' && receiver.track.readyState === 'live'
+      const hasActiveAudioTrack = audioReceivers.some(receiver => 
+        receiver.track && receiver.track.readyState === 'live'
       );
-      const hasActiveMedia = hasActiveVideoTrack || hasActiveAudioTrack;
+      const hasAnyActiveTrack = hasActiveVideoTrack || hasActiveAudioTrack;
 
-      // Get media flow stats if available
+      console.log(`🎵 MEDIA: ${participantId} tracks - Video: ${videoReceivers.length} (${hasActiveVideoTrack ? 'live' : 'inactive'}), Audio: ${audioReceivers.length} (${hasActiveAudioTrack ? 'live' : 'inactive'})`);
+
+      // Get media flow stats as fallback validation
       let mediaStats = currentData.mediaStats;
-      if (finalConfig.enableStatsMonitoring && (state === 'connected' || ontrackReceived)) {
+      if (finalConfig.enableStatsMonitoring && (state === 'connected' || ontrackReceived || hasAnyActiveTrack)) {
         const stats = await checkMediaFlow(pc, participantId);
         if (stats) {
           mediaStats = stats;
-          console.log(`📊 STATS: Updated for ${participantId}:`, stats);
+          const hasDataFlow = stats.packetsReceived > 0 || stats.framesDecoded > 0 || stats.bytesReceived > 0;
+          console.log(`📊 STATS: ${participantId} media flow - Packets: ${stats.packetsReceived}, Frames: ${stats.framesDecoded}, Bytes: ${stats.bytesReceived} (${hasDataFlow ? 'FLOWING' : 'NO FLOW'})`);
         }
       }
 
-      // Enhanced connection detection logic
+      // Enhanced connection detection logic with multiple validation paths
       let isConnected = false;
       let connectionMethod = 'none';
       
+      // Path 1: ontrack event (immediate connection - highest priority)
       if (ontrackReceived) {
         isConnected = true;
         connectionMethod = 'ontrack';
         console.log(`✅ CONNECTION: ${participantId} connected via ontrack event`);
-      } else if (state === 'connected' && hasActiveMedia) {
+      } 
+      // Path 2: WebRTC connected + active media tracks
+      else if (state === 'connected' && hasAnyActiveTrack) {
         isConnected = true;
         connectionMethod = 'receivers';
-        console.log(`✅ CONNECTION: ${participantId} connected via active receivers`);
-      } else if (mediaStats && (mediaStats.packetsReceived > 0 || mediaStats.framesDecoded > 0)) {
+        console.log(`✅ CONNECTION: ${participantId} connected via active receivers (${hasActiveVideoTrack ? 'video' : ''}${hasActiveAudioTrack ? ' audio' : ''})`);
+      } 
+      // Path 3: Media flow statistics validation (fallback)
+      else if (mediaStats && (mediaStats.packetsReceived > 0 || mediaStats.framesDecoded > 0 || mediaStats.bytesReceived > 0)) {
         isConnected = true;
         connectionMethod = 'stats';
-        console.log(`✅ CONNECTION: ${participantId} connected via media flow stats`);
+        console.log(`✅ CONNECTION: ${participantId} connected via media flow stats (packets: ${mediaStats.packetsReceived})`);
+      }
+      // Path 4: Audio-only stream support (special case)
+      else if (state === 'connected' && audioReceivers.length > 0 && !videoReceivers.length) {
+        isConnected = true;
+        connectionMethod = 'audio-only';
+        console.log(`✅ CONNECTION: ${participantId} connected via audio-only stream`);
       }
 
-      // Determine if connection is failed (relaxed criteria)
+      // Relaxed failure criteria - only definitive failures trigger cleanup
       const connectingTime = now - (currentData.connectingStartTime || now);
       const isDefinitelyFailed = state === 'failed' || iceState === 'failed';
       
-      // Determine if recovery is needed (but don't force failure)
+      // Recovery needed only for extended connecting states without progress
       const needsRecovery = (state === 'connecting' || iceState === 'checking') && 
                            !isConnected && 
-                           connectingTime > 45000 && // Increased from 30s to 45s
+                           connectingTime > 60000 && // Increased to 60s - more relaxed
                            (currentData.recoveryAttempts || 0) < finalConfig.maxRecoveryAttempts;
 
       if (isConnected) {
         hasActiveConnections = true;
-        console.log(`🎯 CONNECTED: ${participantId} via ${connectionMethod}`);
+        console.log(`🎯 CONNECTED: ${participantId} via ${connectionMethod} (${connectingTime.toFixed(0)}ms since start)`);
+        
+        // Clear any pending recovery attempts
+        if (currentData.recoveryAttempts > 0) {
+          console.log(`🔧 RECOVERY: Clearing ${currentData.recoveryAttempts} recovery attempts for ${participantId} (connection established)`);
+        }
       } else if (isDefinitelyFailed) {
         hasFailedConnections = true;
         console.warn(`❌ FAILED: ${participantId} - State: ${state}, ICE: ${iceState}`);
@@ -251,9 +273,9 @@ export const useEnhancedWebRTCStability = (
         console.log(`🔄 CONNECTING: ${participantId} for ${(connectingTime/1000).toFixed(1)}s`);
       }
 
-      // Trigger controlled recovery if needed
+      // Trigger controlled recovery sequence if needed
       if (needsRecovery) {
-        console.log(`🔧 RECOVERY: Initiating controlled recovery for ${participantId} (attempt ${(currentData.recoveryAttempts || 0) + 1})`);
+        console.log(`🔧 RECOVERY: Initiating controlled recovery for ${participantId} (attempt ${(currentData.recoveryAttempts || 0) + 1}/${finalConfig.maxRecoveryAttempts})`);
         await attemptConnectionRecovery(participantId, pc);
       }
 
@@ -267,7 +289,7 @@ export const useEnhancedWebRTCStability = (
         ontrackReceived,
         lastOntrackTime: ontrackReceived ? (currentData.lastOntrackTime || now) : currentData.lastOntrackTime,
         mediaStats,
-        recoveryAttempts: needsRecovery ? (currentData.recoveryAttempts || 0) + 1 : (currentData.recoveryAttempts || 0),
+        recoveryAttempts: needsRecovery ? (currentData.recoveryAttempts || 0) + 1 : isConnected ? 0 : (currentData.recoveryAttempts || 0),
         lastRecoveryTime: needsRecovery ? now : currentData.lastRecoveryTime
       });
     }

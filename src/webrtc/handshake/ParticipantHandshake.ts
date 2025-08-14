@@ -296,11 +296,12 @@ class ParticipantHandshakeManager {
         }
       };
 
-      // Enhanced connection state monitoring with detailed logging
+      // Enhanced connection state monitoring with detailed logging and recovery logic
       this.peerConnection.onconnectionstatechange = () => {
         const state = this.peerConnection?.connectionState;
+        const iceState = this.peerConnection?.iceConnectionState;
         const elapsed = performance.now() - this.handshakeStartTime;
-        console.log(`🔍 CONNECTION: State changed to ${state} for participant (${elapsed.toFixed(1)}ms since start)`);
+        console.log(`🔍 CONNECTION: State changed to ${state} for participant (${elapsed.toFixed(1)}ms since start) - ICE: ${iceState}`);
         
         if (state === 'connected') {
           this.clearConnectionTimeout();
@@ -309,11 +310,16 @@ class ParticipantHandshakeManager {
           
           // Notify successful connection
           window.dispatchEvent(new CustomEvent('participant-connected', {
-            detail: { participantId: this.participantId, timestamp: Date.now() }
+            detail: { participantId: this.participantId, timestamp: Date.now(), method: 'connection-state' }
           }));
-        } else if (state === 'failed' || state === 'disconnected') {
-          console.warn(`❌ CONNECTION: Connection failed/disconnected (${state})`);
+        } else if (state === 'failed') {
+          console.warn(`❌ CONNECTION: Connection failed definitively (${state}) - initiating recovery`);
           this.handleConnectionFailure(hostId);
+        } else if (state === 'disconnected') {
+          console.warn(`📤 CONNECTION: Connection disconnected (${state}) - may be temporary`);
+          // Don't immediately trigger recovery for disconnected state - could be temporary
+        } else if (state === 'connecting') {
+          console.log(`🔄 CONNECTION: Connection attempting to establish (${state})`);
         }
       };
 

@@ -20,7 +20,7 @@ class HostHandshakeManager {
         ]
       });
 
-      // ENHANCED ontrack registration with comprehensive logging
+      // ENHANCED ontrack registration with comprehensive logging and immediate connection marking
       pc.ontrack = (event) => {
         const ontrackTime = performance.now();
         console.log(`🎥 ONTRACK: Event received from ${participantId}`, {
@@ -31,6 +31,16 @@ class HostHandshakeManager {
           timestamp: Date.now()
         });
         
+        // IMMEDIATE CONNECTION MARKING - most reliable indicator
+        console.log(`✅ ONTRACK: Marking ${participantId} as connected immediately`);
+        window.dispatchEvent(new CustomEvent('ontrack-connection-established', {
+          detail: { 
+            participantId, 
+            timestamp: Date.now(),
+            connectionMethod: 'ontrack'
+          }
+        }));
+        
         // Log ICE and connection states when ontrack fires
         console.log(`🔍 ONTRACK: Connection states for ${participantId}:`, {
           connectionState: pc.connectionState,
@@ -38,6 +48,7 @@ class HostHandshakeManager {
           signalingState: pc.signalingState
         });
         
+        // Enhanced stream handling with support for edge cases
         if (event.streams && event.streams[0]) {
           const stream = event.streams[0];
           const videoTracks = stream.getVideoTracks();
@@ -47,10 +58,14 @@ class HostHandshakeManager {
             streamId: stream.id.substring(0, 8),
             videoTracks: videoTracks.length,
             audioTracks: audioTracks.length,
-            streamActive: stream.active
+            streamActive: stream.active,
+            trackStates: {
+              video: videoTracks.map(t => ({ id: t.id.substring(0, 8), state: t.readyState, enabled: t.enabled })),
+              audio: audioTracks.map(t => ({ id: t.id.substring(0, 8), state: t.readyState, enabled: t.enabled }))
+            }
           });
           
-          // Enhanced DOM handling with better error handling
+          // Enhanced DOM handling with better error handling and audio-only support
           const quadrantEl = document.querySelector(`[data-participant-id="${participantId}"]`);
           if (quadrantEl) {
             const existingVideo = quadrantEl.querySelector('video');
@@ -59,33 +74,50 @@ class HostHandshakeManager {
               existingVideo.remove();
             }
             
+            // Create video element even for audio-only streams (for potential future video)
             const video = document.createElement('video');
             video.autoplay = true;
             video.playsInline = true;
             video.muted = true;
             video.className = 'w-full h-full object-cover';
             video.srcObject = stream;
+            
+            // Add audio-only indicator if no video tracks
+            if (videoTracks.length === 0 && audioTracks.length > 0) {
+              video.style.backgroundColor = '#1f2937';
+              console.log(`🎵 ONTRACK: Audio-only stream detected for ${participantId}`);
+            }
+            
             quadrantEl.appendChild(video);
             
             video.play().then(() => {
               const renderTime = performance.now();
-              console.log(`✅ ONTRACK: Video rendering successful for ${participantId} (${(renderTime - ontrackTime).toFixed(1)}ms)`);
+              console.log(`✅ ONTRACK: Video element ready for ${participantId} (${(renderTime - ontrackTime).toFixed(1)}ms) - Video tracks: ${videoTracks.length}, Audio tracks: ${audioTracks.length}`);
             }).catch(err => {
               console.warn(`⚠️ ONTRACK: Video play failed for ${participantId}:`, err);
+              // Don't fail the connection for video play issues
             });
           } else {
-            console.warn(`⚠️ ONTRACK: Quadrant element not found for ${participantId}`);
+            console.warn(`⚠️ ONTRACK: Quadrant element not found for ${participantId} - stream will be available but not displayed`);
           }
           
-          // Enhanced event dispatch with more details
+          // Enhanced event dispatch with comprehensive details
           window.dispatchEvent(new CustomEvent('participant-stream-received', {
             detail: { 
               participantId, 
               stream, 
               hasStream: true,
+              isAudioOnly: videoTracks.length === 0 && audioTracks.length > 0,
+              isVideoOnly: videoTracks.length > 0 && audioTracks.length === 0,
               trackCounts: {
                 video: videoTracks.length,
                 audio: audioTracks.length
+              },
+              streamMetadata: {
+                id: stream.id,
+                active: stream.active,
+                videoEnabled: videoTracks.some(t => t.enabled),
+                audioEnabled: audioTracks.some(t => t.enabled)
               },
               timestamp: Date.now()
             }
@@ -93,10 +125,28 @@ class HostHandshakeManager {
           
           // Track this ontrack event for stability monitoring
           window.dispatchEvent(new CustomEvent('ontrack-received', {
-            detail: { participantId, timestamp: Date.now() }
+            detail: { participantId, timestamp: Date.now(), hasVideo: videoTracks.length > 0, hasAudio: audioTracks.length > 0 }
           }));
-        } else {
-          console.warn(`⚠️ ONTRACK: No streams provided for ${participantId}`);
+        } 
+        // Handle empty streams case (ontrack called but no streams provided)
+        else {
+          console.warn(`⚠️ ONTRACK: Empty streams for ${participantId} - track available but no stream container`);
+          
+          // Still mark as connected since ontrack fired
+          window.dispatchEvent(new CustomEvent('participant-stream-received', {
+            detail: { 
+              participantId, 
+              stream: null, 
+              hasStream: false,
+              trackKind: event.track.kind,
+              trackState: event.track.readyState,
+              timestamp: Date.now()
+            }
+          }));
+          
+          window.dispatchEvent(new CustomEvent('ontrack-received', {
+            detail: { participantId, timestamp: Date.now(), emptyStream: true, trackKind: event.track.kind }
+          }));
         }
       };
 

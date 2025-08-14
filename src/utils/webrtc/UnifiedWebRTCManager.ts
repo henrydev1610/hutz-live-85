@@ -446,13 +446,68 @@ export class UnifiedWebRTCManager {
     console.log('🔄 RESET: WebRTC reset complete - ready for new connections');
   }
 
-  // Enhanced ICE candidate buffering with comprehensive logging
+  // Enhanced ICE candidate buffering with comprehensive logging and stats monitoring
   bufferIceCandidate(participantId: string, candidate: RTCIceCandidate): void {
     if (!this.iceCandidateBuffer.has(participantId)) {
       this.iceCandidateBuffer.set(participantId, []);
     }
     this.iceCandidateBuffer.get(participantId)!.push(candidate);
-    console.log(`🧊 ICE BUFFER: Candidate buffered for ${participantId} (total: ${this.iceCandidateBuffer.get(participantId)!.length})`);
+    console.log(`🧊 ICE BUFFER: Candidate buffered for ${participantId} (total: ${this.iceCandidateBuffer.get(participantId)!.length}) - Type: ${candidate.type}, Protocol: ${candidate.protocol}`);
+  }
+
+  // Enhanced media flow validation using getStats()
+  async validateMediaFlow(participantId: string): Promise<{hasFlow: boolean, stats: any}> {
+    const pc = this.peerConnections.get(participantId);
+    if (!pc) {
+      return { hasFlow: false, stats: null };
+    }
+
+    try {
+      const stats = await pc.getStats();
+      let packetsReceived = 0;
+      let framesDecoded = 0;
+      let bytesReceived = 0;
+      let audioPackets = 0;
+      let videoPackets = 0;
+
+      stats.forEach((report) => {
+        if (report.type === 'inbound-rtp') {
+          const packets = report.packetsReceived || 0;
+          const bytes = report.bytesReceived || 0;
+          
+          packetsReceived += packets;
+          bytesReceived += bytes;
+          
+          if (report.kind === 'video') {
+            framesDecoded += report.framesDecoded || 0;
+            videoPackets += packets;
+          } else if (report.kind === 'audio') {
+            audioPackets += packets;
+          }
+        }
+      });
+
+      const hasFlow = packetsReceived > 0 || framesDecoded > 0 || bytesReceived > 0;
+      const flowStats = {
+        packetsReceived,
+        framesDecoded,
+        bytesReceived,
+        audioPackets,
+        videoPackets,
+        lastCheck: Date.now()
+      };
+
+      if (hasFlow) {
+        console.log(`📊 MEDIA FLOW: ${participantId} - Packets: ${packetsReceived} (audio: ${audioPackets}, video: ${videoPackets}), Frames: ${framesDecoded}, Bytes: ${bytesReceived}`);
+      } else {
+        console.log(`📊 MEDIA FLOW: ${participantId} - No media flow detected yet`);
+      }
+
+      return { hasFlow, stats: flowStats };
+    } catch (error) {
+      console.warn(`⚠️ MEDIA FLOW: Failed to get stats for ${participantId}:`, error);
+      return { hasFlow: false, stats: null };
+    }
   }
 
   async flushIceCandidates(participantId: string, pc: RTCPeerConnection): Promise<void> {
