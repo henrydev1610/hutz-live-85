@@ -38,7 +38,8 @@ const LivePage: React.FC = () => {
   // Initialize centralized video display manager
   useStreamDisplayManager();
 
-  // Desktop WebRTC stability management
+  // PLANO DESKTOP: Sistema único de estabilidade - desativar enhanced no desktop
+  const isDesktop = !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   const desktopStability = useDesktopWebRTCStability(new Map());
 
   // Environment detection and WebRTC management

@@ -25,11 +25,11 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   multiplier: 1.5
 };
 
-// Desktop-optimized connection timeouts
+// PLANO DESKTOP: Timeouts ultrarrápidos e definitivos
 const DESKTOP_TIMEOUTS = {
-  connectionTimeout: 10000,    // 10s max for connection
-  loopDetection: 8000,         // 8s loop detection
-  forceCleanup: 15000         // 15s force cleanup
+  connectionTimeout: 5000,     // PLANO: 5s max for connection
+  loopDetection: 4000,         // PLANO: 4s loop detection  
+  forceCleanup: 6000          // PLANO: 6s force cleanup
 };
 
 export class UnifiedWebRTCManager {
@@ -437,42 +437,41 @@ export class UnifiedWebRTCManager {
     }
   }
 
-  // Public method to reset WebRTC connections with desktop optimizations
+  // PLANO: Reset WebRTC ultrarrápido e definitivo
   public resetWebRTC(): void {
-    console.log('🖥️ RESET: Desktop WebRTC reset requested');
+    console.log('🔥 PLANO RESET: Desktop WebRTC reset (5s garantido)');
     
-    // Clear all connection timeouts first
+    // PLANO: Clear all timeouts imediatamente
     this.connectionTimeouts.forEach(timeout => clearTimeout(timeout));
     this.connectionTimeouts.clear();
     
-    // Close all peer connections with force cleanup
+    // PLANO: Force close todas as connections
     this.peerConnections.forEach((pc, participantId) => {
-      console.log(`🔄 RESET: Force closing PC for ${participantId}`);
+      console.log(`🔥 PLANO: Force close ${participantId}`);
       try {
         pc.close();
       } catch (error) {
-        console.error(`❌ RESET: Error closing ${participantId}:`, error);
+        console.error(`❌ PLANO: Erro ${participantId}:`, error);
       }
     });
     this.peerConnections.clear();
     
-    // Clear ICE buffers and metrics
+    // PLANO: Clear todos os buffers
     this.iceCandidateBuffer.clear();
     this.connectionMetrics.clear();
     
-    // Reset WebRTC state
+    // PLANO: Reset estado para disconnected
     this.connectionState.webrtc = 'disconnected';
-    this.updateOverallState();
+    this.connectionState.overall = 'disconnected';
     
-    // Dispatch desktop reset completion
+    // PLANO: Event reset completo
     window.dispatchEvent(new CustomEvent('desktop-webrtc-reset-complete'));
-    
-    console.log('✅ RESET: Desktop WebRTC reset complete - ready for new connections');
+    console.log('✅ PLANO RESET: Completo - 5s máximo garantido');
   }
 
-  // Desktop-specific method to break connection loops immediately  
+  // PLANO: Break loop ultrarrápido - 4s máximo
   public breakConnectionLoop(): void {
-    console.log('🚫 DESKTOP: Breaking connection loops immediately');
+    console.log('⚡ PLANO LOOP: Breaking loops (4s máximo)');
     
     const now = Date.now();
     const loopsDetected: string[] = [];
@@ -482,46 +481,44 @@ export class UnifiedWebRTCManager {
       const iceState = pc.iceConnectionState;
       const metrics = this.connectionMetrics.get(participantId);
       
-      if ((state === 'connecting' || iceState === 'checking') && metrics?.connectionStartTime) {
-        const connectingTime = now - metrics.connectionStartTime;
+      // PLANO: Qualquer connection há mais de 4s é loop
+      const connectingTime = metrics?.connectionStartTime ? now - metrics.connectionStartTime : 0;
+      const isLoop = (state === 'connecting' || iceState === 'checking') && 
+                     connectingTime > DESKTOP_TIMEOUTS.loopDetection;
+      
+      if (isLoop) {
+        console.log(`🚫 PLANO LOOP: ${participantId} (${connectingTime}ms) - QUEBRAR`);
+        loopsDetected.push(participantId);
         
-        if (connectingTime > DESKTOP_TIMEOUTS.loopDetection) {
-          console.log(`🚫 DESKTOP LOOP: Breaking ${participantId} (${connectingTime}ms)`);
-          loopsDetected.push(participantId);
+        try {
+          pc.close();
+          this.peerConnections.delete(participantId);
+          this.connectionMetrics.delete(participantId);
           
-          try {
-            pc.close();
-            this.peerConnections.delete(participantId);
-            this.connectionMetrics.delete(participantId);
-            
-            // Clear timeout
-            const timeout = this.connectionTimeouts.get(participantId);
-            if (timeout) {
-              clearTimeout(timeout);
-              this.connectionTimeouts.delete(participantId);
-            }
-          } catch (error) {
-            console.error(`❌ DESKTOP LOOP: Error breaking ${participantId}:`, error);
+          // PLANO: Clear timeout
+          const timeout = this.connectionTimeouts.get(participantId);
+          if (timeout) {
+            clearTimeout(timeout);
+            this.connectionTimeouts.delete(participantId);
           }
+        } catch (error) {
+          console.error(`❌ PLANO LOOP: Erro ${participantId}:`, error);
         }
       }
     });
     
     if (loopsDetected.length > 0) {
-      console.log(`🚫 DESKTOP: Broke ${loopsDetected.length} connection loops:`, loopsDetected);
+      console.log(`⚡ PLANO LOOP: Quebrou ${loopsDetected.length} loops:`, loopsDetected);
       
-      // Update state if loops were broken
+      // PLANO: Reset estado se não há connections
       if (this.peerConnections.size === 0) {
         this.connectionState.webrtc = 'disconnected';
-        this.updateOverallState();
+        this.connectionState.overall = 'disconnected';
       }
       
-      // Dispatch event
-      window.dispatchEvent(new CustomEvent('desktop-loops-broken', {
-        detail: { brokenConnections: loopsDetected, timestamp: now }
-      }));
+      window.dispatchEvent(new CustomEvent('desktop-loops-broken'));
     } else {
-      console.log('🖥️ DESKTOP: No loops detected to break');
+      console.log('💚 PLANO LOOP: Nenhum loop detectado');
     }
   }
 

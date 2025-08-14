@@ -24,10 +24,10 @@ interface DesktopStabilityConfig {
 }
 
 const DESKTOP_CONFIG: DesktopStabilityConfig = {
-  maxConnectingTime: 10000,      // 10 seconds max connecting
-  healthCheckInterval: 5000,     // Check every 5 seconds 
-  loopDetectionTime: 8000,       // 8 seconds loop detection
-  enableImmedateReset: true      // Enable immediate reset
+  maxConnectingTime: 5000,       // PLANO: 5 seconds max connecting
+  healthCheckInterval: 2000,     // PLANO: Check every 2 seconds for immediate detection
+  loopDetectionTime: 4000,       // PLANO: 4 seconds loop detection  
+  enableImmedateReset: true      // PLANO: Immediate reset enabled
 };
 
 export const useDesktopWebRTCStability = (
@@ -92,10 +92,10 @@ export const useDesktopWebRTCStability = (
 
       const connectingTime = now - currentMetrics.connectingStartTime;
       
-      // Simple connection detection: ontrack event OR connected state
-      const isConnected = hasOntrack || state === 'connected';
+      // PLANO: Single source of truth - APENAS ontrack events
+      const isConnected = hasOntrack;
       
-      // Desktop loop detection: connecting for more than 8 seconds
+      // PLANO: Desktop loop detection - 4 seconds limit
       const isInLoop = (state === 'connecting' || iceState === 'checking') && 
                        connectingTime > DESKTOP_CONFIG.loopDetectionTime;
       
@@ -184,9 +184,9 @@ export const useDesktopWebRTCStability = (
       };
     });
 
-    // Auto-toast for loop detection
+    // PLANO: Auto-toast para feedback imediato
     if (hasLoops && DESKTOP_CONFIG.enableImmedateReset) {
-      toast.warning('🚫 Connection loop detected - resetting automatically');
+      toast.warning('⚡ Loop detectado - reset automático (4s)');
     }
 
   }, [peerConnections, participantMetrics]);

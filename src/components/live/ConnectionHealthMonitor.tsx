@@ -205,7 +205,7 @@ const ConnectionHealthMonitor: React.FC<ConnectionHealthMonitorProps> = ({ isVis
                 window.dispatchEvent(new CustomEvent('desktop-force-reset'));
               }}
             >
-              🖥️ Desktop Reset (10s)
+              🔥 Reset (5s Max)
             </Button>
             
             <Button
@@ -217,7 +217,7 @@ const ConnectionHealthMonitor: React.FC<ConnectionHealthMonitorProps> = ({ isVis
                 window.dispatchEvent(new CustomEvent('desktop-break-loops'));
               }}
             >
-              🚫 Break Desktop Loops
+              ⚡ Break Loops (4s)
             </Button>
           </div>
         )}
