@@ -48,58 +48,33 @@ class HostHandshakeManager {
           signalingState: pc.signalingState
         });
         
-        // Enhanced stream handling with support for edge cases
-        if (event.streams && event.streams[0]) {
-          const stream = event.streams[0];
-          const videoTracks = stream.getVideoTracks();
-          const audioTracks = stream.getAudioTracks();
-          
-          console.log(`🎥 ONTRACK: Stream details for ${participantId}:`, {
-            streamId: stream.id.substring(0, 8),
-            videoTracks: videoTracks.length,
-            audioTracks: audioTracks.length,
-            streamActive: stream.active,
-            trackStates: {
-              video: videoTracks.map(t => ({ id: t.id.substring(0, 8), state: t.readyState, enabled: t.enabled })),
-              audio: audioTracks.map(t => ({ id: t.id.substring(0, 8), state: t.readyState, enabled: t.enabled }))
-            }
-          });
-          
-          // Enhanced DOM handling with better error handling and audio-only support
-          const quadrantEl = document.querySelector(`[data-participant-id="${participantId}"]`);
-          if (quadrantEl) {
-            const existingVideo = quadrantEl.querySelector('video');
-            if (existingVideo) {
-              console.log(`🔄 ONTRACK: Replacing existing video element for ${participantId}`);
-              existingVideo.remove();
-            }
+          // Enhanced stream handling with support for edge cases
+          if (event.streams && event.streams[0]) {
+            const stream = event.streams[0];
+            const videoTracks = stream.getVideoTracks();
+            const audioTracks = stream.getAudioTracks();
             
-            // Create video element even for audio-only streams (for potential future video)
-            const video = document.createElement('video');
-            video.autoplay = true;
-            video.playsInline = true;
-            video.muted = true;
-            video.className = 'w-full h-full object-cover';
-            video.srcObject = stream;
-            
-            // Add audio-only indicator if no video tracks
-            if (videoTracks.length === 0 && audioTracks.length > 0) {
-              video.style.backgroundColor = '#1f2937';
-              console.log(`🎵 ONTRACK: Audio-only stream detected for ${participantId}`);
-            }
-            
-            quadrantEl.appendChild(video);
-            
-            video.play().then(() => {
-              const renderTime = performance.now();
-              console.log(`✅ ONTRACK: Video element ready for ${participantId} (${(renderTime - ontrackTime).toFixed(1)}ms) - Video tracks: ${videoTracks.length}, Audio tracks: ${audioTracks.length}`);
-            }).catch(err => {
-              console.warn(`⚠️ ONTRACK: Video play failed for ${participantId}:`, err);
-              // Don't fail the connection for video play issues
+            console.log(`🎥 ONTRACK: Stream details for ${participantId}:`, {
+              streamId: stream.id.substring(0, 8),
+              videoTracks: videoTracks.length,
+              audioTracks: audioTracks.length,
+              streamActive: stream.active,
+              trackStates: {
+                video: videoTracks.map(t => ({ id: t.id.substring(0, 8), state: t.readyState, enabled: t.enabled })),
+                audio: audioTracks.map(t => ({ id: t.id.substring(0, 8), state: t.readyState, enabled: t.enabled }))
+              }
             });
-          } else {
-            console.warn(`⚠️ ONTRACK: Quadrant element not found for ${participantId} - stream will be available but not displayed`);
-          }
+            
+            // Send stream to centralized display manager instead of direct DOM manipulation
+            console.log(`🎯 ONTRACK: Sending stream to display manager for ${participantId}`);
+            window.dispatchEvent(new CustomEvent('video-stream-ready', {
+              detail: { 
+                participantId, 
+                stream,
+                hasVideo: videoTracks.length > 0,
+                hasAudio: audioTracks.length > 0
+              }
+            }));
           
           // Enhanced event dispatch with comprehensive details
           window.dispatchEvent(new CustomEvent('participant-stream-received', {
