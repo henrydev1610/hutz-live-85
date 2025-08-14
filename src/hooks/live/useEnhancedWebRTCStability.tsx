@@ -15,8 +15,16 @@ interface WebRTCStabilityMetrics {
     lastHeartbeat: number;
     reconnectAttempts: number;
     connectingStartTime?: number;
-    isStuckConnecting?: boolean;
-    isStalledHeartbeat?: boolean;
+    ontrackReceived?: boolean;
+    lastOntrackTime?: number;
+    mediaStats?: {
+      packetsReceived: number;
+      framesDecoded: number;
+      bytesReceived: number;
+      lastStatsCheck: number;
+    };
+    recoveryAttempts: number;
+    lastRecoveryTime?: number;
   }>;
   websocketPingLatency: number;
   lastWebSocketPing: number;
@@ -27,17 +35,21 @@ interface WebRTCStabilityMetrics {
 interface StabilityConfig {
   websocketPingInterval: number;
   connectionHealthCheckInterval: number;
-  maxReconnectAttempts: number;
-  reconnectDelayMultiplier: number;
+  maxRecoveryAttempts: number;
+  recoveryDelayMultiplier: number;
   aggressiveModeForMobile: boolean;
+  enableStatsMonitoring: boolean;
+  statsCheckInterval: number;
 }
 
 const DEFAULT_STABILITY_CONFIG: StabilityConfig = {
-  websocketPingInterval: 3000, // 3s for aggressive monitoring
-  connectionHealthCheckInterval: 2000, // 2s health checks
-  maxReconnectAttempts: 10,
-  reconnectDelayMultiplier: 1.5,
-  aggressiveModeForMobile: true
+  websocketPingInterval: 5000, // Relaxed from 3s to 5s
+  connectionHealthCheckInterval: 3000, // Relaxed from 2s to 3s
+  maxRecoveryAttempts: 3, // Reduced from 10 to 3
+  recoveryDelayMultiplier: 2.0,
+  aggressiveModeForMobile: false, // Disabled aggressive mode
+  enableStatsMonitoring: true,
+  statsCheckInterval: 2000
 };
 
 export const useEnhancedWebRTCStability = (
@@ -62,8 +74,10 @@ export const useEnhancedWebRTCStability = (
 
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const healthCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectAttemptsRef = useRef(new Map<string, number>());
+  const statsCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const recoveryAttemptsRef = useRef(new Map<string, number>());
   const lastStabilityCheckRef = useRef(Date.now());
+  const ontrackEventRef = useRef(new Map<string, boolean>());
 
   // Enhanced WebSocket ping with latency measurement
   const performWebSocketPing = useCallback(async () => {
@@ -114,18 +128,51 @@ export const useEnhancedWebRTCStability = (
     }
   }, [isMobile, finalConfig.aggressiveModeForMobile]);
 
-  // Enhanced connection health assessment with ontrack-based connection detection
-  const assessPeerConnectionHealth = useCallback(() => {
+  // Enhanced stream detection with ontrack and getStats monitoring
+  const checkMediaFlow = useCallback(async (pc: RTCPeerConnection, participantId: string) => {
+    try {
+      const stats = await pc.getStats();
+      let packetsReceived = 0;
+      let framesDecoded = 0;
+      let bytesReceived = 0;
+
+      stats.forEach((report) => {
+        if (report.type === 'inbound-rtp') {
+          packetsReceived += report.packetsReceived || 0;
+          framesDecoded += report.framesDecoded || 0;
+          bytesReceived += report.bytesReceived || 0;
+        }
+      });
+
+      console.log(`📊 STATS: Media flow for ${participantId}:`, {
+        packetsReceived,
+        framesDecoded,
+        bytesReceived,
+        timestamp: Date.now()
+      });
+
+      return {
+        packetsReceived,
+        framesDecoded,
+        bytesReceived,
+        lastStatsCheck: Date.now()
+      };
+    } catch (error) {
+      console.warn(`⚠️ STATS: Failed to get media stats for ${participantId}:`, error);
+      return null;
+    }
+  }, []);
+
+  // Enhanced connection health assessment with ontrack-based detection and controlled recovery
+  const assessPeerConnectionHealth = useCallback(async () => {
     const now = Date.now();
-    const CONNECTING_TIMEOUT = 30000; // 30s timeout for "connecting" state without ontrack
-    const STALLED_HEARTBEAT_TIMEOUT = 15000; // 15s without heartbeat
     
     const updatedConnections = new Map();
     let hasActiveConnections = false;
     let hasFailedConnections = false;
-    let hasStuckConnections = false;
+    let hasConnectingConnections = false;
 
-    peerConnections.forEach((pc, participantId) => {
+    for (const [participantId, pc] of peerConnections.entries()) {
       const state = pc.connectionState;
       const iceState = pc.iceConnectionState;
       const signalingState = pc.signalingState;
@@ -136,83 +183,109 @@ export const useEnhancedWebRTCStability = (
         lastHeartbeat: now,
         reconnectAttempts: 0,
         connectingStartTime: now,
-        hasVideoTrack: false
+        ontrackReceived: false,
+        recoveryAttempts: 0
       };
 
-      // Check for ontrack reception or video receiver tracks  
+      console.log(`🔍 HEALTH: Checking ${participantId} - State: ${state}, ICE: ${iceState}, Signaling: ${signalingState}`);
+
+      // Check for ontrack event reception
+      const ontrackReceived = ontrackEventRef.current.get(participantId) || currentData.ontrackReceived || false;
+      
+      // Check for active tracks via receivers (fallback)
       const receivers = pc.getReceivers();
-      const hasVideoTrack = receivers.some(receiver => 
+      const hasActiveVideoTrack = receivers.some(receiver => 
         receiver.track && receiver.track.kind === 'video' && receiver.track.readyState === 'live'
       );
+      const hasActiveAudioTrack = receivers.some(receiver => 
+        receiver.track && receiver.track.kind === 'audio' && receiver.track.readyState === 'live'
+      );
+      const hasActiveMedia = hasActiveVideoTrack || hasActiveAudioTrack;
 
-      // WebRTC is "connected" only after ontrack OR when receiver has video track
-      const isReallyConnected = hasVideoTrack || (state === 'connected' && hasVideoTrack);
-      
-      // Check for 30s timeout without ontrack
-      const connectStartTime = currentData.connectingStartTime || now;
-      const timeWithoutOntrack = now - connectStartTime;
-      
-      const isStuckConnecting = (state === 'connecting' || iceState === 'checking') &&
-                               !hasVideoTrack && 
-                               timeWithoutOntrack > CONNECTING_TIMEOUT;
-      
-      const isStalledHeartbeat = (now - currentData.lastHeartbeat) > STALLED_HEARTBEAT_TIMEOUT;
+      // Get media flow stats if available
+      let mediaStats = currentData.mediaStats;
+      if (finalConfig.enableStatsMonitoring && (state === 'connected' || ontrackReceived)) {
+        const stats = await checkMediaFlow(pc, participantId);
+        if (stats) {
+          mediaStats = stats;
+          console.log(`📊 STATS: Updated for ${participantId}:`, stats);
+        }
+      }
 
-      // Enhanced health logic based on ontrack reception
-      const isHealthy = isReallyConnected && 
-                       !isStalledHeartbeat &&
-                       hasVideoTrack;
+      // Enhanced connection detection logic
+      let isConnected = false;
+      let connectionMethod = 'none';
       
-      const isDefinitelyFailed = state === 'failed' || 
-                                iceState === 'failed' || 
-                                isStuckConnecting ||
-                                isStalledHeartbeat ||
-                                (state === 'connecting' && !hasVideoTrack && timeWithoutOntrack > CONNECTING_TIMEOUT);
+      if (ontrackReceived) {
+        isConnected = true;
+        connectionMethod = 'ontrack';
+        console.log(`✅ CONNECTION: ${participantId} connected via ontrack event`);
+      } else if (state === 'connected' && hasActiveMedia) {
+        isConnected = true;
+        connectionMethod = 'receivers';
+        console.log(`✅ CONNECTION: ${participantId} connected via active receivers`);
+      } else if (mediaStats && (mediaStats.packetsReceived > 0 || mediaStats.framesDecoded > 0)) {
+        isConnected = true;
+        connectionMethod = 'stats';
+        console.log(`✅ CONNECTION: ${participantId} connected via media flow stats`);
+      }
+
+      // Determine if connection is failed (relaxed criteria)
+      const connectingTime = now - (currentData.connectingStartTime || now);
+      const isDefinitelyFailed = state === 'failed' || iceState === 'failed';
       
-      if (isHealthy) {
+      // Determine if recovery is needed (but don't force failure)
+      const needsRecovery = (state === 'connecting' || iceState === 'checking') && 
+                           !isConnected && 
+                           connectingTime > 45000 && // Increased from 30s to 45s
+                           (currentData.recoveryAttempts || 0) < finalConfig.maxRecoveryAttempts;
+
+      if (isConnected) {
         hasActiveConnections = true;
+        console.log(`🎯 CONNECTED: ${participantId} via ${connectionMethod}`);
       } else if (isDefinitelyFailed) {
         hasFailedConnections = true;
-        console.warn(`⚠️ STABILITY: Connection failed for ${participantId} (no ontrack within 30s or failed state):`, {
-          state, iceState, signalingState, hasVideoTrack, timeWithoutOntrack, isStuckConnecting, isStalledHeartbeat
-        });
-        
-        // Auto-cleanup failed connections
-        setTimeout(() => {
-          console.log(`🧹 STABILITY: Auto-cleaning failed connection for ${participantId}`);
-          pc.close();
-          peerConnections.delete(participantId);
-        }, 1000);
-      } else if ((state === 'connecting' || iceState === 'checking') && !hasVideoTrack) {
-        hasStuckConnections = true;
+        console.warn(`❌ FAILED: ${participantId} - State: ${state}, ICE: ${iceState}`);
+      } else if (state === 'connecting' || iceState === 'checking') {
+        hasConnectingConnections = true;
+        console.log(`🔄 CONNECTING: ${participantId} for ${(connectingTime/1000).toFixed(1)}s`);
+      }
+
+      // Trigger controlled recovery if needed
+      if (needsRecovery) {
+        console.log(`🔧 RECOVERY: Initiating controlled recovery for ${participantId} (attempt ${(currentData.recoveryAttempts || 0) + 1})`);
+        await attemptConnectionRecovery(participantId, pc);
       }
 
       updatedConnections.set(participantId, {
-        state: isReallyConnected ? 'connected' : state,
+        state: isConnected ? 'connected' : state,
         iceState,
         signalingState,
-        lastHeartbeat: isHealthy ? now : currentData.lastHeartbeat,
+        lastHeartbeat: isConnected ? now : currentData.lastHeartbeat,
         reconnectAttempts: currentData.reconnectAttempts,
-        connectingStartTime: (state === 'connecting' && !currentData.connectingStartTime) ? now : currentData.connectingStartTime,
-        hasVideoTrack,
-        timeWithoutOntrack,
-        isStuckConnecting,
-        isStalledHeartbeat
+        connectingStartTime: currentData.connectingStartTime,
+        ontrackReceived,
+        lastOntrackTime: ontrackReceived ? (currentData.lastOntrackTime || now) : currentData.lastOntrackTime,
+        mediaStats,
+        recoveryAttempts: needsRecovery ? (currentData.recoveryAttempts || 0) + 1 : (currentData.recoveryAttempts || 0),
+        lastRecoveryTime: needsRecovery ? now : currentData.lastRecoveryTime
       });
-    });
+    }
 
-    // Enhanced WebRTC state based on real connection status
+    // Enhanced WebRTC state logic - simplified and stable
     let webrtcState: 'disconnected' | 'connecting' | 'connected' | 'failed';
-    if (hasActiveConnections && !hasFailedConnections && !hasStuckConnections) {
+    if (hasActiveConnections) {
       webrtcState = 'connected';
+      console.log(`✅ WEBRTC: Connected - ${hasActiveConnections ? 'active connections found' : 'no active connections'}`);
     } else if (hasFailedConnections) {
       webrtcState = 'failed';
-    } else if (peerConnections.size > 0 && !hasStuckConnections) {
+      console.log(`❌ WEBRTC: Failed - connection failures detected`);
+    } else if (hasConnectingConnections || peerConnections.size > 0) {
       webrtcState = 'connecting';
-    } else if (hasStuckConnections && !hasActiveConnections) {
-      webrtcState = 'failed'; // Stuck connections without ontrack = failed
+      console.log(`🔄 WEBRTC: Connecting - ${peerConnections.size} peer connections in progress`);
     } else {
       webrtcState = 'disconnected';
+      console.log(`📱 WEBRTC: Disconnected - no peer connections`);
     }
 
     setMetrics(prev => {
@@ -221,16 +294,12 @@ export const useEnhancedWebRTCStability = (
         webrtc: webrtcState
       };
       
-      // Overall state logic - prevent infinite "connecting" loop
-      const overall = newConnectionState.websocket === 'connected' && 
-                     newConnectionState.webrtc === 'connected'
+      // Simplified overall state logic
+      const overall = newConnectionState.websocket === 'connected' && newConnectionState.webrtc === 'connected'
                      ? 'connected'
                      : newConnectionState.websocket === 'failed' || newConnectionState.webrtc === 'failed'
                      ? 'failed'
-                     : newConnectionState.websocket === 'connecting' || 
-                       (newConnectionState.webrtc === 'connecting' && !hasStuckConnections)
-                     ? 'connecting'
-                     : 'disconnected';
+                     : 'connecting';
 
       newConnectionState.overall = overall;
 
@@ -243,86 +312,167 @@ export const useEnhancedWebRTCStability = (
     });
 
     lastStabilityCheckRef.current = now;
-  }, [peerConnections, metrics.participantConnections]);
+  }, [peerConnections, metrics.participantConnections, finalConfig.enableStatsMonitoring, finalConfig.maxRecoveryAttempts, checkMediaFlow]);
 
-  // Intelligent reconnection strategy
-  const handleConnectionRecovery = useCallback(async (participantId?: string) => {
-    console.log(`🔄 STABILITY: Initiating connection recovery${participantId ? ` for ${participantId}` : ''}`);
+  // Controlled recovery sequence with ICE restart
+  const attemptConnectionRecovery = useCallback(async (participantId: string, pc: RTCPeerConnection) => {
+    const currentAttempts = recoveryAttemptsRef.current.get(participantId) || 0;
     
-    const currentAttempts = reconnectAttemptsRef.current.get(participantId || 'websocket') || 0;
-    
-    if (currentAttempts >= finalConfig.maxReconnectAttempts) {
-      console.error(`❌ STABILITY: Max reconnection attempts reached for ${participantId || 'websocket'}`);
-      toast.error('❌ Connection recovery failed - max attempts reached');
+    if (currentAttempts >= finalConfig.maxRecoveryAttempts) {
+      console.warn(`⚠️ RECOVERY: Max recovery attempts reached for ${participantId}`);
       return false;
     }
 
-    reconnectAttemptsRef.current.set(participantId || 'websocket', currentAttempts + 1);
+    recoveryAttemptsRef.current.set(participantId, currentAttempts + 1);
+    
+    try {
+      console.log(`🔧 RECOVERY: Attempt ${currentAttempts + 1} for ${participantId} - triggering ICE restart`);
+      
+      if (pc.signalingState === 'stable') {
+        // Try ICE restart for stable connections
+        const offer = await pc.createOffer({ iceRestart: true });
+        await pc.setLocalDescription(offer);
+        console.log(`🧊 ICE RESTART: Triggered for ${participantId}`);
+        return true;
+      } else {
+        console.log(`⚠️ RECOVERY: Cannot restart ICE - signaling state is ${pc.signalingState}`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`❌ RECOVERY: Failed for ${participantId}:`, error);
+      return false;
+    }
+  }, [finalConfig.maxRecoveryAttempts]);
+
+  // Register ontrack events for immediate connection detection
+  const registerOntrackEvents = useCallback(() => {
+    peerConnections.forEach((pc, participantId) => {
+      if (!ontrackEventRef.current.has(participantId)) {
+        pc.addEventListener('track', (event) => {
+          console.log(`🎥 ONTRACK: Event received for ${participantId}`, {
+            track: event.track.kind,
+            trackId: event.track.id.substring(0, 8),
+            streamCount: event.streams.length,
+            timestamp: Date.now()
+          });
+          
+          ontrackEventRef.current.set(participantId, true);
+          
+          // Immediately update connection state on ontrack
+          setMetrics(prev => {
+            const updatedConnections = new Map(prev.participantConnections);
+            const current = updatedConnections.get(participantId);
+            if (current) {
+              updatedConnections.set(participantId, {
+                ...current,
+                ontrackReceived: true,
+                lastOntrackTime: Date.now(),
+                state: 'connected' as RTCPeerConnectionState
+              });
+            }
+            
+            return {
+              ...prev,
+              participantConnections: updatedConnections,
+              connectionState: {
+                ...prev.connectionState,
+                webrtc: 'connected',
+                overall: prev.connectionState.websocket === 'connected' ? 'connected' : 'connecting'
+              }
+            };
+          });
+        });
+      }
+    });
+  }, [peerConnections]);
+
+  // Manual connection recovery with controlled sequence
+  const handleConnectionRecovery = useCallback(async (participantId?: string) => {
+    console.log(`🔄 RECOVERY: Manual recovery initiated${participantId ? ` for ${participantId}` : ''}`);
+    
+    const currentAttempts = recoveryAttemptsRef.current.get(participantId || 'websocket') || 0;
+    
+    if (currentAttempts >= finalConfig.maxRecoveryAttempts) {
+      console.error(`❌ RECOVERY: Max recovery attempts reached for ${participantId || 'websocket'}`);
+      toast.error('❌ Connection recovery failed - please reset connection');
+      return false;
+    }
+
+    recoveryAttemptsRef.current.set(participantId || 'websocket', currentAttempts + 1);
     
     try {
       if (participantId) {
-        // Peer connection recovery
+        // Peer connection recovery with ICE restart
         const pc = peerConnections.get(participantId);
         if (pc) {
-          console.log(`🔄 STABILITY: Restarting ICE for ${participantId}`);
-          await pc.restartIce();
+          console.log(`🔧 RECOVERY: ICE restart sequence for ${participantId}`);
+          const success = await attemptConnectionRecovery(participantId, pc);
+          if (success) {
+            console.log(`✅ RECOVERY: ICE restart successful for ${participantId}`);
+            recoveryAttemptsRef.current.delete(participantId);
+            toast.success(`🔧 Connection recovered for ${participantId}`);
+            return true;
+          }
         }
       } else {
         // WebSocket recovery
-        console.log('🔄 STABILITY: Reconnecting WebSocket...');
+        console.log('🔄 RECOVERY: WebSocket reconnection...');
         await unifiedWebSocketService.forceReconnect();
         
         setMetrics(prev => ({
           ...prev,
           totalReconnections: prev.totalReconnections + 1
         }));
-      }
-      
-      // Reset attempts on success
-      reconnectAttemptsRef.current.delete(participantId || 'websocket');
-      console.log(`✅ STABILITY: Recovery successful for ${participantId || 'websocket'}`);
-      
-      if (isMobile) {
-        toast.success('📱 Connection recovered successfully!');
-      }
-      
-      return true;
-    } catch (error) {
-      console.error(`❌ STABILITY: Recovery failed for ${participantId || 'websocket'}:`, error);
-      
-      // CORREÇÃO: Não fazer retry automático - evita loop infinito
-      if (isMobile) {
-        toast.error('❌ Connection recovery failed. Please try reconnecting manually.');
+        
+        recoveryAttemptsRef.current.delete('websocket');
+        console.log(`✅ RECOVERY: WebSocket recovery successful`);
+        toast.success('📡 WebSocket connection recovered');
+        return true;
       }
       
       return false;
+    } catch (error) {
+      console.error(`❌ RECOVERY: Failed for ${participantId || 'websocket'}:`, error);
+      toast.error(`❌ Recovery failed - attempt ${currentAttempts + 1}/${finalConfig.maxRecoveryAttempts}`);
+      return false;
     }
-  }, [finalConfig.maxReconnectAttempts, finalConfig.reconnectDelayMultiplier, peerConnections, isMobile]);
+  }, [finalConfig.maxRecoveryAttempts, peerConnections, attemptConnectionRecovery]);
 
-  // Start monitoring systems
+  // Start enhanced monitoring systems
   const startStabilityMonitoring = useCallback(() => {
-    console.log(`🔍 STABILITY: Starting enhanced monitoring (Mobile: ${isMobile})`);
+    console.log(`🔍 STABILITY: Starting enhanced monitoring with ontrack detection`);
     
-    // WebSocket ping monitoring
+    // WebSocket ping monitoring (relaxed)
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
     pingIntervalRef.current = setInterval(async () => {
-      const isHealthy = await performWebSocketPing();
-      if (!isHealthy && finalConfig.aggressiveModeForMobile && isMobile) {
-        handleConnectionRecovery();
-      }
+      await performWebSocketPing();
     }, finalConfig.websocketPingInterval);
 
-    // Connection health monitoring
+    // Connection health monitoring with ontrack registration
     if (healthCheckIntervalRef.current) clearInterval(healthCheckIntervalRef.current);
     healthCheckIntervalRef.current = setInterval(() => {
+      registerOntrackEvents();
       assessPeerConnectionHealth();
     }, finalConfig.connectionHealthCheckInterval);
 
-  }, [isMobile, finalConfig.websocketPingInterval, finalConfig.connectionHealthCheckInterval, finalConfig.aggressiveModeForMobile, performWebSocketPing, assessPeerConnectionHealth, handleConnectionRecovery]);
+    // Optional stats monitoring
+    if (finalConfig.enableStatsMonitoring) {
+      if (statsCheckIntervalRef.current) clearInterval(statsCheckIntervalRef.current);
+      statsCheckIntervalRef.current = setInterval(() => {
+        peerConnections.forEach(async (pc, participantId) => {
+          if (pc.connectionState === 'connected') {
+            await checkMediaFlow(pc, participantId);
+          }
+        });
+      }, finalConfig.statsCheckInterval);
+    }
 
-  // Stop monitoring
+    console.log(`✅ STABILITY: Enhanced monitoring started - ontrack: enabled, stats: ${finalConfig.enableStatsMonitoring}`);
+  }, [finalConfig, performWebSocketPing, assessPeerConnectionHealth, registerOntrackEvents, checkMediaFlow, peerConnections]);
+
+  // Stop all monitoring
   const stopStabilityMonitoring = useCallback(() => {
-    console.log('🛑 STABILITY: Stopping monitoring');
+    console.log('🛑 STABILITY: Stopping enhanced monitoring');
     
     if (pingIntervalRef.current) {
       clearInterval(pingIntervalRef.current);
@@ -333,6 +483,14 @@ export const useEnhancedWebRTCStability = (
       clearInterval(healthCheckIntervalRef.current);
       healthCheckIntervalRef.current = null;
     }
+    
+    if (statsCheckIntervalRef.current) {
+      clearInterval(statsCheckIntervalRef.current);
+      statsCheckIntervalRef.current = null;
+    }
+    
+    // Clear ontrack tracking
+    ontrackEventRef.current.clear();
   }, []);
 
   // SOLUÇÃO: Force full recovery com limpeza completa
@@ -354,7 +512,7 @@ export const useEnhancedWebRTCStability = (
     
     // Clear all maps and attempts
     peerConnections.clear();
-    reconnectAttemptsRef.current.clear();
+    recoveryAttemptsRef.current.clear();
     
     // Reset metrics to clean state
     setMetrics(prev => ({

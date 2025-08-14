@@ -296,30 +296,39 @@ class ParticipantHandshakeManager {
         }
       };
 
+      // Enhanced connection state monitoring with detailed logging
       this.peerConnection.onconnectionstatechange = () => {
         const state = this.peerConnection?.connectionState;
         const elapsed = performance.now() - this.handshakeStartTime;
-        console.log(`[PART] Connection state: ${state} (${elapsed.toFixed(1)}ms since start)`);
+        console.log(`🔍 CONNECTION: State changed to ${state} for participant (${elapsed.toFixed(1)}ms since start)`);
         
         if (state === 'connected') {
           this.clearConnectionTimeout();
           this.reconnectAttempts = 0;
-          console.log(`[PART] WebRTC connection established (${elapsed.toFixed(1)}ms total)`);
+          console.log(`✅ CONNECTION: WebRTC connection established (${elapsed.toFixed(1)}ms total)`);
+          
+          // Notify successful connection
+          window.dispatchEvent(new CustomEvent('participant-connected', {
+            detail: { participantId: this.participantId, timestamp: Date.now() }
+          }));
         } else if (state === 'failed' || state === 'disconnected') {
+          console.warn(`❌ CONNECTION: Connection failed/disconnected (${state})`);
           this.handleConnectionFailure(hostId);
         }
       };
 
       this.peerConnection.oniceconnectionstatechange = () => {
         const state = this.peerConnection?.iceConnectionState;
-        console.log(`[PART] ICE connection state: ${state}`);
+        console.log(`🧊 ICE: State changed to ${state}`);
         
         if (state === 'connected' || state === 'completed') {
           this.clearConnectionTimeout();
-          console.log('[PART] ICE connection established');
+          console.log(`✅ ICE: Connection established (${state})`);
         } else if (state === 'failed') {
-          console.log('[PART] ICE connection failed');
+          console.warn(`❌ ICE: Connection failed`);
           this.handleConnectionFailure(hostId);
+        } else if (state === 'checking') {
+          console.log(`🔍 ICE: Checking connectivity...`);
         }
       };
 
@@ -373,9 +382,50 @@ class ParticipantHandshakeManager {
   }
 
   private handleConnectionFailure(hostId: string): void {
-    console.log(`[PART] Connection failure recovery for: ${hostId}`);
+    console.log(`🔧 RECOVERY: Connection failure recovery initiated for: ${hostId}`);
     
-    // Reset PC completely on failure
+    // Enhanced failure logging
+    const connectionState = this.peerConnection?.connectionState;
+    const iceState = this.peerConnection?.iceConnectionState;
+    const signalingState = this.peerConnection?.signalingState;
+    
+    console.log(`🔍 FAILURE: Connection states - Connection: ${connectionState}, ICE: ${iceState}, Signaling: ${signalingState}`);
+    
+    // First try ICE restart if possible before full reset
+    if (this.peerConnection && 
+        this.peerConnection.signalingState === 'stable' && 
+        this.reconnectAttempts === 0) {
+      
+      console.log(`🧊 RECOVERY: Attempting ICE restart for: ${hostId}`);
+      this.reconnectAttempts++;
+      
+      this.peerConnection.createOffer({ iceRestart: true })
+        .then(offer => {
+          if (this.peerConnection) {
+            return this.peerConnection.setLocalDescription(offer);
+          }
+        })
+        .then(() => {
+          console.log(`✅ RECOVERY: ICE restart initiated for: ${hostId}`);
+          // Reset timeout for ICE restart attempt
+          this.setConnectionTimeout(() => {
+            console.log(`⏰ RECOVERY: ICE restart timeout for: ${hostId}`);
+            this.performFullReset(hostId);
+          });
+        })
+        .catch(error => {
+          console.warn(`⚠️ RECOVERY: ICE restart failed for ${hostId}:`, error);
+          this.performFullReset(hostId);
+        });
+    } else {
+      this.performFullReset(hostId);
+    }
+  }
+
+  private performFullReset(hostId: string): void {
+    console.log(`🔄 RESET: Full connection reset for: ${hostId}`);
+    
+    // Reset PC completely
     if (this.peerConnection) {
       this.peerConnection.close();
       this.peerConnection = null;
@@ -384,21 +434,35 @@ class ParticipantHandshakeManager {
     // Clear pending candidates
     this.pendingCandidates = [];
     
-    // Prevent looping: Only retry if not making offer and under retry limit
-    if (!this.isOfferInProgress && this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
+    // Controlled retry with backoff - only if under retry limit
+    if (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
       this.reconnectAttempts++;
-      const backoffDelay = Math.min(5000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
+      const backoffDelay = Math.min(3000 * Math.pow(2, this.reconnectAttempts - 1), 15000);
+      
+      console.log(`⏰ RETRY: Scheduling retry ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS} in ${backoffDelay}ms for: ${hostId}`);
       
       setTimeout(async () => {
-        try {
-          console.log(`[PART] Retry attempt ${this.reconnectAttempts} for: ${hostId}`);
-          await this.createAndSendOffer(hostId);
-        } catch (error) {
-          console.log(`[PART] Retry failed for ${hostId}:`, error);
+        if (!this.isOfferInProgress) {
+          try {
+            console.log(`🔄 RETRY: Attempt ${this.reconnectAttempts} for: ${hostId}`);
+            await this.createAndSendOffer(hostId);
+          } catch (error) {
+            console.error(`❌ RETRY: Failed attempt ${this.reconnectAttempts} for ${hostId}:`, error);
+          }
         }
       }, backoffDelay);
     } else {
-      console.log(`[PART] Max retries reached or already making offer for: ${hostId}`);
+      console.warn(`⚠️ RETRY: Max attempts reached for: ${hostId} - manual intervention required`);
+      
+      // Dispatch event for manual recovery
+      window.dispatchEvent(new CustomEvent('connection-recovery-needed', {
+        detail: { 
+          participantId: this.participantId, 
+          hostId, 
+          attempts: this.reconnectAttempts,
+          timestamp: Date.now()
+        }
+      }));
     }
   }
 

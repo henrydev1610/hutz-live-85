@@ -446,30 +446,38 @@ export class UnifiedWebRTCManager {
     console.log('🔄 RESET: WebRTC reset complete - ready for new connections');
   }
 
-  // ICE candidate buffering methods
+  // Enhanced ICE candidate buffering with comprehensive logging
   bufferIceCandidate(participantId: string, candidate: RTCIceCandidate): void {
     if (!this.iceCandidateBuffer.has(participantId)) {
       this.iceCandidateBuffer.set(participantId, []);
     }
     this.iceCandidateBuffer.get(participantId)!.push(candidate);
-    console.log(`[ICE] candidate buffered for ${participantId} (total: ${this.iceCandidateBuffer.get(participantId)!.length})`);
+    console.log(`🧊 ICE BUFFER: Candidate buffered for ${participantId} (total: ${this.iceCandidateBuffer.get(participantId)!.length})`);
   }
 
   async flushIceCandidates(participantId: string, pc: RTCPeerConnection): Promise<void> {
     const candidates = this.iceCandidateBuffer.get(participantId) || [];
     if (candidates.length > 0) {
-      console.log(`[ICE] candidate buffered -> flushing ${candidates.length} for ${participantId}`);
+      console.log(`🧊 ICE FLUSH: Flushing ${candidates.length} candidates for ${participantId}`);
+      
+      let successCount = 0;
+      let failureCount = 0;
       
       for (const candidate of candidates) {
         try {
           await pc.addIceCandidate(candidate);
+          successCount++;
+          console.log(`🧊 ICE: Candidate applied successfully for ${participantId}`);
         } catch (error) {
-          console.warn(`[ICE] Failed to add buffered candidate:`, error);
+          failureCount++;
+          console.warn(`⚠️ ICE: Failed to add candidate for ${participantId}:`, error);
         }
       }
       
       this.iceCandidateBuffer.delete(participantId);
-      console.log(`[ICE] candidate applied (${candidates.length} flushed)`);
+      console.log(`✅ ICE FLUSH: Complete for ${participantId} - Success: ${successCount}, Failed: ${failureCount}`);
+    } else {
+      console.log(`🧊 ICE FLUSH: No candidates to flush for ${participantId}`);
     }
   }
 

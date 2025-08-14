@@ -20,20 +20,44 @@ class HostHandshakeManager {
         ]
       });
 
-      // EARLY ontrack registration BEFORE any remote description
+      // ENHANCED ontrack registration with comprehensive logging
       pc.ontrack = (event) => {
         const ontrackTime = performance.now();
-        console.log(`[STREAM] ontrack received from ${participantId} (${event.track.kind})`);
+        console.log(`🎥 ONTRACK: Event received from ${participantId}`, {
+          trackKind: event.track.kind,
+          trackId: event.track.id.substring(0, 8),
+          streamCount: event.streams.length,
+          trackReadyState: event.track.readyState,
+          timestamp: Date.now()
+        });
+        
+        // Log ICE and connection states when ontrack fires
+        console.log(`🔍 ONTRACK: Connection states for ${participantId}:`, {
+          connectionState: pc.connectionState,
+          iceConnectionState: pc.iceConnectionState,
+          signalingState: pc.signalingState
+        });
         
         if (event.streams && event.streams[0]) {
           const stream = event.streams[0];
-          console.log(`[STREAM] stream attached to quadrant for ${participantId}`);
+          const videoTracks = stream.getVideoTracks();
+          const audioTracks = stream.getAudioTracks();
           
-          // Find and attach to UI quadrant immediately
+          console.log(`🎥 ONTRACK: Stream details for ${participantId}:`, {
+            streamId: stream.id.substring(0, 8),
+            videoTracks: videoTracks.length,
+            audioTracks: audioTracks.length,
+            streamActive: stream.active
+          });
+          
+          // Enhanced DOM handling with better error handling
           const quadrantEl = document.querySelector(`[data-participant-id="${participantId}"]`);
           if (quadrantEl) {
             const existingVideo = quadrantEl.querySelector('video');
-            if (existingVideo) existingVideo.remove();
+            if (existingVideo) {
+              console.log(`🔄 ONTRACK: Replacing existing video element for ${participantId}`);
+              existingVideo.remove();
+            }
             
             const video = document.createElement('video');
             video.autoplay = true;
@@ -45,16 +69,34 @@ class HostHandshakeManager {
             
             video.play().then(() => {
               const renderTime = performance.now();
-              console.log(`[STREAM] quadrant render: OK (${(renderTime - ontrackTime).toFixed(1)}ms)`);
+              console.log(`✅ ONTRACK: Video rendering successful for ${participantId} (${(renderTime - ontrackTime).toFixed(1)}ms)`);
             }).catch(err => {
-              console.warn(`[STREAM] quadrant render failed:`, err);
+              console.warn(`⚠️ ONTRACK: Video play failed for ${participantId}:`, err);
             });
+          } else {
+            console.warn(`⚠️ ONTRACK: Quadrant element not found for ${participantId}`);
           }
           
-          // Emit to the system with hasStream=true
+          // Enhanced event dispatch with more details
           window.dispatchEvent(new CustomEvent('participant-stream-received', {
-            detail: { participantId, stream, hasStream: true }
+            detail: { 
+              participantId, 
+              stream, 
+              hasStream: true,
+              trackCounts: {
+                video: videoTracks.length,
+                audio: audioTracks.length
+              },
+              timestamp: Date.now()
+            }
           }));
+          
+          // Track this ontrack event for stability monitoring
+          window.dispatchEvent(new CustomEvent('ontrack-received', {
+            detail: { participantId, timestamp: Date.now() }
+          }));
+        } else {
+          console.warn(`⚠️ ONTRACK: No streams provided for ${participantId}`);
         }
       };
 
