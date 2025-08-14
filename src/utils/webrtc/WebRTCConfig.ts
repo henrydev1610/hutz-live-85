@@ -47,8 +47,8 @@ export function getWebRTCConfig(): RTCConfiguration {
   };
   if (relayOnly) cfg.iceTransportPolicy = 'relay';
   
-  // TEMPORÁRIO: Forçar TURN para validação do Metered
-  cfg.iceTransportPolicy = 'relay';
+  // Usar relay apenas se explicitamente configurado
+  if (relayOnly) cfg.iceTransportPolicy = 'relay';
   
   return cfg;
 }
