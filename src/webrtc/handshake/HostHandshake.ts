@@ -168,11 +168,16 @@ class HostHandshakeManager {
 
       hostPeerConnections.set(participantId, pc);
       
-      // Set handshake timeout with PC timeout/reset criteria
+      // Desktop-optimized timeout: 10 seconds max
       const timeout = setTimeout(() => {
-        console.log(`[HOST] Handshake timeout for ${participantId} (30s) - cleaning up`);
+        console.log(`[HOST] Desktop handshake timeout for ${participantId} (10s) - force cleanup`);
         this.cleanupHostHandshake(participantId);
-      }, 30000); // 30 seconds timeout
+        
+        // Dispatch desktop timeout event
+        window.dispatchEvent(new CustomEvent('desktop-handshake-timeout', {
+          detail: { participantId, timeout: 10000 }
+        }));
+      }, 10000); // Desktop: 10 seconds timeout
       
       handshakeTimeouts.set(participantId, timeout);
     }

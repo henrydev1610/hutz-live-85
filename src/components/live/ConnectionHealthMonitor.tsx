@@ -193,31 +193,31 @@ const ConnectionHealthMonitor: React.FC<ConnectionHealthMonitorProps> = ({ isVis
         </div>
 
         {/* Last Update */}
-        {/* Connection Reset Button */}
+        {/* Desktop Connection Controls */}
         {(connectionState.webrtc === 'connecting' || connectionState.overall === 'failed') && (
           <div className="border-t pt-3 space-y-2">
             <Button
               variant="outline"
               size="sm"
-              className="w-full text-xs bg-yellow-50 border-yellow-200 text-yellow-700 hover:bg-yellow-100"
+              className="w-full text-xs bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
               onClick={() => {
-                console.log('🔄 MONITOR: User requested connection reset');
-                window.dispatchEvent(new CustomEvent('force-webrtc-reset'));
+                console.log('🖥️ MONITOR: Desktop immediate reset requested');
+                window.dispatchEvent(new CustomEvent('desktop-force-reset'));
               }}
             >
-              🔄 Reset WebRTC Connection
+              🖥️ Desktop Reset (10s)
             </Button>
             
             <Button
               variant="outline"
               size="sm"
-              className="w-full text-xs bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
+              className="w-full text-xs bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100"
               onClick={() => {
-                console.log('🧹 MONITOR: User requested loop break');
-                window.dispatchEvent(new CustomEvent('break-webrtc-loop'));
+                console.log('🚫 MONITOR: Desktop loop break requested');
+                window.dispatchEvent(new CustomEvent('desktop-break-loops'));
               }}
             >
-              ⚡ Break Connection Loop
+              🚫 Break Desktop Loops
             </Button>
           </div>
         )}

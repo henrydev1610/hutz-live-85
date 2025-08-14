@@ -12,6 +12,7 @@ import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
+import { useDesktopWebRTCStability } from '@/hooks/live/useDesktopWebRTCStability';
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
@@ -36,6 +37,9 @@ const LivePage: React.FC = () => {
 
   // Initialize centralized video display manager
   useStreamDisplayManager();
+
+  // Desktop WebRTC stability management
+  const desktopStability = useDesktopWebRTCStability(new Map());
 
   // Environment detection and WebRTC management
   useEffect(() => {
@@ -84,9 +88,49 @@ const LivePage: React.FC = () => {
       }
     };
 
+    // Desktop-specific event handlers for improved stability
+    const handleDesktopForceReset = () => {
+      console.log('🖥️ LIVE PAGE: Desktop force reset triggered');
+      try {
+        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
+          const manager = getWebRTCManager();
+          if (manager) {
+            manager.resetWebRTC();
+          }
+        });
+        desktopStability.forceDesktopReset();
+        toast({
+          title: "🖥️ Desktop Reset",
+          description: "WebRTC connections reset for desktop stability.",
+        });
+      } catch (error) {
+        console.error('❌ LIVE PAGE: Desktop reset failed:', error);
+      }
+    };
+
+    const handleDesktopBreakLoops = () => {
+      console.log('🚫 LIVE PAGE: Desktop break loops triggered');
+      try {
+        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
+          const manager = getWebRTCManager();
+          if (manager && typeof manager.breakConnectionLoop === 'function') {
+            manager.breakConnectionLoop();
+          }
+        });
+        toast({
+          title: "🚫 Loops Broken",
+          description: "Desktop connection loops resolved.",
+        });
+      } catch (error) {
+        console.error('❌ LIVE PAGE: Desktop loop break failed:', error);
+      }
+    };
+
     // Add event listeners for WebRTC control
     window.addEventListener('force-webrtc-reset', handleForceReset);
     window.addEventListener('break-webrtc-loop', handleLoopBreak);
+    window.addEventListener('desktop-force-reset', handleDesktopForceReset);
+    window.addEventListener('desktop-break-loops', handleDesktopBreakLoops);
 
     // Executar diagnósticos críticos na primeira carga
     const runInitialDiagnostics = async () => {
@@ -119,6 +163,8 @@ const LivePage: React.FC = () => {
     return () => {
       window.removeEventListener('force-webrtc-reset', handleForceReset);
       window.removeEventListener('break-webrtc-loop', handleLoopBreak);
+      window.removeEventListener('desktop-force-reset', handleDesktopForceReset);
+      window.removeEventListener('desktop-break-loops', handleDesktopBreakLoops);
     };
   }, [toast]);
 

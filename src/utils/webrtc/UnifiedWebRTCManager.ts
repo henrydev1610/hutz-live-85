@@ -19,10 +19,17 @@ interface RetryConfig {
 }
 
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 2, // Reduzido de 5 para 2
-  initialDelay: 3000, // Aumentado para 3s
-  maxDelay: 15000, // Reduzido para 15s
-  multiplier: 2
+  maxRetries: 1, // Desktop: single retry only
+  initialDelay: 5000, // Desktop: 5s delay
+  maxDelay: 10000, // Desktop: max 10s delay  
+  multiplier: 1.5
+};
+
+// Desktop-optimized connection timeouts
+const DESKTOP_TIMEOUTS = {
+  connectionTimeout: 10000,    // 10s max for connection
+  loopDetection: 8000,         // 8s loop detection
+  forceCleanup: 15000         // 15s force cleanup
 };
 
 export class UnifiedWebRTCManager {
@@ -62,6 +69,10 @@ export class UnifiedWebRTCManager {
   // Health monitoring
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private connectionMetrics: Map<string, any> = new Map();
+  
+  // Desktop-specific connection tracking
+  private connectionTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private isDesktop: boolean = true;
 
   constructor() {
     const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
@@ -74,8 +85,9 @@ export class UnifiedWebRTCManager {
 
   private detectMobile() {
     this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    this.isDesktop = !this.isMobile;
     const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
-    if (DEBUG) console.log(`📱 [WRTC] Device: ${this.isMobile ? 'Mobile' : 'Desktop'}`);
+    if (DEBUG) console.log(`🖥️ [WRTC] Device: ${this.isMobile ? 'Mobile' : 'Desktop'} - Desktop optimizations: ${this.isDesktop}`);
   }
 
   private initializeComponents() {
@@ -425,25 +437,92 @@ export class UnifiedWebRTCManager {
     }
   }
 
-  // Public method to reset WebRTC connections
+  // Public method to reset WebRTC connections with desktop optimizations
   public resetWebRTC(): void {
-    console.log('🔄 RESET: User requested WebRTC reset');
+    console.log('🖥️ RESET: Desktop WebRTC reset requested');
     
-    // Close all peer connections
+    // Clear all connection timeouts first
+    this.connectionTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.connectionTimeouts.clear();
+    
+    // Close all peer connections with force cleanup
     this.peerConnections.forEach((pc, participantId) => {
-      console.log(`🔄 RESET: Closing PC for ${participantId}`);
-      pc.close();
+      console.log(`🔄 RESET: Force closing PC for ${participantId}`);
+      try {
+        pc.close();
+      } catch (error) {
+        console.error(`❌ RESET: Error closing ${participantId}:`, error);
+      }
     });
     this.peerConnections.clear();
     
-    // Clear ICE buffers
+    // Clear ICE buffers and metrics
     this.iceCandidateBuffer.clear();
+    this.connectionMetrics.clear();
     
     // Reset WebRTC state
     this.connectionState.webrtc = 'disconnected';
     this.updateOverallState();
     
-    console.log('🔄 RESET: WebRTC reset complete - ready for new connections');
+    // Dispatch desktop reset completion
+    window.dispatchEvent(new CustomEvent('desktop-webrtc-reset-complete'));
+    
+    console.log('✅ RESET: Desktop WebRTC reset complete - ready for new connections');
+  }
+
+  // Desktop-specific method to break connection loops immediately  
+  public breakConnectionLoop(): void {
+    console.log('🚫 DESKTOP: Breaking connection loops immediately');
+    
+    const now = Date.now();
+    const loopsDetected: string[] = [];
+    
+    this.peerConnections.forEach((pc, participantId) => {
+      const state = pc.connectionState;
+      const iceState = pc.iceConnectionState;
+      const metrics = this.connectionMetrics.get(participantId);
+      
+      if ((state === 'connecting' || iceState === 'checking') && metrics?.connectionStartTime) {
+        const connectingTime = now - metrics.connectionStartTime;
+        
+        if (connectingTime > DESKTOP_TIMEOUTS.loopDetection) {
+          console.log(`🚫 DESKTOP LOOP: Breaking ${participantId} (${connectingTime}ms)`);
+          loopsDetected.push(participantId);
+          
+          try {
+            pc.close();
+            this.peerConnections.delete(participantId);
+            this.connectionMetrics.delete(participantId);
+            
+            // Clear timeout
+            const timeout = this.connectionTimeouts.get(participantId);
+            if (timeout) {
+              clearTimeout(timeout);
+              this.connectionTimeouts.delete(participantId);
+            }
+          } catch (error) {
+            console.error(`❌ DESKTOP LOOP: Error breaking ${participantId}:`, error);
+          }
+        }
+      }
+    });
+    
+    if (loopsDetected.length > 0) {
+      console.log(`🚫 DESKTOP: Broke ${loopsDetected.length} connection loops:`, loopsDetected);
+      
+      // Update state if loops were broken
+      if (this.peerConnections.size === 0) {
+        this.connectionState.webrtc = 'disconnected';
+        this.updateOverallState();
+      }
+      
+      // Dispatch event
+      window.dispatchEvent(new CustomEvent('desktop-loops-broken', {
+        detail: { brokenConnections: loopsDetected, timestamp: now }
+      }));
+    } else {
+      console.log('🖥️ DESKTOP: No loops detected to break');
+    }
   }
 
   // Enhanced ICE candidate buffering with comprehensive logging and stats monitoring
@@ -536,15 +615,6 @@ export class UnifiedWebRTCManager {
     }
   }
 
-  // NOVO: Método público para quebrar loops de conexão
-  public breakConnectionLoop(): void {
-    console.log('🔄 BREAK LOOP: User requested connection loop break');
-    this.forceCleanupStuckConnections();
-  }
-
-  // NOVO: Sistema de timeouts para quebrar loops
-  private connectionTimeouts: Map<string, NodeJS.Timeout> = new Map();
-  private readonly CONNECTION_TIMEOUT = 30000; // 30s timeout for connections
 
   private updateConnectionState(type: keyof ConnectionState, state: ConnectionState[keyof ConnectionState]): void {
     const previousState = { ...this.connectionState };
@@ -591,12 +661,12 @@ export class UnifiedWebRTCManager {
   private setConnectionTimeout(key: string): void {
     this.clearConnectionTimeout(key);
     this.connectionTimeouts.set(key, setTimeout(() => {
-      console.warn(`⏰ CONNECTION TIMEOUT: Breaking ${key} loop after ${this.CONNECTION_TIMEOUT}ms`);
+      console.warn(`⏰ CONNECTION TIMEOUT: Breaking ${key} loop after ${DESKTOP_TIMEOUTS.forceCleanup}ms`);
       if (key.includes('webrtc')) {
         this.connectionState.webrtc = 'failed';
         this.forceCleanupStuckConnections();
       }
-    }, this.CONNECTION_TIMEOUT));
+    }, DESKTOP_TIMEOUTS.forceCleanup));
   }
 
   private clearConnectionTimeout(key: string): void {
@@ -636,11 +706,53 @@ export class UnifiedWebRTCManager {
     this.connectionMetrics.set(participantId, { ...existing, ...metrics, lastUpdate: Date.now() });
   }
 
-  private setupHealthMonitoring(): void {
+  private setupHealthMonitoring() {
+    console.log('🖥️ [WRTC] Setting up desktop-optimized health monitoring');
+    
+    // Desktop health check every 5 seconds with immediate loop breaking
     this.healthCheckInterval = setInterval(() => {
-      // Basic health check logic
-      console.log('🔍 Health check:', this.connectionState);
-    }, 10000);
+      const now = Date.now();
+      
+      // Desktop-optimized connection monitoring
+      this.peerConnections.forEach((pc, participantId) => {
+        const metrics = this.connectionMetrics.get(participantId);
+        const state = pc.connectionState;
+        const iceState = pc.iceConnectionState;
+        
+        if ((state === 'connecting' || iceState === 'checking') && metrics?.connectionStartTime) {
+          const connectingTime = now - metrics.connectionStartTime;
+          
+          // Desktop: immediate loop detection after 8 seconds
+          if (connectingTime > DESKTOP_TIMEOUTS.loopDetection) {
+            console.warn(`🚫 [DESKTOP HEALTH] Connection loop detected: ${participantId} (${connectingTime}ms) - FORCE CLOSING`);
+            
+            // Immediate force close for desktop
+            try {
+              pc.close();
+              this.peerConnections.delete(participantId);
+              this.connectionMetrics.delete(participantId);
+              
+              // Clear connection timeout
+              const timeout = this.connectionTimeouts.get(participantId);
+              if (timeout) {
+                clearTimeout(timeout);
+                this.connectionTimeouts.delete(participantId);
+              }
+              
+              console.log(`🔥 [DESKTOP HEALTH] Force closed loop connection: ${participantId}`);
+              
+              // Dispatch loop detection event
+              window.dispatchEvent(new CustomEvent('desktop-webrtc-loop-broken', {
+                detail: { participantId, connectingTime, method: 'health_monitor' }
+              }));
+              
+            } catch (error) {
+              console.error(`❌ [DESKTOP HEALTH] Error force closing ${participantId}:`, error);
+            }
+          }
+        }
+      });
+    }, 5000); // 5 second monitoring for desktop
   }
 
   private cleanupExistingConnections(): void {
