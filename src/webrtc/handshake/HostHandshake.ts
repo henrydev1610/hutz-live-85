@@ -1,501 +1,331 @@
+// ============= Host WebRTC Handshake Logic =============
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
-import { getActiveWebRTCConfig } from '@/utils/webrtc/WebRTCConfig';
 
 const hostPeerConnections = new Map<string, RTCPeerConnection>();
 const pendingCandidates = new Map<string, RTCIceCandidate[]>();
-const handshakeTimeouts = new Map<string, NodeJS.Timeout>(); // NOVO: Tracking de timeouts
+const handshakeTimeouts = new Map<string, NodeJS.Timeout>();
 
-function logIceType(prefix: string, cand?: string) {
-  if (!cand) return;
-  const typ = /typ (\w+)/.exec(cand)?.[1];
-  console.log(`${prefix} ICE typ: ${typ} | ${cand}`);
-}
+class HostHandshakeManager {
+  private getOrCreatePC(participantId: string): RTCPeerConnection {
+    let pc = hostPeerConnections.get(participantId);
+    
+    if (!pc) {
+      const pcStartTime = performance.now();
+      console.log(`[HOST] Creating new RTCPeerConnection for ${participantId}`);
+      pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+      });
 
-function getOrCreatePC(participantId: string) {
-  let pc = hostPeerConnections.get(participantId);
-  if (pc) {
-    console.log('📡 [HOST] Reutilizando PC existente para:', participantId, 'state:', pc.signalingState);
+      // EARLY ontrack registration BEFORE any remote description
+      pc.ontrack = (event) => {
+        const ontrackTime = performance.now();
+        console.log(`[STREAM] ontrack received from ${participantId} (${event.track.kind})`);
+        
+        if (event.streams && event.streams[0]) {
+          const stream = event.streams[0];
+          console.log(`[STREAM] stream attached to quadrant for ${participantId}`);
+          
+          // Find and attach to UI quadrant immediately
+          const quadrantEl = document.querySelector(`[data-participant-id="${participantId}"]`);
+          if (quadrantEl) {
+            const existingVideo = quadrantEl.querySelector('video');
+            if (existingVideo) existingVideo.remove();
+            
+            const video = document.createElement('video');
+            video.autoplay = true;
+            video.playsInline = true;
+            video.muted = true;
+            video.className = 'w-full h-full object-cover';
+            video.srcObject = stream;
+            quadrantEl.appendChild(video);
+            
+            video.play().then(() => {
+              const renderTime = performance.now();
+              console.log(`[STREAM] quadrant render: OK (${(renderTime - ontrackTime).toFixed(1)}ms)`);
+            }).catch(err => {
+              console.warn(`[STREAM] quadrant render failed:`, err);
+            });
+          }
+          
+          // Emit to the system with hasStream=true
+          window.dispatchEvent(new CustomEvent('participant-stream-received', {
+            detail: { participantId, stream, hasStream: true }
+          }));
+        }
+      };
+
+      // Add receive-only transceiver for video BEFORE setRemoteDescription
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      console.log(`[HOST] addTransceiver('video', recvonly) for ${participantId}`);
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log(`[ICE] candidate generated for ${participantId}, sending`);
+          unifiedWebSocketService.sendWebRTCCandidate(participantId, event.candidate);
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        console.log(`[HOST] Connection state for ${participantId}: ${state}`);
+        
+        if (state === 'connected') {
+          // Clear timeout on successful connection
+          const timeout = handshakeTimeouts.get(participantId);
+          if (timeout) {
+            clearTimeout(timeout);
+            handshakeTimeouts.delete(participantId);
+          }
+        } else if (state === 'failed' || state === 'closed') {
+          console.log(`[HOST] Connection failed/closed for ${participantId}, cleaning up`);
+          this.cleanupHostHandshake(participantId);
+        }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        const state = pc.iceConnectionState;
+        console.log(`[HOST] ICE connection state for ${participantId}: ${state}`);
+        
+        if (state === 'failed') {
+          console.log(`[HOST] ICE connection failed for ${participantId}`);
+          this.cleanupHostHandshake(participantId);
+        }
+      };
+
+      const pcDuration = performance.now() - pcStartTime;
+      console.log(`[HOST] RTCPeerConnection created for ${participantId} (${pcDuration.toFixed(1)}ms)`);
+
+      hostPeerConnections.set(participantId, pc);
+      
+      // Set handshake timeout with PC timeout/reset criteria
+      const timeout = setTimeout(() => {
+        console.log(`[HOST] Handshake timeout for ${participantId} (30s) - cleaning up`);
+        this.cleanupHostHandshake(participantId);
+      }, 30000); // 30 seconds timeout
+      
+      handshakeTimeouts.set(participantId, timeout);
+    }
+
     return pc;
   }
 
-  const base = getActiveWebRTCConfig();
-  const config = { ...base };
-
-  pc = new RTCPeerConnection(config);
-  hostPeerConnections.set(participantId, pc);
-
-  // CRÍTICO: HOST só recebe mídia - transceivers ANTES de qualquer descrição
-  try {
-    pc.addTransceiver('video', { direction: 'recvonly' });
-    pc.addTransceiver('audio', { direction: 'recvonly' });
-    console.log('📡 [HOST] Transceivers recvonly adicionados ANTES das descrições');
-  } catch (err) {
-    console.warn('⚠️ [HOST] Erro ao adicionar transceivers:', err);
-  }
-
-  // Inicializar buffer de candidates
-  pendingCandidates.set(participantId, []);
-
-  // CORRIGIR LATE ONTRACK: Registrar ontrack IMEDIATAMENTE após criação do PC
-  console.log('HOST-SETUP-ONTRACK-EARLY {participantId=' + participantId + '}');
-  pc.ontrack = (event) => {
-    const [stream] = event.streams;
-    const videoTracks = stream?.getVideoTracks().length || 0;
-    const audioTracks = stream?.getAudioTracks().length || 0;
+  async handleOfferFromParticipant(data: any): Promise<void> {
+    const { offer, participantId } = data;
     
-    console.log(`HOST-ONTRACK-EARLY {participantId=${participantId}, streamId=${stream?.id}, videoTracks=${videoTracks}, audioTracks=${audioTracks}}`);
-
-    if (stream) {
-      try {
-        // TRACK RECONCILIATION: Comparar com receivers
-        const receivers = pc.getReceivers();
-        const activeReceivers = receivers.filter(r => r.track && r.track.readyState === 'live');
-        console.log(`HOST-TRACK-RECONCILE {receivers=${receivers.length}, active=${activeReceivers.length}, streamTracks=${stream.getTracks().length}}`);
-        
-        // FAILSAFE: Sempre salvar stream em __mlStreams__
-        if (typeof window !== 'undefined') {
-          if (!window.__mlStreams__) {
-            window.__mlStreams__ = new Map();
-          }
-          window.__mlStreams__.set(participantId, stream);
-          console.log(`HOST-STREAM-SAVED-EARLY {id=${participantId}, streamId=${stream.id}, tracks=${stream.getTracks().length}}`);
-        }
-
-        // FAILSAFE: Sempre invocar callback se existir
-        if (typeof window !== 'undefined' && window.hostStreamCallback) {
-          window.hostStreamCallback(participantId, stream);
-          console.log(`HOST-CALLBACK-CALLED-EARLY {id=${participantId}, streamId=${stream.id}}`);
-        }
-
-        // FAILSAFE: Sempre fazer postMessage para popup
-        if (typeof window !== 'undefined') {
-          window.postMessage({
-            type: 'participant-stream-ready',
-            participantId: participantId
-          }, '*');
-          console.log(`HOST-POSTMESSAGE-EARLY {participantId=${participantId}}`);
-        }
-
-      } catch (error) {
-        console.error(`HOST-ONTRACK-ERROR-EARLY {participantId=${participantId}}:`, error);
-      }
-    }
-  };
-
-  // SOLUÇÃO APRIMORADA: Timeout com stages específicos
-  const handshakeTimeout = setTimeout(() => {
-    console.log(`⏰ [HOST] Handshake timeout for ${participantId} - cleaning up stuck connection`);
-    console.log(`🔍 [HOST] Connection state at timeout: ${pc.connectionState}, ICE: ${pc.iceConnectionState}, Signaling: ${pc.signalingState}`);
-    if (pc.connectionState !== 'connected') {
-      cleanupHostHandshake(participantId);
-      // Disparar evento global para notificar sobre cleanup
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('webrtc-timeout-cleanup', {
-          detail: { participantId, reason: 'handshake-timeout' }
-        }));
-      }
-    }
-  }, 30000); // 30s timeout
-  handshakeTimeouts.set(participantId, handshakeTimeout);
-
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      logIceType('🧊 [HOST→PART]', event.candidate.candidate);
-      const candidateType = /typ (\w+)/.exec(event.candidate.candidate)?.[1] || 'unknown';
-      console.log(`[HOST-ICE] candidateType=${candidateType} iceConnectionState=${pc.iceConnectionState}`);
-      unifiedWebSocketService.sendWebRTCCandidate(participantId, event.candidate);
-    } else {
-      console.log('🧊 [HOST] ICE gathering completo para:', participantId);
-      console.log(`[HOST-ICE] gathering=complete iceConnectionState=${pc.iceConnectionState}`);
-    }
-  };
-
-  pc.ontrack = (event) => {
-    const [stream] = event.streams;
-    const videoTracks = stream?.getVideoTracks().length || 0;
-    const audioTracks = stream?.getAudioTracks().length || 0;
-    
-    console.log(`HOST-ONTRACK {participantId=${participantId}, streamId=${stream?.id}}`);
-
-    if (stream) {
-      try {
-        // FAILSAFE: Sempre salvar stream em __mlStreams__
-        if (typeof window !== 'undefined') {
-          if (!window.__mlStreams__) {
-            window.__mlStreams__ = new Map();
-          }
-          window.__mlStreams__.set(participantId, stream);
-          console.log(`HOST-STREAM-SAVED {id=${participantId}, streamId=${stream.id}, tracks=${stream.getTracks().length}}`);
-        }
-
-        // Setup track health monitoring and end tracking
-        if (stream.getVideoTracks().length > 0) {
-          const videoTrack = stream.getVideoTracks()[0];
-          videoTrack.onended = () => {
-            console.log(`HOST-TRACK-ENDED {id=${participantId}}`);
-          };
-          
-          // Start periodic health monitoring
-          const healthInterval = setInterval(() => {
-            const videoElement = document.querySelector(`[data-participant-id="${participantId}"] video`) as HTMLVideoElement;
-            if (videoElement && !videoTrack.muted && videoTrack.readyState) {
-              console.log(`HOST-STREAM-HEALTH {id=${participantId}, videoReady=${videoElement.readyState}, trackState=${videoTrack.readyState}, muted=${videoTrack.muted}, enabled=${videoTrack.enabled}}`);
-            }
-          }, 5000);
-          
-          // Clean up interval when track ends
-          videoTrack.addEventListener('ended', () => {
-            clearInterval(healthInterval);
-          });
-        }
-
-        // FAILSAFE: Sempre invocar callback se existir
-        if (typeof window !== 'undefined' && window.hostStreamCallback) {
-          window.hostStreamCallback(participantId, stream);
-          console.log(`HOST-CALLBACK-CALLED {id=${participantId}, streamId=${stream.id}}`);
-        }
-
-        // FAILSAFE: Sempre fazer postMessage para popup
-        if (typeof window !== 'undefined') {
-          window.postMessage({
-            type: 'participant-stream-ready',
-            participantId: participantId
-          }, '*');
-          console.log(`[HOST-ONTRACK] postMessage sent participantId=${participantId}`);
-        }
-
-      } catch (error) {
-        console.error(`[HOST-ONTRACK] error participantId=${participantId}:`, error);
-      }
-    }
-  };
-
-  pc.onconnectionstatechange = () => {
-    console.log(`🔌 [HOST] PC(${participantId}) state:`, pc.connectionState);
-    console.log(`[HOST-ICE] connection=${pc.connectionState}`);
-    
-    // SOLUÇÃO APRIMORADA: Limpar timeout e notificar estado
-    if (pc.connectionState === 'connected') {
-      const timeout = handshakeTimeouts.get(participantId);
-      if (timeout) {
-        clearTimeout(timeout);
-        handshakeTimeouts.delete(participantId);
-        console.log(`✅ [HOST] Connection established for ${participantId} - timeout cleared`);
-      }
-    } else if (pc.connectionState === 'failed') {
-      const timeout = handshakeTimeouts.get(participantId);
-      if (timeout) {
-        clearTimeout(timeout);
-        handshakeTimeouts.delete(participantId);
-      }
-    }
-    
-    // SOLUÇÃO: Auto-cleanup conexões failed
-    if (pc.connectionState === 'failed') {
-      console.log(`❌ [HOST] Auto-cleaning failed connection for ${participantId}`);
-      setTimeout(() => cleanupHostHandshake(participantId), 5000);
-    }
-  };
-  
-  pc.oniceconnectionstatechange = () => {
-    console.log(`🧊 [HOST] ICE state(${participantId}):`, pc.iceConnectionState);
-    console.log(`[HOST-ICE] iceConnectionState=${pc.iceConnectionState}`);
-    
-    // SOLUÇÃO: Auto-cleanup ICE failed
-    if (pc.iceConnectionState === 'failed') {
-      console.log(`❌ [HOST] ICE failed for ${participantId} - scheduling cleanup`);
-      setTimeout(() => cleanupHostHandshake(participantId), 3000);
-    }
-  };
-
-  return pc;
-}
-
-/**
- * FASE B: Host recebe OFFER do participante e responde com ANSWER
- * Protocolo padronizado: { roomId, fromUserId, targetUserId, offer, timestamp }
- */
-export async function handleOfferFromParticipant(data: any) {
-  const participantId = data?.fromUserId;
-  const offer = data?.offer;
-
-  if (!participantId || !offer?.sdp || !offer?.type) {
-    console.warn('⚠️ [HOST] Offer inválido - formato esperado: {fromUserId, offer:{sdp,type}}:', data);
-    return;
-  }
-
-  console.log(`HOST-OFFER-RECEIVED {sdpLen=${offer.sdp?.length || 0}}`);
-  console.log(`[HOST-RECV] webrtc-offer from=${participantId} sdpLen=${offer.sdp?.length || 0} signalingState=checking...`);
-  console.log('📩 [HOST] Offer SEQUENCIAL recebido de', participantId, {
-    roomId: data.roomId,
-    offerType: offer.type,
-    timestamp: data.timestamp,
-    signalingState: 'checking...'
-  });
-
-  const pc = getOrCreatePC(participantId);
-  
-  // CORRIGIR SEQUÊNCIA: Registrar ontrack IMEDIATAMENTE antes de setRemoteDescription
-  console.log('HOST-SEQUENCE-SETUP {ontrack=registering}');
-  pc.ontrack = (event) => {
-    const [stream] = event.streams;
-    const videoTracks = stream?.getVideoTracks().length || 0;
-    const audioTracks = stream?.getAudioTracks().length || 0;
-    
-    console.log(`HOST-ONTRACK-FIRED {participantId=${participantId}, streamId=${stream?.id}, videoTracks=${videoTracks}, audioTracks=${audioTracks}}`);
-
-    if (stream) {
-      try {
-        // Reconciliar com getReceivers()
-        const receivers = pc.getReceivers();
-        console.log(`HOST-RECONCILE {receivers=${receivers.length}, streamTracks=${stream.getTracks().length}}`);
-        
-        // FAILSAFE: Sempre salvar stream em __mlStreams__
-        if (typeof window !== 'undefined') {
-          if (!window.__mlStreams__) {
-            window.__mlStreams__ = new Map();
-          }
-          window.__mlStreams__.set(participantId, stream);
-          console.log(`HOST-STREAM-SAVED {id=${participantId}, streamId=${stream.id}, tracks=${stream.getTracks().length}}`);
-        }
-
-        // FAILSAFE: Sempre invocar callback se existir
-        if (typeof window !== 'undefined' && window.hostStreamCallback) {
-          window.hostStreamCallback(participantId, stream);
-          console.log(`HOST-CALLBACK-CALLED {id=${participantId}, streamId=${stream.id}}`);
-        }
-
-        // FAILSAFE: Sempre fazer postMessage para popup
-        if (typeof window !== 'undefined') {
-          window.postMessage({
-            type: 'participant-stream-ready',
-            participantId: participantId
-          }, '*');
-          console.log(`[HOST-ONTRACK] postMessage sent participantId=${participantId}`);
-        }
-
-      } catch (error) {
-        console.error(`[HOST-ONTRACK] error participantId=${participantId}:`, error);
-      }
-    }
-  };
-
-  // CRÍTICO: Verificar estado antes de aplicar offer
-  if (pc.signalingState !== 'stable') {
-    console.warn('⚠️ [HOST] signalingState != stable:', pc.signalingState, '- Forçando reset');
-    try {
-      pc.close();
-      hostPeerConnections.delete(participantId);
-      const newPc = getOrCreatePC(participantId);
-      console.log('✅ [HOST] PC resetado, novo state:', newPc.signalingState);
-    } catch (resetErr) {
-      console.error('❌ [HOST] Erro no reset do PC:', resetErr);
+    if (!offer || !participantId) {
+      console.error('[HOST] handleOfferFromParticipant: Missing offer or participantId');
       return;
     }
-  }
 
-  const finalPc = hostPeerConnections.get(participantId)!;
+    const handleStartTime = performance.now();
+    console.log(`[HOST] Processing offer from ${participantId}`);
 
-  try {
-    console.log('HOST-SEQUENCE-1 {setRemoteDescription=starting}');
-    console.log('🔄 [HOST] Aplicando setRemoteDescription, state atual:', finalPc.signalingState);
-    await finalPc.setRemoteDescription(offer);
-    console.log(`HOST-SEQUENCE-2 {setRemoteDescription=ok, signalingState=${finalPc.signalingState}}`);
-    console.log('✅ [HOST] Remote description aplicada, novo state:', finalPc.signalingState);
+    try {
+      const pc = this.getOrCreatePC(participantId);
+      
+      // STEP 1: Set remote description (participant's offer)
+      const setRemoteStartTime = performance.now();
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const setRemoteDuration = performance.now() - setRemoteStartTime;
+      console.log(`[HOST] setRemoteDescription (${setRemoteDuration.toFixed(1)}ms)`);
 
-    console.log('🔄 [HOST] Criando answer...');
-    const answer = await finalPc.createAnswer();
-    console.log(`HOST-SEQUENCE-3 {createAnswer=ok, sdpLen=${answer.sdp?.length || 0}}`);
-    
-    await finalPc.setLocalDescription(answer);
-    console.log('HOST-SEQUENCE-4 {setLocalDescription=ok}');
-    console.log('✅ [HOST] Local description definida, state final:', finalPc.signalingState);
-
-    // CORRIGIR ICE BUFFER: Aplicar todos candidates bufferizados IMEDIATAMENTE
-    const buffered = pendingCandidates.get(participantId) || [];
-    if (buffered.length > 0) {
-      console.log(`HOST-ICE-BUFFER-APPLY {count=${buffered.length}}`);
-      console.log(`🧊 [HOST] Aplicando ${buffered.length} candidates em buffer`);
-      for (const candidate of buffered) {
-        try {
-          await finalPc.addIceCandidate(candidate);
-        } catch (err) {
-          console.warn('⚠️ [HOST] Erro aplicando candidate em buffer:', err);
+      // Track reconciliation after setRemoteDescription
+      const receivers = pc.getReceivers();
+      console.log(`[HOST] ${receivers.length} receivers after setRemoteDescription for ${participantId}`);
+      receivers.forEach((receiver, index) => {
+        if (receiver.track) {
+          console.log(`[HOST] Receiver ${index}: ${receiver.track.kind} track (id: ${receiver.track.id.substring(0, 8)})`);
         }
+      });
+
+      // STEP 2: Drain buffered ICE candidates
+      const candidates = pendingCandidates.get(participantId) || [];
+      if (candidates.length > 0) {
+        const candidateStartTime = performance.now();
+        console.log(`[ICE] candidate buffered -> applying ${candidates.length} candidates for ${participantId}`);
+        
+        for (const candidate of candidates) {
+          await pc.addIceCandidate(candidate);
+        }
+        pendingCandidates.delete(participantId);
+        
+        const candidateDuration = performance.now() - candidateStartTime;
+        console.log(`[ICE] candidate applied (${candidateDuration.toFixed(1)}ms)`);
+      } else {
+        console.log(`[ICE] No buffered candidates for ${participantId}`);
       }
-      // LIMPAR buffer após aplicação
-      pendingCandidates.set(participantId, []);
-      console.log('HOST-ICE-BUFFER-CLEARED');
+
+      // STEP 3: Create answer
+      const answerStartTime = performance.now();
+      const answer = await pc.createAnswer();
+      const answerDuration = performance.now() - answerStartTime;
+
+      // STEP 4: Set local description
+      const setLocalStartTime = performance.now();
+      await pc.setLocalDescription(answer);
+      const setLocalDuration = performance.now() - setLocalStartTime;
+      
+      console.log(`[HOST] createAnswer (${answerDuration.toFixed(1)}ms) -> setLocalDescription (${setLocalDuration.toFixed(1)}ms)`);
+
+      // STEP 5: Send answer
+      const sendStartTime = performance.now();
+      unifiedWebSocketService.sendWebRTCAnswer(participantId, answer.sdp!, answer.type);
+      const sendDuration = performance.now() - sendStartTime;
+      
+      const totalDuration = performance.now() - handleStartTime;
+      console.log(`[HOST] answerSent (${sendDuration.toFixed(1)}ms) -> Total handshake: ${totalDuration.toFixed(1)}ms`);
+
+    } catch (error) {
+      console.error(`[HOST] Failed to handle offer from ${participantId}:`, error);
     }
-
-    unifiedWebSocketService.sendWebRTCAnswer(participantId, answer.sdp!, answer.type);
-    console.log('HOST-ANSWER-SENT');
-    console.log(`[HOST-ANSWER] sent to=${participantId} sdpLen=${answer.sdp?.length || 0}`);
-    console.log('✅ [HOST] Answer PADRONIZADA enviada para', participantId);
-  } catch (err) {
-    console.error('❌ [HOST] Erro processando offer de', participantId, err);
-    // Log específico para erro de m-lines
-    if (err instanceof Error && err.message.includes('m-lines')) {
-      console.error('🚨 [HOST] ERRO M-LINES DETECTADO - Problema na ordem dos transceivers');
-    }
-  }
-}
-
-/**
- * FASE B: Host recebe CANDIDATE do participante
- * Protocolo padronizado: { roomId, fromUserId, targetUserId, candidate, timestamp }
- */
-export async function handleRemoteCandidate(data: any) {
-  const participantId = data?.fromUserId;
-  const candidate = data?.candidate;
-
-  if (!participantId || !candidate) {
-    console.warn('⚠️ [HOST] Candidate inválido - formato esperado: {fromUserId, candidate}:', data);
-    return;
   }
 
-  const pc = hostPeerConnections.get(participantId);
-  if (!pc) {
-    console.warn('⚠️ [HOST] Candidate recebido sem PC para', participantId);
-    return;
-  }
-
-  // CORRIGIR ICE BUFFER: Aplicar imediatamente se remoteDescription estiver pronta
-  if (pc.remoteDescription) {
-    try {
-      logIceType('🧊 [PART→HOST]', candidate.candidate);
-      await pc.addIceCandidate(candidate);
-      console.log('HOST-ICE-APPLIED {participantId=' + participantId + '}');
-      console.log('✅ [HOST] ICE candidate SEQUENCIAL adicionado de', participantId);
-    } catch (err) {
-      console.error('❌ [HOST] addIceCandidate falhou para', participantId, err);
-    }
-  } else {
-    // Buffer para aplicar depois do setRemoteDescription
-    const buffer = pendingCandidates.get(participantId) || [];
-    buffer.push(candidate);
-    pendingCandidates.set(participantId, buffer);
-    logIceType('🧊 [PART→HOST] BUFFERED', candidate.candidate);
-    console.log(`HOST-ICE-BUFFERED {participantId=${participantId}, bufferSize=${buffer.length}}`);
-    console.log(`📦 [HOST] Candidate bufferizado para ${participantId} (total: ${buffer.length})`);
-  }
-}
-
-/** FASE D: Registra listeners de sinalização no socket (uma vez) */
-function setupHostHandlers() {
-  if (!unifiedWebSocketService) {
-    console.error('❌ [HOST] unifiedWebSocketService não inicializado');
-    return;
-  }
-
-  // Participante → HOST: offer
-  unifiedWebSocketService.on('webrtc-offer', (payload: any) => {
-    console.log('📥 [HOST] Recebendo webrtc-offer:', payload);
-    handleOfferFromParticipant(payload);
-  });
-
-  // Participante → HOST: candidate
-  unifiedWebSocketService.on('webrtc-candidate', (payload: any) => {
-    console.log('📥 [HOST] Recebendo webrtc-candidate:', payload);
-    handleRemoteCandidate(payload);
-  });
-
-  console.log('📡 [HOST] Handlers de sinalização PADRONIZADOS registrados');
-}
-
-/** FASE F: Solicitar offer de um participante específico */
-export function requestOfferFromParticipant(participantId: string) {
-  if (!unifiedWebSocketService) {
-    console.error('❌ [HOST] unifiedWebSocketService não disponível');
-    return;
-  }
-
-  console.log('🚀 [HOST] Solicitando offer do participante:', participantId);
-  unifiedWebSocketService.requestOfferFromParticipant(participantId);
-}
-
-// Inicializa handlers uma vez
-if (typeof window !== 'undefined' && !(window as any).__hostHandlersSetup) {
-  setupHostHandlers();
-  (window as any).__hostHandlersSetup = true;
-}
-
-/** SOLUÇÃO DEFINITIVA: Cleanup com detecção de loops */
-export function cleanupHostHandshake(participantId: string) {
-  const pc = hostPeerConnections.get(participantId);
-  if (pc) {
-    const wasStuck = pc.connectionState === 'connecting' || pc.iceConnectionState === 'checking';
-    try {
-      pc.ontrack = null;
-      pc.onicecandidate = null;
-      pc.onconnectionstatechange = null;
-      pc.oniceconnectionstatechange = null;
-      pc.close();
-    } catch (err) {
-      console.warn(`⚠️ [HOST] Error during PC cleanup for ${participantId}:`, err);
-    }
-    hostPeerConnections.delete(participantId);
-    console.log(`🧹 [HOST] Cleanup PC for ${participantId} ${wasStuck ? '(was stuck in connecting)' : ''}`);
-  }
-  
-  // Limpar timeout se existe
-  const timeout = handshakeTimeouts.get(participantId);
-  if (timeout) {
-    clearTimeout(timeout);
-    handshakeTimeouts.delete(participantId);
-  }
-  
-  // Limpar pending candidates
-  pendingCandidates.delete(participantId);
-  
-  // Remover streams salvos
-  if (typeof window !== 'undefined' && window.__mlStreams__) {
-    window.__mlStreams__.delete(participantId);
-  }
-}
-
-/** NOVO: Função para limpar todas as conexões stuck */
-export function cleanupAllStuckConnections() {
-  console.log('🧹 [HOST] Cleaning up ALL stuck connections');
-  let cleanedCount = 0;
-  
-  hostPeerConnections.forEach((pc, participantId) => {
-    const isStuck = pc.connectionState === 'connecting' || 
-                   pc.iceConnectionState === 'checking' ||
-                   pc.signalingState === 'have-remote-offer';
+  async handleRemoteCandidate(data: any): Promise<void> {
+    const { candidate, participantId } = data;
     
-    if (isStuck) {
-      cleanupHostHandshake(participantId);
-      cleanedCount++;
+    if (!candidate || !participantId) {
+      console.error('[HOST] handleRemoteCandidate: Missing candidate or participantId');
+      return;
     }
-  });
-  
-  console.log(`✅ [HOST] Cleaned ${cleanedCount} stuck connections`);
-  return cleanedCount;
-}
 
-/** NOVO: Função para obter estado de todas as conexões */
-export function getHostConnectionsState() {
-  const connections: any[] = [];
-  hostPeerConnections.forEach((pc, participantId) => {
-    connections.push({
-      participantId,
-      connectionState: pc.connectionState,
-      iceConnectionState: pc.iceConnectionState,
-      signalingState: pc.signalingState,
-      hasTimeout: handshakeTimeouts.has(participantId)
-    });
-  });
-  return connections;
-}
-
-/** ETAPA 2: REMOVIDO DEFINITIVAMENTE - Host nunca cria offers */
-// export async function startHostHandshakeFor() - FUNÇÃO REMOVIDA PERMANENTEMENTE
-
-// Tipagem global
-declare global {
-  interface Window {
-    hostStreamCallback?: (participantId: string, stream: MediaStream) => void;
-    __hostHandlersSetup?: boolean;
+    const pc = hostPeerConnections.get(participantId);
+    
+    if (pc && pc.remoteDescription) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        console.log(`[ICE] candidate applied immediately for ${participantId}`);
+      } catch (error) {
+        console.error(`[ICE] Failed to apply candidate for ${participantId}:`, error);
+      }
+    } else {
+      // Buffer the candidate if remote description isn't set yet
+      if (!pendingCandidates.has(participantId)) {
+        pendingCandidates.set(participantId, []);
+      }
+      pendingCandidates.get(participantId)!.push(new RTCIceCandidate(candidate));
+      console.log(`[ICE] candidate buffered for ${participantId} (total: ${pendingCandidates.get(participantId)!.length})`);
+    }
   }
+
+  private setupHostHandlers(): void {
+    if (!unifiedWebSocketService) {
+      console.error('❌ [HOST] unifiedWebSocketService not initialized');
+      return;
+    }
+
+    unifiedWebSocketService.on('webrtc-offer', (payload: any) => {
+      console.log('[HOST] Received webrtc-offer:', payload);
+      this.handleOfferFromParticipant(payload);
+    });
+
+    unifiedWebSocketService.on('webrtc-candidate', (payload: any) => {
+      console.log('[HOST] Received webrtc-candidate:', payload);
+      this.handleRemoteCandidate(payload);
+    });
+
+    console.log('✅ [HOST] Enhanced handshake handlers registered');
+  }
+
+  requestOfferFromParticipant(participantId: string): void {
+    if (!unifiedWebSocketService) {
+      console.error('❌ [HOST] unifiedWebSocketService not available');
+      return;
+    }
+
+    console.log(`[HOST] Requesting offer from participant: ${participantId}`);
+    unifiedWebSocketService.requestOfferFromParticipant(participantId);
+  }
+
+  cleanupHostHandshake(participantId: string): void {
+    const pc = hostPeerConnections.get(participantId);
+    if (pc) {
+      try {
+        pc.ontrack = null;
+        pc.onicecandidate = null;
+        pc.onconnectionstatechange = null;
+        pc.oniceconnectionstatechange = null;
+        pc.close();
+      } catch (err) {
+        console.warn(`[HOST] Error closing PC for ${participantId}:`, err);
+      }
+      hostPeerConnections.delete(participantId);
+    }
+
+    // Clear pending candidates
+    pendingCandidates.delete(participantId);
+
+    // Clear timeout
+    const timeout = handshakeTimeouts.get(participantId);
+    if (timeout) {
+      clearTimeout(timeout);
+      handshakeTimeouts.delete(participantId);
+    }
+
+    console.log(`[HOST] Cleaned up handshake for ${participantId}`);
+  }
+
+  cleanupAllStuckConnections(): void {
+    console.log('[HOST] Cleaning up all stuck connections');
+    
+    hostPeerConnections.forEach((pc, participantId) => {
+      const state = pc.connectionState;
+      const iceState = pc.iceConnectionState;
+      
+      if (state === 'connecting' || state === 'failed' || iceState === 'checking' || iceState === 'failed') {
+        console.log(`[HOST] Cleaning up stuck connection for ${participantId} (state: ${state}, ice: ${iceState})`);
+        this.cleanupHostHandshake(participantId);
+      }
+    });
+  }
+
+  getHostConnectionsState(): Map<string, { connectionState: string; iceState: string; signalingState: string }> {
+    const states = new Map();
+    hostPeerConnections.forEach((pc, participantId) => {
+      states.set(participantId, {
+        connectionState: pc.connectionState,
+        iceState: pc.iceConnectionState,
+        signalingState: pc.signalingState
+      });
+    });
+    return states;
+  }
+
+  resetHostWebRTC(): void {
+    console.log('[HOST] Resetting all WebRTC connections');
+    
+    // Close all connections
+    hostPeerConnections.forEach((pc, participantId) => {
+      this.cleanupHostHandshake(participantId);
+    });
+    
+    // Clear all maps
+    hostPeerConnections.clear();
+    pendingCandidates.clear();
+    handshakeTimeouts.clear();
+    
+    console.log('[HOST] WebRTC reset complete');
+  }
+}
+
+// Global instance
+const hostHandshakeManager = new HostHandshakeManager();
+
+// Export functions for external use
+export const handleOfferFromParticipant = (data: any) => hostHandshakeManager.handleOfferFromParticipant(data);
+export const handleRemoteCandidate = (data: any) => hostHandshakeManager.handleRemoteCandidate(data);
+export const requestOfferFromParticipant = (participantId: string) => hostHandshakeManager.requestOfferFromParticipant(participantId);
+export const cleanupHostHandshake = (participantId: string) => hostHandshakeManager.cleanupHostHandshake(participantId);
+export const cleanupAllStuckConnections = () => hostHandshakeManager.cleanupAllStuckConnections();
+export const getHostConnectionsState = () => hostHandshakeManager.getHostConnectionsState();
+export const resetHostWebRTC = () => hostHandshakeManager.resetHostWebRTC();
+
+// Initialize handlers once
+if (typeof window !== 'undefined' && !(window as any).__hostHandlersSetup) {
+  hostHandshakeManager['setupHostHandlers']();
+  (window as any).__hostHandlersSetup = true;
+  console.log('✅ [HOST] Enhanced handshake handlers initialized');
 }

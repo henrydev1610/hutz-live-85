@@ -216,14 +216,34 @@ const ParticipantPage = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // ENHANCED: Auto-initialization with mobile camera validation
+  // ROUTE LOAD: Initialize media immediately when route loads
   useEffect(() => {
     if (!isValidated || isBlocked || !sessionId) {
       console.log('🚫 PARTICIPANT PAGE: Skipping auto-connect - mobile validation failed');
       return;
     }
     
-    console.log('🚀 PARTICIPANT PAGE: MOBILE-FORCED auto-initializing for session:', sessionId);
+    console.log('🚀 PARTICIPANT PAGE: Route load - initializing getUserMedia immediately for session:', sessionId);
+    
+    // Call getUserMedia on route load
+    const initializeMediaOnLoad = async () => {
+      try {
+        console.log('[PART] Route load initialization - starting getUserMedia');
+        const stream = await media.initializeMedia();
+        
+        if (stream) {
+          const videoTracks = stream.getVideoTracks();
+          if (videoTracks.length > 0) {
+            const settings = videoTracks[0].getSettings();
+            console.log(`[PART] getUserMedia: ok - ${settings.facingMode || 'unknown'} camera ready`);
+          }
+        }
+      } catch (error) {
+        console.log(`[PART] getUserMedia: error -`, error);
+      }
+    };
+    
+    initializeMediaOnLoad();
     
     streamLogger.log(
       'STREAM_START' as any,

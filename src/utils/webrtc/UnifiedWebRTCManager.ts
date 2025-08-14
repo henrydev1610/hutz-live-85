@@ -35,6 +35,9 @@ export class UnifiedWebRTCManager {
   private isHost: boolean = false;
   private isMobile: boolean = false;
 
+  // ICE candidate buffering for consistent handling
+  private iceCandidateBuffer: Map<string, RTCIceCandidate[]> = new Map();
+
   // Components
   private connectionHandler: ConnectionHandler;
   private signalingHandler: SignalingHandler;
@@ -390,6 +393,9 @@ export class UnifiedWebRTCManager {
     this.retryTimeouts.clear();
     this.retryAttempts.clear();
 
+    // Clear ICE candidate buffers
+    this.iceCandidateBuffer.clear();
+
     // Clear health monitoring
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
@@ -416,6 +422,54 @@ export class UnifiedWebRTCManager {
     // Disconnect WebSocket
     if (unifiedWebSocketService.isConnected()) {
       unifiedWebSocketService.disconnect();
+    }
+  }
+
+  // Public method to reset WebRTC connections
+  public resetWebRTC(): void {
+    console.log('🔄 RESET: User requested WebRTC reset');
+    
+    // Close all peer connections
+    this.peerConnections.forEach((pc, participantId) => {
+      console.log(`🔄 RESET: Closing PC for ${participantId}`);
+      pc.close();
+    });
+    this.peerConnections.clear();
+    
+    // Clear ICE buffers
+    this.iceCandidateBuffer.clear();
+    
+    // Reset WebRTC state
+    this.connectionState.webrtc = 'disconnected';
+    this.updateOverallState();
+    
+    console.log('🔄 RESET: WebRTC reset complete - ready for new connections');
+  }
+
+  // ICE candidate buffering methods
+  bufferIceCandidate(participantId: string, candidate: RTCIceCandidate): void {
+    if (!this.iceCandidateBuffer.has(participantId)) {
+      this.iceCandidateBuffer.set(participantId, []);
+    }
+    this.iceCandidateBuffer.get(participantId)!.push(candidate);
+    console.log(`[ICE] candidate buffered for ${participantId} (total: ${this.iceCandidateBuffer.get(participantId)!.length})`);
+  }
+
+  async flushIceCandidates(participantId: string, pc: RTCPeerConnection): Promise<void> {
+    const candidates = this.iceCandidateBuffer.get(participantId) || [];
+    if (candidates.length > 0) {
+      console.log(`[ICE] candidate buffered -> flushing ${candidates.length} for ${participantId}`);
+      
+      for (const candidate of candidates) {
+        try {
+          await pc.addIceCandidate(candidate);
+        } catch (error) {
+          console.warn(`[ICE] Failed to add buffered candidate:`, error);
+        }
+      }
+      
+      this.iceCandidateBuffer.delete(participantId);
+      console.log(`[ICE] candidate applied (${candidates.length} flushed)`);
     }
   }
 

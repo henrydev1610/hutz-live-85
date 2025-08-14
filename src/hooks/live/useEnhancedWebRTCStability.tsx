@@ -114,11 +114,11 @@ export const useEnhancedWebRTCStability = (
     }
   }, [isMobile, finalConfig.aggressiveModeForMobile]);
 
-  // SOLUÇÃO: Avaliação aprimorada de saúde com timeouts e limpeza
+  // Enhanced connection health assessment with ontrack-based connection detection
   const assessPeerConnectionHealth = useCallback(() => {
     const now = Date.now();
-    const CONNECTING_TIMEOUT = 30000; // 30s timeout para conexões "connecting"
-    const STALLED_HEARTBEAT_TIMEOUT = 15000; // 15s sem heartbeat
+    const CONNECTING_TIMEOUT = 30000; // 30s timeout for "connecting" state without ontrack
+    const STALLED_HEARTBEAT_TIMEOUT = 15000; // 15s without heartbeat
     
     const updatedConnections = new Map();
     let hasActiveConnections = false;
@@ -135,58 +135,73 @@ export const useEnhancedWebRTCStability = (
         iceState: 'new' as RTCIceConnectionState,
         lastHeartbeat: now,
         reconnectAttempts: 0,
-        connectingStartTime: now
+        connectingStartTime: now,
+        hasVideoTrack: false
       };
 
-      // CORREÇÃO 1: Detectar conexões "stuck" em connecting por muito tempo
-      const isStuckConnecting = (state === 'connecting' || iceState === 'checking' || signalingState === 'have-remote-offer') &&
-                               (now - (currentData.connectingStartTime || now)) > CONNECTING_TIMEOUT;
+      // Check for ontrack reception or video receiver tracks  
+      const receivers = pc.getReceivers();
+      const hasVideoTrack = receivers.some(receiver => 
+        receiver.track && receiver.track.kind === 'video' && receiver.track.readyState === 'live'
+      );
+
+      // WebRTC is "connected" only after ontrack OR when receiver has video track
+      const isReallyConnected = hasVideoTrack || (state === 'connected' && hasVideoTrack);
       
-      // CORREÇÃO 2: Detectar stalled heartbeat
+      // Check for 30s timeout without ontrack
+      const connectStartTime = currentData.connectingStartTime || now;
+      const timeWithoutOntrack = now - connectStartTime;
+      
+      const isStuckConnecting = (state === 'connecting' || iceState === 'checking') &&
+                               !hasVideoTrack && 
+                               timeWithoutOntrack > CONNECTING_TIMEOUT;
+      
       const isStalledHeartbeat = (now - currentData.lastHeartbeat) > STALLED_HEARTBEAT_TIMEOUT;
 
-      // CORREÇÃO 3: Lógica de saúde mais rigorosa
-      const isHealthy = state === 'connected' && 
-                       iceState === 'connected' &&
-                       signalingState === 'stable' &&
-                       !isStalledHeartbeat;
+      // Enhanced health logic based on ontrack reception
+      const isHealthy = isReallyConnected && 
+                       !isStalledHeartbeat &&
+                       hasVideoTrack;
       
       const isDefinitelyFailed = state === 'failed' || 
                                 iceState === 'failed' || 
                                 isStuckConnecting ||
-                                isStalledHeartbeat;
+                                isStalledHeartbeat ||
+                                (state === 'connecting' && !hasVideoTrack && timeWithoutOntrack > CONNECTING_TIMEOUT);
       
       if (isHealthy) {
         hasActiveConnections = true;
       } else if (isDefinitelyFailed) {
         hasFailedConnections = true;
-        console.warn(`⚠️ STABILITY: Connection failed/stuck for ${participantId}:`, {
-          state, iceState, signalingState, isStuckConnecting, isStalledHeartbeat
+        console.warn(`⚠️ STABILITY: Connection failed for ${participantId} (no ontrack within 30s or failed state):`, {
+          state, iceState, signalingState, hasVideoTrack, timeWithoutOntrack, isStuckConnecting, isStalledHeartbeat
         });
         
-        // CORREÇÃO 4: Limpeza automática de conexões failed/stuck
+        // Auto-cleanup failed connections
         setTimeout(() => {
-          console.log(`🧹 STABILITY: Auto-cleaning stuck connection for ${participantId}`);
+          console.log(`🧹 STABILITY: Auto-cleaning failed connection for ${participantId}`);
           pc.close();
           peerConnections.delete(participantId);
         }, 1000);
-      } else if (state === 'connecting' || iceState === 'checking') {
+      } else if ((state === 'connecting' || iceState === 'checking') && !hasVideoTrack) {
         hasStuckConnections = true;
       }
 
       updatedConnections.set(participantId, {
-        state,
+        state: isReallyConnected ? 'connected' : state,
         iceState,
         signalingState,
         lastHeartbeat: isHealthy ? now : currentData.lastHeartbeat,
         reconnectAttempts: currentData.reconnectAttempts,
         connectingStartTime: (state === 'connecting' && !currentData.connectingStartTime) ? now : currentData.connectingStartTime,
+        hasVideoTrack,
+        timeWithoutOntrack,
         isStuckConnecting,
         isStalledHeartbeat
       });
     });
 
-    // CORREÇÃO 5: Estado WebRTC mais preciso
+    // Enhanced WebRTC state based on real connection status
     let webrtcState: 'disconnected' | 'connecting' | 'connected' | 'failed';
     if (hasActiveConnections && !hasFailedConnections && !hasStuckConnections) {
       webrtcState = 'connected';
@@ -195,7 +210,7 @@ export const useEnhancedWebRTCStability = (
     } else if (peerConnections.size > 0 && !hasStuckConnections) {
       webrtcState = 'connecting';
     } else if (hasStuckConnections && !hasActiveConnections) {
-      webrtcState = 'failed'; // Stuck connections são consideradas failed
+      webrtcState = 'failed'; // Stuck connections without ontrack = failed
     } else {
       webrtcState = 'disconnected';
     }
@@ -206,7 +221,7 @@ export const useEnhancedWebRTCStability = (
         webrtc: webrtcState
       };
       
-      // CORREÇÃO 6: Overall state não fica stuck em "connecting"
+      // Overall state logic - prevent infinite "connecting" loop
       const overall = newConnectionState.websocket === 'connected' && 
                      newConnectionState.webrtc === 'connected'
                      ? 'connected'
@@ -474,8 +489,8 @@ export const useEnhancedWebRTCStability = (
     startStabilityMonitoring,
     stopStabilityMonitoring,
     forceFullRecovery,
-    breakWebRTCLoop, // NOVO: Método específico para quebrar loops
-    handleConnectionRecovery,
+    breakWebRTCLoop,
+    handleConnectionRecovery, // Expose reset WebRTC action
     isMobile,
     config: finalConfig
   };
