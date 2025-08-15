@@ -25,11 +25,11 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   multiplier: 1.5
 };
 
-// PLANO DESKTOP: Timeouts ultrarrápidos e definitivos
+// PLANO DESKTOP: Timeouts ultrarrápidos e definitivos - 3s garantido
 const DESKTOP_TIMEOUTS = {
-  connectionTimeout: 5000,     // PLANO: 5s max for connection
-  loopDetection: 4000,         // PLANO: 4s loop detection  
-  forceCleanup: 6000          // PLANO: 6s force cleanup
+  connectionTimeout: 3000,     // PLANO: 3s max for connection
+  loopDetection: 3000,         // PLANO: 3s loop detection  
+  forceCleanup: 3000          // PLANO: 3s force cleanup
 };
 
 export class UnifiedWebRTCManager {
@@ -437,34 +437,37 @@ export class UnifiedWebRTCManager {
     }
   }
 
-  // PLANO: Reset WebRTC ultrarrápido e definitivo
+  // PLANO: Reset WebRTC definitivo - 3s garantido
   public resetWebRTC(): void {
-    console.log('🔥 PLANO RESET: Desktop WebRTC reset (5s garantido)');
+    console.log('🔥 PLANO RESET: Desktop WebRTC reset (3s garantido)');
     
-    // PLANO: Clear all timeouts imediatamente
+    // PLANO: Clear timeouts imediatamente
     this.connectionTimeouts.forEach(timeout => clearTimeout(timeout));
     this.connectionTimeouts.clear();
+    this.retryTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.retryTimeouts.clear();
     
     // PLANO: Force close todas as connections
     this.peerConnections.forEach((pc, participantId) => {
-      console.log(`🔥 PLANO: Force close ${participantId}`);
+      console.log(`🔥 RESET ${participantId}`);
       try {
         pc.close();
       } catch (error) {
-        console.error(`❌ PLANO: Erro ${participantId}:`, error);
+        console.error(`❌ RESET ${participantId}:`, error);
       }
     });
     this.peerConnections.clear();
     
-    // PLANO: Clear todos os buffers
+    // PLANO: Clear todos os buffers e métricas
     this.iceCandidateBuffer.clear();
     this.connectionMetrics.clear();
+    this.retryAttempts.clear();
     
-    // PLANO: Reset estado para disconnected
+    // PLANO: Estado desconectado imediato
     this.connectionState.webrtc = 'disconnected';
-    this.connectionState.overall = 'disconnected';
+    this.connectionState.overall = unifiedWebSocketService.isConnected() ? 'connected' : 'disconnected';
     
-    // PLANO: Event reset completo
+    // PLANO: Event de reset completo
     window.dispatchEvent(new CustomEvent('desktop-webrtc-reset-complete'));
     console.log('✅ PLANO RESET: Completo - 5s máximo garantido');
   }

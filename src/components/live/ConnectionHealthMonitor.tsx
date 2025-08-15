@@ -193,34 +193,21 @@ const ConnectionHealthMonitor: React.FC<ConnectionHealthMonitorProps> = ({ isVis
         </div>
 
         {/* Last Update */}
-        {/* Desktop Connection Controls */}
-        {(connectionState.webrtc === 'connecting' || connectionState.overall === 'failed') && (
-          <div className="border-t pt-3 space-y-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full text-xs bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
-              onClick={() => {
-                console.log('🖥️ MONITOR: Desktop immediate reset requested');
-                window.dispatchEvent(new CustomEvent('desktop-force-reset'));
-              }}
-            >
-              🔥 Reset (5s Max)
-            </Button>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full text-xs bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100"
-              onClick={() => {
-                console.log('🚫 MONITOR: Desktop loop break requested');
-                window.dispatchEvent(new CustomEvent('desktop-break-loops'));
-              }}
-            >
-              ⚡ Break Loops (4s)
-            </Button>
+        {/* PLANO: Interface Desktop Definitiva */}
+        <div className="border-t pt-3 space-y-2">
+          <div className="text-xs font-medium mb-2">Status WebRTC Desktop:</div>
+          <div className="text-xs space-y-1">
+            {connectionState.webrtc === 'connected' && (
+              <div className="text-green-600">✅ Conectado - Stream ativo</div>
+            )}
+            {connectionState.webrtc === 'connecting' && (
+              <div className="text-yellow-600">🔄 Conectando (max 3s)</div>
+            )}
+            {connectionState.webrtc === 'disconnected' && (
+              <div className="text-gray-600">📱 Desconectado</div>
+            )}
           </div>
-        )}
+        </div>
 
         <div className="text-xs text-muted-foreground border-t pt-2">
           Última atualização: {new Date().toLocaleTimeString()}

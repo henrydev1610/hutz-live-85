@@ -24,9 +24,9 @@ interface DesktopStabilityConfig {
 }
 
 const DESKTOP_CONFIG: DesktopStabilityConfig = {
-  maxConnectingTime: 5000,       // PLANO: 5 seconds max connecting
-  healthCheckInterval: 2000,     // PLANO: Check every 2 seconds for immediate detection
-  loopDetectionTime: 4000,       // PLANO: 4 seconds loop detection  
+  maxConnectingTime: 3000,       // PLANO: 3 seconds max connecting
+  healthCheckInterval: 1000,     // PLANO: Check every 1 second for immediate detection
+  loopDetectionTime: 3000,       // PLANO: 3 seconds loop detection  
   enableImmedateReset: true      // PLANO: Immediate reset enabled
 };
 
@@ -65,7 +65,7 @@ export const useDesktopWebRTCStability = (
     }
   }, []);
 
-  // Desktop-optimized connection assessment with immediate loop breaking
+  // PLANO: Assessor de conexão simplificado e assertivo
   const assessDesktopConnections = useCallback(() => {
     const now = Date.now();
     const updatedMetrics = new Map<string, ParticipantMetrics>();
@@ -75,11 +75,9 @@ export const useDesktopWebRTCStability = (
     let hasFailed = false;
     let hasLoops = false;
 
-    console.log(`🖥️ DESKTOP STABILITY: Checking ${peerConnections.size} connections`);
+    console.log(`🖥️ DESKTOP [${(now / 1000).toFixed(0)}s]: Verificando ${peerConnections.size} conexões`);
 
     for (const [participantId, pc] of peerConnections.entries()) {
-      const state = pc.connectionState;
-      const iceState = pc.iceConnectionState;
       const hasOntrack = ontrackEventsRef.current.get(participantId) || false;
       
       const currentMetrics = participantMetrics.get(participantId) || {
@@ -92,79 +90,59 @@ export const useDesktopWebRTCStability = (
 
       const connectingTime = now - currentMetrics.connectingStartTime;
       
-      // PLANO: Single source of truth - APENAS ontrack events
+      // PLANO: APENAS ontrack events como fonte de verdade
       const isConnected = hasOntrack;
       
-      // PLANO: Desktop loop detection - 4 seconds limit
-      const isInLoop = (state === 'connecting' || iceState === 'checking') && 
-                       connectingTime > DESKTOP_CONFIG.loopDetectionTime;
+      // PLANO: 3 segundos limite absoluto
+      const isStuck = connectingTime > DESKTOP_CONFIG.loopDetectionTime && !isConnected;
       
-      // Definitive failure detection
-      const hasFailedState = state === 'failed' || iceState === 'failed';
-
-      console.log(`🖥️ ${participantId}: State=${state}, ICE=${iceState}, Time=${(connectingTime/1000).toFixed(1)}s, Connected=${isConnected}, Loop=${isInLoop}`);
-
+      // PLANO: Log mínimo e assertivo
       if (isConnected) {
         hasConnected = true;
-        console.log(`✅ DESKTOP: ${participantId} connected (${hasOntrack ? 'ontrack' : 'state'})`);
-      } else if (hasFailedState) {
-        hasFailed = true;
-        console.log(`❌ DESKTOP: ${participantId} failed`);
-      } else if (state === 'connecting' || iceState === 'checking') {
-        hasConnecting = true;
+        console.log(`✅ ${participantId}: CONECTADO`);
+      } else if (isStuck) {
+        hasLoops = true;
+        console.log(`🔥 ${participantId}: LOOP 3s - FECHANDO`);
         
-        // IMMEDIATE LOOP BREAKING for desktop
-        if (isInLoop) {
-          hasLoops = true;
-          console.log(`🚫 DESKTOP LOOP: ${participantId} stuck connecting for ${(connectingTime/1000).toFixed(1)}s - BREAKING`);
+        // PLANO: Force close imediato
+        try {
+          pc.close();
+          peerConnections.delete(participantId);
+          ontrackEventsRef.current.delete(participantId);
           
-          if (DESKTOP_CONFIG.enableImmedateReset) {
-            // Close the stuck connection immediately
-            try {
-              pc.close();
-              peerConnections.delete(participantId);
-              console.log(`🔥 DESKTOP LOOP: Forcefully closed ${participantId}`);
-              
-              // Dispatch immediate reset event
-              window.dispatchEvent(new CustomEvent('webrtc-loop-detected', {
-                detail: { participantId, connectingTime, action: 'force_close' }
-              }));
-              
-              continue; // Skip updating metrics for closed connection
-            } catch (error) {
-              console.error(`❌ DESKTOP LOOP: Failed to close ${participantId}:`, error);
-            }
-          }
+          window.dispatchEvent(new CustomEvent('webrtc-3s-timeout', {
+            detail: { participantId, timeoutSeconds: 3 }
+          }));
+          
+          continue; // Skip metrics for closed connection
+        } catch (error) {
+          console.error(`❌ ${participantId}: Erro no fechamento:`, error);
         }
+      } else {
+        hasConnecting = true;
+        console.log(`🔄 ${participantId}: CONECTANDO (${(connectingTime/1000).toFixed(1)}s)`);
       }
 
       updatedMetrics.set(participantId, {
-        state,
-        iceState,
+        state: 'connecting' as RTCPeerConnectionState,
+        iceState: 'checking' as RTCIceConnectionState,
         connectingStartTime: currentMetrics.connectingStartTime,
         hasStream: isConnected || currentMetrics.hasStream,
         lastUpdate: now
       });
     }
 
-    // Simple WebRTC state logic for desktop
+    // PLANO: Lógica de estado simplificada
     let webrtcState: 'disconnected' | 'connecting' | 'connected' | 'failed';
     
-    if (hasLoops) {
-      webrtcState = 'failed';
-      console.log(`🚫 DESKTOP: Connection loops detected - marking as failed`);
-    } else if (hasConnected) {
+    if (hasConnected) {
       webrtcState = 'connected';
-      console.log(`✅ DESKTOP: Active connections found`);
-    } else if (hasFailed) {
-      webrtcState = 'failed';
-      console.log(`❌ DESKTOP: Failed connections detected`);
-    } else if (hasConnecting || peerConnections.size > 0) {
+    } else if (hasLoops) {
+      webrtcState = 'disconnected'; // Reset imediato após loop
+    } else if (hasConnecting) {
       webrtcState = 'connecting';
-      console.log(`🔄 DESKTOP: Connections in progress`);
     } else {
       webrtcState = 'disconnected';
-      console.log(`📱 DESKTOP: No connections`);
     }
 
     // Update state
@@ -173,7 +151,7 @@ export const useDesktopWebRTCStability = (
       const websocketConnected = prev.websocket === 'connected';
       const overall = websocketConnected && webrtcState === 'connected' 
         ? 'connected'
-        : webrtcState === 'failed' || prev.websocket === 'failed'
+        : prev.websocket === 'failed'
         ? 'failed'
         : 'connecting';
 
@@ -184,9 +162,9 @@ export const useDesktopWebRTCStability = (
       };
     });
 
-    // PLANO: Auto-toast para feedback imediato
-    if (hasLoops && DESKTOP_CONFIG.enableImmedateReset) {
-      toast.warning('⚡ Loop detectado - reset automático (4s)');
+    // PLANO: Toast apenas para loops fechados
+    if (hasLoops) {
+      toast.warning('🔥 Loop 3s - Reset automático');
     }
 
   }, [peerConnections, participantMetrics]);

@@ -13,6 +13,7 @@ import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
 import { useDesktopWebRTCStability } from '@/hooks/live/useDesktopWebRTCStability';
+import { useMobileWebRTCStability } from '@/hooks/live/useMobileWebRTCStability';
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
@@ -38,9 +39,14 @@ const LivePage: React.FC = () => {
   // Initialize centralized video display manager
   useStreamDisplayManager();
 
-  // PLANO DESKTOP: Sistema único de estabilidade - desativar enhanced no desktop
+  // PLANO IMPLEMENTADO: Sistemas separados para desktop e mobile
   const isDesktop = !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  const desktopStability = useDesktopWebRTCStability(new Map());
+  
+  // DESKTOP: Sistema assertivo de 3s máximo
+  const desktopStability = isDesktop ? useDesktopWebRTCStability(new Map()) : null;
+  
+  // MOBILE: Sistema simples e confiável
+  const mobileStability = !isDesktop ? useMobileWebRTCStability() : null;
 
   // Environment detection and WebRTC management
   useEffect(() => {
@@ -99,7 +105,7 @@ const LivePage: React.FC = () => {
             manager.resetWebRTC();
           }
         });
-        desktopStability.forceDesktopReset();
+        if (desktopStability) desktopStability.forceDesktopReset();
         toast({
           title: "🖥️ Desktop Reset",
           description: "WebRTC connections reset for desktop stability.",
