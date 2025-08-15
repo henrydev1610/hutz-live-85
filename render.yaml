@@ -1,28 +1,4 @@
 services:
-  # FASE 1-2: Backend service for WebRTC signaling - Updated for production deployment  
-  - type: web
-    name: hutz-live-server
-    repo: https://github.com/your-username/your-repo
-    runtime: node
-    rootDir: ./server
-    buildCommand: npm install
-    startCommand: node index.js
-    plan: starter
-    region: oregon  
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT 
-        value: 3001
-      - key: FRONTEND_URL
-        value: https://hutz-live-85.onrender.com
-      - key: APP_DOMAIN
-        value: https://hutz-live-85.onrender.com
-      - key: ALLOWED_ORIGINS
-        value: https://hutz-live-85.onrender.com,https://preview--hutz-live-85.lovable.app,https://server-hutz-live.onrender.com,http://localhost:8080,http://localhost:5173,https://*.lovable.app
-    # FASE 4: Enhanced health monitoring
-    healthCheckPath: /health
-    
   - type: static
     name: hutz-live-frontend
     env: static

@@ -12,16 +12,13 @@ import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
-// FASE 3: Sistemas WebRTC conflitantes removidos
-// import { useDesktopWebRTCStability } from '@/hooks/live/useDesktopWebRTCStability';
-// import { useMobileWebRTCStability } from '@/hooks/live/useMobileWebRTCStability';
+import { useDesktopWebRTCStability } from '@/hooks/live/useDesktopWebRTCStability';
+import { useMobileWebRTCStability } from '@/hooks/live/useMobileWebRTCStability';
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
 import { ServerConnectivityTest } from '@/utils/debug/ServerConnectivityTest';
-import { SystemHealthDashboard } from '@/utils/debug/SystemHealthDashboard';
-import { backendHealthChecker } from '@/utils/debug/BackendHealthChecker';
 
 const LivePage: React.FC = () => {
   const { toast } = useToast();
@@ -42,66 +39,24 @@ const LivePage: React.FC = () => {
   // Initialize centralized video display manager
   useStreamDisplayManager();
 
-  // FASE 3: SISTEMA WebRTC UNIFICADO - Removidos sistemas conflitantes
-  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline' | 'fallback'>('checking');
-  const [showSystemHealth, setShowSystemHealth] = useState(false);
+  // PLANO IMPLEMENTADO: Sistemas separados para desktop e mobile
+  const isDesktop = !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  
+  // DESKTOP: Sistema assertivo de 3s máximo
+  const desktopStability = isDesktop ? useDesktopWebRTCStability(new Map()) : null;
+  
+  // MOBILE: Sistema simples e confiável
+  const mobileStability = !isDesktop ? useMobileWebRTCStability() : null;
 
-  // FASE 1-5: COMPLETE INITIALIZATION - Environment detection, health checking, and WebRTC management
+  // Environment detection and WebRTC management
   useEffect(() => {
-    const initializeLivePage = async () => {
-      console.log('🚀 LIVE PAGE: Complete initialization starting...');
-      
-      // FASE 1: Environment detection
-      const envInfo = getEnvironmentInfo();
-      console.log('🌍 ENVIRONMENT:', envInfo);
-      
-      // FASE 2: Clear cache for fresh state
-      console.log('🧹 CACHE CLEAR: Initial cleanup');
-      clearConnectionCache();
-      clearDeviceCache();
-      
-      // FASE 3: Backend health check with fallback
-      console.log('🔍 BACKEND HEALTH: Starting comprehensive check...');
-      setBackendStatus('checking');
-      
-      try {
-        const healthResult = await backendHealthChecker.testWithFallback();
-        
-        if (healthResult.success) {
-          setBackendStatus(healthResult.fallbackUsed ? 'fallback' : 'online');
-          console.log(`✅ BACKEND: ${healthResult.fallbackUsed ? 'Fallback' : 'Primary'} backend online:`, healthResult.url);
-          
-          toast({
-            title: "Backend Conectado",
-            description: `${healthResult.fallbackUsed ? 'Fallback' : 'Principal'}: ${new URL(healthResult.url).host}`,
-          });
-        } else {
-          setBackendStatus('offline');
-          console.error('❌ BACKEND: All backends offline');
-          
-          toast({
-            title: "Backend Offline",
-            description: "Servidor não está respondendo. Verifique sua conexão.",
-            variant: "destructive"
-          });
-        }
-      } catch (error) {
-        setBackendStatus('offline');
-        console.error('❌ BACKEND CHECK FAILED:', error);
-      }
-      
-      // FASE 4: Start continuous backend monitoring
-      backendHealthChecker.startMonitoring(30000); // Check every 30s
-      
-      // FASE 5: Enhanced diagnostics
-      try {
-        await WebSocketDiagnostics.runDiagnostics();
-      } catch (error) {
-        console.error('❌ WEBSOCKET DIAGNOSTICS FAILED:', error);
-      }
-    };
+    const envInfo = getEnvironmentInfo();
+    console.log('🌍 LIVE PAGE: Environment detected:', envInfo);
     
-    initializeLivePage();
+    // Clear cache on first load to ensure fresh state
+    console.log('🧹 LIVE PAGE: Initial cache clear');
+    clearConnectionCache();
+    clearDeviceCache();
 
     // HOST-SPECIFIC: Setup WebRTC loop breaking listeners
     const handleForceReset = () => {
@@ -150,6 +105,7 @@ const LivePage: React.FC = () => {
             manager.resetWebRTC();
           }
         });
+        if (desktopStability) desktopStability.forceDesktopReset();
         toast({
           title: "🖥️ Desktop Reset",
           description: "WebRTC connections reset for desktop stability.",
@@ -183,15 +139,39 @@ const LivePage: React.FC = () => {
     window.addEventListener('desktop-force-reset', handleDesktopForceReset);
     window.addEventListener('desktop-break-loops', handleDesktopBreakLoops);
 
+    // Executar diagnósticos críticos na primeira carga
+    const runInitialDiagnostics = async () => {
+      console.log('🔧 LIVE PAGE: Running initial connectivity diagnostics...');
+      
+      try {
+        // Teste de conectividade do servidor
+        await ServerConnectivityTest.runComprehensiveTest();
+        
+        // Diagnósticos de WebSocket
+        const wsResult = await WebSocketDiagnostics.runDiagnostics();
+        
+        if (!wsResult.success) {
+          console.warn('⚠️ LIVE PAGE: WebSocket diagnostics failed:', wsResult.error);
+          toast({
+            title: "Problema de Conectividade",
+            description: "Detectamos problemas de conexão. Verifique sua internet.",
+            variant: "destructive",
+          });
+        }
+        
+      } catch (error) {
+        console.error('❌ LIVE PAGE: Diagnostics failed:', error);
+      }
+    };
+
+    runInitialDiagnostics();
+
     // Cleanup listeners on unmount
     return () => {
       window.removeEventListener('force-webrtc-reset', handleForceReset);
       window.removeEventListener('break-webrtc-loop', handleLoopBreak);
       window.removeEventListener('desktop-force-reset', handleDesktopForceReset);
       window.removeEventListener('desktop-break-loops', handleDesktopBreakLoops);
-      
-      // Stop backend monitoring
-      backendHealthChecker.stopMonitoring();
     };
   }, [toast]);
 
@@ -345,28 +325,14 @@ const LivePage: React.FC = () => {
         closeFinalAction={closeFinalAction}
       />
       
-      {/* FASE 5: System Health Dashboard */}
-      <SystemHealthDashboard 
-        isVisible={showSystemHealth}
-        onClose={() => setShowSystemHealth(false)}
-      />
-      
       {/* Health Monitor */}
       <ConnectionHealthMonitor 
         isVisible={showHealthMonitor}
         onClose={() => setShowHealthMonitor(false)}
       />
       
-      {/* FASE 5: Enhanced Debug Controls with Backend Status */}
+      {/* Enhanced Debug Controls */}
       <div className="fixed bottom-4 left-4 flex flex-col gap-2 z-50">
-        <button
-          onClick={() => setShowSystemHealth(!showSystemHealth)}
-          className="bg-purple-500 text-white p-2 rounded-full text-xs"
-          title="System Health"
-        >
-          📊 System
-        </button>
-        
         <button
           onClick={() => setShowHealthMonitor(!showHealthMonitor)}
           className="bg-blue-500 text-white p-2 rounded-full text-xs"
@@ -376,48 +342,18 @@ const LivePage: React.FC = () => {
         </button>
         
         <button
-          onClick={async () => {
-            const healthResult = await backendHealthChecker.testWithFallback();
+          onClick={() => {
             const envInfo = getEnvironmentInfo();
-            
             console.log('🌍 Environment Info:', envInfo);
-            console.log('🔍 Backend Health:', healthResult);
-            
             toast({
-              title: "System Status",
-              description: `Backend: ${healthResult.success ? 'Online' : 'Offline'} | Env: ${envInfo.isLocalhost ? 'Local' : 'Production'}`,
+              title: "Environment Info",
+              description: `${envInfo.isLovable ? 'Lovable' : envInfo.isLocalhost ? 'Local' : 'Production'} - ${envInfo.wsUrl}`,
             });
           }}
-          className={`text-white p-2 rounded-full text-xs ${
-            backendStatus === 'online' ? 'bg-green-500' : 
-            backendStatus === 'fallback' ? 'bg-yellow-500' :
-            backendStatus === 'checking' ? 'bg-blue-500' : 'bg-red-500'
-          }`}
-          title={`Backend Status: ${backendStatus}`}
+          className="bg-green-500 text-white p-2 rounded-full text-xs"
+          title="Environment Info"
         >
-          {backendStatus === 'online' ? '🟢' : 
-           backendStatus === 'fallback' ? '🟡' :
-           backendStatus === 'checking' ? '🔄' : '🔴'} Backend
-        </button>
-        
-        <button
-          onClick={async () => {
-            console.log('🔄 FORCE REFRESH: Clearing all caches and retesting...');
-            clearConnectionCache();
-            setBackendStatus('checking');
-            
-            const result = await backendHealthChecker.testWithFallback();
-            setBackendStatus(result.success ? (result.fallbackUsed ? 'fallback' : 'online') : 'offline');
-            
-            toast({
-              title: "System Refreshed",
-              description: `Backend: ${result.success ? 'Available' : 'Unavailable'}`,
-            });
-          }}
-          className="bg-purple-500 text-white p-2 rounded-full text-xs"
-          title="Force Refresh"
-        >
-          🔄 Refresh
+          🌍 Env
         </button>
       </div>
 
