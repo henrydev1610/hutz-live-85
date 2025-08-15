@@ -17,8 +17,9 @@ import { useMobileWebRTCStability } from '@/hooks/live/useMobileWebRTCStability'
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
-import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
-import { ServerConnectivityTest } from '@/utils/debug/ServerConnectivityTest';
+// Temporariamente removido para resolver erro 404
+// import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
+// import { ServerConnectivityTest } from '@/utils/debug/ServerConnectivityTest';
 
 const LivePage: React.FC = () => {
   const { toast } = useToast();
@@ -139,32 +140,32 @@ const LivePage: React.FC = () => {
     window.addEventListener('desktop-force-reset', handleDesktopForceReset);
     window.addEventListener('desktop-break-loops', handleDesktopBreakLoops);
 
-    // Executar diagnósticos críticos na primeira carga
-    const runInitialDiagnostics = async () => {
-      console.log('🔧 LIVE PAGE: Running initial connectivity diagnostics...');
-      
-      try {
-        // Teste de conectividade do servidor
-        await ServerConnectivityTest.runComprehensiveTest();
-        
-        // Diagnósticos de WebSocket
-        const wsResult = await WebSocketDiagnostics.runDiagnostics();
-        
-        if (!wsResult.success) {
-          console.warn('⚠️ LIVE PAGE: WebSocket diagnostics failed:', wsResult.error);
-          toast({
-            title: "Problema de Conectividade",
-            description: "Detectamos problemas de conexão. Verifique sua internet.",
-            variant: "destructive",
-          });
-        }
-        
-      } catch (error) {
-        console.error('❌ LIVE PAGE: Diagnostics failed:', error);
-      }
-    };
+    // Executar diagnósticos críticos na primeira carga - TEMPORARIAMENTE DESABILITADO
+    // const runInitialDiagnostics = async () => {
+    //   console.log('🔧 LIVE PAGE: Running initial connectivity diagnostics...');
+    //   
+    //   try {
+    //     // Teste de conectividade do servidor
+    //     await ServerConnectivityTest.runComprehensiveTest();
+    //     
+    //     // Diagnósticos de WebSocket
+    //     const wsResult = await WebSocketDiagnostics.runDiagnostics();
+    //     
+    //     if (!wsResult.success) {
+    //       console.warn('⚠️ LIVE PAGE: WebSocket diagnostics failed:', wsResult.error);
+    //       toast({
+    //         title: "Problema de Conectividade",
+    //         description: "Detectamos problemas de conexão. Verifique sua internet.",
+    //         variant: "destructive",
+    //       });
+    //     }
+    //     
+    //   } catch (error) {
+    //     console.error('❌ LIVE PAGE: Diagnostics failed:', error);
+    //   }
+    // };
 
-    runInitialDiagnostics();
+    // runInitialDiagnostics(); // DESABILITADO
 
     // Cleanup listeners on unmount
     return () => {
