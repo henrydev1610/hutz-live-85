@@ -20,13 +20,50 @@ class HostHandshakeManager {
         ]
       });
 
-      // CRITICAL FIX: Use centralized ontrack handler
-      import('@/utils/webrtc/OnTrackCentralizer').then(({ onTrackCentralizer }) => {
-        pc.ontrack = (event) => {
-          console.log(`🎯 HOST-HANDSHAKE: ontrack received, delegating to centralizer for ${participantId}`);
-          onTrackCentralizer.processOnTrackEvent(participantId, event);
-        };
-      });
+      // FIXED: Direct import to avoid dynamic import issues
+      pc.ontrack = (event) => {
+        console.log(`🎯 HOST-HANDSHAKE: ontrack received for ${participantId}`);
+        
+        if (event.streams && event.streams.length > 0) {
+          const stream = event.streams[0];
+          console.log(`✅ HOST-HANDSHAKE: Stream received:`, {
+            participantId,
+            streamId: stream.id,
+            videoTracks: stream.getVideoTracks().length,
+            audioTracks: stream.getAudioTracks().length
+          });
+
+          // Direct dispatch to DOM manager
+          window.dispatchEvent(new CustomEvent('video-stream-ready', {
+            detail: {
+              participantId,
+              stream,
+              timestamp: Date.now(),
+              source: 'host-handshake-direct'
+            }
+          }));
+
+          // Start 3-second timeout for ontrack verification
+          setTimeout(() => {
+            console.log(`🔍 HOST-HANDSHAKE: Verifying ontrack completion for ${participantId}`);
+            const verification = document.querySelector(`[data-participant-id="${participantId}"] video`);
+            if (!verification) {
+              console.warn(`⚠️ HOST-HANDSHAKE: ontrack timeout - restarting connection for ${participantId}`);
+              this.cleanupHostHandshake(participantId);
+              
+              // Trigger restart
+              setTimeout(() => {
+                this.requestOfferFromParticipant(participantId);
+              }, 1000);
+            } else {
+              console.log(`✅ HOST-HANDSHAKE: ontrack verified successfully for ${participantId}`);
+            }
+          }, 3000);
+
+        } else {
+          console.warn(`⚠️ HOST-HANDSHAKE: ontrack without streams for ${participantId}`);
+        }
+      };
 
       // Add receive-only transceiver for video BEFORE setRemoteDescription
       pc.addTransceiver('video', { direction: 'recvonly' });

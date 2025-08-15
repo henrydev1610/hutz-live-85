@@ -14,6 +14,9 @@ import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessa
 import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
 // FASE 1: Removed conflicting stability hooks
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
+import { WebRTCConnectionStatus } from '@/components/live/WebRTCConnectionStatus';
+import { ServerConnectivityIndicator } from '@/components/live/ServerConnectivityIndicator';
+import { consolidatedWebRTCManager } from '@/utils/webrtc/ConsolidatedWebRTCManager';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
@@ -38,8 +41,6 @@ const LivePage: React.FC = () => {
   // Initialize centralized video display manager
   useStreamDisplayManager();
 
-  // FASE 1: Clean desktop system - removed conflicting hooks
-
   // Environment detection and WebRTC management
   useEffect(() => {
     const envInfo = getEnvironmentInfo();
@@ -52,32 +53,34 @@ const LivePage: React.FC = () => {
 
     // HOST-SPECIFIC: Setup WebRTC loop breaking listeners
     const handleForceReset = () => {
-      console.log('🔄 FASE 1: Force WebRTC reset requested');
+      console.log('🔄 CONSOLIDATED: Force WebRTC reset requested');
       try {
-        import('@/utils/webrtc/HostWebRTCManager').then(({ hostWebRTCManager }) => {
-          hostWebRTCManager.cleanup();
-          toast({
-            title: "Conexão Resetada",
-            description: "WebRTC foi reinicializado com sucesso.",
-          });
+        consolidatedWebRTCManager.cleanup();
+        
+        // Reinitialize if session exists
+        if (state.sessionId) {
+          consolidatedWebRTCManager.initializeAsHost(state.sessionId);
+        }
+        
+        toast({
+          title: "Conexão Resetada",
+          description: "Sistema WebRTC consolidado foi reinicializado.",
         });
       } catch (error) {
-        console.error('❌ FASE 1: Reset failed:', error);
+        console.error('❌ CONSOLIDATED: Reset failed:', error);
       }
     };
 
     const handleLoopBreak = () => {
-      console.log('⚡ FASE 1: Break WebRTC loop requested');
+      console.log('⚡ CONSOLIDATED: Break WebRTC loop requested');
       try {
-        import('@/utils/webrtc/HostWebRTCManager').then(({ hostWebRTCManager }) => {
-          hostWebRTCManager.cleanup();
-          toast({
-            title: "Loop Quebrado",
-            description: "Conexões foram limpas.",
-          });
+        consolidatedWebRTCManager.cleanup();
+        toast({
+          title: "Loop Quebrado",
+          description: "Todas as conexões foram limpas.",
         });
       } catch (error) {
-        console.error('❌ FASE 1: Loop break failed:', error);
+        console.error('❌ CONSOLIDATED: Loop break failed:', error);
       }
     };
 
@@ -287,23 +290,25 @@ const LivePage: React.FC = () => {
         
         <button
           onClick={() => {
-            const envInfo = getEnvironmentInfo();
-            console.log('🌍 Environment Info:', envInfo);
+            const debugInfo = consolidatedWebRTCManager.getDebugInfo();
+            console.log('🎯 CONSOLIDATED DEBUG:', debugInfo);
             toast({
-              title: "Environment Info",
-              description: `${envInfo.isLovable ? 'Lovable' : envInfo.isLocalhost ? 'Local' : 'Production'} - ${envInfo.wsUrl}`,
+              title: "Debug Info",
+              description: `Connections: ${debugInfo.connectionsCount} | State: ${debugInfo.connectionState.overall}`,
             });
           }}
-          className="bg-green-500 text-white p-2 rounded-full text-xs"
-          title="Environment Info"
+          className="bg-purple-500 text-white p-2 rounded-full text-xs"
+          title="Consolidated WebRTC Debug"
         >
-          🌍 Env
+          🎯 WebRTC
         </button>
       </div>
 
       <WebRTCDebugToasts />
+      <WebRTCConnectionStatus />
+      <ServerConnectivityIndicator />
       
-      {/* FASE 5: Painel de Debug Lovable */}
+      {/* CONSOLIDADO: Painel de Debug Lovable */}
       <LovableDebugPanel sessionId={state.sessionId} />
     </div>
   );

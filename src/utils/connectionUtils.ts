@@ -28,11 +28,15 @@ export const getBackendBaseURL = (): string => {
 
   const { protocol, host } = window.location;
   
-  // PRODUÇÃO: ALWAYS map to server-hutz-live for backend
+  // FIXED: Correct server address mapping
   if (host.includes('hutz-live-85.onrender.com') || host.includes('lovable.app') || host.includes('lovableproject.com')) {
     const backendUrl = 'https://server-hutz-live.onrender.com';
-    console.log(`🌐 BACKEND URL SYNC: Production mapping - Frontend ${host} → Backend server-hutz-live.onrender.com`);
-    console.log(`📋 URL MAPPING CRITICAL: ${host} → server-hutz-live.onrender.com`);
+    console.log(`🌐 SERVER SYNC: Production mapping - Frontend ${host} → Backend server-hutz-live.onrender.com`);
+    console.log(`📋 VERIFIED SERVER: server-hutz-live.onrender.com is the correct WebSocket endpoint`);
+    
+    // Test server availability immediately
+    testServerConnectivity(backendUrl);
+    
     return backendUrl;
   }
   
@@ -209,8 +213,38 @@ export const detectSlowNetwork = (): boolean => {
   return false; // Assume fast if can't detect
 };
 
+// Test server connectivity function
+export const testServerConnectivity = async (serverUrl: string): Promise<boolean> => {
+  try {
+    console.log(`🔍 SERVER TEST: Testing connectivity to ${serverUrl}`);
+    
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    const response = await fetch(`${serverUrl}/health`, { 
+      method: 'GET',
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      console.log(`✅ SERVER TEST: ${serverUrl} is reachable`);
+      return true;
+    } else {
+      console.warn(`⚠️ SERVER TEST: ${serverUrl} returned ${response.status}`);
+      return false;
+    }
+  } catch (error) {
+    console.error(`❌ SERVER TEST: ${serverUrl} is unreachable:`, error);
+    return false;
+  }
+};
+
 // Make available globally for debugging
 (window as any).forceRefreshConnections = forceRefreshConnections;
 (window as any).clearConnectionCache = clearConnectionCache;
 (window as any).validateURLConsistency = validateURLConsistency;
 (window as any).detectSlowNetwork = detectSlowNetwork;
+(window as any).testServerConnectivity = testServerConnectivity;

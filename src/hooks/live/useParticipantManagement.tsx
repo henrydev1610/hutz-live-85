@@ -3,7 +3,8 @@ import { useEffect } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
 import { useParticipantLifecycle } from './useParticipantLifecycle';
 import { useParticipantAutoSelection } from './useParticipantAutoSelection';
-import { hostWebRTCManager } from '@/utils/webrtc/HostWebRTCManager';
+import { useTransmissionWindowSync } from './useTransmissionWindowSync';
+import { consolidatedWebRTCManager } from '@/utils/webrtc/ConsolidatedWebRTCManager';
 import { clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
@@ -29,7 +30,12 @@ export const useParticipantManagement = ({
   isHost = false
 }: UseParticipantManagementProps) => {
   
-  // FASE 4: Sistema simplificado - apenas gerenciar lista de participantes
+  // CONSOLIDATED: Single WebRTC system with transmission sync
+  const { syncUpdate, isWindowLoaded } = useTransmissionWindowSync({
+    transmissionWindowRef,
+    participantStreams,
+    participantList
+  });
 
   const { 
     handleParticipantJoin: originalHandleParticipantJoin,
@@ -88,31 +94,35 @@ export const useParticipantManagement = ({
       );
     });
 
-    // Update transmission
-    updateTransmissionParticipants();
+    // Update transmission with sync
+    if (isWindowLoaded) {
+      updateTransmissionParticipants();
+    } else {
+      console.log('📦 CONSOLIDATED: Transmission window not ready, sync will handle update');
+    }
   };
 
-  // FASE 4: Initialize Host WebRTC Manager
+  // CONSOLIDATED: Initialize WebRTC Manager  
   useEffect(() => {
     if (isHost && sessionId) {
-      console.log('🖥️ FASE 4: Inicializando Host WebRTC Manager para:', sessionId);
+      console.log('🎯 CONSOLIDATED: Initializing as host for:', sessionId);
       
-      hostWebRTCManager.initializeAsHost(sessionId)
+      consolidatedWebRTCManager.initializeAsHost(sessionId)
         .then(() => {
-          console.log('✅ FASE 4: Host WebRTC Manager inicializado com sucesso');
+          console.log('✅ CONSOLIDATED: Host initialized successfully');
         })
         .catch((error) => {
-          console.error('❌ FASE 4: Falha ao inicializar Host WebRTC Manager:', error);
+          console.error('❌ CONSOLIDATED: Host initialization failed:', error);
         });
 
-      // Setup global stream callback for transmission window
+      // Setup global callbacks for transmission window
       if (typeof window !== 'undefined') {
         if (!window.__mlStreams__) {
           window.__mlStreams__ = new Map();
         }
         
         window.hostStreamCallback = (participantId: string, stream: MediaStream) => {
-          console.log('🎯 HOST-CALLBACK: Stream recebido para:', participantId);
+          console.log('🎯 CONSOLIDATED-CALLBACK: Stream received for:', participantId);
           window.__mlStreams__.set(participantId, stream);
           handleParticipantStream(participantId, stream);
         };
@@ -125,8 +135,8 @@ export const useParticipantManagement = ({
 
     return () => {
       if (isHost) {
-        console.log('🧹 FASE 4: Limpando Host WebRTC Manager');
-        hostWebRTCManager.cleanup();
+        console.log('🧹 CONSOLIDATED: Cleaning up');
+        consolidatedWebRTCManager.cleanup();
       }
     };
   }, [isHost, sessionId]);
