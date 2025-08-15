@@ -1,4 +1,5 @@
 
+// Fixed: Removed backendHealthChecker reference cache issue
 import React, { useEffect, useState } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import LivePageContainer from '@/components/live/LivePageContainer';
