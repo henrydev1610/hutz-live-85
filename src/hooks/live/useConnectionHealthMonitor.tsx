@@ -118,39 +118,15 @@ export const useConnectionHealthMonitor = ({
     }
   }, [participantStreams]);
 
-  // FASE 3: Iniciar monitoramento apenas quando WebRTC está pronto
+  // Iniciar monitoramento
   useEffect(() => {
     if (!sessionId) return;
     
-    // Verificar se WebRTC manager existe antes de iniciar monitoramento
-    import('@/utils/webrtc').then(({ getWebRTCManager }) => {
-      const manager = getWebRTCManager();
-      
-      if (!manager) {
-        console.log('🩺 HEALTH MONITOR: Aguardando WebRTC manager...');
-        // Retry em 2s se manager não estiver pronto
-        const retryTimeout = setTimeout(() => {
-          const managerRetry = getWebRTCManager();
-          if (managerRetry) {
-            console.log('🩺 HEALTH MONITOR: WebRTC manager detectado, iniciando monitoramento');
-            startMonitoring();
-          } else {
-            console.log('🩺 HEALTH MONITOR: WebRTC manager ainda não disponível, aguardando...');
-          }
-        }, 2000);
-        
-        return () => clearTimeout(retryTimeout);
-      } else {
-        console.log('🩺 HEALTH MONITOR: WebRTC manager disponível, iniciando monitoramento');
-        startMonitoring();
-      }
-    });
+    console.log('🩺 HEALTH MONITOR: Iniciando monitoramento');
     
-    function startMonitoring() {
-      monitorInterval.current = setInterval(() => {
-        checkConnectionHealth();
-      }, 10000); // Check a cada 10s
-    }
+    monitorInterval.current = setInterval(() => {
+      checkConnectionHealth();
+    }, 10000); // Check a cada 10s
     
     return () => {
       if (monitorInterval.current) {

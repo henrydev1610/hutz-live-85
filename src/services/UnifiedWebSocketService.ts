@@ -729,15 +729,14 @@ this.socket.on('ice-servers', (data) => {
       timestamp: Date.now()
     };
     
-    // FIXED: Use correct structure matching server expectations
-    const correctedRequestData = {
+    // NEW: Use new direct routing event 
+    const newRequestData = {
       roomId: this.currentRoomId,
-      targetUserId: participantId,  // SERVER EXPECTS THIS FIELD
-      fromUserId: this.currentUserId || 'host',
+      participantId,
       timestamp: Date.now()
     };
     
-    this.socket!.emit('webrtc-request-offer', correctedRequestData);
+    this.socket!.emit('webrtc-request-offer', newRequestData);
     console.log('HOST-REQUEST-OFFER-SENT');
     console.log(`[WS-SEND] webrtc-request-offer roomId=${this.currentRoomId} from=${this.currentUserId} to=${participantId}`);
     
@@ -745,7 +744,7 @@ this.socket.on('ice-servers', (data) => {
     setTimeout(() => {
       console.log('🔄 [WS] Retry: Reenviando solicitação de offer para:', participantId);
       if (this.socket?.connected) {
-        this.socket.emit('webrtc-request-offer', correctedRequestData);
+        this.socket.emit('webrtc-request-offer', newRequestData);
       }
     }, 5000); // Retry após 5s se não receber offer
   }

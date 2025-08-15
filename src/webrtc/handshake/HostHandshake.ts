@@ -20,48 +20,108 @@ class HostHandshakeManager {
         ]
       });
 
-      // FIXED: Direct import to avoid dynamic import issues
+      // ENHANCED ontrack registration with comprehensive logging and immediate connection marking
       pc.ontrack = (event) => {
-        console.log(`🎯 HOST-HANDSHAKE: ontrack received for ${participantId}`);
+        const ontrackTime = performance.now();
+        console.log(`🎥 ONTRACK: Event received from ${participantId}`, {
+          trackKind: event.track.kind,
+          trackId: event.track.id.substring(0, 8),
+          streamCount: event.streams.length,
+          trackReadyState: event.track.readyState,
+          timestamp: Date.now()
+        });
         
-        if (event.streams && event.streams.length > 0) {
-          const stream = event.streams[0];
-          console.log(`✅ HOST-HANDSHAKE: Stream received:`, {
-            participantId,
-            streamId: stream.id,
-            videoTracks: stream.getVideoTracks().length,
-            audioTracks: stream.getAudioTracks().length
-          });
-
-          // Direct dispatch to DOM manager
-          window.dispatchEvent(new CustomEvent('video-stream-ready', {
-            detail: {
-              participantId,
-              stream,
-              timestamp: Date.now(),
-              source: 'host-handshake-direct'
+        // IMMEDIATE CONNECTION MARKING - most reliable indicator
+        console.log(`✅ ONTRACK: Marking ${participantId} as connected immediately`);
+        window.dispatchEvent(new CustomEvent('ontrack-connection-established', {
+          detail: { 
+            participantId, 
+            timestamp: Date.now(),
+            connectionMethod: 'ontrack'
+          }
+        }));
+        
+        // Log ICE and connection states when ontrack fires
+        console.log(`🔍 ONTRACK: Connection states for ${participantId}:`, {
+          connectionState: pc.connectionState,
+          iceConnectionState: pc.iceConnectionState,
+          signalingState: pc.signalingState
+        });
+        
+          // Enhanced stream handling with support for edge cases
+          if (event.streams && event.streams[0]) {
+            const stream = event.streams[0];
+            const videoTracks = stream.getVideoTracks();
+            const audioTracks = stream.getAudioTracks();
+            
+            console.log(`🎥 ONTRACK: Stream details for ${participantId}:`, {
+              streamId: stream.id.substring(0, 8),
+              videoTracks: videoTracks.length,
+              audioTracks: audioTracks.length,
+              streamActive: stream.active,
+              trackStates: {
+                video: videoTracks.map(t => ({ id: t.id.substring(0, 8), state: t.readyState, enabled: t.enabled })),
+                audio: audioTracks.map(t => ({ id: t.id.substring(0, 8), state: t.readyState, enabled: t.enabled }))
+              }
+            });
+            
+            // Send stream to centralized display manager instead of direct DOM manipulation
+            console.log(`🎯 ONTRACK: Sending stream to display manager for ${participantId}`);
+            window.dispatchEvent(new CustomEvent('video-stream-ready', {
+              detail: { 
+                participantId, 
+                stream,
+                hasVideo: videoTracks.length > 0,
+                hasAudio: audioTracks.length > 0
+              }
+            }));
+          
+          // Enhanced event dispatch with comprehensive details
+          window.dispatchEvent(new CustomEvent('participant-stream-received', {
+            detail: { 
+              participantId, 
+              stream, 
+              hasStream: true,
+              isAudioOnly: videoTracks.length === 0 && audioTracks.length > 0,
+              isVideoOnly: videoTracks.length > 0 && audioTracks.length === 0,
+              trackCounts: {
+                video: videoTracks.length,
+                audio: audioTracks.length
+              },
+              streamMetadata: {
+                id: stream.id,
+                active: stream.active,
+                videoEnabled: videoTracks.some(t => t.enabled),
+                audioEnabled: audioTracks.some(t => t.enabled)
+              },
+              timestamp: Date.now()
             }
           }));
-
-          // Start 3-second timeout for ontrack verification
-          setTimeout(() => {
-            console.log(`🔍 HOST-HANDSHAKE: Verifying ontrack completion for ${participantId}`);
-            const verification = document.querySelector(`[data-participant-id="${participantId}"] video`);
-            if (!verification) {
-              console.warn(`⚠️ HOST-HANDSHAKE: ontrack timeout - restarting connection for ${participantId}`);
-              this.cleanupHostHandshake(participantId);
-              
-              // Trigger restart
-              setTimeout(() => {
-                this.requestOfferFromParticipant(participantId);
-              }, 1000);
-            } else {
-              console.log(`✅ HOST-HANDSHAKE: ontrack verified successfully for ${participantId}`);
+          
+          // Track this ontrack event for stability monitoring
+          window.dispatchEvent(new CustomEvent('ontrack-received', {
+            detail: { participantId, timestamp: Date.now(), hasVideo: videoTracks.length > 0, hasAudio: audioTracks.length > 0 }
+          }));
+        } 
+        // Handle empty streams case (ontrack called but no streams provided)
+        else {
+          console.warn(`⚠️ ONTRACK: Empty streams for ${participantId} - track available but no stream container`);
+          
+          // Still mark as connected since ontrack fired
+          window.dispatchEvent(new CustomEvent('participant-stream-received', {
+            detail: { 
+              participantId, 
+              stream: null, 
+              hasStream: false,
+              trackKind: event.track.kind,
+              trackState: event.track.readyState,
+              timestamp: Date.now()
             }
-          }, 3000);
-
-        } else {
-          console.warn(`⚠️ HOST-HANDSHAKE: ontrack without streams for ${participantId}`);
+          }));
+          
+          window.dispatchEvent(new CustomEvent('ontrack-received', {
+            detail: { participantId, timestamp: Date.now(), emptyStream: true, trackKind: event.track.kind }
+          }));
         }
       };
 

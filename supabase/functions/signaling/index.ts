@@ -291,9 +291,6 @@ serve(async (req) => {
 
       // FASE F: Solicitação de offer
       case 'request-offer':
-        console.log(`📨 [SERVER] Received request-offer from ${peerId} to ${message.targetUserId}`);
-        console.log(`📋 [SERVER] Room ${roomId} participants:`, Array.from(room.connections.keys()));
-        
         if (message.targetUserId && room.connections.has(message.targetUserId)) {
           const targetConnection = room.connections.get(message.targetUserId);
           if (targetConnection && targetConnection.readyState === WebSocket.OPEN) {
@@ -306,48 +303,7 @@ serve(async (req) => {
             };
             console.log(`🚀 [SERVER] Forwarding request-offer: ${peerId} → ${message.targetUserId}`);
             targetConnection.send(JSON.stringify(forwardedMessage));
-          } else {
-            console.warn(`⚠️ [SERVER] Target connection not ready: ${message.targetUserId}`);
           }
-        } else {
-          console.warn(`⚠️ [SERVER] Target participant not found: ${message.targetUserId} in room ${roomId}`);
-        }
-        break;
-
-      // CRITICAL FIX: Add missing webrtc-request-offer handler
-      case 'webrtc-request-offer':
-        console.log(`📨 [SERVER] Received webrtc-request-offer from ${peerId} to ${message.targetUserId}`);
-        console.log(`📋 [SERVER] Room ${roomId} participants:`, Array.from(room.connections.keys()));
-        
-        if (message.targetUserId && room.connections.has(message.targetUserId)) {
-          const targetConnection = room.connections.get(message.targetUserId);
-          if (targetConnection && targetConnection.readyState === WebSocket.OPEN) {
-            const forwardedMessage = {
-              type: 'webrtc-request-offer',
-              roomId: message.roomId,
-              fromUserId: message.fromUserId || peerId,
-              targetUserId: message.targetUserId,
-              timestamp: message.timestamp || Date.now()
-            };
-            console.log(`🚀 [SERVER] Forwarding webrtc-request-offer: ${peerId} → ${message.targetUserId}`);
-            targetConnection.send(JSON.stringify(forwardedMessage));
-          } else {
-            console.warn(`⚠️ [SERVER] Target connection not ready: ${message.targetUserId}`);
-            // Fallback: try legacy request-offer
-            console.log(`🔄 [SERVER] Attempting fallback to request-offer`);
-            const fallbackMessage = {
-              type: 'request-offer',
-              roomId: message.roomId,
-              fromUserId: message.fromUserId || peerId,
-              targetUserId: message.targetUserId,
-              timestamp: message.timestamp || Date.now()
-            };
-            targetConnection?.send(JSON.stringify(fallbackMessage));
-          }
-        } else {
-          console.warn(`⚠️ [SERVER] Target participant not found: ${message.targetUserId} in room ${roomId}`);
-          // Try fallback to legacy protocol
-          console.log(`🔄 [SERVER] Trying fallback protocol for missing participant`);
         }
         break;
         

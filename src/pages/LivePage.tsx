@@ -12,11 +12,9 @@ import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
-// FASE 1: Removed conflicting stability hooks
+import { useDesktopWebRTCStability } from '@/hooks/live/useDesktopWebRTCStability';
+import { useMobileWebRTCStability } from '@/hooks/live/useMobileWebRTCStability';
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
-import { WebRTCConnectionStatus } from '@/components/live/WebRTCConnectionStatus';
-import { ServerConnectivityIndicator } from '@/components/live/ServerConnectivityIndicator';
-import { consolidatedWebRTCManager } from '@/utils/webrtc/ConsolidatedWebRTCManager';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
@@ -41,6 +39,15 @@ const LivePage: React.FC = () => {
   // Initialize centralized video display manager
   useStreamDisplayManager();
 
+  // PLANO IMPLEMENTADO: Sistemas separados para desktop e mobile
+  const isDesktop = !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  
+  // DESKTOP: Sistema assertivo de 3s máximo
+  const desktopStability = isDesktop ? useDesktopWebRTCStability(new Map()) : null;
+  
+  // MOBILE: Sistema simples e confiável
+  const mobileStability = !isDesktop ? useMobileWebRTCStability() : null;
+
   // Environment detection and WebRTC management
   useEffect(() => {
     const envInfo = getEnvironmentInfo();
@@ -53,40 +60,84 @@ const LivePage: React.FC = () => {
 
     // HOST-SPECIFIC: Setup WebRTC loop breaking listeners
     const handleForceReset = () => {
-      console.log('🔄 CONSOLIDATED: Force WebRTC reset requested');
+      console.log('🔄 LIVE PAGE HOST: Force WebRTC reset requested');
       try {
-        consolidatedWebRTCManager.cleanup();
-        
-        // Reinitialize if session exists
-        if (state.sessionId) {
-          consolidatedWebRTCManager.initializeAsHost(state.sessionId);
-        }
-        
-        toast({
-          title: "Conexão Resetada",
-          description: "Sistema WebRTC consolidado foi reinicializado.",
+        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
+          const manager = getWebRTCManager();
+          if (manager) {
+            manager.cleanup();
+            toast({
+              title: "Conexão Resetada",
+              description: "WebRTC foi reinicializado com sucesso.",
+            });
+          }
         });
       } catch (error) {
-        console.error('❌ CONSOLIDATED: Reset failed:', error);
+        console.error('❌ LIVE PAGE: Reset failed:', error);
       }
     };
 
     const handleLoopBreak = () => {
-      console.log('⚡ CONSOLIDATED: Break WebRTC loop requested');
+      console.log('⚡ LIVE PAGE HOST: Break WebRTC loop requested');
       try {
-        consolidatedWebRTCManager.cleanup();
-        toast({
-          title: "Loop Quebrado",
-          description: "Todas as conexões foram limpas.",
+        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
+          const manager = getWebRTCManager();
+          if (manager && typeof manager.breakConnectionLoop === 'function') {
+            manager.breakConnectionLoop();
+            toast({
+              title: "Loop Quebrado",
+              description: "Conexões em loop foram limpas.",
+            });
+          }
         });
       } catch (error) {
-        console.error('❌ CONSOLIDATED: Loop break failed:', error);
+        console.error('❌ LIVE PAGE: Loop break failed:', error);
+      }
+    };
+
+    // Desktop-specific event handlers for improved stability
+    const handleDesktopForceReset = () => {
+      console.log('🖥️ LIVE PAGE: Desktop force reset triggered');
+      try {
+        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
+          const manager = getWebRTCManager();
+          if (manager) {
+            manager.resetWebRTC();
+          }
+        });
+        if (desktopStability) desktopStability.forceDesktopReset();
+        toast({
+          title: "🖥️ Desktop Reset",
+          description: "WebRTC connections reset for desktop stability.",
+        });
+      } catch (error) {
+        console.error('❌ LIVE PAGE: Desktop reset failed:', error);
+      }
+    };
+
+    const handleDesktopBreakLoops = () => {
+      console.log('🚫 LIVE PAGE: Desktop break loops triggered');
+      try {
+        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
+          const manager = getWebRTCManager();
+          if (manager && typeof manager.breakConnectionLoop === 'function') {
+            manager.breakConnectionLoop();
+          }
+        });
+        toast({
+          title: "🚫 Loops Broken",
+          description: "Desktop connection loops resolved.",
+        });
+      } catch (error) {
+        console.error('❌ LIVE PAGE: Desktop loop break failed:', error);
       }
     };
 
     // Add event listeners for WebRTC control
     window.addEventListener('force-webrtc-reset', handleForceReset);
     window.addEventListener('break-webrtc-loop', handleLoopBreak);
+    window.addEventListener('desktop-force-reset', handleDesktopForceReset);
+    window.addEventListener('desktop-break-loops', handleDesktopBreakLoops);
 
     // Executar diagnósticos críticos na primeira carga
     const runInitialDiagnostics = async () => {
@@ -119,6 +170,8 @@ const LivePage: React.FC = () => {
     return () => {
       window.removeEventListener('force-webrtc-reset', handleForceReset);
       window.removeEventListener('break-webrtc-loop', handleLoopBreak);
+      window.removeEventListener('desktop-force-reset', handleDesktopForceReset);
+      window.removeEventListener('desktop-break-loops', handleDesktopBreakLoops);
     };
   }, [toast]);
 
@@ -290,25 +343,23 @@ const LivePage: React.FC = () => {
         
         <button
           onClick={() => {
-            const debugInfo = consolidatedWebRTCManager.getDebugInfo();
-            console.log('🎯 CONSOLIDATED DEBUG:', debugInfo);
+            const envInfo = getEnvironmentInfo();
+            console.log('🌍 Environment Info:', envInfo);
             toast({
-              title: "Debug Info",
-              description: `Connections: ${debugInfo.connectionsCount} | State: ${debugInfo.connectionState.overall}`,
+              title: "Environment Info",
+              description: `${envInfo.isLovable ? 'Lovable' : envInfo.isLocalhost ? 'Local' : 'Production'} - ${envInfo.wsUrl}`,
             });
           }}
-          className="bg-purple-500 text-white p-2 rounded-full text-xs"
-          title="Consolidated WebRTC Debug"
+          className="bg-green-500 text-white p-2 rounded-full text-xs"
+          title="Environment Info"
         >
-          🎯 WebRTC
+          🌍 Env
         </button>
       </div>
 
       <WebRTCDebugToasts />
-      <WebRTCConnectionStatus />
-      <ServerConnectivityIndicator />
       
-      {/* CONSOLIDADO: Painel de Debug Lovable */}
+      {/* FASE 5: Painel de Debug Lovable */}
       <LovableDebugPanel sessionId={state.sessionId} />
     </div>
   );

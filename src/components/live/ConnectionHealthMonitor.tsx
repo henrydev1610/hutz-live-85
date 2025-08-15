@@ -54,35 +54,32 @@ const ConnectionHealthMonitor: React.FC<ConnectionHealthMonitorProps> = ({ isVis
           setMetrics(new Map());
         }
       } else {
-        // FASE 3: Estado de "aguardando inicialização" em vez de erro
-        console.log('🔍 FASE 3: WebRTC manager não disponível, sistema aguardando inicialização');
+        console.warn('⚠️ FASE 4: No WebRTC manager available for monitoring');
         
-        // Tentar verificar WebSocket sem logs de erro desnecessários
+        // FASE 4: Fallback - tentar reconectar ou verificar estado externo
         try {
+          // Importar dinâmicamente o serviço WebSocket para verificar estado
           import('@/services/UnifiedWebSocketService').then(({ unifiedWebSocketService: wsService }) => {
-            const wsConnected = wsService.isConnected();
+            const wsState = { websocket: wsService.getConnectionStatus(), connected: wsService.isConnected() };
+            console.log('🔍 FASE 4: WebSocket fallback state:', wsState);
             
             setConnectionState({
-              websocket: wsConnected ? 'connected' : 'connecting',
-              webrtc: 'connecting', // Mostrar "conectando" em vez de "desconectado"
-              overall: 'connecting'
+              websocket: wsState.websocket as any,
+              webrtc: 'disconnected',
+              overall: wsState.connected ? 'connecting' : 'disconnected'
             });
-          }).catch(() => {
-            // Silenciar erro - sistema ainda está inicializando
-            setConnectionState({
-              websocket: 'connecting',
-              webrtc: 'connecting',
-              overall: 'connecting'
-            });
+          }).catch(err => {
+            console.error('❌ FASE 4: Fallback failed:', err);
           });
-        } catch {
-          setConnectionState({
-            websocket: 'connecting',
-            webrtc: 'connecting',
-            overall: 'connecting'
-          });
+        } catch (error) {
+          console.error('❌ FASE 4: Fallback state check failed:', error);
         }
         
+        setConnectionState({
+          websocket: 'disconnected',
+          webrtc: 'disconnected',
+          overall: 'disconnected'
+        });
         setMetrics(new Map());
       }
     };

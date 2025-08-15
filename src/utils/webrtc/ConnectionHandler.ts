@@ -121,35 +121,16 @@ export class ConnectionHandler {
       }
     }
 
-    // RELAY FIX: Unique relay ID with guaranteed uniqueness
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substr(2, 9);
-    const perfNow = performance.now().toString().replace('.', '');
-    const baseId = `relay-${participantId}-${timestamp}-${random}-${perfNow}`;
+    // Criar nome único para o relay baseado na sessão e timestamp
+    const baseId = `relay-${participantId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${performance.now()}`;
     
-    // ENHANCED: Global relay registry with cleanup
-    if (!(window as any).__relayRegistry) {
-      (window as any).__relayRegistry = {
-        ids: new Set(),
-        cleanup: () => {
-          if ((window as any).__relayRegistry.ids.size > 100) {
-            (window as any).__relayRegistry.ids.clear();
-            console.log('🧹 RELAY-FIX: Registry cleaned');
-          }
-        }
-      };
-    }
-    
+    // Guard global para evitar duplicatas
+    if (!(window as any).__relayIds) (window as any).__relayIds = new Set();
     let uniqueId = baseId;
-    let counter = 0;
-    while ((window as any).__relayRegistry.ids.has(uniqueId)) {
-      counter++;
-      uniqueId = `${baseId}-dup${counter}`;
-      if (counter > 10) break; // Safety break
+    if ((window as any).__relayIds.has(uniqueId)) {
+      uniqueId += `-fallback-${Math.random().toString(36).substr(2, 5)}`;
     }
-    
-    (window as any).__relayRegistry.ids.add(uniqueId);
-    (window as any).__relayRegistry.cleanup();
+    (window as any).__relayIds.add(uniqueId);
     
     // FASE 1: Usar configuração ativa de STUN/TURN (dinâmica ou fallback)
     const config = getActiveWebRTCConfig();
@@ -359,13 +340,99 @@ export class ConnectionHandler {
       }
     }, 8000);
 
-    // CRITICAL FIX: Use centralized ontrack handler to prevent conflicts
-    import('@/utils/webrtc/OnTrackCentralizer').then(({ onTrackCentralizer }) => {
-      peerConnection.ontrack = (event) => {
-        console.log(`🎯 CONNECTION-HANDLER: ontrack received, delegating to centralizer for ${participantId}`);
-        onTrackCentralizer.processOnTrackEvent(participantId, event);
-      };
-    });
+    // FASE 2: ONTRACK CORRIGIDO com múltiplas pontes
+    peerConnection.ontrack = (event) => {
+      onTrackReceived = true;
+      const [stream] = event.streams;
+      clearTimeout(onTrackTimeout);
+      
+      console.log(`🎥 [HOST] ontrack received stream:`, stream);
+      console.log('🎉 FASE 2: ===== ONTRACK DISPARADO COM SUCESSO =====');
+      console.log('🎉 FASE 2: Participante:', participantId);
+      console.log('🎉 FASE 2: Event details:', {
+        streamsCount: event.streams?.length || 0,
+        trackKind: event.track?.kind,
+        trackId: event.track?.id,
+        trackReadyState: event.track?.readyState,
+        trackEnabled: event.track?.enabled,
+        receiverTransport: event.receiver?.transport?.state
+      });
+      
+      if (event.streams && event.streams.length > 0) {
+        const stream = event.streams[0];
+        console.log('🎉 FASE 2: Stream CONFIRMADO recebido:', {
+          streamId: stream.id,
+          trackCount: stream.getTracks().length,
+          participantId,
+          active: stream.active,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length,
+          trackDetails: stream.getTracks().map(track => ({
+            kind: track.kind,
+            id: track.id,
+            enabled: track.enabled,
+            readyState: track.readyState
+          }))
+        });
+        
+        // FASE 1+3: CRÍTICO - Eventos compatíveis com Lovable
+        console.log(`🎯 EVENTO DIRETO LOVABLE: Disparando stream-received-${participantId}`);
+        
+        // Detectar ambiente e ajustar eventos
+        const isLovable = window.location.hostname.includes('lovable') || 
+                         !!document.querySelector('script[src*="gptengineer"]');
+        
+        if (isLovable) {
+          console.log(`🌉 LOVABLE DETECTED: Usando eventos aprimorados para ${participantId}`);
+        }
+        
+        window.dispatchEvent(new CustomEvent(`stream-received-${participantId}`, {
+          detail: { 
+            participantId, 
+            stream, 
+            timestamp: Date.now(), 
+            isP1: true,
+            isLovableEnvironment: isLovable,
+            streamMetadata: {
+              id: stream.id,
+              active: stream.active,
+              tracks: stream.getTracks().length,
+              videoTracks: stream.getVideoTracks().length,
+              audioTracks: stream.getAudioTracks().length
+            }
+          }
+        }));
+        
+        // FASE 1+3: CRÍTICO - Evento global aprimorado
+        console.log(`🌍 EVENTO GLOBAL LOVABLE: Disparando participant-stream-connected`);
+        window.dispatchEvent(new CustomEvent('participant-stream-connected', {
+          detail: { 
+            participantId, 
+            stream, 
+            timestamp: Date.now(),
+            environment: isLovable ? 'lovable' : 'standard',
+            requiresFallback: isLovable
+          }
+        }));
+        
+        // FASE 2: CALLBACK GLOBAL CRÍTICO
+        console.log(`🔥 FASE 2: CALLBACK DIRETO - chamando this.streamCallback para ${participantId}`);
+        this.streamCallback?.(participantId, stream); // Callback global
+        
+        console.log('🎉 FASE 2: ONTRACK processado com sucesso - video deve aparecer agora!');
+      } else {
+        console.warn('⚠️ FASE 2: ontrack sem streams - tentando construir do evento');
+        
+        // FASE 2: Fallback - tentar construir stream do track individual
+        if (event.track && event.track.readyState === 'live') {
+          console.log('🔄 FASE 2: Construindo stream do track individual');
+          const syntheticStream = new MediaStream([event.track]);
+          this.handleTrackReceived(participantId, syntheticStream);
+        } else {
+          console.error('❌ FASE 2: Track inválido ou não live');
+        }
+      }
+    };
 
     // 🚨 CORREÇÃO CRÍTICA: ADICIONAR TRACKS ANTES DE onnegotiationneeded
     const localStream = this.getLocalStream();
