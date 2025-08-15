@@ -1,17 +1,9 @@
 
 import { useEffect } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
-import { setStreamCallback, setParticipantJoinCallback } from '@/utils/webrtc';
-import { useVideoElementManagement } from './useVideoElementManagement';
-import { useCleanStreamManagement } from './useCleanStreamManagement';
 import { useParticipantLifecycle } from './useParticipantLifecycle';
 import { useParticipantAutoSelection } from './useParticipantAutoSelection';
-// REMOVIDO: import { useAutoHandshake } from './useAutoHandshake';
-import { useWebRTCBridge } from './useWebRTCBridge';
-import { useWebRTCDebugLogger } from './useWebRTCDebugLogger';
-import { useWebRTCConnectionBridge } from './useWebRTCConnectionBridge';
-import { useWebRTCAutoRetry } from './useWebRTCAutoRetry';
-import { useConnectionHealthMonitor } from './useConnectionHealthMonitor';
+import { hostWebRTCManager } from '@/utils/webrtc/HostWebRTCManager';
 import { clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
 
@@ -36,39 +28,8 @@ export const useParticipantManagement = ({
   updateTransmissionParticipants,
   isHost = false
 }: UseParticipantManagementProps) => {
-  const { updateVideoElementsImmediately } = useVideoElementManagement();
   
-  // SISTEMA ÚNICO: Apenas useWebRTCConnectionBridge para desktop
-  const { debugConnectionBridge } = useWebRTCConnectionBridge({
-    participantStreams,
-    setParticipantStreams,
-    setParticipantList
-  });
-
-  const { debugAutoRetry, forceRetry, scheduleRetry } = useWebRTCAutoRetry({
-    sessionId,
-    participantStreams,
-    participantList
-  });
-
-  // ETAPA 4: Monitor de saúde da conexão
-  const { getConnectionHealth, forceConnectionRecovery, checkConnectionHealth } = useConnectionHealthMonitor({
-    sessionId,
-    participantStreams,
-    participantList,
-    isHost
-  });
-  
-  // DEBUG LOGGER: Monitoramento WebRTC
-  const { debugCurrentState } = useWebRTCDebugLogger();
-  
-  // Use clean stream management with enhanced error handling
-  const { handleParticipantStream } = useCleanStreamManagement({
-    setParticipantStreams,
-    setParticipantList,
-    updateVideoElementsImmediately,
-    transmissionWindowRef
-  });
+  // FASE 4: Sistema simplificado - apenas gerenciar lista de participantes
 
   const { 
     handleParticipantJoin: originalHandleParticipantJoin,
@@ -83,17 +44,6 @@ export const useParticipantManagement = ({
     updateTransmissionParticipants
   });
 
-  // CORREÇÃO: Participant join simples sem auto-handshake
-  const handleParticipantJoin = async (participantId: string, participantInfo?: any) => {
-    console.log('👤 MANAGEMENT: Handling participant join for:', participantId);
-    
-    // Call original handler only
-    originalHandleParticipantJoin(participantId);
-    
-    // CORREÇÃO: Removido auto-handshake para evitar loops
-    console.log('✅ MANAGEMENT: Participant joined without auto-handshake');
-  };
-
   const { transferStreamToTransmission } = useParticipantAutoSelection({
     participantList,
     setParticipantList,
@@ -103,121 +53,115 @@ export const useParticipantManagement = ({
     updateTransmissionParticipants
   });
 
-  // REMOVIDO: Auto-handshake conflitante - Host só responde, nunca inicia
+  // FASE 4: Simplified participant join - apenas gerenciar lista
+  const handleParticipantJoin = (participantId: string) => {
+    console.log('👤 SIMPLIFIED: Participant join para:', participantId);
+    originalHandleParticipantJoin(participantId);
+  };
 
-  // SIMPLIFICADO: Stream handler direto sem camadas extras
-  const handleParticipantStreamDirect = async (participantId: string, stream: MediaStream) => {
-    console.log(`📹 DIRETO: Stream recebido ${participantId}`);
+  // FASE 4: Simplified stream handler - direto
+  const handleParticipantStream = (participantId: string, stream: MediaStream) => {
+    console.log('📹 SIMPLIFIED: Stream recebido para:', participantId);
     
-    // Processar diretamente com handleParticipantStream original
-    await handleParticipantStream(participantId, stream);
+    // Update participant streams directly
+    setParticipantStreams(prev => ({ ...prev, [participantId]: stream }));
     
-    // Update transmission sem delay
+    // Update participant list to mark as having video
+    setParticipantList(prev => {
+      const exists = prev.some(p => p.id === participantId);
+      if (!exists) {
+        return [...prev, {
+          id: participantId,
+          name: `Mobile-${participantId.slice(-4)}`,
+          joinedAt: Date.now(),
+          lastActive: Date.now(),
+          active: true,
+          selected: prev.length === 0,
+          hasVideo: true,
+          isMobile: true
+        }];
+      }
+      return prev.map(p => 
+        p.id === participantId 
+          ? { ...p, hasVideo: true, active: true, lastActive: Date.now() }
+          : p
+      );
+    });
+
+    // Update transmission
     updateTransmissionParticipants();
   };
 
-  // ETAPA 1: Registrar window.hostStreamCallback ANTES de qualquer setup WebRTC
+  // FASE 4: Initialize Host WebRTC Manager
   useEffect(() => {
-    if (isHost && typeof window !== 'undefined') {
-      console.log('HOST-CALLBACK-REGISTERED');
+    if (isHost && sessionId) {
+      console.log('🖥️ FASE 4: Inicializando Host WebRTC Manager para:', sessionId);
       
-      // CRÍTICO: Inicializar registro de streams global como Map (consistente)
-      if (!window.__mlStreams__) {
-        window.__mlStreams__ = new Map();
-      }
-      console.log(`[HOST-CALLBACK-REGISTERED] __mlStreams__ initialized as Map, size=${window.__mlStreams__.size}`);
-      
-      // CALLBACK ÚNICO: Sem duplicação de processamento
-      window.hostStreamCallback = (participantId: string, stream: MediaStream) => {
-        console.log(`🎯 HOST-ÚNICO: ${participantId} stream=${stream.id}`);
-        
-        // Registrar stream
-        window.__mlStreams__.set(participantId, stream);
-        
-        // Processar uma única vez
-        handleParticipantStreamDirect(participantId, stream);
-      };
-      
-      // Getter para popup acessar o stream (Map)
-      window.getParticipantStream = (participantId: string) => {
-        const stream = window.__mlStreams__?.get(participantId) ?? null;
-        console.log(`[HOST-BRIDGE] getParticipantStream participantId=${participantId} found=${!!stream} mapSize=${window.__mlStreams__?.size || 0}`);
-        return stream;
-      };
-      
-      console.log('[HOST-CALLBACK-REGISTERED] Registration complete - callback will survive page lifecycle');
-    }
-  }, [isHost]);
+      hostWebRTCManager.initializeAsHost(sessionId)
+        .then(() => {
+          console.log('✅ FASE 4: Host WebRTC Manager inicializado com sucesso');
+        })
+        .catch((error) => {
+          console.error('❌ FASE 4: Falha ao inicializar Host WebRTC Manager:', error);
+        });
 
-  // ETAPA 3: Lidar com detecção de participantes e solicitar offer IMEDIATAMENTE
+      // Setup global stream callback for transmission window
+      if (typeof window !== 'undefined') {
+        if (!window.__mlStreams__) {
+          window.__mlStreams__ = new Map();
+        }
+        
+        window.hostStreamCallback = (participantId: string, stream: MediaStream) => {
+          console.log('🎯 HOST-CALLBACK: Stream recebido para:', participantId);
+          window.__mlStreams__.set(participantId, stream);
+          handleParticipantStream(participantId, stream);
+        };
+        
+        window.getParticipantStream = (participantId: string) => {
+          return window.__mlStreams__?.get(participantId) ?? null;
+        };
+      }
+    }
+
+    return () => {
+      if (isHost) {
+        console.log('🧹 FASE 4: Limpando Host WebRTC Manager');
+        hostWebRTCManager.cleanup();
+      }
+    };
+  }, [isHost, sessionId]);
+
+  // FASE 4: Listen for video stream events from HostWebRTCManager
   useEffect(() => {
     if (!isHost) return;
 
-    const handleParticipantDiscovered = (event: CustomEvent) => {
-      const { participantId } = event.detail;
-      console.log('🔍 DETECÇÃO: Participante descoberto:', participantId);
+    const handleVideoStreamReady = (event: CustomEvent) => {
+      const { participantId, stream } = event.detail;
+      console.log('🎥 FASE 4: Video stream pronto de:', participantId);
       
-      // ETAPA 3: Solicitar offer IMEDIATAMENTE
-      setTimeout(() => {
-        console.log('🚀 CRÍTICO: Solicitando offer do participante:', participantId);
-        
-        // Importar e usar HostHandshake
-        import('@/webrtc/handshake/HostHandshake').then(({ requestOfferFromParticipant }) => {
-          requestOfferFromParticipant(participantId);
-        });
-      }, 100); // Delay mínimo de 100ms
+      if (participantId && stream) {
+        handleParticipantStream(participantId, stream);
+      }
     };
 
-    window.addEventListener('participant-discovered', handleParticipantDiscovered as EventListener);
+    window.addEventListener('video-stream-ready', handleVideoStreamReady as EventListener);
     
     return () => {
-      window.removeEventListener('participant-discovered', handleParticipantDiscovered as EventListener);
+      window.removeEventListener('video-stream-ready', handleVideoStreamReady as EventListener);
     };
   }, [isHost]);
 
-  // Set up WebRTC callbacks APÓS o registro da ponte
+  // FASE 4: Cache management only
   useEffect(() => {
-    console.log('🔧 WEBRTC DEBUG: ===== CONFIGURANDO CALLBACKS =====');
-    console.log('🔧 WEBRTC DEBUG: SessionId:', sessionId);
-    console.log('🔧 WEBRTC DEBUG: IsHost:', isHost);
-    
-    // ETAPA 5: Logs de validação
-    if (isHost) {
-      console.log('✅ CRÍTICO: Host role confirmado - IsHost: true');
-    } else {
-      console.log('❌ CRÍTICO: Host role incorreto - IsHost: false');
-    }
-    
-    // Clear cache on session change
     if (sessionId) {
-      console.log('🧹 WEBRTC DEBUG: Limpando cache para nova sessão');
+      console.log('🧹 FASE 4: Limpando cache para nova sessão:', sessionId);
       clearConnectionCache();
       clearDeviceCache();
     }
-    
-    console.log('🔧 WEBRTC DEBUG: Registrando handleParticipantStreamDirect');
-    setStreamCallback(handleParticipantStreamDirect);
-    
-    console.log('🔧 WEBRTC DEBUG: Registrando handleParticipantJoin');
-    setParticipantJoinCallback(handleParticipantJoin);
-    
-    console.log('✅ WEBRTC DEBUG: Callbacks WebRTC registrados com sucesso');
-    
-    // Debug do estado atual
-    debugCurrentState();
-    
-    return () => {
-      console.log('🧹 WEBRTC DEBUG: Limpando callbacks WebRTC');
-      // CRÍTICO: window.hostStreamCallback deve persistir - NUNCA limpar
-    };
-  }, [sessionId, handleParticipantJoin, debugCurrentState, isHost]);
+  }, [sessionId]);
 
   const testConnection = () => {
-    console.log('🧪 ENHANCED MANAGEMENT: Testing connection with cache clearing...');
-    
-    // Clear all cache before test
-    clearConnectionCache();
-    clearDeviceCache();
+    console.log('🧪 FASE 4: Testing connection...');
     
     const testParticipant: Participant = {
       id: `test-${Date.now()}`,
@@ -237,8 +181,8 @@ export const useParticipantManagement = ({
     
     navigator.mediaDevices.getUserMedia({ video: true, audio: false })
       .then(stream => {
-        console.log('✅ ENHANCED MANAGEMENT: Test stream obtained');
-        handleParticipantStreamDirect(testParticipant.id, stream);
+        console.log('✅ FASE 4: Test stream obtained');
+        handleParticipantStream(testParticipant.id, stream);
         
         setTimeout(() => {
           stream.getTracks().forEach(track => track.stop());
@@ -248,10 +192,10 @@ export const useParticipantManagement = ({
             delete updated[testParticipant.id];
             return updated;
           });
-        }, 10000);
+        }, 5000);
       })
       .catch(err => {
-        console.error('❌ ENHANCED MANAGEMENT: Test connection failed:', err);
+        console.error('❌ FASE 4: Test connection failed:', err);
       });
   };
 
@@ -259,19 +203,8 @@ export const useParticipantManagement = ({
     handleParticipantSelect,
     handleParticipantRemove,
     handleParticipantJoin,
-    handleParticipantStream: handleParticipantStreamDirect,
+    handleParticipantStream,
     testConnection,
-    transferStreamToTransmission,
-    
-    // FASE 3 & 4: Novos métodos de debug e controle
-    debugConnectionBridge,
-    debugAutoRetry,
-    forceRetry,
-    scheduleRetry,
-    
-    // ETAPA 4: Health monitoring
-    getConnectionHealth,
-    forceConnectionRecovery,
-    checkConnectionHealth
+    transferStreamToTransmission
   };
 };
