@@ -15,39 +15,43 @@ export const clearConnectionCache = (): void => {
 };
 
 /**
- * FASE 1 & 2: CRITICAL URL SYNC - Get the backend base URL with production enforcement
+ * FASE 1: SMART ENVIRONMENT DETECTION - Get backend URL with fallback strategy
  */
 export const getBackendBaseURL = (): string => {
-  // FASE 1: URL SYNC CRITICO - Verificar env primeiro
-  const envApiUrl = import.meta.env.VITE_API_URL;
-  
-  if (envApiUrl) {
-    console.log(`🔧 BACKEND URL SYNC: Using environment API URL: ${envApiUrl}`);
-    return envApiUrl;
-  }
-
   const { protocol, host } = window.location;
   
-  // PRODUÇÃO: ALWAYS map to server-hutz-live for backend
-  if (host.includes('hutz-live-85.onrender.com') || host.includes('lovable.app') || host.includes('lovableproject.com')) {
-    const backendUrl = 'https://server-hutz-live.onrender.com';
-    console.log(`🌐 BACKEND URL SYNC: Production mapping - Frontend ${host} → Backend server-hutz-live.onrender.com`);
-    console.log(`📋 URL MAPPING CRITICAL: ${host} → server-hutz-live.onrender.com`);
-    return backendUrl;
+  // FASE 1: Check explicit environment variables first (but only if set)
+  const envApiUrl = import.meta.env.VITE_API_BASE_URL;
+  const envApiUrlAlt = import.meta.env.VITE_API_URL;
+  
+  // Only use env vars if they're explicitly set (not empty)
+  const explicitEnvUrl = envApiUrl || envApiUrlAlt;
+  if (explicitEnvUrl && explicitEnvUrl.trim() && !explicitEnvUrl.includes('your-backend-domain')) {
+    console.log(`🔧 ENV OVERRIDE: Using explicit environment URL: ${explicitEnvUrl}`);
+    return explicitEnvUrl;
   }
   
-  // Local development environment
-  if (host.includes('localhost') || host.startsWith('127.0.0.1') || host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.')) {
+  // FASE 2: SMART AUTO-DETECTION
+  const isLocalhost = host.includes('localhost') || host.startsWith('127.0.0.1') || host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.');
+  const isProduction = host.includes('hutz-live-85.onrender.com') || host.includes('lovable.app') || host.includes('lovableproject.com');
+  
+  if (isLocalhost) {
+    // LOCAL DEVELOPMENT
     const localPort = '3001';
     const backendUrl = `${protocol}//${host.split(':')[0]}:${localPort}`;
-    console.log(`🏠 BACKEND URL SYNC: Local development detected: ${backendUrl}`);
+    console.log(`🏠 LOCAL DEV: ${backendUrl}`);
+    return backendUrl;
+  } else if (isProduction) {
+    // PRODUCTION MAPPING
+    const backendUrl = 'https://server-hutz-live.onrender.com';
+    console.log(`🌐 PRODUCTION: Frontend ${host} → Backend server-hutz-live.onrender.com`);
+    return backendUrl;
+  } else {
+    // UNKNOWN ENVIRONMENT - Use same host as frontend
+    const backendUrl = `${protocol}//${host}`;
+    console.log(`❓ UNKNOWN ENV: Using same host: ${backendUrl}`);
     return backendUrl;
   }
-  
-  // Production environment fallback
-  const backendUrl = `${protocol}//${host}`;
-  console.log(`🌐 BACKEND URL SYNC: Production fallback: ${backendUrl}`);
-  return backendUrl;
 };
 
 export const getWebSocketURL = (): string => {
