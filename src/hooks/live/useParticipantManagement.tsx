@@ -38,14 +38,7 @@ export const useParticipantManagement = ({
 }: UseParticipantManagementProps) => {
   const { updateVideoElementsImmediately } = useVideoElementManagement();
   
-  // CORREÇÃO CRÍTICA: Usar ponte WebRTC → React
-  const { debugBridge } = useWebRTCBridge({
-    participantStreams,
-    setParticipantStreams,
-    setParticipantList
-  });
-
-  // FASE 3 & 4: Novos hooks para correção completa
+  // SISTEMA ÚNICO: Apenas useWebRTCConnectionBridge para desktop
   const { debugConnectionBridge } = useWebRTCConnectionBridge({
     participantStreams,
     setParticipantStreams,
@@ -112,41 +105,15 @@ export const useParticipantManagement = ({
 
   // REMOVIDO: Auto-handshake conflitante - Host só responde, nunca inicia
 
-  // Enhanced stream handling with retry and cache busting
-  const enhancedHandleParticipantStream = async (participantId: string, stream: MediaStream) => {
-    console.log('🔄 ENHANCED STREAM HANDLER: Processing stream for:', participantId);
+  // SIMPLIFICADO: Stream handler direto sem camadas extras
+  const handleParticipantStreamDirect = async (participantId: string, stream: MediaStream) => {
+    console.log(`📹 DIRETO: Stream recebido ${participantId}`);
     
-    try {
-      // Clear any stale cache that might interfere
-      if (performance.now() % 10000 < 100) { // Occasionally clear cache
-        console.log('🧹 ENHANCED STREAM HANDLER: Periodic cache cleanup');
-        clearConnectionCache();
-        clearDeviceCache();
-      }
-      
-      await handleParticipantStream(participantId, stream);
-      
-      // Immediate transmission update
-      setTimeout(() => {
-        console.log('📡 ENHANCED STREAM HANDLER: Triggering transmission update');
-        updateTransmissionParticipants();
-      }, 100);
-      
-    } catch (error) {
-      console.error('❌ ENHANCED STREAM HANDLER: Error processing stream:', error);
-      
-      // Retry with cache clear
-      try {
-        console.log('🔄 ENHANCED STREAM HANDLER: Retrying with cache clear');
-        clearConnectionCache();
-        clearDeviceCache();
-        
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await handleParticipantStream(participantId, stream);
-      } catch (retryError) {
-        console.error('❌ ENHANCED STREAM HANDLER: Retry failed:', retryError);
-      }
-    }
+    // Processar diretamente com handleParticipantStream original
+    await handleParticipantStream(participantId, stream);
+    
+    // Update transmission sem delay
+    updateTransmissionParticipants();
   };
 
   // ETAPA 1: Registrar window.hostStreamCallback ANTES de qualquer setup WebRTC
@@ -160,19 +127,15 @@ export const useParticipantManagement = ({
       }
       console.log(`[HOST-CALLBACK-REGISTERED] __mlStreams__ initialized as Map, size=${window.__mlStreams__.size}`);
       
-      // PONTE HOST → POPUP: Registrar callback ANTES de WebRTC
+      // CALLBACK ÚNICO: Sem duplicação de processamento
       window.hostStreamCallback = (participantId: string, stream: MediaStream) => {
-        const videoTracks = stream.getVideoTracks().length;
-        const audioTracks = stream.getAudioTracks().length;
+        console.log(`🎯 HOST-ÚNICO: ${participantId} stream=${stream.id}`);
         
-        console.log(`[HOST-CALLBACK-READY] participantId=${participantId} streamId=${stream.id} v=${videoTracks} a=${audioTracks}`);
-        
-        // CRÍTICO: Registrar stream IMEDIATAMENTE em __mlStreams__ (Map)
+        // Registrar stream
         window.__mlStreams__.set(participantId, stream);
-        console.log(`[HOST-BRIDGE] stream saved to window.__mlStreams__ participantId=${participantId} streamId=${stream.id} mapSize=${window.__mlStreams__.size}`);
         
-        // Processar no React
-        enhancedHandleParticipantStream(participantId, stream);
+        // Processar uma única vez
+        handleParticipantStreamDirect(participantId, stream);
       };
       
       // Getter para popup acessar o stream (Map)
@@ -232,8 +195,8 @@ export const useParticipantManagement = ({
       clearDeviceCache();
     }
     
-    console.log('🔧 WEBRTC DEBUG: Registrando enhancedHandleParticipantStream');
-    setStreamCallback(enhancedHandleParticipantStream);
+    console.log('🔧 WEBRTC DEBUG: Registrando handleParticipantStreamDirect');
+    setStreamCallback(handleParticipantStreamDirect);
     
     console.log('🔧 WEBRTC DEBUG: Registrando handleParticipantJoin');
     setParticipantJoinCallback(handleParticipantJoin);
@@ -275,7 +238,7 @@ export const useParticipantManagement = ({
     navigator.mediaDevices.getUserMedia({ video: true, audio: false })
       .then(stream => {
         console.log('✅ ENHANCED MANAGEMENT: Test stream obtained');
-        enhancedHandleParticipantStream(testParticipant.id, stream);
+        handleParticipantStreamDirect(testParticipant.id, stream);
         
         setTimeout(() => {
           stream.getTracks().forEach(track => track.stop());
@@ -296,7 +259,7 @@ export const useParticipantManagement = ({
     handleParticipantSelect,
     handleParticipantRemove,
     handleParticipantJoin,
-    handleParticipantStream: enhancedHandleParticipantStream,
+    handleParticipantStream: handleParticipantStreamDirect,
     testConnection,
     transferStreamToTransmission,
     

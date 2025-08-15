@@ -25,11 +25,10 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   multiplier: 1.5
 };
 
-// PLANO DESKTOP: Timeouts ultrarrápidos e definitivos - 3s garantido
+// DESKTOP: Timeouts definitivos para evitar loops
 const DESKTOP_TIMEOUTS = {
-  connectionTimeout: 3000,     // PLANO: 3s max for connection
-  loopDetection: 3000,         // PLANO: 3s loop detection  
-  forceCleanup: 3000          // PLANO: 3s force cleanup
+  connectionTimeout: 2000,     // 2s max conexão
+  forceCleanup: 2000          // 2s força limpeza
 };
 
 export class UnifiedWebRTCManager {
@@ -484,10 +483,10 @@ export class UnifiedWebRTCManager {
       const iceState = pc.iceConnectionState;
       const metrics = this.connectionMetrics.get(participantId);
       
-      // PLANO: Qualquer connection há mais de 4s é loop
+      // PLANO: Qualquer connection há mais de 2s é loop
       const connectingTime = metrics?.connectionStartTime ? now - metrics.connectionStartTime : 0;
       const isLoop = (state === 'connecting' || iceState === 'checking') && 
-                     connectingTime > DESKTOP_TIMEOUTS.loopDetection;
+                     connectingTime > DESKTOP_TIMEOUTS.forceCleanup;
       
       if (isLoop) {
         console.log(`🚫 PLANO LOOP: ${participantId} (${connectingTime}ms) - QUEBRAR`);
@@ -722,8 +721,8 @@ export class UnifiedWebRTCManager {
         if ((state === 'connecting' || iceState === 'checking') && metrics?.connectionStartTime) {
           const connectingTime = now - metrics.connectionStartTime;
           
-          // Desktop: immediate loop detection after 8 seconds
-          if (connectingTime > DESKTOP_TIMEOUTS.loopDetection) {
+          // Desktop: immediate loop detection after 2 seconds
+          if (connectingTime > DESKTOP_TIMEOUTS.forceCleanup) {
             console.warn(`🚫 [DESKTOP HEALTH] Connection loop detected: ${participantId} (${connectingTime}ms) - FORCE CLOSING`);
             
             // Immediate force close for desktop
