@@ -4,6 +4,7 @@ import LivePageContent from '@/components/live/LivePageContent';
 import FinalActionDialog from '@/components/live/FinalActionDialog';
 import { clearConnectionCache, forceRefreshConnections, getEnvironmentInfo, validateURLConsistency } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
+import { useWebRTCDebugTracker } from '@/hooks/live/useWebRTCDebugTracker';
 
 interface LivePageContainerProps {
   state: any;
@@ -32,6 +33,9 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
   onQRCodeToTransmission,
   closeFinalAction
 }) => {
+  // CRITICAL: Add WebRTC debug tracker
+  useWebRTCDebugTracker();
+
   // FASE 5: Enhanced cache management with URL sync validation
   useEffect(() => {
     console.log('🏠 LIVE CONTAINER: Initializing with ENHANCED cache management and URL sync');
@@ -144,6 +148,21 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
           title="URL + Mobile Status"
         >
           📱 Status
+        </button>
+        
+        {/* CRITICAL: WebRTC Debug Button */}
+        <button
+          onClick={() => {
+            if ((window as any).debugWebRTC) {
+              (window as any).debugWebRTC();
+            } else {
+              console.log('🔍 Debug tracker not initialized');
+            }
+          }}
+          className="bg-purple-500 text-white p-2 rounded text-xs"
+          title="WebRTC Event Debug"
+        >
+          🎥 WebRTC
         </button>
       </div>
     </div>

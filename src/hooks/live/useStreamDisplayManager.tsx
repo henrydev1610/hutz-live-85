@@ -69,84 +69,112 @@ export const useStreamDisplayManager = () => {
   }, []);
 
   const createVideoForParticipant = useCallback(async (participantId: string, stream: MediaStream) => {
-    console.log(`🎥 STREAM DISPLAY MANAGER: Creating video for ${participantId}`);
+    console.log(`🎥 VIDEO-RENDER-STABLE: Creating video for ${participantId}`);
 
-    // Find the container using standardized ID format
-    const containerId = `video-container-${participantId}`;
-    let container = document.getElementById(containerId);
+    // ENHANCED: Multiple container search strategies with immediate DOM check
+    const searchStrategies = [
+      () => document.getElementById(`video-container-${participantId}`),
+      () => document.querySelector(`[data-participant-id="${participantId}"]`) as HTMLElement,
+      () => document.querySelector(`#unified-video-${participantId}`) as HTMLElement,
+      () => document.querySelector(`#participant-${participantId}`) as HTMLElement,
+      () => document.querySelector(`.participant-video[data-id="${participantId}"]`) as HTMLElement,
+      () => document.querySelector(`[data-video-id="${participantId}"]`) as HTMLElement
+    ];
 
-    // Fallback container searches
-    if (!container) {
-      container = document.querySelector(`[data-participant-id="${participantId}"]`);
+    let container: HTMLElement | null = null;
+    for (const strategy of searchStrategies) {
+      container = strategy();
+      if (container) {
+        console.log(`🎯 VIDEO-RENDER-STABLE: Found container via strategy for ${participantId}`, container.id || container.className);
+        break;
+      }
     }
-    if (!container) {
-      container = document.querySelector(`#unified-video-${participantId}`);
-    }
 
     if (!container) {
-      console.warn(`⚠️ STREAM DISPLAY MANAGER: No container found for ${participantId}`);
+      console.error(`❌ VIDEO-RENDER-STABLE: NO CONTAINER FOUND for ${participantId}`);
+      console.error(`🔍 Available containers:`, Array.from(document.querySelectorAll('[id*="video"], [data-participant-id], [class*="video"]')).map(el => ({
+        id: el.id, 
+        className: el.className,
+        dataId: el.getAttribute('data-participant-id')
+      })));
+      
+      // Dispatch failure event immediately 
+      window.dispatchEvent(new CustomEvent('video-display-ready', {
+        detail: { participantId, success: false, error: 'No container found' }
+      }));
       return;
     }
 
-    // Remove existing video elements
-    const existingVideos = container.querySelectorAll('video');
-    existingVideos.forEach(video => video.remove());
+    // CRITICAL: Force clear existing content
+    console.log(`🧹 VIDEO-RENDER-STABLE: Clearing existing content for ${participantId}`);
+    container.innerHTML = '';
 
-    // Create new video element
+    // ENHANCED: Create video with guaranteed properties
     const video = document.createElement('video');
-    video.id = `stream-video-${participantId}`;
+    const videoId = `video-${participantId}-${Date.now()}`;
+    video.id = videoId;
+    
+    // CRITICAL: Set all video properties before adding to DOM
     video.autoplay = true;
     video.playsInline = true;
     video.muted = true;
     video.controls = false;
-    video.className = 'w-full h-full object-cover absolute inset-0 z-10';
+    video.className = 'w-full h-full object-cover';
+    
+    // FORCE CSS: Absolute positioning to ensure visibility
     video.style.cssText = `
       display: block !important;
-      width: 100% !important;
+      width: 100% !important;  
       height: 100% !important;
       object-fit: cover !important;
       position: absolute !important;
       top: 0 !important;
       left: 0 !important;
-      z-index: 10 !important;
-      background: #000;
+      z-index: 15 !important;
+      background: #1a1a1a !important;
+      border-radius: inherit;
     `;
 
-    // Set stream
+    // CRITICAL: Assign stream BEFORE DOM insertion
     video.srcObject = stream;
+    
+    console.log(`📱 VIDEO-RENDER-STABLE: Inserting video into container for ${participantId}`);
     container.appendChild(video);
-
-    // Attempt playback with retries
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    const attemptPlay = async () => {
+    
+    // ENHANCED: Immediate play attempt with aggressive retry
+    const playVideo = async () => {
       try {
+        console.log(`▶️ VIDEO-RENDER-STABLE: Attempting play for ${participantId}`);
         await video.play();
-        console.log(`✅ STREAM DISPLAY MANAGER: Video playing for ${participantId}`);
         
-        // Dispatch success event
+        console.log(`✅ VIDEO-RENDER-STABLE: Video playing successfully for ${participantId}`);
         window.dispatchEvent(new CustomEvent('video-display-ready', {
-          detail: { participantId, success: true }
+          detail: { participantId, success: true, videoId }
         }));
-      } catch (error) {
-        attempts++;
-        console.warn(`⚠️ STREAM DISPLAY MANAGER: Play attempt ${attempts} failed for ${participantId}:`, error);
         
-        if (attempts < maxAttempts) {
-          setTimeout(attemptPlay, attempts * 1000);
-        } else {
-          console.error(`❌ STREAM DISPLAY MANAGER: Play failed after ${maxAttempts} attempts for ${participantId}`);
-          
-          // Dispatch failure event
-          window.dispatchEvent(new CustomEvent('video-display-ready', {
-            detail: { participantId, success: false, error: error.message }
-          }));
-        }
+      } catch (error) {
+        console.error(`❌ VIDEO-RENDER-STABLE: Play failed for ${participantId}:`, error);
+        
+        // RETRY: One more attempt with delay
+        setTimeout(async () => {
+          try {
+            await video.play();
+            console.log(`✅ VIDEO-RENDER-STABLE: Retry successful for ${participantId}`);
+            window.dispatchEvent(new CustomEvent('video-display-ready', {
+              detail: { participantId, success: true, videoId }
+            }));
+          } catch (retryError) {
+            console.error(`❌ VIDEO-RENDER-STABLE: Final retry failed for ${participantId}:`, retryError);
+            window.dispatchEvent(new CustomEvent('video-display-ready', {
+              detail: { participantId, success: false, error: retryError.message }
+            }));
+          }
+        }, 1000);
       }
     };
 
-    attemptPlay();
+    // IMMEDIATE: Start playback
+    playVideo();
   }, []);
 
   const cleanup = useCallback(() => {
