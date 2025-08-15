@@ -24,7 +24,12 @@ export const useLivePageState = () => {
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    // FASE 1: Auto-inicialização do sessionId no carregamento da página
+    const autoSessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+    console.log('🚀 AUTO SESSION: Gerando sessionId automaticamente:', autoSessionId);
+    return autoSessionId;
+  });
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
