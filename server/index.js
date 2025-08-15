@@ -31,20 +31,38 @@ const corsOptions = {
     // Permitir requisições sem origin (aplicações mobile, Postman, etc.)
     if (!origin) return callback(null, true);
     
-    // Verificar se o origin está na lista permitida
+    console.log(`🔍 CORS CHECK: Testing origin: ${origin}`);
+    console.log(`📋 CORS CHECK: Allowed origins: ${JSON.stringify(allowedOrigins)}`);
+    
+    // Verificar se o origin está na lista permitida (com suporte a wildcards)
     const isAllowed = allowedOrigins.some(allowedOrigin => {
       if (typeof allowedOrigin === 'string') {
-        return origin === allowedOrigin;
+        // Suporte a wildcard com regex
+        if (allowedOrigin.startsWith('*.')) {
+          const domain = allowedOrigin.substring(2);
+          const regex = new RegExp(`^https?://[^.]+\\.${domain.replace(/\./g, '\\.')}$`);
+          const matches = regex.test(origin);
+          console.log(`🌐 WILDCARD CHECK: ${allowedOrigin} vs ${origin} = ${matches}`);
+          return matches;
+        }
+        // Verificação exata
+        const exactMatch = origin === allowedOrigin;
+        console.log(`✅ EXACT CHECK: ${allowedOrigin} vs ${origin} = ${exactMatch}`);
+        return exactMatch;
       } else if (allowedOrigin instanceof RegExp) {
-        return allowedOrigin.test(origin);
+        const regexMatch = allowedOrigin.test(origin);
+        console.log(`🔧 REGEX CHECK: ${allowedOrigin} vs ${origin} = ${regexMatch}`);
+        return regexMatch;
       }
       return false;
     });
     
     if (isAllowed) {
+      console.log(`✅ CORS ALLOWED: ${origin}`);
       callback(null, true);
     } else {
-      console.log(`CORS blocked origin: ${origin}`);
+      console.log(`❌ CORS BLOCKED: ${origin}`);
+      console.log(`📝 CORS HELP: Add "${origin}" to ALLOWED_ORIGINS in server/.env`);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -69,10 +87,18 @@ app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Configurar Socket.IO com os mesmos origins
+// Configurar Socket.IO com os mesmos origins (processando wildcards)
+const processedOrigins = allowedOrigins.map(origin => {
+  if (typeof origin === 'string' && origin.startsWith('*.')) {
+    const domain = origin.substring(2);
+    return new RegExp(`^https?://[^.]+\\.${domain.replace(/\./g, '\\.')}$`);
+  }
+  return origin;
+});
+
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: processedOrigins,
     methods: ["GET", "POST"],
     credentials: true
   },
