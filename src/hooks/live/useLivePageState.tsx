@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
 import { generateSessionId } from '@/utils/sessionUtils';
+import { initHostWebRTC } from '@/utils/webrtc';
 
 export const useLivePageState = () => {
   const [participantCount, setParticipantCount] = useState(4);
