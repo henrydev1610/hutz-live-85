@@ -83,11 +83,12 @@ export const useQRCodeGeneration = () => {
     console.log("📱 MOBILE PARAMS:", FORCED_MOBILE_PARAMS);
     
     try {
-      // CORREÇÃO CRÍTICA: Usar geração direta em vez de API backend problemática
-      const sessionId = generateSessionId();
-      const finalUrl = `${productionUrl}/participant/${sessionId}${FORCED_MOBILE_PARAMS}`;
+      // 🚀 CORREÇÃO CRÍTICA: Reutilizar sessionId existente em vez de gerar novo
+      const currentSessionId = state.sessionId || generateSessionId();
+      const finalUrl = `${productionUrl}/participant/${currentSessionId}${FORCED_MOBILE_PARAMS}`;
       
       console.log(`🎯 QR URL GERADA: ${finalUrl}`);
+      console.log(`🔑 SESSION ID: ${currentSessionId} (${state.sessionId ? 'existing' : 'new'})`);
       
       // Gerar QR Code usando a biblioteca qrcode
       const qrDataUrl = await QRCode.toDataURL(finalUrl, {
@@ -99,11 +100,16 @@ export const useQRCodeGeneration = () => {
         }
       });
       
-      // Atualizar estado
-      state.setSessionId(sessionId);
+      // Atualizar estado - só atualizar sessionId se não existir
+      if (!state.sessionId) {
+        state.setSessionId(currentSessionId);
+      }
       state.setQrCodeURL(finalUrl);
       state.setQrCodeSvg(qrDataUrl);
-      state.setParticipantList([]);
+      // Não limpar participantList se já existir sessionId
+      if (!state.sessionId) {
+        state.setParticipantList([]);
+      }
       
       console.log("✅ QR Code gerado com sucesso!");
       

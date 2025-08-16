@@ -1,6 +1,7 @@
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
+import { generateSessionId } from '@/utils/sessionUtils';
 
 export const useLivePageState = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -25,6 +26,15 @@ export const useLivePageState = () => {
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+
+  // 🚀 CORREÇÃO CRÍTICA: Gerar sessionId automaticamente na inicialização
+  useEffect(() => {
+    if (!sessionId) {
+      const newSessionId = generateSessionId();
+      console.log('🎯 HOST INIT: Auto-generating sessionId:', newSessionId);
+      setSessionId(newSessionId);
+    }
+  }, [sessionId]);
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
     x: 20, 
