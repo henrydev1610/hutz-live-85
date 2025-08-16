@@ -5,15 +5,15 @@ import LivePageContainer from '@/components/live/LivePageContainer';
 import { LovableDebugPanel } from '@/components/debug/LovableDebugPanel';
 import ConnectionHealthMonitor from '@/components/live/ConnectionHealthMonitor';
 import { useLivePageState } from '@/hooks/live/useLivePageState';
-import { useParticipantManagement } from '@/hooks/live/useParticipantManagement';
+import { useSimplifiedParticipantManagement } from '@/hooks/live/useSimplifiedParticipantManagement';
 import { useQRCodeGeneration } from '@/hooks/live/useQRCodeGeneration';
 import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
-import { useDesktopWebRTCStability } from '@/hooks/live/useDesktopWebRTCStability';
-import { useMobileWebRTCStability } from '@/hooks/live/useMobileWebRTCStability';
+// Removido: Sistemas de estabilidade conflitantes substituídos por useRobustWebRTC
+import { useRobustWebRTC } from '@/hooks/live/useRobustWebRTC';
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
@@ -40,14 +40,12 @@ const LivePage: React.FC = () => {
   // Initialize centralized video display manager
   useStreamDisplayManager();
 
-  // PLANO IMPLEMENTADO: Sistemas separados para desktop e mobile
-  const isDesktop = !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  
-  // DESKTOP: Sistema assertivo de 3s máximo
-  const desktopStability = isDesktop ? useDesktopWebRTCStability(new Map()) : null;
-  
-  // MOBILE: Sistema simples e confiável
-  const mobileStability = !isDesktop ? useMobileWebRTCStability() : null;
+  // SISTEMA ROBUSTO: WebRTC unificado para desktop
+  const {
+    connectionState,
+    initializeAsHost,
+    forceReset
+  } = useRobustWebRTC(state.sessionId, true);
 
   // Environment detection and WebRTC management
   useEffect(() => {
@@ -59,23 +57,10 @@ const LivePage: React.FC = () => {
     clearConnectionCache();
     clearDeviceCache();
 
-    // HOST-SPECIFIC: Setup WebRTC loop breaking listeners
+    // SISTEMA ROBUSTO: Handler único para reset
     const handleForceReset = () => {
-      console.log('🔄 LIVE PAGE HOST: Force WebRTC reset requested');
-      try {
-        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
-          const manager = getWebRTCManager();
-          if (manager) {
-            manager.cleanup();
-            toast({
-              title: "Conexão Resetada",
-              description: "WebRTC foi reinicializado com sucesso.",
-            });
-          }
-        });
-      } catch (error) {
-        console.error('❌ LIVE PAGE: Reset failed:', error);
-      }
+      console.log('🔥 LIVE PAGE: Force reset triggered');
+      forceReset();
     };
 
     const handleLoopBreak = () => {
@@ -96,49 +81,9 @@ const LivePage: React.FC = () => {
       }
     };
 
-    // Desktop-specific event handlers for improved stability
-    const handleDesktopForceReset = () => {
-      console.log('🖥️ LIVE PAGE: Desktop force reset triggered');
-      try {
-        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
-          const manager = getWebRTCManager();
-          if (manager) {
-            manager.resetWebRTC();
-          }
-        });
-        if (desktopStability) desktopStability.forceDesktopReset();
-        toast({
-          title: "🖥️ Desktop Reset",
-          description: "WebRTC connections reset for desktop stability.",
-        });
-      } catch (error) {
-        console.error('❌ LIVE PAGE: Desktop reset failed:', error);
-      }
-    };
-
-    const handleDesktopBreakLoops = () => {
-      console.log('🚫 LIVE PAGE: Desktop break loops triggered');
-      try {
-        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
-          const manager = getWebRTCManager();
-          if (manager && typeof manager.breakConnectionLoop === 'function') {
-            manager.breakConnectionLoop();
-          }
-        });
-        toast({
-          title: "🚫 Loops Broken",
-          description: "Desktop connection loops resolved.",
-        });
-      } catch (error) {
-        console.error('❌ LIVE PAGE: Desktop loop break failed:', error);
-      }
-    };
-
-    // Add event listeners for WebRTC control
-    window.addEventListener('force-webrtc-reset', handleForceReset);
+    // SISTEMA ROBUSTO: Event listener único
+    window.addEventListener('webrtc-force-reset', handleForceReset);
     window.addEventListener('break-webrtc-loop', handleLoopBreak);
-    window.addEventListener('desktop-force-reset', handleDesktopForceReset);
-    window.addEventListener('desktop-break-loops', handleDesktopBreakLoops);
 
     // Executar diagnósticos críticos na primeira carga - TEMPORARIAMENTE DESABILITADO
     // const runInitialDiagnostics = async () => {
@@ -169,12 +114,44 @@ const LivePage: React.FC = () => {
 
     // Cleanup listeners on unmount
     return () => {
-      window.removeEventListener('force-webrtc-reset', handleForceReset);
+      window.removeEventListener('webrtc-force-reset', handleForceReset);
       window.removeEventListener('break-webrtc-loop', handleLoopBreak);
-      window.removeEventListener('desktop-force-reset', handleDesktopForceReset);
-      window.removeEventListener('desktop-break-loops', handleDesktopBreakLoops);
     };
-  }, [toast]);
+  }, [toast, forceReset]);
+
+  // SISTEMA ROBUSTO: Inicializar host WebRTC
+  useEffect(() => {
+    const initializeHost = async () => {
+      if (!state.sessionId) return;
+      
+      console.log('🔧 ROBUST HOST: Initializing for session:', state.sessionId);
+      
+      try {
+        await initializeAsHost(state.sessionId);
+        console.log('✅ ROBUST HOST: Initialized successfully');
+        
+        toast({
+          title: "Host Inicializado",
+          description: "Sistema pronto para receber participantes",
+        });
+        
+      } catch (error) {
+        console.error('❌ ROBUST HOST: Failed to initialize:', error);
+        toast({
+          title: "Erro de Inicialização",
+          description: "Falha ao inicializar como host",
+          variant: "destructive",
+        });
+      }
+    };
+
+    initializeHost();
+  }, [state.sessionId, initializeAsHost, toast]);
+
+  // SISTEMA ROBUSTO: Log do estado de conexão
+  useEffect(() => {
+    console.log('📊 LIVE PAGE: Connection state:', connectionState);
+  }, [connectionState]);
 
   // ENHANCED: Transmission participants update with debugging and cache management
   const updateTransmissionParticipants = () => {
@@ -220,7 +197,7 @@ const LivePage: React.FC = () => {
     }
   };
 
-  const participantManagement = useParticipantManagement({
+  const participantManagement = useSimplifiedParticipantManagement({
     participantList: state.participantList,
     setParticipantList: state.setParticipantList,
     participantStreams: state.participantStreams,
