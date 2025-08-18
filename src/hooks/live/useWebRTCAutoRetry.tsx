@@ -17,42 +17,64 @@ export const useWebRTCAutoRetry = ({
 }: UseWebRTCAutoRetryProps) => {
   const retryAttempts = useRef(new Map<string, number>());
   const retryTimeouts = useRef(new Map<string, NodeJS.Timeout>());
-  const maxRetries = 5;
+  const lastConnectionAttempt = useRef(new Map<string, number>());
+  const circuitBreaker = useRef(new Map<string, boolean>());
+  const maxRetries = 3; // Reduzido para evitar loops
+  const GRACE_PERIOD = 45000; // 45s antes do primeiro retry
 
   const executeRetry = useCallback(async (participantId: string, strategy: 'soft' | 'hard' = 'soft') => {
     const currentAttempts = retryAttempts.current.get(participantId) || 0;
+    const lastAttempt = lastConnectionAttempt.current.get(participantId) || 0;
+    const now = Date.now();
+    
+    // Circuit breaker: bloquear se muitos retries
+    if (circuitBreaker.current.get(participantId)) {
+      console.warn(`🚫 RETRY BLOQUEADO: Circuit breaker ativo para ${participantId}`);
+      return false;
+    }
+    
+    // Grace period: aguardar antes do primeiro retry
+    if (currentAttempts === 0 && (now - lastAttempt) < GRACE_PERIOD) {
+      const remaining = Math.round((GRACE_PERIOD - (now - lastAttempt)) / 1000);
+      console.log(`⏳ GRACE PERIOD: Aguardando ${remaining}s antes do retry para ${participantId}`);
+      return false;
+    }
     
     if (currentAttempts >= maxRetries) {
-      console.error(`❌ FASE 4: Max retries (${maxRetries}) atingido para ${participantId}`);
+      console.error(`❌ AUTO-RETRY: Max retries (${maxRetries}) atingido para ${participantId} - ativando circuit breaker`);
+      circuitBreaker.current.set(participantId, true);
+      
+      // Reset circuit breaker após 5 minutos
+      setTimeout(() => {
+        circuitBreaker.current.set(participantId, false);
+        retryAttempts.current.set(participantId, 0);
+        console.log(`🔄 CIRCUIT BREAKER: Reset para ${participantId} após 5min`);
+      }, 300000);
+      
       return false;
     }
 
     retryAttempts.current.set(participantId, currentAttempts + 1);
-    console.log(`🔄 FASE 4: Retry ${currentAttempts + 1}/${maxRetries} para ${participantId} (${strategy})`);
+    console.log(`🔄 AUTO-RETRY: Tentativa ${currentAttempts + 1}/${maxRetries} para ${participantId} (${strategy})`);
 
     try {
       if (strategy === 'hard') {
-        // Hard retry: recriar conexão WebRTC completamente
-        console.log(`🔥 FASE 4: Hard retry - recriando WebRTC para ${participantId}`);
+        console.log(`🔥 AUTO-RETRY: Hard retry - reset completo para ${participantId}`);
         
-        // Limpar estado existente
         const event = new CustomEvent('force-webrtc-reset', {
           detail: { participantId }
         });
         window.dispatchEvent(event);
         
-        // Aguardar limpeza
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // Reinicializar
         const retryEvent = new CustomEvent('force-webrtc-reinit', {
           detail: { participantId, sessionId }
         });
         window.dispatchEvent(retryEvent);
         
       } else {
-        // Soft retry: tentar reestabelecer conexão existente
-        console.log(`🔄 FASE 4: Soft retry - reestabelecendo conexão para ${participantId}`);
+        console.log(`🔄 AUTO-RETRY: Soft retry para ${participantId}`);
         
         const retryEvent = new CustomEvent('force-webrtc-retry', {
           detail: { participantId }
@@ -62,7 +84,7 @@ export const useWebRTCAutoRetry = ({
 
       return true;
     } catch (error) {
-      console.error(`❌ FASE 4: Erro no retry para ${participantId}:`, error);
+      console.error(`❌ AUTO-RETRY: Erro no retry para ${participantId}:`, error);
       return false;
     }
   }, [sessionId, maxRetries]);
@@ -85,24 +107,46 @@ export const useWebRTCAutoRetry = ({
   }, [executeRetry]);
 
   const monitorConnection = useCallback((participantId: string) => {
+    // Skip monitoring se circuit breaker ativo
+    if (circuitBreaker.current.get(participantId)) {
+      return;
+    }
+    
     const hasStream = !!participantStreams[participantId];
     const participant = participantList.find(p => p.id === participantId);
     const isActive = participant?.active;
+    const lastAttempt = lastConnectionAttempt.current.get(participantId) || 0;
+    const timeSinceLastAttempt = Date.now() - lastAttempt;
 
-    console.log(`🔍 FASE 4: Monitorando ${participantId}:`, {
+    console.log(`🔍 AUTO-RETRY: Monitorando ${participantId}:`, {
       hasStream,
       isActive,
+      timeSinceLastAttempt: Math.round(timeSinceLastAttempt/1000),
+      gracePeriod: GRACE_PERIOD/1000,
       streamId: participantStreams[participantId]?.id
     });
 
-    // Se participante está ativo mas não tem stream
+    // Registrar tentativa de conexão inicial
+    if (isActive && lastAttempt === 0) {
+      lastConnectionAttempt.current.set(participantId, Date.now());
+      console.log(`🎯 AUTO-RETRY: Registrando conexão inicial para ${participantId}`);
+      return;
+    }
+
+    // Aguardar grace period antes de qualquer retry
+    if (timeSinceLastAttempt < GRACE_PERIOD) {
+      const remaining = Math.round((GRACE_PERIOD - timeSinceLastAttempt) / 1000);
+      console.log(`⏳ AUTO-RETRY: Grace period ativo para ${participantId} (${remaining}s restantes)`);
+      return;
+    }
+
+    // Se participante está ativo mas não tem stream após grace period
     if (isActive && !hasStream) {
       const timeSinceJoin = participant?.joinedAt ? Date.now() - participant.joinedAt : 0;
       
-      // Dar tempo para conexão normal (30 segundos)
-      if (timeSinceJoin > 30000) {
-        console.warn(`⚠️ FASE 4: Participante ${participantId} ativo há ${Math.round(timeSinceJoin/1000)}s sem stream`);
-        scheduleRetry(participantId, 'soft', 2000);
+      if (timeSinceJoin > GRACE_PERIOD) {
+        console.warn(`⚠️ AUTO-RETRY: ${participantId} sem stream após grace period`);
+        scheduleRetry(participantId, 'soft', 5000);
       }
     }
 
@@ -112,8 +156,8 @@ export const useWebRTCAutoRetry = ({
       const isStreamActive = stream.active && stream.getTracks().some(t => t.readyState === 'live');
       
       if (!isStreamActive) {
-        console.warn(`⚠️ FASE 4: Stream ${stream.id} para ${participantId} está inativo`);
-        scheduleRetry(participantId, 'hard', 5000);
+        console.warn(`⚠️ AUTO-RETRY: Stream inativo para ${participantId}`);
+        scheduleRetry(participantId, 'hard', 10000);
       }
     }
   }, [participantStreams, participantList, scheduleRetry]);
@@ -121,14 +165,14 @@ export const useWebRTCAutoRetry = ({
   useEffect(() => {
     console.log('🤖 FASE 4: Configurando Auto-Retry System');
 
-    // Monitor periódico de conexões
+    // Monitor periódico menos agressivo
     const monitorInterval = setInterval(() => {
       participantList.forEach(participant => {
         if (participant.active) {
           monitorConnection(participant.id);
         }
       });
-    }, 10000); // Verificar a cada 10 segundos
+    }, 20000); // Verificar a cada 20 segundos (menos agressivo)
 
     // Listeners para falhas de conexão
     const handleConnectionFailure = (event: CustomEvent) => {

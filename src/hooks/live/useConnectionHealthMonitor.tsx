@@ -33,7 +33,7 @@ export const useConnectionHealthMonitor = ({
   const monitorInterval = useRef<NodeJS.Timeout | null>(null);
   const failureCount = useRef(0);
 
-  // ETAPA 4: Monitor de saúde da conexão
+  // ETAPA 4: Monitor de saúde menos agressivo
   const checkConnectionHealth = useCallback(() => {
     const health = healthRef.current;
     const now = Date.now();
@@ -47,11 +47,11 @@ export const useConnectionHealthMonitor = ({
     health.participantConnected = hasParticipants;
     health.streamActive = hasActiveStreams;
     
-    // Determinar qualidade da conexão
-    if (hasParticipants && hasActiveStreams && timeSinceLastActivity < 30000) {
+    // Determinar qualidade da conexão com timings mais lenientes
+    if (hasParticipants && hasActiveStreams && timeSinceLastActivity < 60000) { // Aumentado para 60s
       health.quality = 'good';
       failureCount.current = 0;
-    } else if (hasParticipants && timeSinceLastActivity < 60000) {
+    } else if (hasParticipants && timeSinceLastActivity < 120000) { // Aumentado para 120s
       health.quality = 'poor';
       failureCount.current++;
     } else {
@@ -59,25 +59,26 @@ export const useConnectionHealthMonitor = ({
       failureCount.current++;
     }
     
-    // Alertas de saúde
+    // Alertas de saúde menos agressivos
     if (isHost) {
-      if (health.quality === 'failed' && failureCount.current >= 3) {
+      // Só alertar após falhas consistentes por mais tempo
+      if (health.quality === 'failed' && failureCount.current >= 5) { // Aumentado threshold
         toast({
           title: "⚠️ Problema de Conexão",
-          description: "Nenhum participante conectado há mais de 1 minuto",
+          description: "Nenhum participante conectado há mais de 2 minutos",
           variant: "destructive"
         });
-      } else if (health.quality === 'poor' && failureCount.current >= 2) {
+      } else if (health.quality === 'poor' && failureCount.current >= 4) { // Aumentado threshold
         toast({
           title: "📶 Conexão Instável",
-          description: "Participante conectado mas sem stream ativo",
+          description: "Participante conectado mas sem stream ativo há mais de 1 minuto",
           variant: "destructive"
         });
       }
     }
     
-    // Log detalhado a cada 30s
-    if (now % 30000 < 5000) {
+    // Log detalhado menos frequente
+    if (now % 60000 < 5000) { // A cada 60s em vez de 30s
       console.log('📊 HEALTH MONITOR:', {
         quality: health.quality,
         participantConnected: health.participantConnected,
@@ -126,7 +127,7 @@ export const useConnectionHealthMonitor = ({
     
     monitorInterval.current = setInterval(() => {
       checkConnectionHealth();
-    }, 10000); // Check a cada 10s
+    }, 30000); // Check a cada 30s (menos agressivo)
     
     return () => {
       if (monitorInterval.current) {

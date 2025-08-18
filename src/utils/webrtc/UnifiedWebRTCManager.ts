@@ -4,6 +4,7 @@ import { SignalingHandler } from './SignalingHandler';
 import { ParticipantManager } from './ParticipantManager';
 import { WebRTCCallbacks } from './WebRTCCallbacks';
 import { MEDIA_CONSTRAINTS } from './WebRTCConfig';
+import { assessDesktopConnections } from './assessDesktopConnections';
 
 interface ConnectionState {
   websocket: 'disconnected' | 'connecting' | 'connected' | 'failed';
@@ -25,10 +26,12 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   multiplier: 1.5
 };
 
-// DESKTOP: Timeouts definitivos para evitar loops
+// DESKTOP: Timeouts realistas para WebRTC
 const DESKTOP_TIMEOUTS = {
-  connectionTimeout: 2000,     // 2s max conexão
-  forceCleanup: 2000          // 2s força limpeza
+  connectionTimeout: 15000,    // 15s para negociação WebRTC
+  forceCleanup: 20000,         // 20s antes de força limpeza  
+  healthCheckInterval: 30000,  // 30s entre checks de saúde
+  retryGracePeriod: 45000      // 45s grace period antes do primeiro retry
 };
 
 export class UnifiedWebRTCManager {
@@ -79,7 +82,6 @@ export class UnifiedWebRTCManager {
     this.detectMobile();
     this.initializeComponents();
     this.setupHealthMonitoring();
-    this.cleanupExistingConnections();
   }
 
   private detectMobile() {
@@ -705,58 +707,31 @@ export class UnifiedWebRTCManager {
     this.connectionMetrics.set(participantId, { ...existing, ...metrics, lastUpdate: Date.now() });
   }
 
-  private setupHealthMonitoring() {
-    console.log('🖥️ [WRTC] Setting up desktop-optimized health monitoring');
-    
-    // Desktop health check every 5 seconds with immediate loop breaking
-    this.healthCheckInterval = setInterval(() => {
-      const now = Date.now();
-      
-      // Desktop-optimized connection monitoring
-      this.peerConnections.forEach((pc, participantId) => {
-        const metrics = this.connectionMetrics.get(participantId);
-        const state = pc.connectionState;
-        const iceState = pc.iceConnectionState;
+  private setupHealthMonitoring(): void {
+    // DESKTOP: Health monitoring menos agressivo
+    if (this.isDesktop && !this.healthCheckInterval) {
+      this.healthCheckInterval = setInterval(() => {
+        // Só fazer health check se não estivermos em negociação inicial
+        const now = Date.now();
+        const hasRecentlyStarted = this.peerConnections.size > 0 && 
+          Array.from(this.peerConnections.values()).some(pc => 
+            pc.connectionState === 'connecting' || pc.connectionState === 'new'
+          );
         
-        if ((state === 'connecting' || iceState === 'checking') && metrics?.connectionStartTime) {
-          const connectingTime = now - metrics.connectionStartTime;
-          
-          // Desktop: immediate loop detection after 2 seconds
-          if (connectingTime > DESKTOP_TIMEOUTS.forceCleanup) {
-            console.warn(`🚫 [DESKTOP HEALTH] Connection loop detected: ${participantId} (${connectingTime}ms) - FORCE CLOSING`);
-            
-            // Immediate force close for desktop
-            try {
-              pc.close();
-              this.peerConnections.delete(participantId);
-              this.connectionMetrics.delete(participantId);
-              
-              // Clear connection timeout
-              const timeout = this.connectionTimeouts.get(participantId);
-              if (timeout) {
-                clearTimeout(timeout);
-                this.connectionTimeouts.delete(participantId);
-              }
-              
-              console.log(`🔥 [DESKTOP HEALTH] Force closed loop connection: ${participantId}`);
-              
-              // Dispatch loop detection event
-              window.dispatchEvent(new CustomEvent('desktop-webrtc-loop-broken', {
-                detail: { participantId, connectingTime, method: 'health_monitor' }
-              }));
-              
-            } catch (error) {
-              console.error(`❌ [DESKTOP HEALTH] Error force closing ${participantId}:`, error);
-            }
-          }
+        if (!hasRecentlyStarted) {
+          assessDesktopConnections(this.peerConnections, this.connectionMetrics, this.connectionTimeouts);
+        } else {
+          console.log('🩺 DESKTOP: Pulando health check - negociação em andamento');
         }
-      });
-    }, 5000); // 5 second monitoring for desktop
+      }, DESKTOP_TIMEOUTS.healthCheckInterval); // 30s intervals
+      
+      console.log('🩺 DESKTOP: Health monitoring ativado (30s intervals com grace period)');
+    }
   }
 
-  private cleanupExistingConnections(): void {
-    // Clean up any existing connections
-    console.log('🧹 Cleaning up existing connections');
+  // Método agora usa função importada para melhor modularidade
+  private assessDesktopConnections(): void {
+    assessDesktopConnections(this.peerConnections, this.connectionMetrics, this.connectionTimeouts);
   }
 
   private setupWebSocketCallbacks(): void {
