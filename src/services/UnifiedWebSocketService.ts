@@ -641,7 +641,7 @@ this.socket.on('ice-servers', (data) => {
     });
     console.log(`[WS-SEND] webrtc-offer roomId=${this.currentRoomId} from=${this.currentUserId} to=${targetUserId} sdpLen=${sdp?.length || 0}`);
 
-    this.socket?.emit('offer', legacyMessage);
+    this.socket?.emit('webrtc-offer', legacyMessage);
   }
 
   sendWebRTCAnswer(targetUserId: string, sdp: string, type: string): void {
@@ -669,7 +669,7 @@ this.socket.on('ice-servers', (data) => {
     });
     console.log(`[WS-SEND] webrtc-answer roomId=${this.currentRoomId} from=${this.currentUserId} to=${targetUserId} sdpLen=${sdp?.length || 0}`);
 
-    this.socket?.emit('answer', legacyMessage);
+    this.socket?.emit('webrtc-answer', legacyMessage);
   }
 
   sendWebRTCCandidate(targetUserId: string, candidate: RTCIceCandidate): void {
@@ -699,7 +699,7 @@ this.socket.on('ice-servers', (data) => {
     });
     console.log(`[WS-SEND] webrtc-candidate roomId=${this.currentRoomId} from=${this.currentUserId} to=${targetUserId}`);
 
-    this.socket?.emit('ice-candidate', legacyMessage);
+    this.socket?.emit('webrtc-candidate', legacyMessage);
   }
 
   // FASE F: Solicitar offer do participante com RETRY
