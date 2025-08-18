@@ -177,40 +177,51 @@ export const useParticipantManagement = ({
 
   // Set up WebRTC callbacks APÓS o registro da ponte
   useEffect(() => {
-    console.log('🔧 WEBRTC DEBUG: ===== CONFIGURANDO CALLBACKS =====');
-    console.log('🔧 WEBRTC DEBUG: SessionId:', sessionId);
-    console.log('🔧 WEBRTC DEBUG: IsHost:', isHost);
-    
-    // ETAPA 5: Logs de validação
-    if (isHost) {
-      console.log('✅ CRÍTICO: Host role confirmado - IsHost: true');
-    } else {
-      console.log('❌ CRÍTICO: Host role incorreto - IsHost: false');
-    }
-    
-    // Clear cache on session change
     if (sessionId) {
-      console.log('🧹 WEBRTC DEBUG: Limpando cache para nova sessão');
-      clearConnectionCache();
-      clearDeviceCache();
+      // 🚀 CORREÇÃO CRÍTICA: Registrar callbacks apenas uma vez por sessionId
+      console.log('🔄 Configurando callbacks WebRTC para sessão:', sessionId);
+      
+      const streamCallback = (participantId: string, stream: MediaStream) => {
+        console.log('🎥 Stream recebido do participante:', participantId);
+        setParticipantStreams(prev => {
+          if (prev[participantId]) {
+            console.log('⚠️ Stream já existe para participante:', participantId);
+            return prev;
+          }
+          return { ...prev, [participantId]: stream };
+        });
+        updateTransmissionParticipants();
+      };
+
+      const joinCallback = (participantId: string) => {
+        console.log('👤 Participante entrou na sessão:', participantId);
+        const newParticipant: Participant = {
+          id: participantId,
+          name: `Participante ${participantId.slice(-4)}`,
+          joinedAt: Date.now(),
+          lastActive: Date.now(),
+          active: true,
+          selected: false,
+          hasVideo: false,
+          isMobile: false
+        };
+
+        setParticipantList(prev => {
+          const existing = prev.find(p => p.id === participantId);
+          if (existing) {
+            console.log('⚠️ Participante já existe na lista:', participantId);
+            return prev;
+          }
+          return [...prev, newParticipant];
+        });
+      };
+
+      setStreamCallback(streamCallback);
+      setParticipantJoinCallback(joinCallback);
+      
+      console.log('✅ Callbacks WebRTC configurados com sucesso');
     }
-    
-    console.log('🔧 WEBRTC DEBUG: Registrando handleParticipantStreamDirect');
-    setStreamCallback(handleParticipantStreamDirect);
-    
-    console.log('🔧 WEBRTC DEBUG: Registrando handleParticipantJoin');
-    setParticipantJoinCallback(handleParticipantJoin);
-    
-    console.log('✅ WEBRTC DEBUG: Callbacks WebRTC registrados com sucesso');
-    
-    // Debug do estado atual
-    debugCurrentState();
-    
-    return () => {
-      console.log('🧹 WEBRTC DEBUG: Limpando callbacks WebRTC');
-      // CRÍTICO: window.hostStreamCallback deve persistir - NUNCA limpar
-    };
-  }, [sessionId, handleParticipantJoin, debugCurrentState, isHost]);
+  }, [sessionId, updateTransmissionParticipants]);
 
   const testConnection = () => {
     console.log('🧪 ENHANCED MANAGEMENT: Testing connection with cache clearing...');

@@ -29,12 +29,20 @@ export const useLivePageState = () => {
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   // 🚀 CORREÇÃO CRÍTICA: Gerar sessionId automaticamente na inicialização
-useEffect(() => {
-  if (sessionId) {
-    console.log('🚀 Iniciando WebRTC com sessionId:', sessionId);
-    initHostWebRTC(sessionId);
-  }
-}, [sessionId]);
+  useEffect(() => {
+    if (!sessionId) {
+      const newSessionId = generateSessionId();
+      console.log('🚀 Gerando novo sessionId:', newSessionId);
+      setSessionId(newSessionId);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (sessionId) {
+      console.log('🚀 Iniciando WebRTC com sessionId:', sessionId);
+      initHostWebRTC(sessionId);
+    }
+  }, [sessionId]);
 
   
   const [qrCodePosition, setQrCodePosition] = useState({ 

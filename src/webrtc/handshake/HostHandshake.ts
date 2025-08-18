@@ -214,21 +214,29 @@ class HostHandshakeManager {
         }
       });
 
-      // STEP 2: Drain buffered ICE candidates
+      // STEP 2: Aplicar ICE candidates em buffer de forma sequencial com logs detalhados
       const candidates = pendingCandidates.get(participantId) || [];
       if (candidates.length > 0) {
         const candidateStartTime = performance.now();
-        console.log(`[ICE] candidate buffered -> applying ${candidates.length} candidates for ${participantId}`);
+        console.log(`📤 Aplicando ${candidates.length} candidates em buffer para: ${participantId}`);
         
-        for (const candidate of candidates) {
-          await pc.addIceCandidate(candidate);
+        // 🚀 CORREÇÃO CRÍTICA: Aplicar candidates sequencialmente com delay para evitar race conditions
+        for (let i = 0; i < candidates.length; i++) {
+          try {
+            await pc.addIceCandidate(candidates[i]);
+            console.log(`✅ Candidate ${i+1}/${candidates.length} aplicado com sucesso para: ${participantId}`);
+            // Pequeno delay entre candidates para estabilidade
+            await new Promise(resolve => setTimeout(resolve, 10));
+          } catch (error) {
+            console.error(`❌ Erro ao aplicar candidate ${i+1} para ${participantId}:`, error);
+          }
         }
         pendingCandidates.delete(participantId);
         
         const candidateDuration = performance.now() - candidateStartTime;
-        console.log(`[ICE] candidate applied (${candidateDuration.toFixed(1)}ms)`);
+        console.log(`🧹 Buffer de candidates limpo para ${participantId} (${candidateDuration.toFixed(1)}ms)`);
       } else {
-        console.log(`[ICE] No buffered candidates for ${participantId}`);
+        console.log(`📝 Nenhum candidate em buffer para ${participantId}`);
       }
 
       // STEP 3: Create answer
@@ -268,18 +276,19 @@ class HostHandshakeManager {
     
     if (pc && pc.remoteDescription) {
       try {
+        // 🚀 CORREÇÃO CRÍTICA: Verificar se remote description está configurada antes de adicionar candidate
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        console.log(`[ICE] candidate applied immediately for ${participantId}`);
+        console.log(`✅ ICE candidate aplicado imediatamente para ${participantId}`);
       } catch (error) {
-        console.error(`[ICE] Failed to apply candidate for ${participantId}:`, error);
+        console.error(`❌ Erro ao aplicar ICE candidate para ${participantId}:`, error);
       }
     } else {
-      // Buffer the candidate if remote description isn't set yet
+      // Buffer candidate até remote description estar pronta
       if (!pendingCandidates.has(participantId)) {
         pendingCandidates.set(participantId, []);
       }
       pendingCandidates.get(participantId)!.push(new RTCIceCandidate(candidate));
-      console.log(`[ICE] candidate buffered for ${participantId} (total: ${pendingCandidates.get(participantId)!.length})`);
+      console.log(`📦 ICE candidate bufferizado para ${participantId} (total: ${pendingCandidates.get(participantId)!.length})`);
     }
   }
 
