@@ -159,15 +159,26 @@ class ParticipantHandshakeManager {
 
     // Receive answer from host
     unifiedWebSocketService.on('webrtc-answer', async (data: any) => {
-      const hostId = data?.fromUserId;
+      const hostId = data?.fromUserId || data?.fromSocketId;
       const answer = data?.answer;
 
+      console.log(`🚨 CRÍTICO [PART] Answer recebido do host`, {
+        hostId,
+        hasAnswer: !!answer,
+        dataKeys: Object.keys(data),
+        answerType: answer?.type,
+        answerSdpPreview: answer?.sdp?.substring(0, 100) + '...',
+        peerConnectionExists: !!this.peerConnection,
+        peerConnectionState: this.peerConnection?.connectionState,
+        signalingState: this.peerConnection?.signalingState
+      });
+
       if (!hostId || !answer?.sdp || !answer?.type) {
-        console.warn('⚠️ [PARTICIPANT] Invalid answer format:', data);
+        console.error('❌ [PARTICIPANT] Invalid answer format:', data);
         return;
       }
 
-      console.log(`[HOST] setRemoteDescription -> answer received from ${hostId}`);
+      console.log(`✅ [PART] setRemoteDescription -> answer received from ${hostId}`);
 
       if (!this.peerConnection) {
         console.warn('⚠️ [PARTICIPANT] Answer received without active PC');
@@ -353,11 +364,20 @@ class ParticipantHandshakeManager {
       
       console.log(`[PART] createOffer (${offerCreateDuration.toFixed(1)}ms) -> setLocalDescription (${setLocalDuration.toFixed(1)}ms)`);
 
-      // STEP 6: Send offer to host
+      // STEP 6: Send offer to host with detailed debugging
       const sendStartTime = performance.now();
-      unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type);
-      const sendDuration = performance.now() - sendStartTime;
+      console.log(`🚨 CRÍTICO [PART] Enviando offer para host ${hostId}`, {
+        sdp: offer.sdp?.substring(0, 100) + '...',
+        type: offer.type,
+        localStreamTracks: stream.getTracks().length,
+        peerConnectionState: this.peerConnection.connectionState,
+        signalingState: this.peerConnection.signalingState
+      });
       
+      unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type);
+      console.log(`✅ [PART] Offer enviado via WebSocket para ${hostId}`);
+      
+      const sendDuration = performance.now() - sendStartTime;
       const totalDuration = performance.now() - offerStartTime;
       console.log(`[PART] setLocalDescription -> offerSent (${sendDuration.toFixed(1)}ms) -> Total sequence: ${totalDuration.toFixed(1)}ms`);
 

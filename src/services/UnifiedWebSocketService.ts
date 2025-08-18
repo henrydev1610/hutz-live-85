@@ -407,19 +407,34 @@ this.socket.on('ice-servers', (data) => {
       this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-host-missing', { detail: data }));
     });
 
-    // ✅ CORREÇÃO: WebRTC events with consistent naming
+    // ✅ CORREÇÃO: WebRTC events with consistent naming - BOTH old and new
     this.socket.on('offer', (data) => {
-      console.log('📞 WS: Received offer, dispatching webrtc-offer event', data);
+      console.log('📞 WS: Received offer (legacy), dispatching webrtc-offer event', data);
+      this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-offer', { detail: data }));
+    });
+
+    this.socket.on('webrtc-offer', (data) => {
+      console.log('📞 WS: Received webrtc-offer (new), dispatching webrtc-offer event', data);
       this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-offer', { detail: data }));
     });
 
     this.socket.on('answer', (data) => {
-      console.log('📞 WS: Received answer, dispatching webrtc-answer event', data);
+      console.log('📞 WS: Received answer (legacy), dispatching webrtc-answer event', data);
+      this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-answer', { detail: data }));
+    });
+
+    this.socket.on('webrtc-answer', (data) => {
+      console.log('📞 WS: Received webrtc-answer (new), dispatching webrtc-answer event', data);
       this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-answer', { detail: data }));
     });
 
     this.socket.on('ice-candidate', (data) => {
-      console.log('📞 WS: Received candidate, dispatching webrtc-candidate event', data);
+      console.log('📞 WS: Received ice-candidate (legacy), dispatching webrtc-candidate event', data);
+      this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-candidate', { detail: data }));
+    });
+
+    this.socket.on('webrtc-candidate', (data) => {
+      console.log('📞 WS: Received webrtc-candidate (new), dispatching webrtc-candidate event', data);
       this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-candidate', { detail: data }));
     });
 

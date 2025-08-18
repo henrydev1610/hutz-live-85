@@ -210,15 +210,24 @@ class HostHandshakeManager {
   }
 
   async handleOfferFromParticipant(data: any): Promise<void> {
-    const { offer, participantId } = data;
+    const participantId = data.participantId || data.fromUserId || data.fromSocketId;
+    const offer = data.offer;
+    
+    console.log(`🚨 CRÍTICO [HOST] Offer recebido de participante`, {
+      participantId,
+      hasOffer: !!offer,
+      dataKeys: Object.keys(data),
+      offerType: offer?.type,
+      offerSdpPreview: offer?.sdp?.substring(0, 100) + '...'
+    });
     
     if (!offer || !participantId) {
-      console.error('[HOST] handleOfferFromParticipant: Missing offer or participantId');
+      console.error('❌ [HOST] handleOfferFromParticipant: Missing offer or participantId', data);
       return;
     }
 
     const handleStartTime = performance.now();
-    console.log(`[HOST] Processing offer from ${participantId}`);
+    console.log(`✅ [HOST] Processing offer from ${participantId}`);
 
     try {
       const pc = this.getOrCreatePC(participantId);
@@ -275,11 +284,20 @@ class HostHandshakeManager {
       
       console.log(`[HOST] createAnswer (${answerDuration.toFixed(1)}ms) -> setLocalDescription (${setLocalDuration.toFixed(1)}ms)`);
 
-      // STEP 5: Send answer
+      // STEP 5: Send answer with detailed debugging
       const sendStartTime = performance.now();
-      unifiedWebSocketService.sendWebRTCAnswer(participantId, answer.sdp!, answer.type);
-      const sendDuration = performance.now() - sendStartTime;
+      console.log(`🚨 CRÍTICO [HOST] Enviando answer para ${participantId}`, {
+        answerType: answer.type,
+        answerSdpPreview: answer.sdp?.substring(0, 100) + '...',
+        peerConnectionState: pc.connectionState,
+        signalingState: pc.signalingState,
+        receiversCount: pc.getReceivers().length
+      });
       
+      unifiedWebSocketService.sendWebRTCAnswer(participantId, answer.sdp!, answer.type);
+      console.log(`✅ [HOST] Answer enviado via WebSocket para ${participantId}`);
+      
+      const sendDuration = performance.now() - sendStartTime;
       const totalDuration = performance.now() - handleStartTime;
       console.log(`[HOST] answerSent (${sendDuration.toFixed(1)}ms) -> Total handshake: ${totalDuration.toFixed(1)}ms`);
 
