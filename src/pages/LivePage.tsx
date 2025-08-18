@@ -36,8 +36,27 @@ const LivePage: React.FC = () => {
     setFinalActionOpen: state.setFinalActionOpen
   });
 
-  // Initialize centralized video display manager
-  useStreamDisplayManager();
+  // ✅ ETAPA 1: INICIALIZAR STREAM DISPLAY MANAGER COM DEBUG
+  const streamDisplayManager = useStreamDisplayManager();
+  
+  // ✅ ETAPA 4: EXPOSER DEBUG FUNCTIONS GLOBALMENTE
+  useEffect(() => {
+    (window as any).__livePageDebug = {
+      ...streamDisplayManager,
+      participantCount: participantManagement ? participantManagement.getConnectionHealth?.() : null,
+      sessionInfo: {
+        sessionId: state.sessionId,
+        participantList: state.participantList,
+        participantStreams: state.participantStreams
+      }
+    };
+    
+    console.log('🔧 LIVE PAGE: Debug functions exposed to window.__livePageDebug');
+    
+    return () => {
+      delete (window as any).__livePageDebug;
+    };
+  }, [streamDisplayManager]);
 
   // ✅ CORREÇÃO CRÍTICA: Sistema WebRTC unificado via useParticipantManagement
   // Removidos sistemas conflitantes useDesktopWebRTCStability e useMobileWebRTCStability

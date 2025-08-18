@@ -105,32 +105,21 @@ export const useParticipantManagement = ({
 
   // REMOVIDO: Auto-handshake conflitante - Host só responde, nunca inicia
 
-  // SIMPLIFICADO: Stream handler direto sem camadas extras
-  const handleParticipantStreamDirect = async (participantId: string, stream: MediaStream) => {
-    console.log(`📹 DIRETO: Stream recebido ${participantId}`);
-    
-    // Processar diretamente com handleParticipantStream original
-    await handleParticipantStream(participantId, stream);
-    
-    // Update transmission sem delay
-    updateTransmissionParticipants();
-  };
+  // ✅ ETAPA 2: REMOVIDO handleParticipantStreamDirect - streams vão direto para StreamDisplayManager
+  // ❌ CALLBACK DUPLICADO REMOVIDO - apenas eventos centralizados
 
-  // ✅ CORREÇÃO: Sistema unificado de callbacks WebRTC sem duplicação
+  // ✅ ETAPA 2: SISTEMA UNIFICADO SEM CALLBACKS DUPLICADOS
   useEffect(() => {
     if (!isHost) return;
     
-    console.log('🎯 HOST: Setting up unified WebRTC system');
+    console.log('🎯 HOST: Setting up UNIFIED WebRTC system (NO DUPLICATES)');
     
-    // Single unified callback for receiving participant streams
-    setStreamCallback((participantId: string, stream: MediaStream) => {
-      console.log('🎬 HOST: Unified stream callback received:', participantId, stream.id);
-      handleParticipantStreamDirect(participantId, stream);
-    });
-
-    // Single callback to handle participant joining
+    // ❌ REMOVIDO: setStreamCallback duplicado - streams serão processados via eventos
+    // ❌ REMOVIDO: handleParticipantStreamDirect duplicado
+    
+    // ✅ APENAS callback para participant joining (sem stream processing)
     setParticipantJoinCallback((participantData: any) => {
-      console.log('👤 HOST: Unified participant join callback:', participantData);
+      console.log('👤 HOST: Participant join callback (UNIFIED):', participantData);
       
       const participant = {
         ...participantData,
@@ -178,12 +167,11 @@ export const useParticipantManagement = ({
 
     return () => {
       console.log('🧹 HOST: Cleaning up unified WebRTC system');
-      setStreamCallback(() => {});
       setParticipantJoinCallback(() => {});
       delete window.getParticipantStream;
       window.removeEventListener('participant-discovered', handleParticipantDiscovered);
     };
-  }, [isHost, handleParticipantStreamDirect, setParticipantList, participantStreams]);
+  }, [isHost, setParticipantList, participantStreams]);
 
   const testConnection = () => {
     console.log('🧪 ENHANCED MANAGEMENT: Testing connection with cache clearing...');
@@ -211,7 +199,7 @@ export const useParticipantManagement = ({
     navigator.mediaDevices.getUserMedia({ video: true, audio: false })
       .then(stream => {
         console.log('✅ ENHANCED MANAGEMENT: Test stream obtained');
-        handleParticipantStreamDirect(testParticipant.id, stream);
+        handleParticipantStream(testParticipant.id, stream);
         
         setTimeout(() => {
           stream.getTracks().forEach(track => track.stop());
@@ -232,7 +220,7 @@ export const useParticipantManagement = ({
     handleParticipantSelect,
     handleParticipantRemove,
     handleParticipantJoin,
-    handleParticipantStream: handleParticipantStreamDirect,
+    handleParticipantStream,
     testConnection,
     transferStreamToTransmission,
     

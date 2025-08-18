@@ -23,10 +23,64 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const { createVideoElementUnified } = useUnifiedVideoCreation();
   
-  const containerId = `unified-video-${participant.id}`;
+  // ✅ ETAPA 3: CONTAINER COM MÚLTIPLOS IDs PADRONIZADOS
+  const containerId = `video-container-${participant.id}`;
+  const unifiedVideoId = `unified-video-${participant.id}`;
+  
+  // ✅ ETAPA 4: ENSURE CONTAINER HAS STANDARDIZED IDs
+  useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.id = containerId;
+      containerRef.current.setAttribute('data-participant-id', participant.id);
+      containerRef.current.setAttribute('data-video-container', 'true');
+      
+      // Also add unified video ID as class for compatibility
+      containerRef.current.classList.add(`unified-video-${participant.id}`);
+      
+      console.log(`📦 UNIFIED CONTAINER: IDs set for ${participant.id}`, {
+        containerId,
+        unifiedVideoId,
+        hasRef: !!containerRef.current
+      });
+    }
+  }, [participant.id, containerId, unifiedVideoId]);
+
+  // ✅ ETAPA 1: ENHANCED VIDEO DISPLAY EVENT LISTENER
+  useEffect(() => {
+    const handleVideoDisplayReady = (event: CustomEvent) => {
+      const { participantId, success, error } = event.detail;
+      
+      if (participantId === participant.id) {
+        console.log(`🎥 UNIFIED CONTAINER: Video display event for ${participantId}`, { success, error });
+        
+        if (success) {
+          setIsVideoReady(true);
+          setError(null);
+          console.log(`✅ UNIFIED CONTAINER: Video display ready for ${participant.id}`);
+        } else {
+          setError(error || 'Video display failed');
+          console.error(`❌ UNIFIED CONTAINER: Video display failed for ${participant.id}:`, error);
+        }
+      }
+    };
+
+    // Listen for both event types for redundancy
+    const eventTypes = ['video-display-ready', 'participant-stream-received'];
+    eventTypes.forEach(eventType => {
+      window.addEventListener(eventType, handleVideoDisplayReady as EventListener);
+    });
+    
+    return () => {
+      eventTypes.forEach(eventType => {
+        window.removeEventListener(eventType, handleVideoDisplayReady as EventListener);
+      });
+    };
+  }, [participant.id]);
+
+  // ✅ ETAPA 4: MOBILE DETECTION WITH DEBUGGING
   const isMobile = participant.isMobile ?? detectMobileAggressively();
   
-  // FASE 5: STATUS VISUAL EM TEMPO REAL
+  // ✅ ETAPA 5: STATUS VISUAL EM TEMPO REAL
   const { 
     status, 
     statusText, 
@@ -41,37 +95,6 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
     stream
   });
 
-  // Listen for centralized video display events
-  useEffect(() => {
-    const handleVideoDisplayReady = (event: CustomEvent) => {
-      const { participantId, success, error } = event.detail;
-      
-      if (participantId === participant.id) {
-        if (success) {
-          setIsVideoReady(true);
-          setError(null);
-          console.log(`✅ UNIFIED CONTAINER: Video display ready for ${participant.id}`);
-        } else {
-          setError(error || 'Video display failed');
-          console.error(`❌ UNIFIED CONTAINER: Video display failed for ${participant.id}:`, error);
-        }
-      }
-    };
-
-    window.addEventListener('video-display-ready', handleVideoDisplayReady as EventListener);
-    
-    return () => {
-      window.removeEventListener('video-display-ready', handleVideoDisplayReady as EventListener);
-    };
-  }, [participant.id]);
-
-  // Update container ID to match standardized format
-  useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.id = `video-container-${participant.id}`;
-    }
-  }, [participant.id]);
-
   // Video creation is now handled by the centralized StreamDisplayManager
   // This component only handles display state and UI
 
@@ -80,14 +103,20 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
       className="participant-video aspect-video bg-gray-800/60 rounded-md overflow-hidden relative"
       id={containerId}
       data-participant-id={participant.id}
+      data-video-container="true"
       style={{ 
         minHeight: '120px', 
         minWidth: '160px',
         backgroundColor: participant.hasVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
       }}
     >
-      {/* Main video container */}
-      <div ref={containerRef} className="w-full h-full relative" />
+      {/* ✅ ETAPA 3: MAIN VIDEO CONTAINER WITH MULTIPLE IDs FOR COMPATIBILITY */}
+      <div 
+        ref={containerRef} 
+        id={unifiedVideoId}
+        className="w-full h-full relative"
+        data-unified-video="true"
+      />
       
       {/* FASE 5: STATUS VISUAL EM TEMPO REAL - indicador unificado */}
       <div className="absolute top-1 right-1 bg-black/70 text-white text-xs px-2 py-1 rounded z-30">
