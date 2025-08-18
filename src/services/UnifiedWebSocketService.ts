@@ -65,6 +65,9 @@ class UnifiedWebSocketService {
     const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
     if (DEBUG) console.log('🔧 [WS] Service initialized');
     this.detectNetworkQuality();
+    
+    // ✅ CORREÇÃO: Ativar debug logging automaticamente
+    this.enableDebugLogging();
   }
 
   // FASE 5: Network quality detection
@@ -404,29 +407,20 @@ this.socket.on('ice-servers', (data) => {
       this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-host-missing', { detail: data }));
     });
 
-    this.socket.on('offer', (data: { offer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
-      console.log('📞 OFFER received from:', data.fromUserId || data.fromSocketId);
-      console.log(`[WS-RECV] webrtc-offer roomId=${this.currentRoomId || 'unknown'} from=${data.fromUserId || 'unknown'} to=${this.currentUserId || 'unknown'}`);
-      // CRITICAL: Map to expected event name
+    // ✅ CORREÇÃO: WebRTC events with consistent naming
+    this.socket.on('offer', (data) => {
+      console.log('📞 WS: Received offer, dispatching webrtc-offer event', data);
       this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-offer', { detail: data }));
-      this.callbacks.onOffer?.(data);
     });
 
-    this.socket.on('answer', (data: { answer: RTCSessionDescriptionInit, fromUserId: string, fromSocketId: string }) => {
-      console.log('✅ ANSWER received from:', data.fromUserId || data.fromSocketId);
-      console.log(`[WS-RECV] webrtc-answer roomId=${this.currentRoomId || 'unknown'} from=${data.fromUserId || 'unknown'} to=${this.currentUserId || 'unknown'}`);
-      // CRITICAL: Map to expected event name
+    this.socket.on('answer', (data) => {
+      console.log('📞 WS: Received answer, dispatching webrtc-answer event', data);
       this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-answer', { detail: data }));
-      this.callbacks.onAnswer?.(data);
     });
 
-    this.socket.on('ice-candidate', (data: { candidate: RTCIceCandidate, fromUserId: string, fromSocketId: string }) => {
-      const candidateType = /typ (\w+)/.exec(data?.candidate?.candidate)?.[1] || 'unknown';
-      console.log(`ICE-CANDIDATE-RECV {type=${candidateType}}`);
-      console.log(`🧊 [WS] ICE candidate from: ${data.fromUserId || data.fromSocketId}`);
-      console.log(`[WS-RECV] webrtc-candidate roomId=${this.currentRoomId || 'unknown'} from=${data.fromUserId || 'unknown'} to=${this.currentUserId || 'unknown'}`);
+    this.socket.on('ice-candidate', (data) => {
+      console.log('📞 WS: Received candidate, dispatching webrtc-candidate event', data);
       this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-candidate', { detail: data }));
-      this.callbacks.onIceCandidate?.(data);
     });
 
     this.socket.on('stream-started', (participantId: string, streamInfo: any) => {
@@ -803,6 +797,34 @@ this.socket.on('ice-servers', (data) => {
   // FASE 1: Utilities
   private isMobileDevice(): boolean {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }
+
+  // ✅ ADICIONADO: Sistema de debug aprimorado para WebSocket
+  enableDebugLogging() {
+    console.log('🔧 WS: Debug logging enabled for WebSocket service');
+    
+    // Expose debug functions on window for manual inspection
+    window.wsDebug = {
+      getState: () => this.getConnectionMetrics(),
+      getStats: () => ({
+        isConnected: this.isConnected(),
+        reconnectAttempts: this.metrics.attemptCount,
+        socket: {
+          connected: this.socket?.connected,
+          id: this.socket?.id,
+          transport: this.socket?.io?.engine?.transport?.name
+        }
+      }),
+      forceReconnect: () => {
+        console.log('🔄 WS: Manual reconnect triggered');
+        this.socket?.disconnect();
+        this.connect();
+      },
+      resetService: () => {
+        console.log('🔄 WS: Manual service reset');
+        this.resetService();
+      }
+    };
   }
 
   // FASE 3: Métricas para debugging

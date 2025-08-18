@@ -13,6 +13,22 @@ interface Window {
   _fallbackChannels?: {
     [key: string]: BroadcastChannel;
   };
+  
+  // ✅ ADICIONADO: WebRTC and WebSocket debug properties
+  hostStreamCallback?: (participantId: string, stream: MediaStream) => void;
+  getParticipantStream?: (participantId: string) => MediaStream | null;
+  __mlStreams__?: Map<string, MediaStream>;
+  webrtcDebugUI?: {
+    forceReconnect: () => void;
+    getConnectionState: () => any;
+    clearWebRTCCache: () => void;
+  };
+  wsDebug?: {
+    getState: () => any;
+    getStats: () => any;
+    forceReconnect: () => void;
+    resetService: () => void;
+  };
 }
 
 // Define NodeJS namespace if it doesn't exist to fix Timeout type issues

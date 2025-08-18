@@ -116,112 +116,74 @@ export const useParticipantManagement = ({
     updateTransmissionParticipants();
   };
 
-  // ETAPA 1: Registrar window.hostStreamCallback ANTES de qualquer setup WebRTC
-  useEffect(() => {
-    if (isHost && typeof window !== 'undefined') {
-      console.log('HOST-CALLBACK-REGISTERED');
-      
-      // CRÍTICO: Inicializar registro de streams global como Map (consistente)
-      if (!window.__mlStreams__) {
-        window.__mlStreams__ = new Map();
-      }
-      console.log(`[HOST-CALLBACK-REGISTERED] __mlStreams__ initialized as Map, size=${window.__mlStreams__.size}`);
-      
-      // CALLBACK ÚNICO: Sem duplicação de processamento
-      window.hostStreamCallback = (participantId: string, stream: MediaStream) => {
-        console.log(`🎯 HOST-ÚNICO: ${participantId} stream=${stream.id}`);
-        
-        // Registrar stream
-        window.__mlStreams__.set(participantId, stream);
-        
-        // Processar uma única vez
-        handleParticipantStreamDirect(participantId, stream);
-      };
-      
-      // Getter para popup acessar o stream (Map)
-      window.getParticipantStream = (participantId: string) => {
-        const stream = window.__mlStreams__?.get(participantId) ?? null;
-        console.log(`[HOST-BRIDGE] getParticipantStream participantId=${participantId} found=${!!stream} mapSize=${window.__mlStreams__?.size || 0}`);
-        return stream;
-      };
-      
-      console.log('[HOST-CALLBACK-REGISTERED] Registration complete - callback will survive page lifecycle');
-    }
-  }, [isHost]);
-
-  // ETAPA 3: Lidar com detecção de participantes e solicitar offer IMEDIATAMENTE
+  // ✅ CORREÇÃO: Sistema unificado de callbacks WebRTC sem duplicação
   useEffect(() => {
     if (!isHost) return;
-
-    const handleParticipantDiscovered = (event: CustomEvent) => {
-      const { participantId } = event.detail;
-      console.log('🔍 DETECÇÃO: Participante descoberto:', participantId);
-      
-      // ETAPA 3: Solicitar offer IMEDIATAMENTE
-      setTimeout(() => {
-        console.log('🚀 CRÍTICO: Solicitando offer do participante:', participantId);
-        
-        // Importar e usar HostHandshake
-        import('@/webrtc/handshake/HostHandshake').then(({ requestOfferFromParticipant }) => {
-          requestOfferFromParticipant(participantId);
-        });
-      }, 100); // Delay mínimo de 100ms
-    };
-
-    window.addEventListener('participant-discovered', handleParticipantDiscovered as EventListener);
     
-    return () => {
-      window.removeEventListener('participant-discovered', handleParticipantDiscovered as EventListener);
+    console.log('🎯 HOST: Setting up unified WebRTC system');
+    
+    // Single unified callback for receiving participant streams
+    setStreamCallback((participantId: string, stream: MediaStream) => {
+      console.log('🎬 HOST: Unified stream callback received:', participantId, stream.id);
+      handleParticipantStreamDirect(participantId, stream);
+    });
+
+    // Single callback to handle participant joining
+    setParticipantJoinCallback((participantData: any) => {
+      console.log('👤 HOST: Unified participant join callback:', participantData);
+      
+      const participant = {
+        ...participantData,
+        selected: false,
+        hasVideo: false,
+        active: false
+      };
+
+      setParticipantList(prev => {
+        const existingIndex = prev.findIndex(p => p.id === participant.id);
+        if (existingIndex >= 0) {
+          console.log('🔄 HOST: Updating existing participant:', participant.id);
+          const updated = [...prev];
+          updated[existingIndex] = { ...updated[existingIndex], ...participant };
+          return updated;
+        } else {
+          console.log('➕ HOST: Adding new participant:', participant.id);
+          return [...prev, participant];
+        }
+      });
+    });
+
+    // Listen for participant discovery and request offers
+    const handleParticipantDiscovered = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { participantId } = customEvent.detail;
+      
+      console.log('🔍 HOST: Participant discovered:', participantId);
+      
+      // Request offer from discovered participant
+      import('@/webrtc/handshake/HostHandshake').then(({ requestOfferFromParticipant }) => {
+        console.log('📞 HOST: Requesting offer from participant:', participantId);
+        requestOfferFromParticipant(participantId);
+      });
     };
-  }, [isHost]);
 
-  // Set up WebRTC callbacks APÓS o registro da ponte
-  useEffect(() => {
-    if (sessionId) {
-      // 🚀 CORREÇÃO CRÍTICA: Registrar callbacks apenas uma vez por sessionId
-      console.log('🔄 Configurando callbacks WebRTC para sessão:', sessionId);
-      
-      const streamCallback = (participantId: string, stream: MediaStream) => {
-        console.log('🎥 Stream recebido do participante:', participantId);
-        setParticipantStreams(prev => {
-          if (prev[participantId]) {
-            console.log('⚠️ Stream já existe para participante:', participantId);
-            return prev;
-          }
-          return { ...prev, [participantId]: stream };
-        });
-        updateTransmissionParticipants();
-      };
+    // Set up global access for participant stream retrieval (single instance)
+    window.getParticipantStream = (participantId: string) => {
+      const stream = participantStreams[participantId];
+      console.log('📥 HOST: getParticipantStream requested for:', participantId, stream ? stream.id : 'not found');
+      return stream;
+    };
 
-      const joinCallback = (participantId: string) => {
-        console.log('👤 Participante entrou na sessão:', participantId);
-        const newParticipant: Participant = {
-          id: participantId,
-          name: `Participante ${participantId.slice(-4)}`,
-          joinedAt: Date.now(),
-          lastActive: Date.now(),
-          active: true,
-          selected: false,
-          hasVideo: false,
-          isMobile: false
-        };
+    window.addEventListener('participant-discovered', handleParticipantDiscovered);
 
-        setParticipantList(prev => {
-          const existing = prev.find(p => p.id === participantId);
-          if (existing) {
-            console.log('⚠️ Participante já existe na lista:', participantId);
-            return prev;
-          }
-          return [...prev, newParticipant];
-        });
-      };
-
-      setStreamCallback(streamCallback);
-      setParticipantJoinCallback(joinCallback);
-      
-      console.log('✅ Callbacks WebRTC configurados com sucesso');
-    }
-  }, [sessionId, updateTransmissionParticipants]);
+    return () => {
+      console.log('🧹 HOST: Cleaning up unified WebRTC system');
+      setStreamCallback(() => {});
+      setParticipantJoinCallback(() => {});
+      delete window.getParticipantStream;
+      window.removeEventListener('participant-discovered', handleParticipantDiscovered);
+    };
+  }, [isHost, handleParticipantStreamDirect, setParticipantList, participantStreams]);
 
   const testConnection = () => {
     console.log('🧪 ENHANCED MANAGEMENT: Testing connection with cache clearing...');

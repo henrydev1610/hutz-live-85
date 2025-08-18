@@ -12,8 +12,7 @@ import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
-import { useDesktopWebRTCStability } from '@/hooks/live/useDesktopWebRTCStability';
-import { useMobileWebRTCStability } from '@/hooks/live/useMobileWebRTCStability';
+// Removed conflicting WebRTC stability systems - now unified in useParticipantManagement
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
@@ -40,14 +39,9 @@ const LivePage: React.FC = () => {
   // Initialize centralized video display manager
   useStreamDisplayManager();
 
-  // PLANO IMPLEMENTADO: Sistemas separados para desktop e mobile
-  const isDesktop = !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  
-  // DESKTOP: Sistema assertivo de 3s máximo
-  const desktopStability = isDesktop ? useDesktopWebRTCStability(new Map()) : null;
-  
-  // MOBILE: Sistema simples e confiável
-  const mobileStability = !isDesktop ? useMobileWebRTCStability() : null;
+  // ✅ CORREÇÃO CRÍTICA: Sistema WebRTC unificado via useParticipantManagement
+  // Removidos sistemas conflitantes useDesktopWebRTCStability e useMobileWebRTCStability
+  console.log('🚀 LIVE PAGE: Using unified WebRTC system via useParticipantManagement');
 
   // Environment detection and WebRTC management
   useEffect(() => {
@@ -106,7 +100,7 @@ const LivePage: React.FC = () => {
             manager.resetWebRTC();
           }
         });
-        if (desktopStability) desktopStability.forceDesktopReset();
+        // Desktop stability now handled by unified system
         toast({
           title: "🖥️ Desktop Reset",
           description: "WebRTC connections reset for desktop stability.",
