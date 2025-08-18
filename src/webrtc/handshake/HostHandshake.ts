@@ -20,16 +20,23 @@ class HostHandshakeManager {
         ]
       });
 
-      // ENHANCED ontrack registration with comprehensive logging and immediate connection marking
+      // ✅ DIAGNÓSTICO CRÍTICO: ONTRACK com logs detalhados para debug
       pc.ontrack = (event) => {
         const ontrackTime = performance.now();
-        console.log(`🎥 ONTRACK: Event received from ${participantId}`, {
+        console.log(`🚨 DIAGNÓSTICO CRÍTICO: ONTRACK received from ${participantId}`, {
           trackKind: event.track.kind,
           trackId: event.track.id.substring(0, 8),
           streamCount: event.streams.length,
           trackReadyState: event.track.readyState,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          streamsAvailable: !!event.streams,
+          firstStreamActive: event.streams?.[0]?.active
         });
+        
+        // ✅ DIAGNÓSTICO: Verificar se chegamos aqui
+        window.dispatchEvent(new CustomEvent('debug-ontrack-fired', {
+          detail: { participantId, timestamp: Date.now() }
+        }));
         
         // IMMEDIATE CONNECTION MARKING - most reliable indicator
         console.log(`✅ ONTRACK: Marking ${participantId} as connected immediately`);
@@ -65,16 +72,33 @@ class HostHandshakeManager {
               }
             });
             
-            // Send stream to centralized display manager instead of direct DOM manipulation
-            console.log(`🎯 ONTRACK: Sending stream to display manager for ${participantId}`);
-            window.dispatchEvent(new CustomEvent('video-stream-ready', {
-              detail: { 
-                participantId, 
-                stream,
-                hasVideo: videoTracks.length > 0,
-                hasAudio: audioTracks.length > 0
+            // ✅ DIAGNÓSTICO CRÍTICO: STREAM DISPATCH PARA DISPLAY MANAGER
+            console.log(`🚨 DIAGNÓSTICO CRÍTICO: Dispatching video-stream-ready for ${participantId}`, {
+              streamId: stream.id.substring(0, 8),
+              streamActive: stream.active,
+              videoTracks: videoTracks.length,
+              audioTracks: audioTracks.length,
+              trackIds: [...videoTracks, ...audioTracks].map(t => t.id.substring(0, 8))
+            });
+            
+            // ✅ DIAGNÓSTICO: Múltiplos eventos para garantir recepção
+            const eventDetail = { 
+              participantId, 
+              stream,
+              hasVideo: videoTracks.length > 0,
+              hasAudio: audioTracks.length > 0,
+              debugInfo: {
+                source: 'HostHandshake.ontrack',
+                timestamp: Date.now(),
+                streamActive: stream.active
               }
-            }));
+            };
+            
+            window.dispatchEvent(new CustomEvent('video-stream-ready', { detail: eventDetail }));
+            window.dispatchEvent(new CustomEvent('participant-stream-received', { detail: eventDetail }));
+            window.dispatchEvent(new CustomEvent('debug-stream-dispatched', { detail: eventDetail }));
+            
+            console.log(`✅ DIAGNÓSTICO: Três eventos disparados para ${participantId}`);
           
           // Enhanced event dispatch with comprehensive details
           window.dispatchEvent(new CustomEvent('participant-stream-received', {

@@ -20,17 +20,26 @@ export const useStreamDisplayManager = () => {
     console.log('🚀 STREAM DISPLAY MANAGER: Initializing with enhanced debugging...');
     
     const handleVideoStreamReady = (event: CustomEvent) => {
-      const { participantId, stream, hasVideo, hasAudio } = event.detail;
+      const { participantId, stream, hasVideo, hasAudio, debugInfo } = event.detail;
       
-      console.log(`🎯 STREAM DISPLAY MANAGER: video-stream-ready event received`, {
+      console.log(`🚨 DIAGNÓSTICO CRÍTICO: STREAM DISPLAY MANAGER received event`, {
+        eventType: event.type,
         participantId,
         streamId: stream?.id?.substring(0, 8),
         hasVideo,
         hasAudio,
         streamActive: stream?.active,
         trackCount: stream?.getTracks()?.length,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        debugInfo,
+        queueLength: processingQueue.current.length,
+        isProcessing: isProcessing.current
       });
+      
+      // ✅ DIAGNÓSTICO: Confirmar recepção do evento
+      window.dispatchEvent(new CustomEvent('debug-stream-manager-received', {
+        detail: { participantId, eventType: event.type, timestamp: Date.now() }
+      }));
       
       if (!participantId || !stream) {
         console.error('❌ STREAM DISPLAY MANAGER: Invalid event data', { participantId, stream });
@@ -49,13 +58,19 @@ export const useStreamDisplayManager = () => {
       processQueue();
     };
 
-    // ✅ ETAPA 1: MÚLTIPLOS EVENT LISTENERS PARA GARANTIR CAPTURA
-    const eventTypes = ['video-stream-ready', 'participant-stream-received'];
+    // ✅ DIAGNÓSTICO CRÍTICO: MÚLTIPLOS EVENT LISTENERS COM DEBUG
+    const eventTypes = ['video-stream-ready', 'participant-stream-received', 'debug-stream-dispatched'];
     
     eventTypes.forEach(eventType => {
       window.addEventListener(eventType, handleVideoStreamReady as EventListener);
-      console.log(`✅ STREAM DISPLAY MANAGER: Registered listener for ${eventType}`);
+      console.log(`🚨 DIAGNÓSTICO: STREAM DISPLAY MANAGER registered listener for ${eventType}`);
     });
+    
+    // ✅ DIAGNÓSTICO: Adicionar listener para debug de ontrack
+    const handleOntrackFired = (event: CustomEvent) => {
+      console.log(`🚨 DIAGNÓSTICO: ontrack fired detected for ${event.detail.participantId}`);
+    };
+    window.addEventListener('debug-ontrack-fired', handleOntrackFired as EventListener);
     
     // ✅ ETAPA 4: SISTEMA DE HEARTBEAT PARA DEBUG
     heartbeatInterval.current = setInterval(() => {
@@ -87,6 +102,8 @@ export const useStreamDisplayManager = () => {
       eventTypes.forEach(eventType => {
         window.removeEventListener(eventType, handleVideoStreamReady as EventListener);
       });
+      
+      window.removeEventListener('debug-ontrack-fired', handleOntrackFired as EventListener);
       
       if (heartbeatInterval.current) {
         clearInterval(heartbeatInterval.current);

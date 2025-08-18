@@ -36,27 +36,53 @@ const LivePage: React.FC = () => {
     setFinalActionOpen: state.setFinalActionOpen
   });
 
-  // ✅ ETAPA 1: INICIALIZAR STREAM DISPLAY MANAGER COM DEBUG
+  // ✅ DIAGNÓSTICO CRÍTICO: INICIALIZAR STREAM DISPLAY MANAGER 
   const streamDisplayManager = useStreamDisplayManager();
   
-  // ✅ ETAPA 4: EXPOSER DEBUG FUNCTIONS GLOBALMENTE
+  // ✅ DIAGNÓSTICO CRÍTICO: DEBUG COMPLETO + LISTENERS EXTRAS
   useEffect(() => {
+    console.log(`🚨 DIAGNÓSTICO CRÍTICO: LivePage initialized with sessionId: ${state.sessionId}`);
+    
+    // ✅ DIAGNÓSTICO: Listeners para todos os eventos de debug
+    const debugListeners = {
+      'debug-ontrack-fired': (e: CustomEvent) => console.log('🚨 LIVE PAGE: ontrack fired detected', e.detail),
+      'debug-stream-dispatched': (e: CustomEvent) => console.log('🚨 LIVE PAGE: stream dispatched detected', e.detail),
+      'debug-stream-manager-received': (e: CustomEvent) => console.log('🚨 LIVE PAGE: stream manager received', e.detail),
+      'video-display-ready': (e: CustomEvent) => console.log('🚨 LIVE PAGE: video display ready', e.detail)
+    };
+    
+    Object.entries(debugListeners).forEach(([event, handler]) => {
+      window.addEventListener(event, handler as EventListener);
+    });
+    
     (window as any).__livePageDebug = {
       ...streamDisplayManager,
-      participantCount: participantManagement ? participantManagement.getConnectionHealth?.() : null,
+      participantCount: state.participantList.length,
+      activeStreams: Object.keys(state.participantStreams).length,
       sessionInfo: {
         sessionId: state.sessionId,
         participantList: state.participantList,
         participantStreams: state.participantStreams
+      },
+      // ✅ DIAGNÓSTICO: Função para testar fluxo completo
+      testStreamFlow: () => {
+        console.log('🧪 DIAGNÓSTICO: Testing complete stream flow...');
+        console.log('Sessions:', state.sessionId);
+        console.log('Participants:', state.participantList);
+        console.log('Streams:', state.participantStreams);
+        console.log('Available containers:', document.querySelectorAll('[data-participant-id]').length);
       }
     };
     
-    console.log('🔧 LIVE PAGE: Debug functions exposed to window.__livePageDebug');
+    console.log('🔧 LIVE PAGE: Enhanced debug functions exposed to window.__livePageDebug');
     
     return () => {
+      Object.entries(debugListeners).forEach(([event, handler]) => {
+        window.removeEventListener(event, handler as EventListener);
+      });
       delete (window as any).__livePageDebug;
     };
-  }, [streamDisplayManager]);
+  }, [streamDisplayManager, state.sessionId, state.participantList, state.participantStreams]);
 
   // ✅ CORREÇÃO CRÍTICA: Sistema WebRTC unificado via useParticipantManagement
   // Removidos sistemas conflitantes useDesktopWebRTCStability e useMobileWebRTCStability
