@@ -15,6 +15,8 @@ class ParticipantHandshakeManager {
   private hasReconnected: boolean = false;
   private lastConnectionTime: number = 0;
   private handshakeStartTime: number = 0;
+  private clearMonitoring: (() => void) | null = null;
+  
   
   constructor() {
     this.setupParticipantHandlers();
@@ -197,32 +199,76 @@ class ParticipantHandshakeManager {
       }
 
       try {
+        // CORREÇÃO 1: Validação crítica pré-setRemoteDescription
+        const currentSignalingState = this.peerConnection.signalingState;
+        console.log(`🚨 CRÍTICO [PARTICIPANT] Pre-validation - signalingState: ${currentSignalingState}`);
+        
+        if (currentSignalingState !== 'have-local-offer') {
+          console.error(`❌ CRÍTICO [PARTICIPANT] Invalid signaling state for answer: ${currentSignalingState} (expected: have-local-offer)`);
+          throw new Error(`Invalid signaling state: ${currentSignalingState}`);
+        }
+
+        // Validar formato do SDP
+        if (!answer.sdp || answer.sdp.length < 100) {
+          console.error('❌ CRÍTICO [PARTICIPANT] Invalid answer SDP format');
+          throw new Error('Invalid answer SDP format');
+        }
+
         console.log('🚨 CRÍTICO [PARTICIPANT] Setting remote description from answer...');
         await this.peerConnection.setRemoteDescription(answer);
-        console.log('✅ [PARTICIPANT] Remote description set successfully');
+        
+        // CORREÇÃO 2: Validação pós-setRemoteDescription
+        const newSignalingState = this.peerConnection.signalingState;
+        console.log(`✅ [PARTICIPANT] setRemoteDescription SUCCESS: ${currentSignalingState} → ${newSignalingState}`);
+        
+        if (newSignalingState !== 'stable') {
+          console.warn(`⚠️ [PARTICIPANT] Unexpected signaling state after answer: ${newSignalingState}`);
+        }
+
         console.log(`🚨 CRÍTICO [PARTICIPANT] Connection state após setRemoteDescription: ${this.peerConnection.connectionState}`);
 
-        // Flush all pending candidates immediately
+        // CORREÇÃO 3: ICE candidates ordenados com validação
         if (this.pendingCandidates.length > 0) {
           console.log(`🚨 CRÍTICO [PARTICIPANT] Applying ${this.pendingCandidates.length} buffered candidates`);
           
           const candidatesToFlush = [...this.pendingCandidates];
           this.pendingCandidates = [];
+          let appliedCount = 0;
+          let failedCount = 0;
           
           for (const candidate of candidatesToFlush) {
             try {
+              // Validar candidate antes de aplicar
+              if (!candidate.candidate || !candidate.sdpMid) {
+                console.warn('⚠️ [PARTICIPANT] Invalid candidate format, skipping');
+                failedCount++;
+                continue;
+              }
+              
               await this.peerConnection.addIceCandidate(candidate);
-              console.log('✅ [PARTICIPANT] ICE candidate aplicado do buffer');
+              appliedCount++;
+              console.log(`✅ [PARTICIPANT] ICE candidate aplicado: ${candidate.candidate.split(' ')[7] || 'unknown'}`);
             } catch (err) {
+              failedCount++;
               console.error('❌ [PARTICIPANT] Error flushing candidate:', err);
             }
           }
-          console.log('✅ [PARTICIPANT] Buffer de ICE candidates limpo');
+          console.log(`✅ [PARTICIPANT] ICE candidates flushed: ${appliedCount}/${candidatesToFlush.length} applied, ${failedCount} failed`);
         }
         
-        console.log('✅ [PARTICIPANT] Connection established successfully');
+        // CORREÇÃO 4: Aguardar negociação completa
+        this.waitForConnectionEstablishment(hostId);
+        
+        console.log('✅ [PARTICIPANT] Answer processing complete - waiting for connection establishment');
+        
       } catch (err) {
         console.error('❌ CRÍTICO [PARTICIPANT] Error applying answer:', err);
+        console.error('❌ CRÍTICO [PARTICIPANT] Answer error details:', {
+          error: err.message,
+          signalingState: this.peerConnection?.signalingState,
+          connectionState: this.peerConnection?.connectionState,
+          hasRemoteDescription: !!this.peerConnection?.remoteDescription
+        });
         this.handleConnectionFailure(hostId);
       }
     });
@@ -252,17 +298,28 @@ class ParticipantHandshakeManager {
         return;
       }
 
-      // Apply immediately OR buffer consistently
-      if (this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
+      // CORREÇÃO: ICE candidates com validação rigorosa
+      const hasRemoteDesc = this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type;
+      const signalingState = this.peerConnection.signalingState;
+      
+      console.log(`🚨 CRÍTICO [PARTICIPANT] ICE candidate decision: hasRemoteDesc=${!!hasRemoteDesc}, signalingState=${signalingState}`);
+      
+      if (hasRemoteDesc && signalingState === 'stable') {
         try {
+          // Validar candidate antes de aplicar
+          if (!candidate.candidate || !candidate.sdpMid) {
+            console.warn('⚠️ [PARTICIPANT] Invalid candidate format from host, ignoring');
+            return;
+          }
+          
           await this.peerConnection.addIceCandidate(candidate);
-          console.log(`✅ [PARTICIPANT] ICE candidate applied immediately from ${hostId}`);
+          console.log(`✅ [PARTICIPANT] ICE candidate applied immediately from ${hostId}: ${candidate.candidate.split(' ')[7] || 'unknown'}`);
         } catch (err) {
           console.warn('⚠️ [PARTICIPANT] Error adding candidate from:', hostId, err);
         }
       } else {
         this.pendingCandidates.push(candidate);
-        console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId} (total: ${this.pendingCandidates.length})`);
+        console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId} (total: ${this.pendingCandidates.length}) - reason: remoteDesc=${!!hasRemoteDesc}, state=${signalingState}`);
       }
     });
     
@@ -443,6 +500,97 @@ class ParticipantHandshakeManager {
       console.log(`[PART] Host check failed: ${hostId}`, error);
       return { ready: false, reason: 'check-failed' };
     }
+  }
+
+  // CORREÇÃO 4: Método para aguardar estabelecimento completo da conexão
+  private waitForConnectionEstablishment(hostId: string): void {
+    console.log('🚨 CRÍTICO [PARTICIPANT] Starting connection establishment monitoring...');
+    
+    let connectionCheckInterval: NodeJS.Timeout;
+    let timeoutTimer: NodeJS.Timeout;
+    let checkCount = 0;
+    const maxChecks = 60; // 30 segundos com checks de 500ms
+    
+    const checkConnection = () => {
+      checkCount++;
+      
+      if (!this.peerConnection) {
+        console.error('❌ [PARTICIPANT] PeerConnection lost during establishment monitoring');
+        this.clearMonitoring();
+        return;
+      }
+      
+      const connectionState = this.peerConnection.connectionState;
+      const iceConnectionState = this.peerConnection.iceConnectionState;
+      const signalingState = this.peerConnection.signalingState;
+      
+      console.log(`🔍 [PARTICIPANT] Connection check ${checkCount}/${maxChecks}: conn=${connectionState}, ice=${iceConnectionState}, sig=${signalingState}`);
+      
+      // Sucesso: conexão estabelecida
+      if (connectionState === 'connected' && (iceConnectionState === 'connected' || iceConnectionState === 'completed')) {
+        console.log('✅ [PARTICIPANT] Connection establishment SUCCESS - validating stream tracks');
+        
+        // Validar que o stream tem tracks ativas
+        if (this.localStream) {
+          const activeTracks = this.localStream.getTracks().filter(t => t.readyState === 'live');
+          console.log(`🎥 [PARTICIPANT] Stream validation: ${activeTracks.length} active tracks`);
+          
+          if (activeTracks.length > 0) {
+            console.log('🚨 CRÍTICO [PARTICIPANT] Stream negotiation COMPLETE - tracks active and ready');
+            window.dispatchEvent(new CustomEvent('participant-stream-ready', {
+              detail: { 
+                participantId: this.participantId, 
+                hostId, 
+                streamId: this.localStream.id,
+                trackCount: activeTracks.length,
+                timestamp: Date.now() 
+              }
+            }));
+          } else {
+            console.warn('⚠️ [PARTICIPANT] No active tracks found in stream');
+          }
+        }
+        
+        this.clearMonitoring();
+        return;
+      }
+      
+      // Falha: conexão falhou
+      if (connectionState === 'failed' || iceConnectionState === 'failed') {
+        console.error('❌ [PARTICIPANT] Connection establishment FAILED');
+        this.clearMonitoring();
+        this.handleConnectionFailure(hostId);
+        return;
+      }
+      
+      // Timeout: muitas tentativas
+      if (checkCount >= maxChecks) {
+        console.error('❌ [PARTICIPANT] Connection establishment TIMEOUT');
+        this.clearMonitoring();
+        this.handleConnectionFailure(hostId);
+        return;
+      }
+    };
+    
+    const clearMonitoring = () => {
+      if (connectionCheckInterval) clearInterval(connectionCheckInterval);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+    };
+    
+    this.clearMonitoring = clearMonitoring;
+    
+    // Iniciar monitoramento
+    connectionCheckInterval = setInterval(checkConnection, 500);
+    
+    // Timeout de segurança
+    timeoutTimer = setTimeout(() => {
+      console.error('❌ [PARTICIPANT] Connection establishment HARD TIMEOUT (30s)');
+      clearMonitoring();
+      this.handleConnectionFailure(hostId);
+    }, 30000);
+    
+    // Primeira verificação imediata
+    checkConnection();
   }
 
   private handleConnectionFailure(hostId: string): void {
