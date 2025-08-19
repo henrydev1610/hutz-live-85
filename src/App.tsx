@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from "@/components/ui/toaster";
+import { secureContextEnforcer } from '@/utils/security/SecureContextEnforcer';
 
 // Pages
 import Index from './pages/Index';
@@ -13,8 +14,28 @@ import NotFound from './pages/NotFound';
 import ParticipantPage from './pages/ParticipantPage';
 
 function App() {
-  // Verifica se foi redirecionado da página 404
+  // FASE 1: CRÍTICO - Enforçar HTTPS e validar contexto seguro na inicialização
   useEffect(() => {
+    console.log('🔒 FASE 1: Initializing security context enforcement...');
+    
+    // Forçar HTTPS se necessário
+    const httpsEnforced = secureContextEnforcer.enforceHTTPS();
+    if (!httpsEnforced) {
+      console.log('🔒 SECURITY: HTTPS redirect initiated, app will reload');
+      return;
+    }
+    
+    // Validar contexto seguro
+    const validation = secureContextEnforcer.validateSecureContext();
+    console.log('🔒 SECURITY: Initial validation:', validation);
+    
+    // Corrigir mixed content se detectado
+    if (validation.issues.some(issue => issue.includes('Mixed content'))) {
+      console.log('🔒 SECURITY: Fixing mixed content...');
+      secureContextEnforcer.fixMixedContent();
+    }
+    
+    // Verificar redirecionamento 404
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('route') === '404') {
       window.history.replaceState({}, '', '/404');

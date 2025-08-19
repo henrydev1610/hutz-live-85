@@ -1,7 +1,8 @@
 
 import { detectMobileAggressively } from './deviceDetection';
+import { secureContextEnforcer } from '@/utils/security/SecureContextEnforcer';
 
-// FASE 4: Enhanced media permissions handling with mobile-specific validation
+// FASE 1 & 4: Enhanced media permissions with security context validation
 export interface PermissionStatus {
   camera: PermissionState | 'unknown';
   microphone: PermissionState | 'unknown';
@@ -48,9 +49,18 @@ export const checkMediaPermissions = async (): Promise<PermissionStatus> => {
   let cameraPermission: PermissionState | 'unknown' = 'unknown';
   let micPermission: PermissionState | 'unknown' = 'unknown';
   
-  console.log('🔐 FASE 4: CHECKING media permissions with mobile validation...');
+  console.log('🔐 FASE 1 & 4: CHECKING media permissions with security and mobile validation...');
   
-  // FASE 4: Validate mobile permission support first
+  // FASE 1: CRÍTICO - Validar contexto seguro primeiro
+  try {
+    await secureContextEnforcer.validateBeforeGetUserMedia();
+    console.log('✅ FASE 1: Secure context validated for media access');
+  } catch (error) {
+    console.error('❌ FASE 1: CRITICAL - Secure context validation failed:', error);
+    throw error;
+  }
+  
+  // FASE 4: Validate mobile permission support
   const canRequestMobile = await validateMobilePermissionRequest();
   if (!canRequestMobile && (isParticipantRoute() || detectMobileAggressively())) {
     console.error('❌ FASE 4: CRITICAL - Cannot guarantee mobile camera permission on mobile/participant context');
@@ -88,7 +98,22 @@ export const checkMediaPermissions = async (): Promise<PermissionStatus> => {
 };
 
 export const requestMediaPermissions = async (isMobile: boolean): Promise<boolean> => {
-  console.log(`🔐 FASE 4: REQUESTING explicit permissions - Mobile: ${isMobile}, Participant: ${isParticipantRoute()}`);
+  console.log(`🔐 FASE 1 & 4: REQUESTING explicit permissions - Mobile: ${isMobile}, Participant: ${isParticipantRoute()}`);
+  
+  // FASE 1: CRÍTICO - Enforçar HTTPS e validar contexto seguro
+  const httpsEnforced = secureContextEnforcer.enforceHTTPS();
+  if (!httpsEnforced) {
+    console.log('🔒 FASE 1: HTTPS redirect initiated, stopping permission request');
+    return false;
+  }
+  
+  try {
+    await secureContextEnforcer.validateBeforeGetUserMedia();
+    console.log('✅ FASE 1: Secure context validated before permission request');
+  } catch (error) {
+    console.error('❌ FASE 1: CRITICAL - Cannot request permissions in insecure context:', error);
+    throw error;
+  }
   
   try {
     // FASE 4: For participant route or mobile, use mobile-specific constraints
