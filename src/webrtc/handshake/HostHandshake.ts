@@ -1,51 +1,25 @@
 // ============= Host WebRTC Handshake Logic =============
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { webrtcGlobalDebugger } from '@/utils/webrtc/WebRTCGlobalDebug';
-import { candidateMonitor } from '@/utils/webrtc/CandidateMonitor';
 
 const hostPeerConnections = new Map<string, RTCPeerConnection>();
 const participantICEBuffers = new Map<string, RTCIceCandidate[]>();
 const handshakeTimeouts = new Map<string, NodeJS.Timeout>();
 
 class HostHandshakeManager {
-  private async getOrCreatePC(participantId: string): Promise<RTCPeerConnection> {
+  private getOrCreatePC(participantId: string): RTCPeerConnection {
     let pc = hostPeerConnections.get(participantId);
     
     if (!pc) {
       const pcStartTime = performance.now();
       console.log(`[HOST] Creating new RTCPeerConnection for ${participantId}`);
-      
-      // CORREÇÃO CRÍTICA: Executar diagnóstico TURN antes de criar RTCPeerConnection
-      console.log('🧊 [HOST] Running TURN diagnostic before peer connection...');
-      try {
-        const { turnConnectivityService } = await import('@/services/TurnConnectivityService');
-        const diagnostic = await turnConnectivityService.runDiagnostic();
-        
-        console.log('🧊 [HOST] TURN diagnostic result:', {
-          workingServers: diagnostic.workingServers.length,
-          totalServers: diagnostic.allServersStatus.length,
-          overallHealth: diagnostic.overallHealth
-        });
-        
-        // Use método público forceRefresh que já aplica configuração otimizada
-        const result = await turnConnectivityService.forceRefresh();
-        
-      } catch (diagError) {
-        console.warn('⚠️ [HOST] TURN diagnostic failed, using fallback:', diagError);
-      }
-      
-      // Usar configuração dinâmica TURN em vez de hardcoded STUN
-      const { getWebRTCConfig } = await import('@/utils/webrtc/WebRTCConfig');
-      const configuration = getWebRTCConfig();
-      
-      console.log('🧊 [HOST] Using ICE configuration:', {
-        serverCount: configuration.iceServers?.length || 0,
-        hasSTUN: configuration.iceServers?.some(s => s.urls.toString().includes('stun')),
-        hasTURN: configuration.iceServers?.some(s => s.urls.toString().includes('turn')),
-        iceTransportPolicy: configuration.iceTransportPolicy || 'all'
+      pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ]
       });
-      
-      pc = new RTCPeerConnection(configuration);
 
       // Event handlers
       pc.ontrack = async (event) => {
@@ -117,30 +91,8 @@ class HostHandshakeManager {
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          const candidateType = event.candidate.candidate.includes('host') ? 'host' : 
-                               event.candidate.candidate.includes('srflx') ? 'srflx' : 
-                               event.candidate.candidate.includes('relay') ? 'relay' : 'unknown';
-          
-          console.log('🧊 [HOST] ICE candidate generated:', {
-            participantId,
-            type: candidateType,
-            protocol: event.candidate.protocol,
-            address: event.candidate.address,
-            port: event.candidate.port,
-            candidate: event.candidate.candidate.substring(0, 50) + '...'
-          });
-          
-          // Track relay candidates specifically
-          if (candidateType === 'relay') {
-            console.log('✅ [HOST] RELAY candidate generated - NAT traversal should work!');
-          }
-          
-          // Record candidate for monitoring
-          candidateMonitor.recordCandidate(participantId, event.candidate, 'host');
-          
+          console.log(`[ICE] candidate generated for ${participantId}, sending`);
           unifiedWebSocketService.sendWebRTCCandidate(participantId, event.candidate);
-        } else {
-          console.log(`🧊 [HOST] ICE gathering complete for ${participantId} (candidate: null)`);
         }
       };
 
@@ -226,7 +178,7 @@ class HostHandshakeManager {
       console.log(`✅ [HOST] Processing offer from ${data.participantId}`);
 
       // PASSO 1: Obter ou criar peer connection
-      const pc = await this.getOrCreatePC(data.participantId);
+      const pc = this.getOrCreatePC(data.participantId);
       console.log(`🚨 CRÍTICO [HOST] RTCPeerConnection state: ${pc.connectionState}`);
       
       // PASSO 2: Set remote description
@@ -421,7 +373,7 @@ class HostHandshakeManager {
     try {
       console.log(`🚀 [HOST] FALLBACK: Creating direct offer for ${participantId}`);
       
-      const pc = await this.getOrCreatePC(participantId);
+      const pc = this.getOrCreatePC(participantId);
       
       // Criar offer do lado host
       const offer = await pc.createOffer();
@@ -473,7 +425,7 @@ webrtcGlobalDebugger.exposeGlobalFunctions();
 webrtcGlobalDebugger.startHeartbeat(15000); // Heartbeat a cada 15 segundos
 
 // Export functions for external use
-export const getOrCreatePC = async (participantId: string) => hostHandshakeManager['getOrCreatePC'](participantId);
+export const getOrCreatePC = (participantId: string) => hostHandshakeManager['getOrCreatePC'](participantId);
 export const handleOfferFromParticipant = (data: any) => hostHandshakeManager.handleOfferFromParticipant(data);
 export const handleRemoteCandidate = (data: any) => hostHandshakeManager.handleRemoteCandidate(data);
 export const setupHostHandlers = () => hostHandshakeManager.setupHostHandlers();

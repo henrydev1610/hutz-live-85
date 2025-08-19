@@ -12,7 +12,6 @@ import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { ConnectionStabilityIndicator } from '@/components/live/ConnectionStabilityIndicator';
 import { TurnStatusIndicator } from '@/components/live/TurnStatusIndicator';
-import { TurnDiagnosticsPanel } from '@/components/live/TurnDiagnosticsPanel';
 import TransmissionControls from '@/components/live/TransmissionControls';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
@@ -386,14 +385,10 @@ const LivePage: React.FC = () => {
         onClose={() => setShowHealthMonitor(false)}
       />
       
-      {/* FASE 4: TURN Status Dashboard - Painel Completo em Desenvolvimento */}
+      {/* FASE 4: TURN Status Dashboard */}
       {showTurnDiagnostics && (
-        <div className="fixed top-4 right-4 z-50 w-96">
-          {process.env.NODE_ENV === 'development' ? (
-            <TurnDiagnosticsPanel sessionId={state.sessionId} />
-          ) : (
-            <TurnStatusIndicator />
-          )}
+        <div className="fixed top-4 right-4 z-50">
+          <TurnStatusIndicator />
         </div>
       )}
 
