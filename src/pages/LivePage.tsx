@@ -30,8 +30,8 @@ const LivePage: React.FC = () => {
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
   
-  // ✅ CORREÇÃO CRÍTICA: Forçar inicialização WebRTC
-  console.log('🚀 LIVE PAGE: Forçando inicialização WebRTC com sessionId:', state.sessionId);
+  // ✅ CORREÇÃO CRÍTICA: Inicialização WebRTC com sessionId não-nulo
+  console.log('🚀 LIVE PAGE: Iniciando WebRTC com sessionId:', state.sessionId);
   const { isInitialized } = useWebRTCInitializer({
     sessionId: state.sessionId,
     onWebRTCReady: () => {
@@ -40,7 +40,7 @@ const LivePage: React.FC = () => {
     }
   });
 
-  // ✅ CORREÇÃO CRÍTICA: Auto-geração do QR Code
+  // ✅ CORREÇÃO CRÍTICA: Auto-geração do QR Code independente do WebRTC
   const { qrGenerated } = useAutoQRGeneration({
     sessionId: state.sessionId,
     handleGenerateQRCode,

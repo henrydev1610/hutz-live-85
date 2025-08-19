@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 interface UseAutoQRGenerationProps {
-  sessionId: string | null;
+  sessionId: string;
   handleGenerateQRCode: (state: any) => void;
   state: any;
 }
@@ -14,17 +14,17 @@ export const useAutoQRGeneration = ({
   const qrGeneratedRef = useRef(false);
 
   useEffect(() => {
-    if (!sessionId || qrGeneratedRef.current || state.qrCodeSvg) return;
+    if (qrGeneratedRef.current || state.qrCodeSvg) return;
 
-    console.log('🔍 AUTO QR: SessionId disponível, gerando QR Code automaticamente...');
+    console.log('🔍 AUTO QR: Iniciando geração automática do QR Code...');
     console.log('🔍 AUTO QR: SessionId:', sessionId);
     console.log('🔍 AUTO QR: QR já existe:', !!state.qrCodeSvg);
 
-    // Gerar QR Code automaticamente quando sessionId estiver disponível
+    // ✅ CORREÇÃO CRÍTICA: Gerar QR Code independente do WebRTC
     const generateAutoQR = async () => {
       try {
         qrGeneratedRef.current = true;
-        console.log('🎯 AUTO QR: Iniciando geração automática...');
+        console.log('🎯 AUTO QR: Gerando QR Code automaticamente (independente do WebRTC)...');
         
         await handleGenerateQRCode(state);
         
@@ -35,8 +35,8 @@ export const useAutoQRGeneration = ({
       }
     };
 
-    // Delay pequeno para garantir que o state está pronto
-    const timer = setTimeout(generateAutoQR, 1000);
+    // Geração imediata - não depende de WebRTC
+    const timer = setTimeout(generateAutoQR, 500);
 
     return () => {
       clearTimeout(timer);

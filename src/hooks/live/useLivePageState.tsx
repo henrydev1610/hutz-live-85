@@ -26,16 +26,13 @@ export const useLivePageState = () => {
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-
-  // ✅ CORREÇÃO CRÍTICA: SessionId será gerado e usado pelo useWebRTCInitializer
-  useEffect(() => {
-    if (!sessionId) {
-      const newSessionId = generateSessionId();
-      console.log('🚀 STATE: Gerando novo sessionId:', newSessionId);
-      setSessionId(newSessionId);
-    }
-  }, [sessionId]);
+  
+  // ✅ CORREÇÃO CRÍTICA: SessionId gerado sincronamente para evitar race conditions
+  const [sessionId] = useState<string>(() => {
+    const newSessionId = generateSessionId();
+    console.log('🚀 STATE: Gerando sessionId síncrono:', newSessionId);
+    return newSessionId;
+  });
 
   // ❌ REMOVIDO: Duplicação removida - inicialização agora é feita pelo useWebRTCInitializer
 
@@ -79,7 +76,7 @@ export const useLivePageState = () => {
     finalActionOpen, setFinalActionOpen,
     finalActionTimeLeft, setFinalActionTimeLeft,
     finalActionTimerId, setFinalActionTimerId,
-    sessionId, setSessionId,
+    sessionId,
     qrCodePosition, setQrCodePosition,
     qrDescriptionPosition, setQrDescriptionPosition,
     participantStreams, setParticipantStreams,

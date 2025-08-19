@@ -5,7 +5,7 @@ import { setupHostHandlers } from '@/webrtc/handshake/HostHandshake';
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 
 interface UseWebRTCInitializerProps {
-  sessionId: string | null;
+  sessionId: string;
   onWebRTCReady?: () => void;
 }
 
@@ -16,11 +16,6 @@ export const useWebRTCInitializer = ({ sessionId, onWebRTCReady }: UseWebRTCInit
   useEffect(() => {
     console.log('🔍 WEBRTC INITIALIZER: Effect triggered', { sessionId, isInitialized: initializationRef.current });
     
-    if (!sessionId) {
-      console.warn('⚠️ WEBRTC INITIALIZER: SessionId is null/undefined, skipping initialization');
-      return;
-    }
-    
     if (initializationRef.current) {
       console.log('✅ WEBRTC INITIALIZER: Already initialized, skipping');
       return;
@@ -28,44 +23,59 @@ export const useWebRTCInitializer = ({ sessionId, onWebRTCReady }: UseWebRTCInit
 
     const initializeWebRTC = async () => {
       try {
-        console.log('🚀 WEBRTC INITIALIZER: STARTING initialization process');
+        console.log('🚀 WEBRTC INITIALIZER: STARTING non-blocking initialization');
         console.log('🚀 WEBRTC INITIALIZER: SessionId:', sessionId);
         initializationRef.current = true;
 
-        // PASSO 1: Conectar WebSocket primeiro
+        // Toast de início para feedback visual
+        toast({
+          title: "Inicializando Sistema",
+          description: "Configurando conexões WebRTC...",
+        });
+
+        // PASSO 1: Conectar WebSocket com timeout reduzido
         if (!unifiedWebSocketService.isConnected()) {
-          console.log('🔗 WEBRTC INITIALIZER: Conectando WebSocket...');
-          await unifiedWebSocketService.connect();
+          console.log('🔗 WEBRTC INITIALIZER: Conectando WebSocket (timeout: 5s)...');
+          await Promise.race([
+            unifiedWebSocketService.connect(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('WebSocket timeout')), 5000))
+          ]);
           console.log('✅ WEBRTC INITIALIZER: WebSocket conectado');
         }
 
-        // PASSO 2: Inicializar como Host
-        console.log('🎯 WEBRTC INITIALIZER: Inicializando Host WebRTC...');
-        const result = await initHostWebRTC(sessionId);
-        console.log('✅ WEBRTC INITIALIZER: Host WebRTC inicializado:', !!result.webrtc);
+        // PASSO 2: Inicializar como Host com timeout
+        console.log('🎯 WEBRTC INITIALIZER: Inicializando Host WebRTC (timeout: 8s)...');
+        const result = await Promise.race([
+          initHostWebRTC(sessionId),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Host init timeout')), 8000))
+        ]);
+        console.log('✅ WEBRTC INITIALIZER: Host WebRTC inicializado:', !!(result as any)?.webrtc);
 
         // PASSO 3: Setup Host Handlers
         console.log('📞 WEBRTC INITIALIZER: Configurando Host Handlers...');
         setupHostHandlers();
         console.log('✅ WEBRTC INITIALIZER: Host Handlers configurados');
 
-        // PASSO 4: Entrar na sala
-        console.log('🚪 WEBRTC INITIALIZER: Entrando na sala...');
-        await unifiedWebSocketService.joinRoom(sessionId, 'host');
+        // PASSO 4: Entrar na sala com timeout
+        console.log('🚪 WEBRTC INITIALIZER: Entrando na sala (timeout: 5s)...');
+        await Promise.race([
+          unifiedWebSocketService.joinRoom(sessionId, 'host'),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Join room timeout')), 5000))
+        ]);
         console.log('✅ WEBRTC INITIALIZER: Host entrou na sala');
 
         // PASSO 5: Callback de sucesso
         onWebRTCReady?.();
         
         toast({
-          title: "WebRTC Inicializado",
-          description: "Sistema WebRTC conectado e pronto para receber participantes",
+          title: "Sistema Pronto",
+          description: "WebRTC inicializado e pronto para participantes",
         });
 
         console.log('🎉 WEBRTC INITIALIZER: Inicialização completa com sucesso!');
 
       } catch (error) {
-        console.error('❌ WEBRTC INITIALIZER: CRITICAL ERROR during initialization:', error);
+        console.error('❌ WEBRTC INITIALIZER: ERROR durante inicialização:', error);
         console.error('❌ WEBRTC INITIALIZER: Error details:', {
           message: error.message,
           stack: error.stack,
@@ -75,16 +85,16 @@ export const useWebRTCInitializer = ({ sessionId, onWebRTCReady }: UseWebRTCInit
         initializationRef.current = false;
         
         toast({
-          title: "Erro WebRTC",
-          description: `Falha na inicialização: ${error.message}`,
-          variant: "destructive",
+          title: "Aviso: Inicialização Parcial",
+          description: "QR Code disponível. WebRTC será reconfigurado automaticamente.",
+          variant: "default",
         });
 
-        // Retry after 5 seconds with more robust retry
+        // Retry mais rápido e silencioso
         setTimeout(() => {
-          console.log('🔄 WEBRTC INITIALIZER: Retrying initialization after error...');
+          console.log('🔄 WEBRTC INITIALIZER: Tentativa silenciosa de reconexão...');
           initializationRef.current = false;
-        }, 5000);
+        }, 3000);
       }
     };
 
