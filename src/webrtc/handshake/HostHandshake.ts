@@ -22,7 +22,7 @@ class HostHandshakeManager {
       });
 
       // Event handlers
-      pc.ontrack = (event) => {
+      pc.ontrack = async (event) => {
         console.log(`🚨 CRÍTICO [HOST] ontrack DISPARADO para ${participantId}:`, {
           streamCount: event.streams.length,
           trackKind: event.track.kind,
@@ -39,6 +39,29 @@ class HostHandshakeManager {
             audioTracks: stream.getAudioTracks().length,
             videoEnabled: stream.getVideoTracks()[0]?.enabled,
             audioEnabled: stream.getAudioTracks()[0]?.enabled
+          });
+
+          // CORREÇÃO CRÍTICA: Aguardar tracks estarem 'live' antes de processar
+          console.log(`🔥 [HOST] AGUARDANDO TRACKS 'LIVE' no ontrack para: ${participantId}`);
+          const { waitUntilTracksReady } = await import('@/utils/media/trackReadyWaiter');
+          const tracksReady = await waitUntilTracksReady(stream, participantId, 3000);
+
+          if (!tracksReady) {
+            console.warn(`⚠️ [HOST] Tracks não ficaram 'live' para ${participantId} - prosseguindo mesmo assim`);
+          }
+
+          const tracks = stream.getVideoTracks();
+          if (tracks.length === 0) {
+            console.warn(`⚠️ [HOST] Nenhuma track de vídeo para ${participantId} - não processando stream`);
+            return;
+          }
+
+          console.log(`🎥 [HOST] VALIDATION LOG para ${participantId}:`, {
+            streamId: stream.id,
+            videoTracks: tracks.length,
+            trackReadyState: tracks[0].readyState,
+            trackEnabled: tracks[0].enabled,
+            tracksReady
           });
           
           // Dispatch custom event para notificar que stream foi recebido

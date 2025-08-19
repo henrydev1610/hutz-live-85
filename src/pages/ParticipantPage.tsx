@@ -401,6 +401,16 @@ const ParticipantPage = () => {
             setupStreamTransmissionMonitoring(stream, participantId);
           }
           
+          // CORREÇÃO CRÍTICA: Aguardar tracks estarem 'live' antes de iniciar WebRTC
+          console.log(`🔥 [PART] AGUARDANDO TRACKS 'LIVE' antes do WebRTC para: ${participantId}`);
+          const { waitUntilTracksReady } = await import('@/utils/media/trackReadyWaiter');
+          const tracksReady = await waitUntilTracksReady(stream, participantId, 3000);
+          
+          if (!tracksReady) {
+            console.warn(`⚠️ [PART] Tracks não ficaram 'live' para ${participantId} - prosseguindo mesmo assim`);
+            toast.warning('⚠️ Câmera pode estar instável');
+          }
+          
           // ÚNICO CAMINHO: initParticipantWebRTC → setLocalStream → connectToHost
           const { webrtc } = await initParticipantWebRTC(sessionId!, participantId, stream);
           if (webrtc) {
