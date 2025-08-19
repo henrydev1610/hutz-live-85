@@ -123,10 +123,20 @@ class ParticipantHandshakeManager {
       return;
     }
 
+    console.log('🚨 CRÍTICO [PARTICIPANT] Setting up event handlers');
+    
+    // Limpar handlers existentes primeiro para evitar duplicação  
+    // Note: UnifiedWebSocketService não tem método off(), então apenas registramos novos handlers
+    
     // Listen for WebRTC offer request from host
     unifiedWebSocketService.on('webrtc-request-offer', async (data: any) => {
       const hostId = data?.fromUserId;
-      console.log(`[PART] Offer request received from host: ${hostId}`);
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Offer request received from host: ${hostId}`, {
+        dataKeys: Object.keys(data),
+        hasFromUserId: !!data.fromUserId,
+        hasParticipantId: !!data.participantId,
+        timestamp: Date.now()
+      });
       
       if (!hostId) {
         console.warn('⚠️ [PARTICIPANT] Invalid offer request:', data);
@@ -157,12 +167,12 @@ class ParticipantHandshakeManager {
       await this.createAndSendOffer(hostId);
     });
 
-    // Receive answer from host
+    // Handler para respostas (answers) do host
     unifiedWebSocketService.on('webrtc-answer', async (data: any) => {
-      const hostId = data?.fromUserId || data?.fromSocketId;
+      const hostId = data?.fromUserId || data?.fromSocketId || data?.hostId;
       const answer = data?.answer;
 
-      console.log(`🚨 CRÍTICO [PART] Answer recebido do host`, {
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Answer recebido do host`, {
         hostId,
         hasAnswer: !!answer,
         dataKeys: Object.keys(data),
@@ -170,7 +180,8 @@ class ParticipantHandshakeManager {
         answerSdpPreview: answer?.sdp?.substring(0, 100) + '...',
         peerConnectionExists: !!this.peerConnection,
         peerConnectionState: this.peerConnection?.connectionState,
-        signalingState: this.peerConnection?.signalingState
+        signalingState: this.peerConnection?.signalingState,
+        timestamp: Date.now()
       });
 
       if (!hostId || !answer?.sdp || !answer?.type) {
@@ -178,7 +189,7 @@ class ParticipantHandshakeManager {
         return;
       }
 
-      console.log(`✅ [PART] setRemoteDescription -> answer received from ${hostId}`);
+      console.log(`✅ [PARTICIPANT] setRemoteDescription -> answer received from ${hostId}`);
 
       if (!this.peerConnection) {
         console.warn('⚠️ [PARTICIPANT] Answer received without active PC');
@@ -186,12 +197,14 @@ class ParticipantHandshakeManager {
       }
 
       try {
+        console.log('🚨 CRÍTICO [PARTICIPANT] Setting remote description from answer...');
         await this.peerConnection.setRemoteDescription(answer);
-        console.log(`[HOST] setRemoteDescription -> answer applied`);
+        console.log('✅ [PARTICIPANT] Remote description set successfully');
+        console.log(`🚨 CRÍTICO [PARTICIPANT] Connection state após setRemoteDescription: ${this.peerConnection.connectionState}`);
 
         // Flush all pending candidates immediately
         if (this.pendingCandidates.length > 0) {
-          console.log(`[ICE] candidate buffered -> flushing ${this.pendingCandidates.length} candidates`);
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Applying ${this.pendingCandidates.length} buffered candidates`);
           
           const candidatesToFlush = [...this.pendingCandidates];
           this.pendingCandidates = [];
@@ -199,23 +212,34 @@ class ParticipantHandshakeManager {
           for (const candidate of candidatesToFlush) {
             try {
               await this.peerConnection.addIceCandidate(candidate);
-              console.log('[ICE] candidate applied');
+              console.log('✅ [PARTICIPANT] ICE candidate aplicado do buffer');
             } catch (err) {
-              console.warn('⚠️ [PARTICIPANT] Error flushing candidate:', err);
+              console.error('❌ [PARTICIPANT] Error flushing candidate:', err);
             }
           }
+          console.log('✅ [PARTICIPANT] Buffer de ICE candidates limpo');
         }
         
         console.log('✅ [PARTICIPANT] Connection established successfully');
       } catch (err) {
-        console.error('❌ [PARTICIPANT] Error applying answer:', err);
+        console.error('❌ CRÍTICO [PARTICIPANT] Error applying answer:', err);
+        this.handleConnectionFailure(hostId);
       }
     });
 
     // Receive ICE candidates from host with consistent buffering
     unifiedWebSocketService.on('webrtc-candidate', async (data: any) => {
-      const hostId = data?.fromUserId;
+      const hostId = data?.fromUserId || data?.fromSocketId || data?.hostId;
       const candidate = data?.candidate;
+      
+      console.log('🚨 CRÍTICO [PARTICIPANT] ICE candidate recebido:', {
+        fromHost: hostId,
+        hasCandidate: !!candidate,
+        candidateType: candidate?.candidate?.includes('host') ? 'host' : 
+                      candidate?.candidate?.includes('srflx') ? 'srflx' : 'relay',
+        peerConnectionExists: !!this.peerConnection,
+        hasRemoteDescription: !!this.peerConnection?.remoteDescription
+      });
       
       if (!candidate) {
         console.warn('⚠️ [PARTICIPANT] Invalid candidate from:', hostId);
@@ -232,29 +256,31 @@ class ParticipantHandshakeManager {
       if (this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
         try {
           await this.peerConnection.addIceCandidate(candidate);
-          console.log(`[ICE] candidate applied immediately from ${hostId}`);
+          console.log(`✅ [PARTICIPANT] ICE candidate applied immediately from ${hostId}`);
         } catch (err) {
           console.warn('⚠️ [PARTICIPANT] Error adding candidate from:', hostId, err);
         }
       } else {
         this.pendingCandidates.push(candidate);
-        console.log(`[ICE] candidate buffered from ${hostId} (total: ${this.pendingCandidates.length})`);
+        console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId} (total: ${this.pendingCandidates.length})`);
       }
     });
+    
+    console.log('✅ [PARTICIPANT] Event handlers configurados com sucesso');
   }
 
   async createAndSendOffer(hostId: string): Promise<void> {
     if (this.isOfferInProgress) {
-      console.log('[PART] createAndSendOffer: Offer already in progress, skipping');
+      console.log('[PARTICIPANT] createAndSendOffer: Offer already in progress, skipping');
       return;
     }
 
     const offerStartTime = performance.now();
     this.handshakeStartTime = offerStartTime;
-    console.log(`[PART] Starting offer creation sequence for ${hostId}`);
+    console.log(`🚨 CRÍTICO [PARTICIPANT] Starting offer creation sequence for ${hostId}`);
 
     if (this.peerConnection && this.peerConnection.connectionState !== 'closed') {
-      console.log('[PART] createAndSendOffer: Closing existing peer connection');
+      console.log('[PARTICIPANT] createAndSendOffer: Closing existing peer connection');
       this.peerConnection.close();
       this.peerConnection = null;
     }
@@ -271,9 +297,17 @@ class ParticipantHandshakeManager {
       if (!stream) {
         throw new Error('No local stream available for offer');
       }
-      console.log(`[PART] addTrack -> Stream ready (${streamDuration.toFixed(1)}ms)`);
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Stream validado:`, {
+        hasStream: !!stream,
+        streamId: stream?.id,
+        videoTracks: stream?.getVideoTracks().length || 0,
+        audioTracks: stream?.getAudioTracks().length || 0,
+        videoEnabled: stream?.getVideoTracks()[0]?.enabled,
+        audioEnabled: stream?.getAudioTracks()[0]?.enabled,
+        duration: `${streamDuration.toFixed(1)}ms`
+      });
 
-      // STEP 2: Create new peer connection
+      // STEP 2: Create new peer connection BEFORE any operation
       const pcStartTime = performance.now();
       const configuration: RTCConfiguration = {
         iceServers: [
@@ -286,23 +320,24 @@ class ParticipantHandshakeManager {
 
       this.peerConnection = new RTCPeerConnection(configuration);
       const pcDuration = performance.now() - pcStartTime;
-      console.log(`[PART] RTCPeerConnection created (${pcDuration.toFixed(1)}ms)`);
+      console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
 
       // STEP 3: Add tracks to peer connection BEFORE creating offer
       const addTrackStartTime = performance.now();
-      stream.getTracks().forEach(track => {
+      console.log('🚨 CRÍTICO [PARTICIPANT] Anexando stream ao RTCPeerConnection...');
+      stream.getTracks().forEach((track, index) => {
         if (this.peerConnection && stream) {
-          console.log(`[PART] addTrack(${track.kind}) -> readyState: ${track.readyState}`);
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Adicionando track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
           this.peerConnection.addTrack(track, stream);
         }
       });
       const addTrackDuration = performance.now() - addTrackStartTime;
-      console.log(`[PART] addTrack -> createOffer (${addTrackDuration.toFixed(1)}ms)`);
+      console.log(`✅ [PARTICIPANT] All tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
 
       // Set up event handlers
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log('[ICE] candidate generated, sending to host');
+          console.log('🚨 CRÍTICO [PARTICIPANT] ICE candidate generated, sending to host');
           unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
         }
       };
@@ -351,6 +386,7 @@ class ParticipantHandshakeManager {
 
       // STEP 4: Create offer AFTER stream is added
       const offerCreateStartTime = performance.now();
+      console.log('🚨 CRÍTICO [PARTICIPANT] Creating offer...');
       const offer = await this.peerConnection.createOffer({
         offerToReceiveVideo: false,
         offerToReceiveAudio: false
@@ -359,36 +395,38 @@ class ParticipantHandshakeManager {
 
       // STEP 5: Set local description
       const setLocalStartTime = performance.now();
+      console.log('🚨 CRÍTICO [PARTICIPANT] Setting local description...');
       await this.peerConnection.setLocalDescription(offer);
       const setLocalDuration = performance.now() - setLocalStartTime;
       
-      console.log(`[PART] createOffer (${offerCreateDuration.toFixed(1)}ms) -> setLocalDescription (${setLocalDuration.toFixed(1)}ms)`);
+      console.log(`✅ [PARTICIPANT] createOffer (${offerCreateDuration.toFixed(1)}ms) -> setLocalDescription (${setLocalDuration.toFixed(1)}ms)`);
 
       // STEP 6: Send offer to host with detailed debugging
       const sendStartTime = performance.now();
-      console.log(`🚨 CRÍTICO [PART] Enviando offer para host ${hostId}`, {
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Enviando offer para host ${hostId}`, {
         sdp: offer.sdp?.substring(0, 100) + '...',
         type: offer.type,
         localStreamTracks: stream.getTracks().length,
         peerConnectionState: this.peerConnection.connectionState,
-        signalingState: this.peerConnection.signalingState
+        signalingState: this.peerConnection.signalingState,
+        hasLocalDescription: !!this.peerConnection.localDescription
       });
       
       unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type);
-      console.log(`✅ [PART] Offer enviado via WebSocket para ${hostId}`);
+      console.log(`✅ CRÍTICO [PARTICIPANT] Offer enviado via WebSocket para ${hostId} - Aguardando answer...`);
       
       const sendDuration = performance.now() - sendStartTime;
       const totalDuration = performance.now() - offerStartTime;
-      console.log(`[PART] setLocalDescription -> offerSent (${sendDuration.toFixed(1)}ms) -> Total sequence: ${totalDuration.toFixed(1)}ms`);
+      console.log(`✅ [PARTICIPANT] setLocalDescription -> offerSent (${sendDuration.toFixed(1)}ms) -> Total sequence: ${totalDuration.toFixed(1)}ms`);
 
       // Set connection timeout
       this.setConnectionTimeout(() => {
-        console.log('[PART] Connection timeout reached (30s)');
+        console.log('[PARTICIPANT] Connection timeout reached (30s)');
         this.handleConnectionFailure(hostId);
       });
 
     } catch (error) {
-      console.error('[PART] createAndSendOffer: Failed:', error);
+      console.error('❌ CRÍTICO [PARTICIPANT] createAndSendOffer: Failed:', error);
       this.isOfferInProgress = false;
       throw error;
     } finally {
