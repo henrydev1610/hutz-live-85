@@ -23,6 +23,12 @@ export const useTransmissionMessageHandler = ({
 }: UseTransmissionMessageHandlerProps) => {
   
   const handleTransmissionMessage = (event: MessageEvent) => {
+    // CORREÇÃO CRÍTICA: Validar event.data antes de acessar propriedades
+    if (!event.data || typeof event.data !== 'object') {
+      console.warn('📨 HOST: Received invalid message from transmission:', event.data);
+      return;
+    }
+
     console.log('📨 HOST: Received message from transmission:', event.data.type);
     console.log(`[POPUP-BRIDGE] received message type=${event.data.type} participantId=${event.data.participantId || 'none'}`);
     
