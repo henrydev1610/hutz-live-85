@@ -7,6 +7,7 @@ import ConnectionHealthMonitor from '@/components/live/ConnectionHealthMonitor';
 import { useLivePageState } from '@/hooks/live/useLivePageState';
 import { useParticipantManagement } from '@/hooks/live/useParticipantManagement';
 import { useQRCodeGeneration } from '@/hooks/live/useQRCodeGeneration';
+import { useAutoQRGeneration } from '@/hooks/live/useAutoQRGeneration';
 import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
@@ -26,6 +27,13 @@ const LivePage: React.FC = () => {
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
+  
+  // Auto-geração de QR Code quando sessionId existir
+  useAutoQRGeneration({ 
+    sessionId: state.sessionId, 
+    qrCodeURL: state.qrCodeURL, 
+    state 
+  });
   
   const { closeFinalAction } = useFinalAction({
     finalActionOpen: state.finalActionOpen,
