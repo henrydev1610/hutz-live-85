@@ -10,6 +10,9 @@ import { useQRCodeGeneration } from '@/hooks/live/useQRCodeGeneration';
 import { useAutoQRGeneration } from '@/hooks/live/useAutoQRGeneration';
 import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
+import { ConnectionStabilityIndicator } from '@/components/live/ConnectionStabilityIndicator';
+import { TurnStatusIndicator } from '@/components/live/TurnStatusIndicator';
+import TransmissionControls from '@/components/live/TransmissionControls';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
@@ -46,6 +49,9 @@ const LivePage: React.FC = () => {
 
   // ✅ DIAGNÓSTICO CRÍTICO: INICIALIZAR STREAM DISPLAY MANAGER 
   const streamDisplayManager = useStreamDisplayManager();
+
+  // FASE 4: Mostrar status TURN na interface
+  const [showTurnDiagnostics, setShowTurnDiagnostics] = useState(false);
   
   // ✅ DIAGNÓSTICO CRÍTICO: DEBUG COMPLETO + LISTENERS EXTRAS
   useEffect(() => {
@@ -379,8 +385,23 @@ const LivePage: React.FC = () => {
         onClose={() => setShowHealthMonitor(false)}
       />
       
+      {/* FASE 4: TURN Status Dashboard */}
+      {showTurnDiagnostics && (
+        <div className="fixed top-4 right-4 z-50">
+          <TurnStatusIndicator />
+        </div>
+      )}
+
       {/* Enhanced Debug Controls */}
       <div className="fixed bottom-4 left-4 flex flex-col gap-2 z-50">
+        <button
+          onClick={() => setShowTurnDiagnostics(!showTurnDiagnostics)}
+          className="bg-orange-500 text-white p-2 rounded-full text-xs"
+          title="TURN Status"
+        >
+          🧊 TURN
+        </button>
+        
         <button
           onClick={() => setShowHealthMonitor(!showHealthMonitor)}
           className="bg-blue-500 text-white p-2 rounded-full text-xs"

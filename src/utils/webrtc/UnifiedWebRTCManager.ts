@@ -26,12 +26,12 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   multiplier: 1.5
 };
 
-// DESKTOP: Timeouts realistas para WebRTC
+// FASE 2: Timeouts otimizados para detecção rápida de TURN travado
 const DESKTOP_TIMEOUTS = {
-  connectionTimeout: 15000,    // 15s para negociação WebRTC
-  forceCleanup: 20000,         // 20s antes de força limpeza  
-  healthCheckInterval: 30000,  // 30s entre checks de saúde
-  retryGracePeriod: 45000      // 45s grace period antes do primeiro retry
+  connectionTimeout: 5000,     // 5s para detecção rápida de falha (reduzido de 15s)
+  forceCleanup: 8000,          // 8s antes de força limpeza (reduzido de 20s)
+  healthCheckInterval: 15000,  // 15s entre checks de saúde (reduzido de 30s)
+  retryGracePeriod: 10000      // 10s grace period (reduzido de 45s)
 };
 
 export class UnifiedWebRTCManager {

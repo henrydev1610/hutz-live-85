@@ -3,6 +3,7 @@ import { Wifi, WifiOff, AlertTriangle, CheckCircle, Clock, Smartphone } from 'lu
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TurnStatusIndicator } from './TurnStatusIndicator';
 
 interface ConnectionStatus {
   websocket: 'disconnected' | 'connecting' | 'connected' | 'failed';
@@ -26,6 +27,7 @@ interface ConnectionStabilityIndicatorProps {
   onForceReconnect?: () => void;
   onBreakLoop?: () => void; // NOVO: Função para quebrar loops
   onDiagnostics?: () => void;
+  showTurnStatus?: boolean; // FASE 4: Mostrar status TURN integrado
   className?: string;
 }
 
@@ -79,6 +81,7 @@ export const ConnectionStabilityIndicator: React.FC<ConnectionStabilityIndicator
   onForceReconnect,
   onBreakLoop,
   onDiagnostics,
+  showTurnStatus = true,
   className = ''
 }) => {
   const overallColor = getStatusColor(connectionStatus.overall);
@@ -203,6 +206,13 @@ export const ConnectionStabilityIndicator: React.FC<ConnectionStabilityIndicator
                 🔍 Diagnose
               </Button>
             )}
+          </div>
+        )}
+
+        {/* FASE 4: TURN Status Integration */}
+        {showTurnStatus && (
+          <div className="border-t pt-3">
+            <TurnStatusIndicator compact />
           </div>
         )}
 

@@ -1,8 +1,9 @@
 
+// FASE 1: Integrar hooks no LivePage
 import { useState, useRef, useEffect } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
 import { generateSessionId } from '@/utils/sessionUtils';
-import { initHostWebRTC } from '@/utils/webrtc';
+import { useWebRTCInitialization } from './useWebRTCInitialization';
 
 export const useLivePageState = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -28,6 +29,13 @@ export const useLivePageState = () => {
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
+  // FASE 1: Usar hook de inicialização WebRTC com diagnóstico TURN
+  const webrtcInit = useWebRTCInitialization({
+    sessionId: sessionId || '',
+    isHost: true,
+    autoInit: !!sessionId
+  });
+
   // 🚀 CORREÇÃO CRÍTICA: Gerar sessionId automaticamente na inicialização
   useEffect(() => {
     if (!sessionId) {
@@ -37,12 +45,13 @@ export const useLivePageState = () => {
     }
   }, []);
 
-  useEffect(() => {
-    if (sessionId) {
-      console.log('🚀 Iniciando WebRTC com sessionId:', sessionId);
-      initHostWebRTC(sessionId);
-    }
-  }, [sessionId]);
+  // Remover inicialização manual do WebRTC - agora é automática via hook
+  // useEffect(() => {
+  //   if (sessionId) {
+  //     console.log('🚀 Iniciando WebRTC com sessionId:', sessionId);
+  //     initHostWebRTC(sessionId);
+  //   }
+  // }, [sessionId]);
 
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
@@ -89,6 +98,8 @@ export const useLivePageState = () => {
     qrDescriptionPosition, setQrDescriptionPosition,
     participantStreams, setParticipantStreams,
     localStream, setLocalMediaStream,
-    fileInputRef
+    fileInputRef,
+    // FASE 1: Expor estado da inicialização WebRTC
+    webrtcInit
   };
 };
