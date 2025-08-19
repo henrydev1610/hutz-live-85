@@ -299,16 +299,9 @@ export const useTransmissionWindow = () => {
             // ====== Handlers (BroadcastChannel) ======
             channel.addEventListener('message', async (event) => {
               const data = event.data;
+              console.log("📨 TRANSMISSION: Received message:", data?.type, data);
               
-              // CORREÇÃO CRÍTICA: Validar data antes de acessar propriedades
-              if (!data || typeof data !== 'object') {
-                console.warn("📨 TRANSMISSION: Invalid channel message data:", data);
-                return;
-              }
-              
-              console.log("📨 TRANSMISSION: Received message:", data.type, data);
-              
-              if (data.type === 'video-stream' && data.participantId && data.hasStream) {
+              if (data?.type === 'video-stream' && data.participantId && data.hasStream) {
                 if (!participantSlots[data.participantId] && availableSlots.length > 0) {
                   const slotIndex = availableSlots.shift();
                   participantSlots[data.participantId] = slotIndex;
@@ -331,16 +324,9 @@ export const useTransmissionWindow = () => {
             // ====== Handlers (postMessage do host) ======
             window.addEventListener('message', async (event) => {
               const data = event.data;
+              console.log("📩 TRANSMISSION: Received window message:", data?.type);
               
-              // CORREÇÃO CRÍTICA: Validar data antes de acessar propriedades
-              if (!data || typeof data !== 'object') {
-                console.warn("📩 TRANSMISSION: Invalid window message data:", data);
-                return;
-              }
-              
-              console.log("📩 TRANSMISSION: Received window message:", data.type);
-              
-              if (data.type === 'participant-stream-ready' && data.participantId) {
+              if (data?.type === 'participant-stream-ready' && data.participantId) {
                 if (!participantSlots[data.participantId] && availableSlots.length > 0) {
                   const slotIndex = availableSlots.shift();
                   participantSlots[data.participantId] = slotIndex;
@@ -526,15 +512,7 @@ export const useTransmissionWindow = () => {
       // Handler de mensagens vindas da popup
       const handleTransmissionMessage = (event: MessageEvent) => {
         if (event.source === newWindow) {
-          // CORREÇÃO CRÍTICA: Validar event.data antes de acessar propriedades
-          if (!event.data || typeof event.data !== 'object') {
-            console.warn('📨 Transmission Window: Invalid message data:', event.data);
-            return;
-          }
-          
-          const type = event.data.type || 'unknown';
-          console.log('📨 Transmission Window: Received message type:', type);
-          
+          const type = (event.data && event.data.type) || 'unknown';
           if (type === 'transmission-ready') {
             setTimeout(() => {
               updateTransmissionParticipants();
