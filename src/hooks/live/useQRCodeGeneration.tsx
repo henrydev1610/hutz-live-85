@@ -1,6 +1,6 @@
 
 import { useState } from 'react';
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/components/ui/use-toast";
 import QRCode from 'qrcode';
 import { generateSessionId } from '@/utils/sessionUtils';
 

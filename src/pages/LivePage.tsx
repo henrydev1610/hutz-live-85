@@ -1,5 +1,6 @@
+
 import React, { useEffect, useState } from 'react';
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/components/ui/use-toast";
 import LivePageContainer from '@/components/live/LivePageContainer';
 import { LovableDebugPanel } from '@/components/debug/LovableDebugPanel';
 import ConnectionHealthMonitor from '@/components/live/ConnectionHealthMonitor';
@@ -11,8 +12,6 @@ import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
-import { useWebRTCInitializer } from '@/hooks/live/useWebRTCInitializer';
-import { useAutoQRGeneration } from '@/hooks/live/useAutoQRGeneration';
 // Removed conflicting WebRTC stability systems - now unified in useParticipantManagement
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
@@ -25,35 +24,8 @@ const LivePage: React.FC = () => {
   const { toast } = useToast();
   const state = useLivePageState();
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
-  const [webrtcReady, setWebrtcReady] = useState(false);
-  
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
-  
-  // ✅ CORREÇÃO CRÍTICA: Inicialização WebRTC com sessionId não-nulo
-  console.log('🚀 LIVE PAGE: Iniciando WebRTC com sessionId:', state.sessionId);
-  const { isInitialized } = useWebRTCInitializer({
-    sessionId: state.sessionId,
-    onWebRTCReady: () => {
-      console.log('✅ LIVE PAGE: WebRTC pronto!');
-      setWebrtcReady(true);
-    }
-  });
-
-  // ✅ CORREÇÃO CRÍTICA: Auto-geração do QR Code independente do WebRTC
-  const { qrGenerated } = useAutoQRGeneration({
-    sessionId: state.sessionId,
-    handleGenerateQRCode,
-    state
-  });
-
-  console.log('🔍 LIVE PAGE STATUS:', {
-    sessionId: state.sessionId,
-    isInitialized,
-    webrtcReady,
-    qrGenerated,
-    qrCodeExists: !!state.qrCodeSvg
-  });
   
   const { closeFinalAction } = useFinalAction({
     finalActionOpen: state.finalActionOpen,
@@ -67,62 +39,6 @@ const LivePage: React.FC = () => {
   // ✅ DIAGNÓSTICO CRÍTICO: INICIALIZAR STREAM DISPLAY MANAGER 
   const streamDisplayManager = useStreamDisplayManager();
   
-  // ENHANCED: Transmission participants update with debugging and cache management
-  const updateTransmissionParticipants = () => {
-    console.log('🔄 HOST: Updating transmission participants with cache awareness');
-    
-    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      const participantsWithStreams = state.participantList.map(p => ({
-        ...p,
-        hasStream: p.active && p.hasVideo
-      }));
-      
-      const selectedParticipants = participantsWithStreams.filter(p => p.selected);
-      
-      console.log('📊 HOST: Transmission update with environment info:', {
-        totalParticipants: participantsWithStreams.length,
-        selectedParticipants: selectedParticipants.length,
-        activeStreams: Object.keys(state.participantStreams).length,
-        environment: getEnvironmentInfo()
-      });
-      
-      try {
-        transmissionWindowRef.current.postMessage({
-          type: 'update-participants',
-          participants: participantsWithStreams,
-          environment: getEnvironmentInfo(),
-          timestamp: Date.now(),
-          cacheVersion: Date.now() // Force cache refresh
-        }, '*');
-        
-        console.log('✅ HOST: Participants sent to transmission window with cache busting');
-      } catch (error) {
-        console.error('❌ HOST: Failed to send participants to transmission:', error);
-        
-        // Retry with cache clear
-        console.log('🔄 HOST: Retrying with cache clear');
-        clearConnectionCache();
-        setTimeout(() => {
-          updateTransmissionParticipants();
-        }, 1000);
-      }
-    } else {
-      console.warn('⚠️ HOST: Transmission window not available for update');
-    }
-  };
-
-  // ✅ SISTEMA WebRTC: Participant management com inicialização forçada
-  const participantManagement = useParticipantManagement({
-    participantList: state.participantList,
-    setParticipantList: state.setParticipantList,
-    participantStreams: state.participantStreams,
-    setParticipantStreams: state.setParticipantStreams,
-    sessionId: state.sessionId,
-    transmissionWindowRef,
-    updateTransmissionParticipants,
-    isHost: true // CORREÇÃO CRÍTICA: Forçar papel de host na rota /live
-  });
-
   // ✅ DIAGNÓSTICO CRÍTICO: DEBUG COMPLETO + LISTENERS EXTRAS
   useEffect(() => {
     console.log(`🚨 DIAGNÓSTICO CRÍTICO: LivePage initialized with sessionId: ${state.sessionId}`);
@@ -167,6 +83,10 @@ const LivePage: React.FC = () => {
       delete (window as any).__livePageDebug;
     };
   }, [streamDisplayManager, state.sessionId, state.participantList, state.participantStreams]);
+
+  // ✅ CORREÇÃO CRÍTICA: Sistema WebRTC unificado via useParticipantManagement
+  // Removidos sistemas conflitantes useDesktopWebRTCStability e useMobileWebRTCStability
+  console.log('🚀 LIVE PAGE: Using unified WebRTC system via useParticipantManagement');
 
   // Environment detection and WebRTC management
   useEffect(() => {
@@ -259,6 +179,33 @@ const LivePage: React.FC = () => {
     window.addEventListener('desktop-force-reset', handleDesktopForceReset);
     window.addEventListener('desktop-break-loops', handleDesktopBreakLoops);
 
+    // Executar diagnósticos críticos na primeira carga - TEMPORARIAMENTE DESABILITADO
+    // const runInitialDiagnostics = async () => {
+    //   console.log('🔧 LIVE PAGE: Running initial connectivity diagnostics...');
+    //   
+    //   try {
+    //     // Teste de conectividade do servidor
+    //     await ServerConnectivityTest.runComprehensiveTest();
+    //     
+    //     // Diagnósticos de WebSocket
+    //     const wsResult = await WebSocketDiagnostics.runDiagnostics();
+    //     
+    //     if (!wsResult.success) {
+    //       console.warn('⚠️ LIVE PAGE: WebSocket diagnostics failed:', wsResult.error);
+    //       toast({
+    //         title: "Problema de Conectividade",
+    //         description: "Detectamos problemas de conexão. Verifique sua internet.",
+    //         variant: "destructive",
+    //       });
+    //     }
+    //     
+    //   } catch (error) {
+    //     console.error('❌ LIVE PAGE: Diagnostics failed:', error);
+    //   }
+    // };
+
+    // runInitialDiagnostics(); // DESABILITADO
+
     // Cleanup listeners on unmount
     return () => {
       window.removeEventListener('force-webrtc-reset', handleForceReset);
@@ -267,6 +214,61 @@ const LivePage: React.FC = () => {
       window.removeEventListener('desktop-break-loops', handleDesktopBreakLoops);
     };
   }, [toast]);
+
+  // ENHANCED: Transmission participants update with debugging and cache management
+  const updateTransmissionParticipants = () => {
+    console.log('🔄 HOST: Updating transmission participants with cache awareness');
+    
+    if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+      const participantsWithStreams = state.participantList.map(p => ({
+        ...p,
+        hasStream: p.active && p.hasVideo
+      }));
+      
+      const selectedParticipants = participantsWithStreams.filter(p => p.selected);
+      
+      console.log('📊 HOST: Transmission update with environment info:', {
+        totalParticipants: participantsWithStreams.length,
+        selectedParticipants: selectedParticipants.length,
+        activeStreams: Object.keys(state.participantStreams).length,
+        environment: getEnvironmentInfo()
+      });
+      
+      try {
+        transmissionWindowRef.current.postMessage({
+          type: 'update-participants',
+          participants: participantsWithStreams,
+          environment: getEnvironmentInfo(),
+          timestamp: Date.now(),
+          cacheVersion: Date.now() // Force cache refresh
+        }, '*');
+        
+        console.log('✅ HOST: Participants sent to transmission window with cache busting');
+      } catch (error) {
+        console.error('❌ HOST: Failed to send participants to transmission:', error);
+        
+        // Retry with cache clear
+        console.log('🔄 HOST: Retrying with cache clear');
+        clearConnectionCache();
+        setTimeout(() => {
+          updateTransmissionParticipants();
+        }, 1000);
+      }
+    } else {
+      console.warn('⚠️ HOST: Transmission window not available for update');
+    }
+  };
+
+  const participantManagement = useParticipantManagement({
+    participantList: state.participantList,
+    setParticipantList: state.setParticipantList,
+    participantStreams: state.participantStreams,
+    setParticipantStreams: state.setParticipantStreams,
+    sessionId: state.sessionId,
+    transmissionWindowRef,
+    updateTransmissionParticipants,
+    isHost: true // CORREÇÃO CRÍTICA: Forçar papel de host na rota /live
+  });
 
   // Use the effects hook
   useLivePageEffects({

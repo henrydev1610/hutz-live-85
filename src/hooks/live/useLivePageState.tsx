@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
 import { generateSessionId } from '@/utils/sessionUtils';
-// ❌ REMOVIDO: import { initHostWebRTC } from '@/utils/webrtc'; - não mais necessário
+import { initHostWebRTC } from '@/utils/webrtc';
 
 export const useLivePageState = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -26,15 +26,23 @@ export const useLivePageState = () => {
   const [finalActionOpen, setFinalActionOpen] = useState(false);
   const [finalActionTimeLeft, setFinalActionTimeLeft] = useState(20);
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
-  
-  // ✅ CORREÇÃO CRÍTICA: SessionId gerado sincronamente para evitar race conditions
-  const [sessionId] = useState<string>(() => {
-    const newSessionId = generateSessionId();
-    console.log('🚀 STATE: Gerando sessionId síncrono:', newSessionId);
-    return newSessionId;
-  });
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
-  // ❌ REMOVIDO: Duplicação removida - inicialização agora é feita pelo useWebRTCInitializer
+  // 🚀 CORREÇÃO CRÍTICA: Gerar sessionId automaticamente na inicialização
+  useEffect(() => {
+    if (!sessionId) {
+      const newSessionId = generateSessionId();
+      console.log('🚀 Gerando novo sessionId:', newSessionId);
+      setSessionId(newSessionId);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (sessionId) {
+      console.log('🚀 Iniciando WebRTC com sessionId:', sessionId);
+      initHostWebRTC(sessionId);
+    }
+  }, [sessionId]);
 
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
@@ -76,7 +84,7 @@ export const useLivePageState = () => {
     finalActionOpen, setFinalActionOpen,
     finalActionTimeLeft, setFinalActionTimeLeft,
     finalActionTimerId, setFinalActionTimerId,
-    sessionId,
+    sessionId, setSessionId,
     qrCodePosition, setQrCodePosition,
     qrDescriptionPosition, setQrDescriptionPosition,
     participantStreams, setParticipantStreams,
