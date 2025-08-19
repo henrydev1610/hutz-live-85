@@ -13,6 +13,14 @@ import NotFound from './pages/NotFound';
 import ParticipantPage from './pages/ParticipantPage';
 
 function App() {
+  // Verifica se foi redirecionado da página 404
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('route') === '404') {
+      window.history.replaceState({}, '', '/404');
+    }
+  }, []);
+
   return (
     <BrowserRouter>
       <Routes>
