@@ -125,10 +125,11 @@ class ParticipantHandshakeManager {
       return;
     }
 
-    console.log('🚨 CRÍTICO [PARTICIPANT] Setting up event handlers');
+    console.log('🚨 CRÍTICO [PARTICIPANT] Setting up event handlers with DUAL REGISTRATION');
     
-    // Limpar handlers existentes primeiro para evitar duplicação  
-    // Note: UnifiedWebSocketService não tem método off(), então apenas registramos novos handlers
+    // CORREÇÃO 5: DUAL EVENT REGISTRATION - Registrar tanto no eventEmitter quanto no socket diretamente
+    const socketInstance = (unifiedWebSocketService as any).socket;
+    console.log('🔧 DUAL REGISTRATION: Socket instance available:', !!socketInstance);
     
     // Listen for WebRTC offer request from host
     unifiedWebSocketService.on('webrtc-request-offer', async (data: any) => {
@@ -169,10 +170,10 @@ class ParticipantHandshakeManager {
       await this.createAndSendOffer(hostId);
     });
 
-    // Handler para respostas (answers) do host
-    unifiedWebSocketService.on('webrtc-answer', async (data: any) => {
+    // CORREÇÃO 5: DUAL EVENT REGISTRATION - Handler para respostas (answers) do host
+    const answerHandler = async (data: any) => {
       const hostId = data?.fromUserId || data?.fromSocketId || data?.hostId;
-      const answer = data?.answer;
+      let answer = data?.answer;
 
       console.log(`🚨 CRÍTICO [PARTICIPANT] Answer recebido do host`, {
         hostId,
@@ -186,8 +187,19 @@ class ParticipantHandshakeManager {
         timestamp: Date.now()
       });
 
-      if (!hostId || !answer?.sdp || !answer?.type) {
-        console.error('❌ [PARTICIPANT] Invalid answer format:', data);
+      // CORREÇÃO 2: VALIDAÇÃO CRÍTICA DE PAYLOAD - Melhorar validação para aceitar diferentes formatos
+      if (!answer && data?.sdp && data?.type) {
+        console.log('🔄 [PARTICIPANT] Fallback: Using data directly as answer');
+        answer = { sdp: data.sdp, type: data.type };
+      }
+
+      if (!hostId) {
+        console.error('❌ [PARTICIPANT] Missing hostId in answer:', data);
+        return;
+      }
+
+      if (!answer?.sdp || !answer?.type) {
+        console.error('❌ [PARTICIPANT] Invalid answer format after fallback:', data);
         return;
       }
 
@@ -261,6 +273,9 @@ class ParticipantHandshakeManager {
         
         console.log('✅ [PARTICIPANT] Answer processing complete - waiting for connection establishment');
         
+        // CORREÇÃO 4: SIGNALING STATE MONITORING - Iniciar monitoramento específico para have-local-offer
+        this.startSignalingStateMonitoring(hostId);
+        
       } catch (err) {
         console.error('❌ CRÍTICO [PARTICIPANT] Error applying answer:', err);
         console.error('❌ CRÍTICO [PARTICIPANT] Answer error details:', {
@@ -271,7 +286,14 @@ class ParticipantHandshakeManager {
         });
         this.handleConnectionFailure(hostId);
       }
-    });
+    };
+
+    // CORREÇÃO 5: DUAL REGISTRATION - Registrar nos dois lugares
+    unifiedWebSocketService.on('webrtc-answer', answerHandler);
+    if (socketInstance) {
+      socketInstance.on('webrtc-answer', answerHandler);
+      console.log('✅ [PARTICIPANT] DUAL REGISTRATION: webrtc-answer handler registered on both eventEmitter and socket');
+    }
 
     // Receive ICE candidates from host with consistent buffering
     unifiedWebSocketService.on('webrtc-candidate', async (data: any) => {
@@ -320,6 +342,16 @@ class ParticipantHandshakeManager {
       } else {
         this.pendingCandidates.push(candidate);
         console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId} (total: ${this.pendingCandidates.length}) - reason: remoteDesc=${!!hasRemoteDesc}, state=${signalingState}`);
+        
+        // CORREÇÃO 3: ENHANCED ICE CANDIDATE BUFFERING - Auto-flush timeout
+        if (this.pendingCandidates.length === 1) {
+          setTimeout(() => {
+            if (this.pendingCandidates.length > 0) {
+              console.warn(`⚠️ [PARTICIPANT] ICE candidates still buffered after 10s, clearing buffer (${this.pendingCandidates.length} candidates)`);
+              this.pendingCandidates = [];
+            }
+          }, 10000);
+        }
       }
     });
     
@@ -500,6 +532,41 @@ class ParticipantHandshakeManager {
       console.log(`[PART] Host check failed: ${hostId}`, error);
       return { ready: false, reason: 'check-failed' };
     }
+  }
+
+  // CORREÇÃO 4: SIGNALING STATE MONITORING - Detector específico para have-local-offer travado
+  private startSignalingStateMonitoring(hostId: string): void {
+    console.log('🚨 CRÍTICO [PARTICIPANT] Starting signaling state monitoring for have-local-offer');
+    
+    if (!this.peerConnection) return;
+    
+    let checkCount = 0;
+    const maxChecks = 20; // 10 segundos com checks de 500ms
+    
+    const signalingMonitor = setInterval(() => {
+      checkCount++;
+      
+      if (!this.peerConnection) {
+        clearInterval(signalingMonitor);
+        return;
+      }
+      
+      const signalingState = this.peerConnection.signalingState;
+      console.log(`🔍 [PARTICIPANT] Signaling check ${checkCount}/${maxChecks}: ${signalingState}`);
+      
+      if (signalingState === 'stable') {
+        console.log('✅ [PARTICIPANT] Signaling state reached stable - monitoring complete');
+        clearInterval(signalingMonitor);
+        return;
+      }
+      
+      if (signalingState === 'have-local-offer' && checkCount >= maxChecks) {
+        console.error('❌ CRÍTICO [PARTICIPANT] Stuck in have-local-offer for >10s - forcing handshake restart');
+        clearInterval(signalingMonitor);
+        this.handleConnectionFailure(hostId);
+        return;
+      }
+    }, 500);
   }
 
   // CORREÇÃO 4: Método para aguardar estabelecimento completo da conexão
