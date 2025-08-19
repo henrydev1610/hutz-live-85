@@ -168,13 +168,11 @@ class HostHandshakeManager {
 
       // PASSO 6: Enviar answer
       console.log(`🚨 CRÍTICO [HOST] Sending answer to ${data.participantId}`);
-      unifiedWebSocketService.emit('webrtc-answer', {
-        answer,
-        toSocketId: data.fromSocketId,
-        hostId: 'host',
-        participantId: data.participantId,
-        timestamp: Date.now()
-      });
+      unifiedWebSocketService.sendWebRTCAnswer(
+        data.participantId,
+        answer.sdp!,
+        answer.type
+      );
 
       console.log(`✅ CRÍTICO [HOST] Answer sent to ${data.participantId} - Aguardando ontrack...`);
 
