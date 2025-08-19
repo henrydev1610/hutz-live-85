@@ -68,6 +68,11 @@ class HostHandshakeManager {
         const state = pc.connectionState;
         console.log(`[HOST] Connection state for ${participantId}: ${state}`);
         
+        // CORREÇÃO 3: Emitir eventos de estado WebRTC
+        window.dispatchEvent(new CustomEvent('webrtc-negotiation-state', {
+          detail: { participantId, state: state === 'connected' ? 'connected' : state }
+        }));
+        
         if (state === 'connected') {
           // Clear timeout on successful connection
           const timeout = handshakeTimeouts.get(participantId);
@@ -96,16 +101,20 @@ class HostHandshakeManager {
 
       hostPeerConnections.set(participantId, pc);
       
-      // Desktop-optimized timeout: 10 seconds max
+      // CORREÇÃO 1: Timeout adaptativo baseado no tipo de dispositivo
+      const isMobileParticipant = participantId.includes('mobile') || participantId.includes('participant');
+      const timeoutDuration = isMobileParticipant ? 30000 : 15000; // 30s mobile, 15s desktop
+      
+      console.log(`[HOST] Setting ${isMobileParticipant ? 'MOBILE' : 'DESKTOP'} timeout for ${participantId}: ${timeoutDuration}ms`);
+      
       const timeout = setTimeout(() => {
-        console.log(`[HOST] Desktop handshake timeout for ${participantId} (10s) - force cleanup`);
-        this.cleanupHostHandshake(participantId);
+        console.log(`[HOST] ${isMobileParticipant ? 'Mobile' : 'Desktop'} handshake timeout for ${participantId} (${timeoutDuration}ms)`);
         
-        // Dispatch desktop timeout event
-        window.dispatchEvent(new CustomEvent('desktop-handshake-timeout', {
-          detail: { participantId, timeout: 10000 }
-        }));
-      }, 10000); // Desktop: 10 seconds timeout
+        // CORREÇÃO 2: Fallback automático - tentar criar offer direto do host
+        console.log(`[HOST] FALLBACK: Attempting direct offer creation for ${participantId}`);
+        this.attemptDirectOfferCreation(participantId);
+        
+      }, timeoutDuration);
       
       handshakeTimeouts.set(participantId, timeout);
     }
@@ -128,6 +137,11 @@ class HostHandshakeManager {
         console.error('❌ CRÍTICO [HOST] Invalid offer data:', data);
         return;
       }
+
+      // CORREÇÃO 3: Emitir estado de negociação
+      window.dispatchEvent(new CustomEvent('webrtc-negotiation-state', {
+        detail: { participantId: data.participantId, state: 'negotiating' }
+      }));
 
       console.log(`✅ [HOST] Processing offer from ${data.participantId}`);
 
@@ -181,8 +195,18 @@ class HostHandshakeManager {
       console.log(`✅ CRÍTICO [HOST] Answer sent to ${data.participantId} via sendWebRTCAnswer - Aguardando ontrack...`);
       console.log(`📋 CRÍTICO [HOST] Answer details: type=${answer.type}, sdpLength=${answer.sdp.length}`);
 
+      // CORREÇÃO 3: Emitir estado conectando após answer
+      window.dispatchEvent(new CustomEvent('webrtc-negotiation-state', {
+        detail: { participantId: data.participantId, state: 'connecting' }
+      }));
+
     } catch (error) {
       console.error('❌ CRÍTICO [HOST] Error handling offer:', error);
+      
+      // CORREÇÃO 3: Emitir estado de erro
+      window.dispatchEvent(new CustomEvent('webrtc-negotiation-state', {
+        detail: { participantId: data.participantId, state: 'failed' }
+      }));
     }
   }
 
@@ -310,6 +334,38 @@ class HostHandshakeManager {
       });
     });
     return states;
+  }
+
+  // CORREÇÃO 2: Método de fallback para criar offer direto do host
+  async attemptDirectOfferCreation(participantId: string): Promise<void> {
+    try {
+      console.log(`🚀 [HOST] FALLBACK: Creating direct offer for ${participantId}`);
+      
+      const pc = this.getOrCreatePC(participantId);
+      
+      // Criar offer do lado host
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      
+      console.log(`✅ [HOST] FALLBACK: Direct offer created for ${participantId}`);
+      
+      // Enviar offer diretamente para o participante
+      unifiedWebSocketService.sendWebRTCOffer(participantId, offer.sdp!, offer.type!);
+      
+      console.log(`📤 [HOST] FALLBACK: Direct offer sent to ${participantId}`);
+      
+      // Manter timeout ativo mas com tempo menor para response
+      setTimeout(() => {
+        if (pc.connectionState !== 'connected') {
+          console.log(`[HOST] FALLBACK timeout - cleaning up ${participantId}`);
+          this.cleanupHostHandshake(participantId);
+        }
+      }, 15000); // 15s para resposta ao fallback
+      
+    } catch (error) {
+      console.error(`❌ [HOST] FALLBACK failed for ${participantId}:`, error);
+      this.cleanupHostHandshake(participantId);
+    }
   }
 
   resetHostWebRTC(): void {

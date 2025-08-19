@@ -80,7 +80,9 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
   // ✅ ETAPA 4: MOBILE DETECTION WITH DEBUGGING
   const isMobile = participant.isMobile ?? detectMobileAggressively();
   
-  // ✅ ETAPA 5: STATUS VISUAL EM TEMPO REAL
+  // ✅ CORREÇÃO 4: STATUS VISUAL APRIMORADO - não mostrar "disconnected" durante negociação
+  const [isNegotiating, setIsNegotiating] = useState(false);
+  
   const { 
     status, 
     statusText, 
@@ -95,7 +97,26 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
     stream
   });
 
-  // ✅ CORREÇÃO 1: BRIDGE REATIVO - Stream disponível mas sem vídeo
+  // Override status during WebRTC negotiation
+  const displayStatus = isNegotiating && status === 'disconnected' ? 'connecting' : status;
+  const displayStatusText = isNegotiating && statusText === 'Desconectado' ? 'Negociando...' : statusText;
+  const displayStatusColor = isNegotiating && statusColor === 'text-red-400' ? 'text-yellow-400' : statusColor;
+
+  // ✅ CORREÇÃO 3: Monitor de negociação WebRTC
+  useEffect(() => {
+    const handleWebRTCNegotiation = (event: CustomEvent) => {
+      const { participantId, state } = event.detail;
+      if (participantId === participant.id) {
+        console.log(`🔄 WEBRTC STATE: ${participantId} -> ${state}`);
+        setIsNegotiating(state === 'negotiating' || state === 'connecting');
+      }
+    };
+
+    window.addEventListener('webrtc-negotiation-state', handleWebRTCNegotiation as EventListener);
+    return () => window.removeEventListener('webrtc-negotiation-state', handleWebRTCNegotiation as EventListener);
+  }, [participant.id]);
+
+  // ✅ CORREÇÃO 1: BRIDGE REATIVO - Stream disponível mas sem vídeo  
   useEffect(() => {
     if (!stream || !containerRef.current) return;
     
@@ -152,12 +173,13 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
         data-unified-video="true"
       />
       
-      {/* FASE 5: STATUS VISUAL EM TEMPO REAL - indicador unificado */}
+      {/* CORREÇÃO 4: STATUS VISUAL APRIMORADO - sem "disconnected" durante negociação */}
       <div className="absolute top-1 right-1 bg-black/70 text-white text-xs px-2 py-1 rounded z-30">
         <div className="flex items-center gap-1">
           <span>{statusIcon}</span>
-          <span className={statusColor}>{statusText}</span>
+          <span className={displayStatusColor}>{displayStatusText}</span>
           {isMobile && <span>📱</span>}
+          {isNegotiating && <span className="animate-spin">⚙️</span>}
         </div>
       </div>
       
