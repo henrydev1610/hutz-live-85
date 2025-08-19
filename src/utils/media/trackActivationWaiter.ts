@@ -105,6 +105,96 @@ export const waitForStreamTracks = async (
   });
 };
 
+export const waitForVideoData = async (
+  videoElement: HTMLVideoElement,
+  participantId: string = 'unknown',
+  maxWaitTime: number = 5000
+): Promise<{ hasVideoData: boolean; dimensions: { width: number; height: number } }> => {
+  console.log(`🎬 [VIDEO-DATA] Aguardando dados de vídeo para ${participantId}`, {
+    currentWidth: videoElement.videoWidth,
+    currentHeight: videoElement.videoHeight,
+    readyState: videoElement.readyState,
+    maxWaitTime
+  });
+
+  // Se já tem dados de vídeo, retorna imediatamente
+  if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+    console.log(`✅ [VIDEO-DATA] Dados já disponíveis para ${participantId}:`, {
+      width: videoElement.videoWidth,
+      height: videoElement.videoHeight
+    });
+    return { 
+      hasVideoData: true, 
+      dimensions: { width: videoElement.videoWidth, height: videoElement.videoHeight } 
+    };
+  }
+
+  const startTime = Date.now();
+  const maxAttempts = Math.floor(maxWaitTime / 100);
+  let attempts = 0;
+
+  return new Promise((resolve) => {
+    const checkVideoData = () => {
+      attempts++;
+      const waitTime = Date.now() - startTime;
+      
+      console.log(`🔍 [VIDEO-DATA] Tentativa ${attempts}/${maxAttempts} para ${participantId}:`, {
+        width: videoElement.videoWidth,
+        height: videoElement.videoHeight,
+        readyState: videoElement.readyState,
+        waitTime
+      });
+
+      // Sucesso: tem dados de vídeo
+      if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+        console.log(`✅ [VIDEO-DATA] SUCESSO! Dados de vídeo encontrados para ${participantId}:`, {
+          width: videoElement.videoWidth,
+          height: videoElement.videoHeight,
+          waitTime,
+          attempts
+        });
+        
+        resolve({ 
+          hasVideoData: true, 
+          dimensions: { width: videoElement.videoWidth, height: videoElement.videoHeight } 
+        });
+        return;
+      }
+
+      // Timeout ou máximo de tentativas
+      if (attempts >= maxAttempts || waitTime >= maxWaitTime) {
+        console.error(`❌ [VIDEO-DATA] TIMEOUT! Dados de vídeo não disponíveis para ${participantId}:`, {
+          width: videoElement.videoWidth,
+          height: videoElement.videoHeight,
+          readyState: videoElement.readyState,
+          waitTime,
+          attempts
+        });
+        
+        resolve({ 
+          hasVideoData: false, 
+          dimensions: { width: videoElement.videoWidth, height: videoElement.videoHeight } 
+        });
+        return;
+      }
+
+      // Continua tentando
+      setTimeout(checkVideoData, 100);
+    };
+
+    // Aguarda loadedmetadata primeiro, se necessário
+    if (videoElement.readyState < 1) {
+      const metadataHandler = () => {
+        videoElement.removeEventListener('loadedmetadata', metadataHandler);
+        checkVideoData();
+      };
+      videoElement.addEventListener('loadedmetadata', metadataHandler);
+    } else {
+      checkVideoData();
+    }
+  });
+};
+
 export const validateStreamWithTrackWait = async (
   stream: MediaStream | null, 
   participantId: string = 'unknown',
@@ -142,4 +232,61 @@ export const validateStreamWithTrackWait = async (
   });
   
   return { isValid: true, stream };
+};
+
+export const validateStreamWithVideoData = async (
+  stream: MediaStream | null, 
+  participantId: string = 'unknown',
+  maxWaitTime: number = 5000
+): Promise<{ isValid: boolean; stream: MediaStream | null; hasVideoData: boolean }> => {
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const deviceType = isMobile ? 'mobile' : 'desktop';
+  
+  // Primeiro valida tracks básicas
+  const trackValidation = await validateStreamWithTrackWait(stream, participantId, maxWaitTime);
+  
+  if (!trackValidation.isValid || !trackValidation.stream) {
+    return { isValid: false, stream: trackValidation.stream, hasVideoData: false };
+  }
+
+  // Cria elemento de vídeo temporário para validar dados
+  const tempVideo = document.createElement('video');
+  tempVideo.muted = true;
+  tempVideo.playsInline = true;
+  tempVideo.srcObject = trackValidation.stream;
+
+  try {
+    // Aguarda dados de vídeo
+    const videoDataResult = await waitForVideoData(tempVideo, participantId, maxWaitTime);
+    
+    // Cleanup
+    tempVideo.srcObject = null;
+    tempVideo.remove();
+
+    if (videoDataResult.hasVideoData) {
+      console.log(`✅ [STREAM-VIDEO-VALIDATOR] Stream com dados de vídeo validada para ${participantId}:`, {
+        dimensions: videoDataResult.dimensions,
+        tracksCount: trackValidation.stream.getTracks().length
+      });
+      
+      streamLogger.logValidation(participantId, isMobile, deviceType, true, {
+        reason: 'stream_validated_with_video_data',
+        tracksCount: trackValidation.stream.getTracks().length,
+        videoDimensions: videoDataResult.dimensions
+      });
+      
+      return { isValid: true, stream: trackValidation.stream, hasVideoData: true };
+    } else {
+      console.error(`❌ [STREAM-VIDEO-VALIDATOR] Stream sem dados de vídeo para ${participantId}`);
+      return { isValid: false, stream: trackValidation.stream, hasVideoData: false };
+    }
+  } catch (error) {
+    console.error(`❌ [STREAM-VIDEO-VALIDATOR] Erro ao validar dados de vídeo para ${participantId}:`, error);
+    
+    // Cleanup em caso de erro
+    tempVideo.srcObject = null;
+    tempVideo.remove();
+    
+    return { isValid: false, stream: trackValidation.stream, hasVideoData: false };
+  }
 };

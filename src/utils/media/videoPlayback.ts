@@ -24,16 +24,62 @@ export const setupVideoElement = async (videoElement: HTMLVideoElement, stream: 
   videoElement.muted = true;
   videoElement.autoplay = true;
   
+  // Aguarda metadados e dados de vídeo antes de tentar play
+  const waitForVideoReady = async (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const maxAttempts = 50; // 5 segundos
+      
+      const checkVideoReady = () => {
+        attempts++;
+        
+        // Verifica se tem dimensões válidas
+        if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+          console.log(`✅ SETUP VIDEO: Dados de vídeo prontos: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+          resolve(true);
+          return;
+        }
+        
+        if (attempts >= maxAttempts) {
+          console.warn('⚠️ SETUP VIDEO: Timeout aguardando dados de vídeo');
+          resolve(false);
+          return;
+        }
+        
+        setTimeout(checkVideoReady, 100);
+      };
+      
+      // Se metadados já estão carregados, verifica imediatamente
+      if (videoElement.readyState >= 1) {
+        checkVideoReady();
+      } else {
+        // Aguarda metadados carregarem
+        const metadataHandler = () => {
+          videoElement.removeEventListener('loadedmetadata', metadataHandler);
+          checkVideoReady();
+        };
+        videoElement.addEventListener('loadedmetadata', metadataHandler);
+      }
+    });
+  };
+
   try {
+    console.log('📺 SETUP VIDEO: Aguardando dados de vídeo...');
+    const hasVideoData = await waitForVideoReady();
+    
+    if (!hasVideoData) {
+      console.warn('⚠️ SETUP VIDEO: Prosseguindo play sem dados de vídeo confirmados');
+    }
+    
     console.log('📺 SETUP VIDEO: Attempting to play video...');
     await videoElement.play();
     console.log(`✅ SETUP VIDEO: Video playing successfully (Mobile: ${isMobile})`);
     
-    // Verify video is actually playing
+    // Verificação final após play
     if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-      console.log(`✅ SETUP VIDEO: Video dimensions: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+      console.log(`✅ SETUP VIDEO: Video dimensions confirmadas: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
     } else {
-      console.warn('⚠️ SETUP VIDEO: Video dimensions are 0x0 - may still be loading');
+      console.warn('⚠️ SETUP VIDEO: Video tocando mas dimensões ainda são 0x0');
     }
     
   } catch (playError) {
