@@ -1,28 +1,21 @@
-
 import React, { useEffect, useState } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import LivePageContainer from '@/components/live/LivePageContainer';
 import { LovableDebugPanel } from '@/components/debug/LovableDebugPanel';
 import ConnectionHealthMonitor from '@/components/live/ConnectionHealthMonitor';
 import { useLivePageState } from '@/hooks/live/useLivePageState';
+import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useParticipantManagement } from '@/hooks/live/useParticipantManagement';
 import { useQRCodeGeneration } from '@/hooks/live/useQRCodeGeneration';
 import { useAutoQRGeneration } from '@/hooks/live/useAutoQRGeneration';
 import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
-import { ConnectionStabilityIndicator } from '@/components/live/ConnectionStabilityIndicator';
-import { TurnStatusIndicator } from '@/components/live/TurnStatusIndicator';
-import TransmissionControls from '@/components/live/TransmissionControls';
-import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
-// Removed conflicting WebRTC stability systems - now unified in useParticipantManagement
-import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
+import { generateSessionId } from '@/utils/sessionUtils';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
-// Temporariamente removido para resolver erro 404
-// import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
-// import { ServerConnectivityTest } from '@/utils/debug/ServerConnectivityTest';
+import { streamCountMonitor } from '@/utils/debug/StreamCountMonitor';
 
 const LivePage: React.FC = () => {
   const { toast } = useToast();
@@ -49,13 +42,13 @@ const LivePage: React.FC = () => {
 
   // ✅ DIAGNÓSTICO CRÍTICO: INICIALIZAR STREAM DISPLAY MANAGER 
   const streamDisplayManager = useStreamDisplayManager();
-
-  // FASE 4: Mostrar status TURN na interface
-  const [showTurnDiagnostics, setShowTurnDiagnostics] = useState(false);
   
   // ✅ DIAGNÓSTICO CRÍTICO: DEBUG COMPLETO + LISTENERS EXTRAS
   useEffect(() => {
     console.log(`🚨 DIAGNÓSTICO CRÍTICO: LivePage initialized with sessionId: ${state.sessionId}`);
+    
+    // Iniciar monitoramento de streams
+    streamCountMonitor.startMonitoring();
     
     // ✅ DIAGNÓSTICO: Listeners para todos os eventos de debug
     const debugListeners = {
@@ -85,12 +78,37 @@ const LivePage: React.FC = () => {
         console.log('Participants:', state.participantList);
         console.log('Streams:', state.participantStreams);
         console.log('Available containers:', document.querySelectorAll('[data-participant-id]').length);
+      },
+      // ✅ NOVO: Funções de monitoramento de streams
+      getStreamInfo: () => ({
+        streamCount: Object.keys(state.participantStreams).length,
+        streamIds: Object.entries(state.participantStreams).map(([id, stream]) => ({
+          participantId: id,
+          streamId: stream.id.substring(0, 8),
+          active: stream.active,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length
+        }))
+      }),
+      forceStreamRefresh: () => {
+        console.log('🔄 [DEBUG] Forçando refresh de streams...');
+        streamCountMonitor.forceRefresh();
+        
+        // Force re-render
+        state.setParticipantStreams(prev => ({ ...prev }));
+      },
+      resetConnection: () => {
+        console.log('🔄 [DEBUG] Resetando conexão...');
+        clearConnectionCache();
+        clearDeviceCache();
+        window.location.reload();
       }
     };
     
     console.log('🔧 LIVE PAGE: Enhanced debug functions exposed to window.__livePageDebug');
     
     return () => {
+      streamCountMonitor.stopMonitoring();
       Object.entries(debugListeners).forEach(([event, handler]) => {
         window.removeEventListener(event, handler as EventListener);
       });
@@ -99,135 +117,7 @@ const LivePage: React.FC = () => {
   }, [streamDisplayManager, state.sessionId, state.participantList, state.participantStreams]);
 
   // ✅ CORREÇÃO CRÍTICA: Sistema WebRTC unificado via useParticipantManagement
-  // Removidos sistemas conflitantes useDesktopWebRTCStability e useMobileWebRTCStability
   console.log('🚀 LIVE PAGE: Using unified WebRTC system via useParticipantManagement');
-
-  // Environment detection and WebRTC management
-  useEffect(() => {
-    const envInfo = getEnvironmentInfo();
-    console.log('🌍 LIVE PAGE: Environment detected:', envInfo);
-    
-    // Clear cache on first load to ensure fresh state
-    console.log('🧹 LIVE PAGE: Initial cache clear');
-    clearConnectionCache();
-    clearDeviceCache();
-
-    // HOST-SPECIFIC: Setup WebRTC loop breaking listeners
-    const handleForceReset = () => {
-      console.log('🔄 LIVE PAGE HOST: Force WebRTC reset requested');
-      try {
-        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
-          const manager = getWebRTCManager();
-          if (manager) {
-            manager.cleanup();
-            toast({
-              title: "Conexão Resetada",
-              description: "WebRTC foi reinicializado com sucesso.",
-            });
-          }
-        });
-      } catch (error) {
-        console.error('❌ LIVE PAGE: Reset failed:', error);
-      }
-    };
-
-    const handleLoopBreak = () => {
-      console.log('⚡ LIVE PAGE HOST: Break WebRTC loop requested');
-      try {
-        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
-          const manager = getWebRTCManager();
-          if (manager && typeof manager.breakConnectionLoop === 'function') {
-            manager.breakConnectionLoop();
-            toast({
-              title: "Loop Quebrado",
-              description: "Conexões em loop foram limpas.",
-            });
-          }
-        });
-      } catch (error) {
-        console.error('❌ LIVE PAGE: Loop break failed:', error);
-      }
-    };
-
-    // Desktop-specific event handlers for improved stability
-    const handleDesktopForceReset = () => {
-      console.log('🖥️ LIVE PAGE: Desktop force reset triggered');
-      try {
-        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
-          const manager = getWebRTCManager();
-          if (manager) {
-            manager.resetWebRTC();
-          }
-        });
-        // Desktop stability now handled by unified system
-        toast({
-          title: "🖥️ Desktop Reset",
-          description: "WebRTC connections reset for desktop stability.",
-        });
-      } catch (error) {
-        console.error('❌ LIVE PAGE: Desktop reset failed:', error);
-      }
-    };
-
-    const handleDesktopBreakLoops = () => {
-      console.log('🚫 LIVE PAGE: Desktop break loops triggered');
-      try {
-        import('@/utils/webrtc').then(({ getWebRTCManager }) => {
-          const manager = getWebRTCManager();
-          if (manager && typeof manager.breakConnectionLoop === 'function') {
-            manager.breakConnectionLoop();
-          }
-        });
-        toast({
-          title: "🚫 Loops Broken",
-          description: "Desktop connection loops resolved.",
-        });
-      } catch (error) {
-        console.error('❌ LIVE PAGE: Desktop loop break failed:', error);
-      }
-    };
-
-    // Add event listeners for WebRTC control
-    window.addEventListener('force-webrtc-reset', handleForceReset);
-    window.addEventListener('break-webrtc-loop', handleLoopBreak);
-    window.addEventListener('desktop-force-reset', handleDesktopForceReset);
-    window.addEventListener('desktop-break-loops', handleDesktopBreakLoops);
-
-    // Executar diagnósticos críticos na primeira carga - TEMPORARIAMENTE DESABILITADO
-    // const runInitialDiagnostics = async () => {
-    //   console.log('🔧 LIVE PAGE: Running initial connectivity diagnostics...');
-    //   
-    //   try {
-    //     // Teste de conectividade do servidor
-    //     await ServerConnectivityTest.runComprehensiveTest();
-    //     
-    //     // Diagnósticos de WebSocket
-    //     const wsResult = await WebSocketDiagnostics.runDiagnostics();
-    //     
-    //     if (!wsResult.success) {
-    //       console.warn('⚠️ LIVE PAGE: WebSocket diagnostics failed:', wsResult.error);
-    //       toast({
-    //         title: "Problema de Conectividade",
-    //         description: "Detectamos problemas de conexão. Verifique sua internet.",
-    //         variant: "destructive",
-    //       });
-    //     }
-    //     
-    //   } catch (error) {
-    //     console.error('❌ LIVE PAGE: Diagnostics failed:', error);
-    //   }
-    // };
-
-    // runInitialDiagnostics(); // DESABILITADO
-
-    // Cleanup listeners on unmount
-    return () => {
-      window.removeEventListener('force-webrtc-reset', handleForceReset);
-      window.removeEventListener('break-webrtc-loop', handleLoopBreak);
-      window.removeEventListener('desktop-force-reset', handleDesktopForceReset);
-      window.removeEventListener('desktop-break-loops', handleDesktopBreakLoops);
-    };
-  }, [toast]);
 
   // ENHANCED: Transmission participants update with debugging and cache management
   const updateTransmissionParticipants = () => {
@@ -384,24 +274,9 @@ const LivePage: React.FC = () => {
         isVisible={showHealthMonitor}
         onClose={() => setShowHealthMonitor(false)}
       />
-      
-      {/* FASE 4: TURN Status Dashboard */}
-      {showTurnDiagnostics && (
-        <div className="fixed top-4 right-4 z-50">
-          <TurnStatusIndicator />
-        </div>
-      )}
 
       {/* Enhanced Debug Controls */}
       <div className="fixed bottom-4 left-4 flex flex-col gap-2 z-50">
-        <button
-          onClick={() => setShowTurnDiagnostics(!showTurnDiagnostics)}
-          className="bg-orange-500 text-white p-2 rounded-full text-xs"
-          title="TURN Status"
-        >
-          🧊 TURN
-        </button>
-        
         <button
           onClick={() => setShowHealthMonitor(!showHealthMonitor)}
           className="bg-blue-500 text-white p-2 rounded-full text-xs"
@@ -424,9 +299,23 @@ const LivePage: React.FC = () => {
         >
           🌍 Env
         </button>
+        
+        <button
+          onClick={() => {
+            if ((window as any).__livePageDebug) {
+              (window as any).__livePageDebug.forceStreamRefresh();
+            }
+            toast({
+              title: "Stream Refresh",
+              description: "Forçando atualização de streams ativos",
+            });
+          }}
+          className="bg-red-500 text-white p-2 rounded-full text-xs"
+          title="Force Stream Refresh"
+        >
+          📺 Refresh
+        </button>
       </div>
-
-      <WebRTCDebugToasts />
       
       {/* FASE 5: Painel de Debug Lovable */}
       <LovableDebugPanel sessionId={state.sessionId} />

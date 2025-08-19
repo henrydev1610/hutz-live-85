@@ -208,13 +208,38 @@ const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
         </div>
 
         {/* Stream Info */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Streams Ativos:</span>
-          <div className="flex items-center gap-1">
-            <Video className="h-4 w-4" />
-            <span className="font-semibold">{activeStreams}</span>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Streams Ativos:</span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Video className="h-4 w-4" />
+                <span className="font-semibold" id="active-streams-count">{activeStreams}</span>
+              </div>
+              <button
+                onClick={() => {
+                  console.log('🔄 [DEBUG] Forçando atualização de streams...');
+                  console.log('🔍 [DEBUG] Estado atual:', {
+                    activeStreams,
+                    participantCount,
+                    timestamp: Date.now()
+                  });
+                  
+                  // Forçar refresh via global debug function
+                  if ((window as any).__livePageDebug) {
+                    (window as any).__livePageDebug.forceStreamRefresh();
+                  }
+                  
+                  // Forçar re-render
+                  const event = new CustomEvent('force-streams-refresh');
+                  window.dispatchEvent(event);
+                }}
+                className="p-1 rounded hover:bg-gray-700 transition-colors"
+                title="Forçar atualização de streams"
+              >
+                <RefreshCw className="h-3 w-3" />
+              </button>
+            </div>
           </div>
-        </div>
 
         {/* Test Connection Button */}
         <div className="pt-4 border-t">

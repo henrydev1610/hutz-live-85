@@ -18,20 +18,49 @@ export const useWebRTCConnectionBridge = ({
 
   useEffect(() => {
     console.log('🌉 FASE 3: Configurando Connection Bridge Host→React');
+    console.log('🚨 CRÍTICO: Current participantStreams count:', Object.keys(participantStreams).length);
     
-    // BRIDGE ÚNICO: Sem verificações redundantes
+    // BRIDGE ÚNICO COM LOGS DETALHADOS
     const handleWebRTCTrack = (event: CustomEvent) => {
       const { participantId, stream } = event.detail;
-      console.log(`🎯 BRIDGE-ÚNICO: ${participantId}`);
       
-      if (!participantId || !stream) return;
+      console.log(`🚨 CRÍTICO [BRIDGE] Evento participant-stream-connected recebido:`, {
+        participantId,
+        streamId: stream?.id,
+        streamActive: stream?.active,
+        streamTracks: stream?.getTracks()?.length,
+        videoTracks: stream?.getVideoTracks()?.length,
+        currentStreamsCount: Object.keys(participantStreams).length,
+        timestamp: Date.now()
+      });
+      
+      if (!participantId || !stream) {
+        console.error('❌ [BRIDGE] Dados inválidos no evento:', { participantId, stream });
+        return;
+      }
+      
+      if (!stream.active) {
+        console.warn('⚠️ [BRIDGE] Stream não está ativo:', stream);
+        return;
+      }
+      
+      if (stream.getVideoTracks().length === 0) {
+        console.warn('⚠️ [BRIDGE] Stream não tem tracks de vídeo:', stream);
+        return;
+      }
       
       // Atualizar estados diretamente
-      setParticipantStreams(prev => ({ ...prev, [participantId]: stream }));
+      console.log(`✅ [BRIDGE] Adicionando stream para ${participantId} ao estado React`);
+      setParticipantStreams(prev => {
+        const newState = { ...prev, [participantId]: stream };
+        console.log(`🎯 [BRIDGE] Estado atualizado - streams ativos:`, Object.keys(newState).length);
+        return newState;
+      });
       
       setParticipantList(prev => {
         const exists = prev.some(p => p.id === participantId);
         if (!exists) {
+          console.log(`➕ [BRIDGE] Adicionando novo participante: ${participantId}`);
           return [...prev, {
             id: participantId,
             name: `Mobile-${participantId.slice(-4)}`,
@@ -43,12 +72,22 @@ export const useWebRTCConnectionBridge = ({
             isMobile: true
           }];
         }
+        
+        console.log(`🔄 [BRIDGE] Atualizando participante existente: ${participantId}`);
         return prev.map(p => 
           p.id === participantId 
             ? { ...p, hasVideo: true, active: true, lastActive: Date.now() }
             : p
         );
       });
+      
+      // Forçar re-render dos componentes dependentes
+      setTimeout(() => {
+        console.log(`🔄 [BRIDGE] Stream count após atualização:`, Object.keys(participantStreams).length + 1);
+        window.dispatchEvent(new CustomEvent('streams-updated', {
+          detail: { participantId, streamCount: Object.keys(participantStreams).length + 1 }
+        }));
+      }, 100);
     };
     
     // HANDLERS SIMPLIFICADOS: Sem múltiplas camadas

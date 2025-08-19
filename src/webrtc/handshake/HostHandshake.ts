@@ -75,9 +75,31 @@ class HostHandshakeManager {
           
           // Dispatch custom event para notificar que stream foi recebido
           console.log(`🚨 CRÍTICO [HOST] Dispatching participant-stream-connected event para ${participantId}`);
+          
+          // DIAGNÓSTICO: Verificar se há listeners
+          const eventListeners = (window as any).getEventListeners?.('participant-stream-connected');
+          console.log(`🔍 [HOST] Event listeners registrados:`, eventListeners?.length || 'N/A');
+          
+          // Dispatch com logs detalhados
+          const eventDetail = { participantId, stream };
+          console.log(`📤 [HOST] Event detail:`, {
+            participantId,
+            streamId: stream.id,
+            streamActive: stream.active,
+            videoTracks: stream.getVideoTracks().length,
+            timestamp: Date.now()
+          });
+          
           window.dispatchEvent(new CustomEvent('participant-stream-connected', {
-            detail: { participantId, stream }
+            detail: eventDetail
           }));
+          
+          // Verificação imediata se evento foi processado
+          setTimeout(() => {
+            console.log(`🔍 [HOST] Verificando se stream foi processado após 1s para ${participantId}`);
+            const streamElements = document.querySelectorAll(`[data-participant-id="${participantId}"]`);
+            console.log(`📊 [HOST] Elementos encontrados para ${participantId}:`, streamElements.length);
+          }, 1000);
           
           console.log(`✅ CRÍTICO [HOST] Event participant-stream-connected dispatched para ${participantId}`);
         } else {
