@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { initHostWebRTC } from '@/utils/webrtc';
 import { setupHostHandlers } from '@/webrtc/handshake/HostHandshake';
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
@@ -14,13 +14,23 @@ export const useWebRTCInitializer = ({ sessionId, onWebRTCReady }: UseWebRTCInit
   const initializationRef = useRef(false);
 
   useEffect(() => {
-    if (!sessionId || initializationRef.current) return;
+    console.log('🔍 WEBRTC INITIALIZER: Effect triggered', { sessionId, isInitialized: initializationRef.current });
+    
+    if (!sessionId) {
+      console.warn('⚠️ WEBRTC INITIALIZER: SessionId is null/undefined, skipping initialization');
+      return;
+    }
+    
+    if (initializationRef.current) {
+      console.log('✅ WEBRTC INITIALIZER: Already initialized, skipping');
+      return;
+    }
 
     const initializeWebRTC = async () => {
       try {
-        initializationRef.current = true;
-        console.log('🚀 WEBRTC INITIALIZER: Forçando inicialização completa');
+        console.log('🚀 WEBRTC INITIALIZER: STARTING initialization process');
         console.log('🚀 WEBRTC INITIALIZER: SessionId:', sessionId);
+        initializationRef.current = true;
 
         // PASSO 1: Conectar WebSocket primeiro
         if (!unifiedWebSocketService.isConnected()) {
@@ -55,26 +65,37 @@ export const useWebRTCInitializer = ({ sessionId, onWebRTCReady }: UseWebRTCInit
         console.log('🎉 WEBRTC INITIALIZER: Inicialização completa com sucesso!');
 
       } catch (error) {
-        console.error('❌ WEBRTC INITIALIZER: Erro na inicialização:', error);
+        console.error('❌ WEBRTC INITIALIZER: CRITICAL ERROR during initialization:', error);
+        console.error('❌ WEBRTC INITIALIZER: Error details:', {
+          message: error.message,
+          stack: error.stack,
+          sessionId,
+          timestamp: new Date().toISOString()
+        });
         initializationRef.current = false;
         
         toast({
           title: "Erro WebRTC",
-          description: "Falha na inicialização do WebRTC. Tentando novamente...",
+          description: `Falha na inicialização: ${error.message}`,
           variant: "destructive",
         });
 
-        // Retry after 3 seconds
+        // Retry after 5 seconds with more robust retry
         setTimeout(() => {
+          console.log('🔄 WEBRTC INITIALIZER: Retrying initialization after error...');
           initializationRef.current = false;
-        }, 3000);
+        }, 5000);
       }
     };
 
-    initializeWebRTC();
+    console.log('🚀 WEBRTC INITIALIZER: Calling initializeWebRTC function...');
+    initializeWebRTC().catch(error => {
+      console.error('❌ WEBRTC INITIALIZER: Unhandled error in initialization:', error);
+    });
 
     return () => {
-      console.log('🧹 WEBRTC INITIALIZER: Cleanup');
+      console.log('🧹 WEBRTC INITIALIZER: Cleanup - resetting initialization flag');
+      initializationRef.current = false;
     };
   }, [sessionId, onWebRTCReady, toast]);
 

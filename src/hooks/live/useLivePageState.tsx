@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
 import { generateSessionId } from '@/utils/sessionUtils';
-import { initHostWebRTC } from '@/utils/webrtc';
+// ❌ REMOVIDO: import { initHostWebRTC } from '@/utils/webrtc'; - não mais necessário
 
 export const useLivePageState = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -28,21 +28,16 @@ export const useLivePageState = () => {
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  // 🚀 CORREÇÃO CRÍTICA: Gerar sessionId automaticamente na inicialização
+  // ✅ CORREÇÃO CRÍTICA: SessionId será gerado e usado pelo useWebRTCInitializer
   useEffect(() => {
     if (!sessionId) {
       const newSessionId = generateSessionId();
-      console.log('🚀 Gerando novo sessionId:', newSessionId);
+      console.log('🚀 STATE: Gerando novo sessionId:', newSessionId);
       setSessionId(newSessionId);
     }
-  }, []);
-
-  useEffect(() => {
-    if (sessionId) {
-      console.log('🚀 Iniciando WebRTC com sessionId:', sessionId);
-      initHostWebRTC(sessionId);
-    }
   }, [sessionId]);
+
+  // ❌ REMOVIDO: Duplicação removida - inicialização agora é feita pelo useWebRTCInitializer
 
   
   const [qrCodePosition, setQrCodePosition] = useState({ 
