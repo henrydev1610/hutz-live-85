@@ -58,11 +58,42 @@ export const useStreamDisplayManager = () => {
       processQueue();
     };
 
-    // ✅ DIAGNÓSTICO CRÍTICO: MÚLTIPLOS EVENT LISTENERS COM DEBUG
-    const eventTypes = ['video-stream-ready', 'participant-stream-received', 'debug-stream-dispatched'];
+    // ✅ CORREÇÃO 1: ADICIONAR LISTENER PARA BRIDGE REATIVO
+    const handleReactContainerReady = (event: CustomEvent) => {
+      const { participantId, stream, container } = event.detail;
+      
+      console.log(`🎯 BRIDGE REATIVO: Container React pronto para ${participantId}`, {
+        streamId: stream?.id?.substring(0, 8),
+        hasContainer: !!container,
+        containerId: container?.id
+      });
+      
+      if (!participantId || !stream || !container) {
+        console.error('❌ BRIDGE REATIVO: Dados inválidos', { participantId, stream, container });
+        return;
+      }
+
+      // Processar imediatamente com container React garantido
+      const request: StreamRequest = {
+        participantId,
+        stream,
+        timestamp: Date.now()
+      };
+
+      processingQueue.current.push(request);
+      console.log(`📥 BRIDGE REATIVO: Adicionado ${participantId} à fila (length: ${processingQueue.current.length})`);
+      processQueue();
+    };
+    
+    // ✅ DIAGNÓSTICO CRÍTICO: MÚLTIPLOS EVENT LISTENERS COM DEBUG + BRIDGE REATIVO
+    const eventTypes = ['video-stream-ready', 'participant-stream-received', 'debug-stream-dispatched', 'react-container-ready'];
     
     eventTypes.forEach(eventType => {
-      window.addEventListener(eventType, handleVideoStreamReady as EventListener);
+      if (eventType === 'react-container-ready') {
+        window.addEventListener(eventType, handleReactContainerReady as EventListener);
+      } else {
+        window.addEventListener(eventType, handleVideoStreamReady as EventListener);
+      }
       console.log(`🚨 DIAGNÓSTICO: STREAM DISPLAY MANAGER registered listener for ${eventType}`);
     });
     
@@ -100,7 +131,11 @@ export const useStreamDisplayManager = () => {
     
     return () => {
       eventTypes.forEach(eventType => {
-        window.removeEventListener(eventType, handleVideoStreamReady as EventListener);
+        if (eventType === 'react-container-ready') {
+          window.removeEventListener(eventType, handleReactContainerReady as EventListener);
+        } else {
+          window.removeEventListener(eventType, handleVideoStreamReady as EventListener);
+        }
       });
       
       window.removeEventListener('debug-ontrack-fired', handleOntrackFired as EventListener);
@@ -152,46 +187,69 @@ export const useStreamDisplayManager = () => {
       active: stream.active
     });
 
-    // ✅ ETAPA 3: ENCONTRAR OU CRIAR CONTAINER DINAMICAMENTE
+    // ✅ CORREÇÃO 2: PRIORIZAR CONTAINERS REACT COM DOM READY
     const containerSelectors = [
+      // PRIORIDADE 1: Containers React padronizados
       `#video-container-${participantId}`,
-      `#unified-video-${participantId}`, 
+      `#unified-video-${participantId}`,
+      // PRIORIDADE 2: Data attributes React
       `[data-participant-id="${participantId}"]`,
+      // PRIORIDADE 3: Fallbacks
       `.participant-container[data-id="${participantId}"]`,
       `.video-container:has([data-participant-id="${participantId}"])`
     ];
 
     let container: HTMLElement | null = null;
+    let retryCount = 0;
+    const maxRetries = 3;
     
-    for (const selector of containerSelectors) {
-      container = document.querySelector(selector);
-      if (container) {
-        console.log(`✅ STREAM DISPLAY MANAGER: Found container for ${participantId} using selector: ${selector}`);
-        break;
+    // ✅ CORREÇÃO 3: AGUARDAR DOM READY COM RETRY
+    const findContainerWithRetry = async (): Promise<HTMLElement | null> => {
+      while (retryCount < maxRetries) {
+        for (const selector of containerSelectors) {
+          container = document.querySelector(selector);
+          if (container) {
+            console.log(`✅ STREAM DISPLAY MANAGER: Found React container for ${participantId} using selector: ${selector} (retry ${retryCount})`);
+            return container;
+          }
+        }
+        
+        retryCount++;
+        console.log(`⏳ STREAM DISPLAY MANAGER: Container not found for ${participantId}, retry ${retryCount}/${maxRetries}`);
+        
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 200 * retryCount)); // Progressive delay
+        }
       }
-    }
+      
+      return null;
+    };
+    
+    container = await findContainerWithRetry();
 
-    // ✅ ETAPA 3: CRIAR CONTAINER DINAMICAMENTE SE NÃO EXISTIR
+    // ✅ CORREÇÃO 2 & 3: CRIAR EMERGENCY CONTAINER APENAS COMO ÚLTIMO RECURSO
     if (!container) {
-      console.log(`🏗️ STREAM DISPLAY MANAGER: Creating dynamic container for ${participantId}`);
+      console.warn(`⚠️ STREAM DISPLAY MANAGER: No React container found for ${participantId} after ${maxRetries} retries`);
+      console.log(`🏗️ STREAM DISPLAY MANAGER: Creating emergency container as last resort for ${participantId}`);
       
       // Try to find participant grid to append to
       const participantGrid = document.querySelector('.participant-grid, [data-testid="participant-grid"], .participants-container');
       
       if (participantGrid) {
         container = document.createElement('div');
-        container.id = `video-container-${participantId}`;
+        container.id = `video-container-${participantId}`; // PADRONIZAÇÃO: mesmo ID que React
         container.setAttribute('data-participant-id', participantId);
-        container.className = 'participant-container relative w-full h-64 bg-gray-800 rounded-lg overflow-hidden';
+        container.setAttribute('data-emergency', 'true');
+        container.className = 'participant-container relative w-full h-64 bg-gray-800 rounded-lg overflow-hidden border-2 border-yellow-500';
         container.innerHTML = `
-          <div class="absolute top-2 left-2 bg-black/50 text-white px-2 py-1 rounded text-sm">
-            ${participantId.substring(0, 8)}...
+          <div class="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded text-sm font-bold">
+            EMERGENCY ${participantId.substring(0, 6)}
           </div>
         `;
         participantGrid.appendChild(container);
-        console.log(`✅ STREAM DISPLAY MANAGER: Dynamic container created for ${participantId}`);
+        console.log(`⚠️ STREAM DISPLAY MANAGER: Emergency container created for ${participantId}`);
       } else {
-        console.error(`❌ STREAM DISPLAY MANAGER: No participant grid found to create container for ${participantId}`);
+        console.error(`❌ STREAM DISPLAY MANAGER: No participant grid found to create emergency container for ${participantId}`);
         return;
       }
     }

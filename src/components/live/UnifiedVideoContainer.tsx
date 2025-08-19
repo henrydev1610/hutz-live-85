@@ -95,8 +95,42 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
     stream
   });
 
+  // ✅ CORREÇÃO 1: BRIDGE REATIVO - Stream disponível mas sem vídeo
+  useEffect(() => {
+    if (!stream || !containerRef.current) return;
+    
+    // Verificar se já existe elemento de vídeo
+    const existingVideo = containerRef.current.querySelector('video');
+    if (existingVideo) return;
+    
+    console.log(`🎯 BRIDGE REATIVO: Stream disponível mas sem vídeo para ${participant.id}`, {
+      streamId: stream.id.substring(0, 8),
+      hasContainer: !!containerRef.current,
+      containerId: containerRef.current?.id
+    });
+    
+    // Aguardar um tick para garantir que o DOM está pronto
+    const timer = setTimeout(() => {
+      if (!containerRef.current) return;
+      
+      // Disparar evento para StreamDisplayManager processar
+      window.dispatchEvent(new CustomEvent('react-container-ready', {
+        detail: {
+          participantId: participant.id,
+          stream,
+          container: containerRef.current,
+          timestamp: Date.now()
+        }
+      }));
+      
+      console.log(`✅ BRIDGE REATIVO: Evento disparado para ${participant.id}`);
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [participant.id, stream]);
+
   // Video creation is now handled by the centralized StreamDisplayManager
-  // This component only handles display state and UI
+  // This component handles display state, UI, and React-WebRTC bridge
 
   return (
     <div 
