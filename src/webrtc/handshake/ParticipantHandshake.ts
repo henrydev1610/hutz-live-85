@@ -457,17 +457,55 @@ class ParticipantHandshakeManager {
       
       tracks.forEach((track, index) => {
         if (this.peerConnection && stream) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Adicionando track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState}, label: ${track.label})`);
-          this.peerConnection.addTrack(track, stream);
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Adicionando track ${index + 1}:`, {
+            kind: track.kind,
+            enabled: track.enabled,
+            readyState: track.readyState,
+            muted: track.muted,
+            label: track.label
+          });
+          
+          const sender = this.peerConnection.addTrack(track, stream);
+          console.log(`✅ [PARTICIPANT] Track ${index + 1} adicionada via addTrack:`, {
+            sender: !!sender,
+            trackId: track.id,
+            senderTrack: !!sender.track
+          });
+
+          // CORREÇÃO 5: TRACK TRANSMISSION VALIDATION - Verify sender is properly configured
+          if (sender && sender.track) {
+            console.log(`🚨 CRÍTICO [PARTICIPANT] Sender validation for track ${index + 1}:`, {
+              senderTrackId: sender.track.id,
+              senderTrackKind: sender.track.kind,
+              senderTrackEnabled: sender.track.enabled,
+              senderTrackReadyState: sender.track.readyState
+            });
+          } else {
+            console.error(`❌ CRÍTICO [PARTICIPANT] Sender validation FAILED for track ${index + 1}`);
+          }
         }
       });
       
-      // CORREÇÃO 5: VALIDATE TRANSCEIVERS after addTrack
+      // CORREÇÃO 5: VALIDATE TRANSCEIVERS and SENDERS after addTrack
       const transceivers = this.peerConnection.getTransceivers();
-      console.log(`🚨 CRÍTICO [PARTICIPANT] Transceivers após addTrack:`, {
-        count: transceivers.length,
-        directions: transceivers.map(t => `${t.mid || 'none'}:${t.direction}`)
+      const senders = this.peerConnection.getSenders();
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Post-addTrack validation:`, {
+        transceiversCount: transceivers.length,
+        sendersCount: senders.length,
+        transceiverDirections: transceivers.map(t => `${t.mid || 'none'}:${t.direction}`),
+        sendersWithTracks: senders.filter(s => s.track).length,
+        activeSenders: senders.filter(s => s.track && s.track.readyState === 'live').length
       });
+
+      // Validate that all tracks have been properly added
+      const expectedTrackCount = stream.getTracks().length;
+      const actualSenderCount = senders.filter(s => s.track).length;
+      
+      if (actualSenderCount !== expectedTrackCount) {
+        console.error(`❌ CRÍTICO [PARTICIPANT] Track mismatch: expected ${expectedTrackCount}, got ${actualSenderCount} senders`);
+      } else {
+        console.log(`✅ [PARTICIPANT] All ${actualSenderCount} tracks properly added to transceivers`);
+      }
       
       const addTrackDuration = performance.now() - addTrackStartTime;
       console.log(`✅ [PARTICIPANT] All tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
