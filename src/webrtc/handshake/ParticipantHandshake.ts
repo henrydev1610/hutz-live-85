@@ -132,13 +132,15 @@ class ParticipantHandshakeManager {
     console.log('🔧 DUAL REGISTRATION: Socket instance available:', !!socketInstance);
     
     // Listen for WebRTC offer request from host
-    unifiedWebSocketService.on('webrtc-request-offer', async (data: any) => {
+    const offerRequestHandler = async (data: any) => {
       const hostId = data?.fromUserId;
       console.log(`🚨 CRÍTICO [PARTICIPANT] Offer request received from host: ${hostId}`, {
         dataKeys: Object.keys(data),
         hasFromUserId: !!data.fromUserId,
         hasParticipantId: !!data.participantId,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        currentPCExists: !!this.peerConnection,
+        isOfferInProgress: this.isOfferInProgress
       });
       
       if (!hostId) {
@@ -146,11 +148,12 @@ class ParticipantHandshakeManager {
         return;
       }
 
-      // Check host readiness
+      // CORREÇÃO 3: VALIDATION DE HANDSHAKE INITIALIZATION - improved checks
       const hostReadiness = await this.checkHostReadiness(hostId);
       if (!hostReadiness.ready) {
-        console.log(`[PART] Host not ready: ${hostId}, reason: ${hostReadiness.reason}`);
+        console.log(`🚨 CRÍTICO [PARTICIPANT] Host not ready: ${hostId}, reason: ${hostReadiness.reason} - scheduling retry`);
         setTimeout(() => {
+          console.log(`🔄 [PARTICIPANT] Retrying createAndSendOffer for: ${hostId}`);
           this.createAndSendOffer(hostId);
         }, 2000);
         return;
@@ -167,8 +170,16 @@ class ParticipantHandshakeManager {
         return;
       }
 
+      console.log(`🚀 [PARTICIPANT] Iniciando createAndSendOffer para: ${hostId}`);
       await this.createAndSendOffer(hostId);
-    });
+    };
+
+    // CORREÇÃO 3: DUAL REGISTRATION for offer requests too
+    unifiedWebSocketService.on('webrtc-request-offer', offerRequestHandler);
+    if (socketInstance) {
+      socketInstance.on('webrtc-request-offer', offerRequestHandler);
+      console.log('✅ [PARTICIPANT] DUAL REGISTRATION: webrtc-request-offer handler registered on both');
+    }
 
     // CORREÇÃO 5: DUAL EVENT REGISTRATION - Handler para respostas (answers) do host
     const answerHandler = async (data: any) => {
@@ -317,6 +328,17 @@ class ParticipantHandshakeManager {
       if (!this.peerConnection) {
         console.warn('⚠️ [PARTICIPANT] PC doesn\'t exist, buffering candidate from:', hostId);
         this.pendingCandidates.push(candidate);
+        
+        // CORREÇÃO 1: CRITICAL FIX - Force PC creation if missing during ICE negotiation
+        console.log('🚨 CRÍTICO [PARTICIPANT] FORCE RECOVERY: PC missing durante ICE - tentando criar oferecimento tardio');
+        if (hostId && !this.isOfferInProgress) {
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Iniciando createAndSendOffer TARDIO para: ${hostId}`);
+          setTimeout(() => {
+            this.createAndSendOffer(hostId).catch(err => {
+              console.error('❌ [PARTICIPANT] Error em createAndSendOffer tardio:', err);
+            });
+          }, 100);
+        }
         return;
       }
 
@@ -360,17 +382,22 @@ class ParticipantHandshakeManager {
 
   async createAndSendOffer(hostId: string): Promise<void> {
     if (this.isOfferInProgress) {
-      console.log('[PARTICIPANT] createAndSendOffer: Offer already in progress, skipping');
+      console.log('⚠️ [PARTICIPANT] createAndSendOffer: Offer already in progress, skipping');
       return;
     }
 
     const offerStartTime = performance.now();
     this.handshakeStartTime = offerStartTime;
     console.log(`🚨 CRÍTICO [PARTICIPANT] Starting offer creation sequence for ${hostId}`);
+    console.log(`🚨 CRÍTICO [PARTICIPANT] Current state: PC exists=${!!this.peerConnection}, localStream exists=${!!this.localStream}`);
 
-    if (this.peerConnection && this.peerConnection.connectionState !== 'closed') {
-      console.log('[PARTICIPANT] createAndSendOffer: Closing existing peer connection');
-      this.peerConnection.close();
+    // CORREÇÃO 1: CRITICAL PC state check and cleanup
+    if (this.peerConnection) {
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Existing PC state: ${this.peerConnection.connectionState}, signaling: ${this.peerConnection.signalingState}`);
+      if (this.peerConnection.connectionState !== 'closed') {
+        console.log('🚨 CRÍTICO [PARTICIPANT] Closing existing peer connection');
+        this.peerConnection.close();
+      }
       this.peerConnection = null;
     }
 
@@ -409,17 +436,39 @@ class ParticipantHandshakeManager {
 
       this.peerConnection = new RTCPeerConnection(configuration);
       const pcDuration = performance.now() - pcStartTime;
-      console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
+      console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created successfully: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
+      
+      // CORREÇÃO 1: CRITICAL validation - ensure PC was created
+      if (!this.peerConnection) {
+        throw new Error('Failed to create RTCPeerConnection');
+      }
 
       // STEP 3: Add tracks to peer connection BEFORE creating offer
       const addTrackStartTime = performance.now();
       console.log('🚨 CRÍTICO [PARTICIPANT] Anexando stream ao RTCPeerConnection...');
-      stream.getTracks().forEach((track, index) => {
+      
+      // CORREÇÃO 5: TRACK TRANSMISSION VALIDATION - validate tracks before adding
+      const tracks = stream.getTracks();
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Tracks to add: ${tracks.length} total`, {
+        videoTracks: stream.getVideoTracks().length,
+        audioTracks: stream.getAudioTracks().length,
+        activeTracks: tracks.filter(t => t.readyState === 'live').length
+      });
+      
+      tracks.forEach((track, index) => {
         if (this.peerConnection && stream) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Adicionando track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Adicionando track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState}, label: ${track.label})`);
           this.peerConnection.addTrack(track, stream);
         }
       });
+      
+      // CORREÇÃO 5: VALIDATE TRANSCEIVERS after addTrack
+      const transceivers = this.peerConnection.getTransceivers();
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Transceivers após addTrack:`, {
+        count: transceivers.length,
+        directions: transceivers.map(t => `${t.mid || 'none'}:${t.direction}`)
+      });
+      
       const addTrackDuration = performance.now() - addTrackStartTime;
       console.log(`✅ [PARTICIPANT] All tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
 
@@ -536,23 +585,38 @@ class ParticipantHandshakeManager {
 
   // CORREÇÃO 4: SIGNALING STATE MONITORING - Detector específico para have-local-offer travado
   private startSignalingStateMonitoring(hostId: string): void {
-    console.log('🚨 CRÍTICO [PARTICIPANT] Starting signaling state monitoring for have-local-offer');
+    console.log('🚨 CRÍTICO [PARTICIPANT] Starting enhanced signaling state monitoring for have-local-offer');
     
-    if (!this.peerConnection) return;
+    if (!this.peerConnection) {
+      console.warn('⚠️ [PARTICIPANT] startSignalingStateMonitoring: no PC available');
+      return;
+    }
     
+    // CORREÇÃO 4: Enhanced monitoring with more detailed state tracking
     let checkCount = 0;
     const maxChecks = 20; // 10 segundos com checks de 500ms
+    const startTime = Date.now();
     
     const signalingMonitor = setInterval(() => {
       checkCount++;
       
       if (!this.peerConnection) {
+        console.log('⚠️ [PARTICIPANT] STATE MONITORING: PC não existe mais, parando monitoramento');
         clearInterval(signalingMonitor);
         return;
       }
       
       const signalingState = this.peerConnection.signalingState;
-      console.log(`🔍 [PARTICIPANT] Signaling check ${checkCount}/${maxChecks}: ${signalingState}`);
+      const connectionState = this.peerConnection.connectionState;
+      const hasRemoteDesc = !!this.peerConnection.remoteDescription;
+      const elapsed = Date.now() - startTime;
+      
+      console.log(`🔍 [PARTICIPANT] Enhanced check ${checkCount}/${maxChecks}: signaling=${signalingState}, connection=${connectionState}, hasRemoteDesc=${hasRemoteDesc}, elapsed=${elapsed}ms`);
+      
+      // CORREÇÃO 2: Check for missing remote description
+      if (signalingState === 'have-local-offer' && !hasRemoteDesc && checkCount > 10) {
+        console.warn(`⚠️ [PARTICIPANT] have-local-offer sem remoteDescription após ${elapsed}ms - possível problema com answer`);
+      }
       
       if (signalingState === 'stable') {
         console.log('✅ [PARTICIPANT] Signaling state reached stable - monitoring complete');
@@ -560,10 +624,19 @@ class ParticipantHandshakeManager {
         return;
       }
       
+      // CORREÇÃO 4: Enhanced stuck detection with more options
       if (signalingState === 'have-local-offer' && checkCount >= maxChecks) {
-        console.error('❌ CRÍTICO [PARTICIPANT] Stuck in have-local-offer for >10s - forcing handshake restart');
+        console.error(`❌ CRÍTICO [PARTICIPANT] STUCK em have-local-offer por ${elapsed}ms - forçando reset completo`);
         clearInterval(signalingMonitor);
-        this.handleConnectionFailure(hostId);
+        
+        // CORREÇÃO 3: Force complete reset and retry
+        console.log(`🔄 [PARTICIPANT] Executando reset completo e nova tentativa para ${hostId}`);
+        this.performFullReset(hostId);
+        setTimeout(() => {
+          this.createAndSendOffer(hostId).catch(err => {
+            console.error('❌ [PARTICIPANT] Error em retry após reset:', err);
+          });
+        }, 1000);
         return;
       }
     }, 500);
