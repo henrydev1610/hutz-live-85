@@ -83,6 +83,33 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
   // ✅ CORREÇÃO 4: STATUS VISUAL APRIMORADO - não mostrar "disconnected" durante negociação
   const [isNegotiating, setIsNegotiating] = useState(false);
   
+  // CORREÇÃO CRÍTICA: Verificar tracks antes de marcar como "com vídeo"
+  const [hasValidVideo, setHasValidVideo] = useState(false);
+  
+  useEffect(() => {
+    const checkStreamTracks = async () => {
+      if (!stream) {
+        setHasValidVideo(false);
+        return;
+      }
+
+      const { shouldProcessStream } = await import('@/utils/media/trackValidation');
+      const isValid = shouldProcessStream(stream, participant.id);
+      
+      console.log(`🔍 UNIFIED CONTAINER: Verificação de tracks para ${participant.id}:`, {
+        streamId: stream.id,
+        isValid,
+        trackCount: stream.getTracks().length,
+        videoTracks: stream.getVideoTracks().length,
+        activeTracks: stream.getTracks().filter(t => t.readyState === 'live').length
+      });
+      
+      setHasValidVideo(isValid);
+    };
+
+    checkStreamTracks();
+  }, [stream, participant.id]);
+
   const { 
     status, 
     statusText, 
@@ -92,7 +119,7 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
     hasActiveVideo 
   } = useRealTimeStatus({
     participantId: participant.id,
-    hasVideo: participant.hasVideo,
+    hasVideo: hasValidVideo, // Usar validação crítica em vez de participant.hasVideo
     active: participant.active,
     stream
   });
@@ -162,7 +189,7 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
       style={{ 
         minHeight: '120px', 
         minWidth: '160px',
-        backgroundColor: participant.hasVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
+        backgroundColor: hasValidVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
       }}
     >
       {/* ✅ ETAPA 3: MAIN VIDEO CONTAINER WITH MULTIPLE IDs FOR COMPATIBILITY */}
@@ -238,7 +265,7 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
       </div>
       
       {/* Video indicator */}
-      {participant.hasVideo && isVideoReady && (
+      {hasValidVideo && isVideoReady && (
         <div className="absolute top-2 right-2 z-20">
           <div className="bg-green-500 w-2 h-2 rounded-full animate-pulse"></div>
         </div>

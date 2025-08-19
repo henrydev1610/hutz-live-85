@@ -181,10 +181,32 @@ export const useStreamDisplayManager = () => {
   }, []);
 
   const createVideoForParticipant = useCallback(async (participantId: string, stream: MediaStream) => {
-    console.log(`🎥 STREAM DISPLAY MANAGER: Creating video for ${participantId}`, {
+    // CORREÇÃO CRÍTICA: Validar tracks antes de criar vídeo
+    const { validateMediaStreamTracks, shouldProcessStream } = await import('@/utils/media/trackValidation');
+    
+    console.log(`🎥 STREAM DISPLAY MANAGER: Iniciando criação de vídeo para ${participantId}`);
+    
+    const validation = validateMediaStreamTracks(stream, participantId);
+    console.log(`🔍 STREAM DISPLAY MANAGER: Validação de tracks para ${participantId}:`, validation);
+    
+    if (!shouldProcessStream(stream, participantId)) {
+      console.error(`❌ STREAM DISPLAY MANAGER: REJEITADO - Stream sem tracks de vídeo ativas para ${participantId}`);
+      
+      // Dispatch failure event
+      window.dispatchEvent(new CustomEvent('video-display-ready', {
+        detail: { 
+          participantId, 
+          success: false, 
+          error: 'Stream sem tracks de vídeo ativas',
+          validation
+        }
+      }));
+      return;
+    }
+    
+    console.log(`✅ STREAM DISPLAY MANAGER: Stream aprovado para ${participantId}`, {
       streamId: stream.id.substring(0, 8),
-      trackCount: stream.getTracks().length,
-      active: stream.active
+      ...validation
     });
 
     // ✅ CORREÇÃO 2: PRIORIZAR CONTAINERS REACT COM DOM READY
@@ -287,6 +309,23 @@ export const useStreamDisplayManager = () => {
     
     console.log(`📹 STREAM DISPLAY MANAGER: Video element created and added to container for ${participantId}`);
 
+    // IMPLEMENTAÇÃO CRÍTICA: Fallback para reaplica srcObject
+    let fallbackApplied = false;
+    const applyFallback = () => {
+      if (!fallbackApplied) {
+        fallbackApplied = true;
+        console.log(`🔄 STREAM DISPLAY MANAGER: Aplicando fallback - recarregando srcObject para ${participantId}`);
+        
+        // Reaplica srcObject após delay
+        setTimeout(() => {
+          if (video.srcObject !== stream) {
+            video.srcObject = stream;
+            console.log(`🔄 STREAM DISPLAY MANAGER: srcObject reaplicado para ${participantId}`);
+          }
+        }, 1000);
+      }
+    };
+
     // Attempt playback with retries
     let attempts = 0;
     const maxAttempts = 3;
@@ -304,10 +343,18 @@ export const useStreamDisplayManager = () => {
         attempts++;
         console.warn(`⚠️ STREAM DISPLAY MANAGER: Play attempt ${attempts} failed for ${participantId}:`, error);
         
+        // Aplicar fallback na primeira falha
+        if (attempts === 1) {
+          applyFallback();
+        }
+        
         if (attempts < maxAttempts) {
           setTimeout(attemptPlay, attempts * 1000);
         } else {
           console.error(`❌ STREAM DISPLAY MANAGER: Play failed after ${maxAttempts} attempts for ${participantId}`);
+          
+          // Último recurso: tentar fallback final
+          applyFallback();
           
           // Dispatch failure event
           window.dispatchEvent(new CustomEvent('video-display-ready', {
@@ -316,6 +363,18 @@ export const useStreamDisplayManager = () => {
         }
       }
     };
+
+    // Monitor para reaplica srcObject se vídeo não iniciar em 3s
+    const fallbackTimer = setTimeout(() => {
+      if (video.readyState === 0 || video.videoWidth === 0) {
+        console.log(`⚠️ STREAM DISPLAY MANAGER: Vídeo não iniciou em 3s, aplicando fallback para ${participantId}`);
+        applyFallback();
+      }
+    }, 3000);
+
+    video.addEventListener('loadeddata', () => {
+      clearTimeout(fallbackTimer);
+    }, { once: true });
 
     attemptPlay();
   }, []);

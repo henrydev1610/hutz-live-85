@@ -33,35 +33,44 @@ class HostHandshakeManager {
         
         if (event.streams.length > 0) {
           const stream = event.streams[0];
-          console.log(`✅ CRÍTICO [HOST] Stream recebido de ${participantId}:`, {
+          
+          // IMPLEMENTAÇÃO CRÍTICA: Validar tracks ANTES de processar
+          const { validateMediaStreamTracks, waitForActiveTracks, shouldProcessStream } = await import('@/utils/media/trackValidation');
+          
+          console.log(`🚨 CRÍTICO [HOST] Stream recebido de ${participantId} - validando tracks:`, {
             streamId: stream.id,
-            videoTracks: stream.getVideoTracks().length,
-            audioTracks: stream.getAudioTracks().length,
-            videoEnabled: stream.getVideoTracks()[0]?.enabled,
-            audioEnabled: stream.getAudioTracks()[0]?.enabled
+            initialTracksCount: stream.getTracks().length,
+            initialVideoTracks: stream.getVideoTracks().length,
+            initialAudioTracks: stream.getAudioTracks().length
           });
 
-          // CORREÇÃO CRÍTICA: Aguardar tracks estarem 'live' antes de processar
-          console.log(`🔥 [HOST] AGUARDANDO TRACKS 'LIVE' no ontrack para: ${participantId}`);
-          const { waitUntilTracksReady } = await import('@/utils/media/trackReadyWaiter');
-          const tracksReady = await waitUntilTracksReady(stream, participantId, 3000);
-
-          if (!tracksReady) {
-            console.warn(`⚠️ [HOST] Tracks não ficaram 'live' para ${participantId} - prosseguindo mesmo assim`);
+          // ETAPA 1: Verificação imediata - se não há tracks, aguardar
+          const immediateValidation = validateMediaStreamTracks(stream, participantId);
+          
+          if (!immediateValidation.hasActiveTracks) {
+            console.log(`⏳ [HOST] Stream vazio recebido para ${participantId} - aguardando tracks ativas...`);
+            
+            // ETAPA 2: Aguardar tracks ficarem ativas com timeout de 5s
+            const trackValidation = await waitForActiveTracks(stream, participantId, 5000);
+            
+            if (!trackValidation.hasActiveTracks) {
+              console.error(`❌ [HOST] STREAM REJEITADO: Nenhuma track ativa após timeout para ${participantId}:`, trackValidation);
+              return;
+            }
+            
+            console.log(`✅ [HOST] Tracks ativas confirmadas após espera para ${participantId}:`, trackValidation);
           }
 
-          const tracks = stream.getVideoTracks();
-          if (tracks.length === 0) {
-            console.warn(`⚠️ [HOST] Nenhuma track de vídeo para ${participantId} - não processando stream`);
+          // ETAPA 3: Verificação final - só processa se tiver video tracks ativas
+          if (!shouldProcessStream(stream, participantId)) {
+            console.warn(`❌ [HOST] STREAM REJEITADO: Sem tracks de vídeo ativas para ${participantId}`);
             return;
           }
 
-          console.log(`🎥 [HOST] VALIDATION LOG para ${participantId}:`, {
+          console.log(`🎥 [HOST] STREAM APROVADO para processamento: ${participantId}`, {
             streamId: stream.id,
-            videoTracks: tracks.length,
-            trackReadyState: tracks[0].readyState,
-            trackEnabled: tracks[0].enabled,
-            tracksReady
+            videoTracksAtivas: stream.getVideoTracks().filter(t => t.readyState === 'live').length,
+            audioTracksAtivas: stream.getAudioTracks().filter(t => t.readyState === 'live').length
           });
           
           // Dispatch custom event para notificar que stream foi recebido
