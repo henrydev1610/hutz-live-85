@@ -34,25 +34,43 @@ class HostHandshakeManager {
         if (event.streams.length > 0) {
           const stream = event.streams[0];
           
-          console.log(`🚨 CRÍTICO [HOST] Stream recebido de ${participantId}:`, {
+          // IMPLEMENTAÇÃO CRÍTICA: Validar tracks ANTES de processar
+          const { validateMediaStreamTracks, waitForActiveTracks, shouldProcessStream } = await import('@/utils/media/trackValidation');
+          
+          console.log(`🚨 CRÍTICO [HOST] Stream recebido de ${participantId} - validando tracks:`, {
             streamId: stream.id,
             initialTracksCount: stream.getTracks().length,
             initialVideoTracks: stream.getVideoTracks().length,
             initialAudioTracks: stream.getAudioTracks().length
           });
 
-          // Validação básica de stream
-          const videoTracks = stream.getVideoTracks();
-          if (videoTracks.length === 0) {
-            console.warn(`❌ [HOST] STREAM REJEITADO: Sem tracks de vídeo para ${participantId}`);
+          // ETAPA 1: Verificação imediata - se não há tracks, aguardar
+          const immediateValidation = validateMediaStreamTracks(stream, participantId);
+          
+          if (!immediateValidation.hasActiveTracks) {
+            console.log(`⏳ [HOST] Stream vazio recebido para ${participantId} - aguardando tracks ativas...`);
+            
+            // ETAPA 2: Aguardar tracks ficarem ativas com timeout de 5s
+            const trackValidation = await waitForActiveTracks(stream, participantId, 5000);
+            
+            if (!trackValidation.hasActiveTracks) {
+              console.error(`❌ [HOST] STREAM REJEITADO: Nenhuma track ativa após timeout para ${participantId}:`, trackValidation);
+              return;
+            }
+            
+            console.log(`✅ [HOST] Tracks ativas confirmadas após espera para ${participantId}:`, trackValidation);
+          }
+
+          // ETAPA 3: Verificação final - só processa se tiver video tracks ativas
+          if (!shouldProcessStream(stream, participantId)) {
+            console.warn(`❌ [HOST] STREAM REJEITADO: Sem tracks de vídeo ativas para ${participantId}`);
             return;
           }
 
           console.log(`🎥 [HOST] STREAM APROVADO para processamento: ${participantId}`, {
             streamId: stream.id,
-            videoTracks: videoTracks.length,
-            videoTrackEnabled: videoTracks[0]?.enabled,
-            videoTrackReadyState: videoTracks[0]?.readyState
+            videoTracksAtivas: stream.getVideoTracks().filter(t => t.readyState === 'live').length,
+            audioTracksAtivas: stream.getAudioTracks().filter(t => t.readyState === 'live').length
           });
           
           // Dispatch custom event para notificar que stream foi recebido
@@ -68,15 +86,8 @@ class HostHandshakeManager {
       };
 
       // Add receive-only transceiver for video BEFORE setRemoteDescription
-      const transceiver = pc.addTransceiver('video', { direction: 'recvonly' });
-      console.log(`🚨 CRÍTICO [HOST] addTransceiver('video', recvonly) for ${participantId}:`, {
-        transceiverMid: transceiver.mid,
-        direction: transceiver.direction,
-        currentDirection: transceiver.currentDirection
-      });
-
-      // CORREÇÃO 2: FALLBACK DETECTION SYSTEM - Monitor receivers para fallback
-      this.startOntrackFallbackMonitoring(pc, participantId);
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      console.log(`[HOST] addTransceiver('video', recvonly) for ${participantId}`);
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -357,75 +368,7 @@ class HostHandshakeManager {
     return states;
   }
 
-  // CORREÇÃO 2: ONTRACK FALLBACK MONITORING - Detect streams via receivers if ontrack fails
-  private startOntrackFallbackMonitoring(pc: RTCPeerConnection, participantId: string): void {
-    let ontrackFired = false;
-    let monitoringInterval: NodeJS.Timeout;
-
-    // Mark ontrack as fired when it happens
-    const originalOntrack = pc.ontrack;
-    pc.ontrack = (event) => {
-      ontrackFired = true;
-      if (monitoringInterval) {
-        clearInterval(monitoringInterval);
-      }
-      if (originalOntrack) {
-        originalOntrack.call(pc, event);
-      }
-    };
-
-    // Start monitoring receivers every 2 seconds
-    monitoringInterval = setInterval(() => {
-      if (ontrackFired) {
-        clearInterval(monitoringInterval);
-        return;
-      }
-
-      const receivers = pc.getReceivers();
-      console.log(`🔍 [HOST] FALLBACK CHECK para ${participantId}:`, {
-        ontrackFired,
-        receiversCount: receivers.length,
-        connectionState: pc.connectionState,
-        iceState: pc.iceConnectionState
-      });
-
-      for (const receiver of receivers) {
-        if (receiver.track && receiver.track.kind === 'video' && receiver.track.readyState === 'live') {
-          console.log(`🚨 CRÍTICO [HOST] FALLBACK DETECTION: Stream encontrado via receiver para ${participantId}`);
-          
-          // Create synthetic stream from receiver
-          const syntheticStream = new MediaStream([receiver.track]);
-          
-          console.log(`🚨 CRÍTICO [HOST] FALLBACK: Simulando ontrack para ${participantId}`, {
-            streamId: syntheticStream.id,
-            trackKind: receiver.track.kind,
-            trackEnabled: receiver.track.enabled,
-            trackReadyState: receiver.track.readyState
-          });
-
-          // Dispatch event manually
-          console.log(`🚨 CRÍTICO [HOST] FALLBACK: Dispatching participant-stream-connected para ${participantId}`);
-          window.dispatchEvent(new CustomEvent('participant-stream-connected', {
-            detail: { participantId, stream: syntheticStream }
-          }));
-          
-          ontrackFired = true;
-          clearInterval(monitoringInterval);
-          break;
-        }
-      }
-    }, 2000);
-
-    // Stop monitoring after 30 seconds
-    setTimeout(() => {
-      if (monitoringInterval) {
-        console.log(`⏰ [HOST] FALLBACK TIMEOUT: Stopping ontrack monitoring for ${participantId}`);
-        clearInterval(monitoringInterval);
-      }
-    }, 30000);
-  }
-
-  // CORREÇÃO 3: Método de fallback para criar offer direto do host
+  // CORREÇÃO 2: Método de fallback para criar offer direto do host
   async attemptDirectOfferCreation(participantId: string): Promise<void> {
     try {
       console.log(`🚀 [HOST] FALLBACK: Creating direct offer for ${participantId}`);
