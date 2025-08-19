@@ -168,15 +168,18 @@ class HostHandshakeManager {
 
       // PASSO 6: Enviar answer
       console.log(`🚨 CRÍTICO [HOST] Sending answer to ${data.participantId}`);
-      unifiedWebSocketService.emit('webrtc-answer', {
-        answer,
-        toSocketId: data.fromSocketId,
-        hostId: 'host',
-        participantId: data.participantId,
-        timestamp: Date.now()
-      });
+      
+      // Validar se answer tem SDP antes de enviar
+      if (!answer.sdp) {
+        console.error(`❌ CRÍTICO [HOST] Answer sem SDP para ${data.participantId}:`, answer);
+        return;
+      }
 
-      console.log(`✅ CRÍTICO [HOST] Answer sent to ${data.participantId} - Aguardando ontrack...`);
+      // CORREÇÃO CRÍTICA: Usar sendWebRTCAnswer em vez de emit
+      unifiedWebSocketService.sendWebRTCAnswer(data.participantId, answer.sdp, answer.type);
+      
+      console.log(`✅ CRÍTICO [HOST] Answer sent to ${data.participantId} via sendWebRTCAnswer - Aguardando ontrack...`);
+      console.log(`📋 CRÍTICO [HOST] Answer details: type=${answer.type}, sdpLength=${answer.sdp.length}`);
 
     } catch (error) {
       console.error('❌ CRÍTICO [HOST] Error handling offer:', error);
