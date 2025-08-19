@@ -181,32 +181,44 @@ export const useStreamDisplayManager = () => {
   }, []);
 
   const createVideoForParticipant = useCallback(async (participantId: string, stream: MediaStream) => {
-    // CORREÇÃO CRÍTICA: Validar tracks antes de criar vídeo
+    // FASE 3: VALIDAÇÃO CRÍTICA COM TRACK ACTIVATION WAITER
     const { validateMediaStreamTracks, shouldProcessStream } = await import('@/utils/media/trackValidation');
+    const { waitForTrackActivation } = await import('@/utils/media/trackActivationWaiter');
     
     console.log(`🎥 STREAM DISPLAY MANAGER: Iniciando criação de vídeo para ${participantId}`);
     
+    // PRIMEIRA VALIDAÇÃO: Básica
     const validation = validateMediaStreamTracks(stream, participantId);
-    console.log(`🔍 STREAM DISPLAY MANAGER: Validação de tracks para ${participantId}:`, validation);
+    console.log(`🔍 STREAM DISPLAY MANAGER: Validação básica para ${participantId}:`, validation);
     
     if (!shouldProcessStream(stream, participantId)) {
-      console.error(`❌ STREAM DISPLAY MANAGER: REJEITADO - Stream sem tracks de vídeo ativas para ${participantId}`);
+      console.warn(`⚠️ STREAM DISPLAY MANAGER: Stream falhou validação básica para ${participantId}, aguardando ativação...`);
+    }
+    
+    // FASE 3: AGUARDAR TRACKS FICAREM REALMENTE ATIVAS
+    console.log(`🎯 STREAM DISPLAY MANAGER: Aguardando ativação de tracks para ${participantId}...`);
+    const activationResult = await waitForTrackActivation(stream, participantId, 3000);
+    
+    if (!activationResult.isActive) {
+      console.error(`❌ STREAM DISPLAY MANAGER: REJEITADO - Tracks não ativaram para ${participantId}`);
       
       // Dispatch failure event
       window.dispatchEvent(new CustomEvent('video-display-ready', {
         detail: { 
           participantId, 
           success: false, 
-          error: 'Stream sem tracks de vídeo ativas',
-          validation
+          error: 'Tracks não ficaram ativas',
+          validation,
+          activationResult
         }
       }));
       return;
     }
     
-    console.log(`✅ STREAM DISPLAY MANAGER: Stream aprovado para ${participantId}`, {
+    console.log(`✅ STREAM DISPLAY MANAGER: Tracks ativas confirmadas para ${participantId}`, {
       streamId: stream.id.substring(0, 8),
-      ...validation
+      waitTime: activationResult.waitTime,
+      activeTrackCount: activationResult.activeTrackCount
     });
 
     // ✅ CORREÇÃO 2: PRIORIZAR CONTAINERS REACT COM DOM READY
@@ -309,71 +321,137 @@ export const useStreamDisplayManager = () => {
     
     console.log(`📹 STREAM DISPLAY MANAGER: Video element created and added to container for ${participantId}`);
 
-    // IMPLEMENTAÇÃO CRÍTICA: Fallback para reaplica srcObject
-    let fallbackApplied = false;
-    const applyFallback = () => {
-      if (!fallbackApplied) {
-        fallbackApplied = true;
-        console.log(`🔄 STREAM DISPLAY MANAGER: Aplicando fallback - recarregando srcObject para ${participantId}`);
-        
-        // Reaplica srcObject após delay
-        setTimeout(() => {
-          if (video.srcObject !== stream) {
-            video.srcObject = stream;
-            console.log(`🔄 STREAM DISPLAY MANAGER: srcObject reaplicado para ${participantId}`);
+    // FASE 2: FALLBACK AGRESSIVO COM MÚLTIPLAS ESTRATÉGIAS
+    let fallbackCount = 0;
+    const maxFallbacks = 3;
+    
+    const applyAggressiveFallback = async (strategy: string) => {
+      if (fallbackCount >= maxFallbacks) return;
+      
+      fallbackCount++;
+      console.log(`🔄 STREAM DISPLAY MANAGER: Aplicando fallback ${fallbackCount}/${maxFallbacks} (${strategy}) para ${participantId}`);
+      
+      switch (strategy) {
+        case 'srcObject_reapply':
+          video.srcObject = null;
+          await new Promise(resolve => setTimeout(resolve, 100));
+          video.srcObject = stream;
+          break;
+          
+        case 'force_play':
+          try {
+            await video.play();
+            console.log(`✅ STREAM DISPLAY MANAGER: Force play sucesso para ${participantId}`);
+          } catch (error) {
+            console.warn(`⚠️ STREAM DISPLAY MANAGER: Force play falhou para ${participantId}:`, error);
           }
-        }, 1000);
+          break;
+          
+        case 'element_recreation':
+          console.log(`🚨 STREAM DISPLAY MANAGER: Recriando elemento de vídeo para ${participantId}`);
+          const newVideo = video.cloneNode() as HTMLVideoElement;
+          newVideo.srcObject = stream;
+          video.replaceWith(newVideo);
+          Object.assign(video, newVideo); // Update reference
+          break;
       }
     };
 
-    // Attempt playback with retries
+    // FASE 2 CONTINUAÇÃO: SYSTEM DE PLAYBACK COM VALIDAÇÃO CONTÍNUA
     let attempts = 0;
-    const maxAttempts = 3;
+    const maxAttempts = 5;
+    let playbackValidated = false;
 
     const attemptPlay = async () => {
       try {
         await video.play();
         console.log(`✅ STREAM DISPLAY MANAGER: Video playing for ${participantId}`);
         
-        // Dispatch success event
-        window.dispatchEvent(new CustomEvent('video-display-ready', {
-          detail: { participantId, success: true }
-        }));
+        // FASE 3: VALIDAR SE REALMENTE ESTÁ PRODUZINDO DADOS
+        const { validateTrackProduction } = await import('@/utils/media/trackActivationWaiter');
+        
+        console.log(`🔍 STREAM DISPLAY MANAGER: Validando produção de dados para ${participantId}...`);
+        const isProducing = await validateTrackProduction(video, participantId, 2000);
+        
+        if (isProducing) {
+          playbackValidated = true;
+          console.log(`✅ STREAM DISPLAY MANAGER: Produção de dados confirmada para ${participantId}`);
+          
+          // Dispatch success event
+          window.dispatchEvent(new CustomEvent('video-display-ready', {
+            detail: { participantId, success: true, validated: true }
+          }));
+        } else {
+          console.warn(`⚠️ STREAM DISPLAY MANAGER: Video tocando mas sem dados para ${participantId}`);
+          await applyAggressiveFallback('srcObject_reapply');
+          
+          // Retry with fallback
+          if (attempts < maxAttempts) {
+            setTimeout(attemptPlay, 1000);
+          }
+        }
+        
       } catch (error) {
         attempts++;
         console.warn(`⚠️ STREAM DISPLAY MANAGER: Play attempt ${attempts} failed for ${participantId}:`, error);
         
-        // Aplicar fallback na primeira falha
+        // Estratégias progressivas de fallback
         if (attempts === 1) {
-          applyFallback();
+          await applyAggressiveFallback('srcObject_reapply');
+        } else if (attempts === 2) {
+          await applyAggressiveFallback('force_play');
+        } else if (attempts === 3) {
+          await applyAggressiveFallback('element_recreation');
         }
         
         if (attempts < maxAttempts) {
-          setTimeout(attemptPlay, attempts * 1000);
+          setTimeout(attemptPlay, attempts * 500);
         } else {
           console.error(`❌ STREAM DISPLAY MANAGER: Play failed after ${maxAttempts} attempts for ${participantId}`);
           
-          // Último recurso: tentar fallback final
-          applyFallback();
-          
           // Dispatch failure event
           window.dispatchEvent(new CustomEvent('video-display-ready', {
-            detail: { participantId, success: false, error: error.message }
+            detail: { 
+              participantId, 
+              success: false, 
+              error: error.message,
+              fallbacksApplied: fallbackCount
+            }
           }));
         }
       }
     };
 
-    // Monitor para reaplica srcObject se vídeo não iniciar em 3s
-    const fallbackTimer = setTimeout(() => {
-      if (video.readyState === 0 || video.videoWidth === 0) {
-        console.log(`⚠️ STREAM DISPLAY MANAGER: Vídeo não iniciou em 3s, aplicando fallback para ${participantId}`);
-        applyFallback();
+    // MONITORAMENTO CONTÍNUO: Múltiplos timers para diferentes cenários
+    const fallbackTimer1 = setTimeout(async () => {
+      if (video.readyState === 0) {
+        console.log(`⚠️ STREAM DISPLAY MANAGER: ReadyState 0 após 2s para ${participantId}`);
+        await applyAggressiveFallback('srcObject_reapply');
       }
-    }, 3000);
+    }, 2000);
+    
+    const fallbackTimer2 = setTimeout(async () => {
+      if (video.videoWidth === 0 && !playbackValidated) {
+        console.log(`⚠️ STREAM DISPLAY MANAGER: Sem dimensões após 4s para ${participantId}`);
+        await applyAggressiveFallback('force_play');
+      }
+    }, 4000);
+    
+    const fallbackTimer3 = setTimeout(async () => {
+      if (!playbackValidated) {
+        console.log(`🚨 STREAM DISPLAY MANAGER: CRÍTICO - Sem validação após 6s para ${participantId}`);
+        await applyAggressiveFallback('element_recreation');
+      }
+    }, 6000);
 
     video.addEventListener('loadeddata', () => {
-      clearTimeout(fallbackTimer);
+      clearTimeout(fallbackTimer1);
+      console.log(`📺 STREAM DISPLAY MANAGER: LoadedData event para ${participantId}`);
+    }, { once: true });
+    
+    video.addEventListener('playing', () => {
+      clearTimeout(fallbackTimer2);
+      console.log(`▶️ STREAM DISPLAY MANAGER: Playing event para ${participantId}`);
     }, { once: true });
 
     attemptPlay();

@@ -1,292 +1,274 @@
-// Aguarda que tracks de uma stream fiquem ativas antes de processar
+// FASE 3: Track Activation Waiter - Garante que tracks estão produzindo dados
 import { streamLogger } from '../debug/StreamLogger';
 
-export const waitForStreamTracks = async (
+export interface TrackActivationResult {
+  isActive: boolean;
+  trackCount: number;
+  activeTrackCount: number;
+  trackStates: Array<{
+    kind: string;
+    enabled: boolean;
+    readyState: string;
+    muted: boolean;
+  }>;
+  waitTime: number;
+}
+
+export const waitForTrackActivation = async (
   stream: MediaStream, 
   participantId: string = 'unknown',
-  maxWaitTime: number = 5000
-): Promise<{ hasActiveTracks: boolean; stream: MediaStream }> => {
+  timeout: number = 5000
+): Promise<TrackActivationResult> => {
+  const start = Date.now();
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  const deviceType = isMobile ? 'mobile' : 'desktop';
   
-  console.log(`🚨 CRÍTICO [TRACK-WAITER] Aguardando tracks ativas para ${participantId}:`, {
+  console.log(`🎯 [TRACK-ACTIVATION] Aguardando ativação de tracks para ${participantId}:`, {
     streamId: stream.id,
-    initialTracksCount: stream.getTracks().length,
-    active: stream.active,
-    maxWaitTime
+    initialTracks: stream.getTracks().length,
+    videoTracks: stream.getVideoTracks().length,
+    timeout
   });
 
-  // Se já tem tracks ativas, retorna imediatamente
-  const initialTracks = stream.getTracks();
-  const activeTracks = initialTracks.filter(track => track.readyState === 'live');
-  
-  if (activeTracks.length > 0) {
-    console.log(`✅ [TRACK-WAITER] Tracks já ativas para ${participantId}:`, {
-      totalTracks: initialTracks.length,
-      activeTracks: activeTracks.length
-    });
-    
-    streamLogger.logValidation(participantId, isMobile, deviceType, true, {
-      reason: 'tracks_already_active',
-      tracksCount: activeTracks.length,
-      waitTime: 0
-    });
-    
-    return { hasActiveTracks: true, stream };
-  }
-
-  // Aguarda tracks ficarem ativas
-  const startTime = Date.now();
-  let attempts = 0;
-  const maxAttempts = Math.floor(maxWaitTime / 100); // Check every 100ms
-
   return new Promise((resolve) => {
-    const checkTracks = () => {
-      attempts++;
-      const currentTracks = stream.getTracks();
-      const currentActiveTracks = currentTracks.filter(track => track.readyState === 'live');
-      const waitTime = Date.now() - startTime;
+    const checkActivation = () => {
+      const tracks = stream.getTracks();
+      const videoTracks = stream.getVideoTracks();
+      const activeTracks = tracks.filter(track => 
+        track.enabled && track.readyState === 'live' && !track.muted
+      );
+      const activeVideoTracks = videoTracks.filter(track => 
+        track.enabled && track.readyState === 'live' && !track.muted
+      );
       
-      console.log(`🔍 [TRACK-WAITER] Tentativa ${attempts}/${maxAttempts} para ${participantId}:`, {
-        totalTracks: currentTracks.length,
-        activeTracks: currentActiveTracks.length,
-        waitTime,
-        streamActive: stream.active
+      const elapsed = Date.now() - start;
+      const isActive = activeVideoTracks.length > 0;
+      
+      const trackStates = tracks.map(track => ({
+        kind: track.kind,
+        enabled: track.enabled,
+        readyState: track.readyState,
+        muted: track.muted
+      }));
+      
+      console.log(`🔍 [TRACK-ACTIVATION] Check para ${participantId}:`, {
+        totalTracks: tracks.length,
+        activeTracks: activeTracks.length,
+        activeVideoTracks: activeVideoTracks.length,
+        isActive,
+        elapsed,
+        trackStates
       });
 
-      // Sucesso: encontrou tracks ativas
-      if (currentActiveTracks.length > 0) {
-        console.log(`✅ [TRACK-WAITER] SUCESSO! Tracks ativas encontradas para ${participantId}:`, {
-          totalTracks: currentTracks.length,
-          activeTracks: currentActiveTracks.length,
-          waitTime,
-          attempts
+      const result: TrackActivationResult = {
+        isActive,
+        trackCount: tracks.length,
+        activeTrackCount: activeTracks.length,
+        trackStates,
+        waitTime: elapsed
+      };
+
+      if (isActive) {
+        console.log(`✅ [TRACK-ACTIVATION] Tracks ativas confirmadas para ${participantId}:`, {
+          activeVideoTracks: activeVideoTracks.length,
+          waitTime: elapsed
         });
         
-        streamLogger.logValidation(participantId, isMobile, deviceType, true, {
+        streamLogger.logValidation(participantId, isMobile, isMobile ? 'mobile' : 'desktop', true, {
           reason: 'tracks_became_active',
-          tracksCount: currentActiveTracks.length,
-          waitTime,
-          attempts
+          waitTime: elapsed,
+          activeTracksCount: activeTracks.length
         });
         
-        resolve({ hasActiveTracks: true, stream });
+        resolve(result);
+        return;
+      }
+      
+      if (elapsed > timeout) {
+        console.warn(`⚠️ [TRACK-ACTIVATION] TIMEOUT para ${participantId}:`, {
+          elapsed,
+          trackStates,
+          timeoutReached: true
+        });
+        
+        streamLogger.logValidation(participantId, isMobile, isMobile ? 'mobile' : 'desktop', false, {
+          reason: 'track_activation_timeout',
+          waitTime: elapsed,
+          trackCount: tracks.length,
+          activeCount: activeTracks.length
+        });
+        
+        resolve(result);
         return;
       }
 
-      // Timeout ou máximo de tentativas
-      if (attempts >= maxAttempts || waitTime >= maxWaitTime) {
-        console.error(`❌ [TRACK-WAITER] TIMEOUT! Tracks não ficaram ativas para ${participantId}:`, {
-          totalTracks: currentTracks.length,
-          activeTracks: currentActiveTracks.length,
-          waitTime,
-          attempts,
-          streamActive: stream.active
-        });
-        
-        streamLogger.logValidation(participantId, isMobile, deviceType, false, {
-          reason: 'tracks_activation_timeout',
-          tracksCount: currentTracks.length,
-          activeTracks: currentActiveTracks.length,
-          waitTime,
-          attempts
-        });
-        
-        resolve({ hasActiveTracks: false, stream });
-        return;
-      }
-
-      // Continua tentando
-      setTimeout(checkTracks, 100);
+      // Continua verificando
+      setTimeout(checkActivation, 200);
     };
 
-    // Inicia verificação
-    checkTracks();
+    checkActivation();
   });
 };
 
-export const waitForVideoData = async (
+export const validateTrackProduction = async (
   videoElement: HTMLVideoElement,
   participantId: string = 'unknown',
-  maxWaitTime: number = 5000
-): Promise<{ hasVideoData: boolean; dimensions: { width: number; height: number } }> => {
-  console.log(`🎬 [VIDEO-DATA] Aguardando dados de vídeo para ${participantId}`, {
-    currentWidth: videoElement.videoWidth,
-    currentHeight: videoElement.videoHeight,
-    readyState: videoElement.readyState,
-    maxWaitTime
-  });
-
-  // Se já tem dados de vídeo, retorna imediatamente
-  if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-    console.log(`✅ [VIDEO-DATA] Dados já disponíveis para ${participantId}:`, {
-      width: videoElement.videoWidth,
-      height: videoElement.videoHeight
-    });
-    return { 
-      hasVideoData: true, 
-      dimensions: { width: videoElement.videoWidth, height: videoElement.videoHeight } 
-    };
-  }
-
-  const startTime = Date.now();
-  const maxAttempts = Math.floor(maxWaitTime / 100);
-  let attempts = 0;
-
+  timeout: number = 3000
+): Promise<boolean> => {
+  console.log(`📹 [TRACK-PRODUCTION] Validando produção de dados para ${participantId}`);
+  
   return new Promise((resolve) => {
-    const checkVideoData = () => {
+    let attempts = 0;
+    const maxAttempts = timeout / 100;
+    
+    const checkProduction = () => {
       attempts++;
-      const waitTime = Date.now() - startTime;
       
-      console.log(`🔍 [VIDEO-DATA] Tentativa ${attempts}/${maxAttempts} para ${participantId}:`, {
-        width: videoElement.videoWidth,
-        height: videoElement.videoHeight,
+      const hasData = videoElement.videoWidth > 0 && videoElement.videoHeight > 0;
+      const isPlaying = !videoElement.paused && !videoElement.ended && videoElement.readyState > 2;
+      
+      console.log(`🔍 [TRACK-PRODUCTION] Check ${attempts} para ${participantId}:`, {
+        hasData,
+        isPlaying,
+        dimensions: `${videoElement.videoWidth}x${videoElement.videoHeight}`,
         readyState: videoElement.readyState,
-        waitTime
+        paused: videoElement.paused
       });
-
-      // Sucesso: tem dados de vídeo
-      if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-        console.log(`✅ [VIDEO-DATA] SUCESSO! Dados de vídeo encontrados para ${participantId}:`, {
-          width: videoElement.videoWidth,
-          height: videoElement.videoHeight,
-          waitTime,
-          attempts
-        });
-        
-        resolve({ 
-          hasVideoData: true, 
-          dimensions: { width: videoElement.videoWidth, height: videoElement.videoHeight } 
-        });
+      
+      if (hasData && isPlaying) {
+        console.log(`✅ [TRACK-PRODUCTION] Produção confirmada para ${participantId}`);
+        resolve(true);
         return;
       }
-
-      // Timeout ou máximo de tentativas
-      if (attempts >= maxAttempts || waitTime >= maxWaitTime) {
-        console.error(`❌ [VIDEO-DATA] TIMEOUT! Dados de vídeo não disponíveis para ${participantId}:`, {
-          width: videoElement.videoWidth,
-          height: videoElement.videoHeight,
-          readyState: videoElement.readyState,
-          waitTime,
-          attempts
-        });
-        
-        resolve({ 
-          hasVideoData: false, 
-          dimensions: { width: videoElement.videoWidth, height: videoElement.videoHeight } 
-        });
+      
+      if (attempts >= maxAttempts) {
+        console.warn(`⚠️ [TRACK-PRODUCTION] Timeout para ${participantId} após ${attempts} tentativas`);
+        resolve(false);
         return;
       }
-
-      // Continua tentando
-      setTimeout(checkVideoData, 100);
+      
+      setTimeout(checkProduction, 100);
     };
-
-    // Aguarda loadedmetadata primeiro, se necessário
-    if (videoElement.readyState < 1) {
-      const metadataHandler = () => {
-        videoElement.removeEventListener('loadedmetadata', metadataHandler);
-        checkVideoData();
-      };
-      videoElement.addEventListener('loadedmetadata', metadataHandler);
-    } else {
-      checkVideoData();
-    }
+    
+    checkProduction();
   });
 };
 
-export const validateStreamWithTrackWait = async (
-  stream: MediaStream | null, 
-  participantId: string = 'unknown',
-  maxWaitTime: number = 5000
-): Promise<{ isValid: boolean; stream: MediaStream | null }> => {
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  const deviceType = isMobile ? 'mobile' : 'desktop';
-  
-  // Validações básicas primeiro
-  if (!stream) {
-    console.error(`❌ [STREAM-VALIDATOR] Stream é null para ${participantId}`);
-    streamLogger.logStreamError(participantId, isMobile, deviceType, new Error('Stream é null'), 0);
-    return { isValid: false, stream: null };
-  }
-  
-  if (!stream.getTracks || typeof stream.getTracks !== 'function') {
-    console.error(`❌ [STREAM-VALIDATOR] Stream não possui método getTracks para ${participantId}`);
-    streamLogger.logStreamError(participantId, isMobile, deviceType, new Error('Stream sem getTracks'), 0);
-    return { isValid: false, stream: null };
-  }
-
-  // Aguarda tracks ficarem ativas
-  const trackResult = await waitForStreamTracks(stream, participantId, maxWaitTime);
-  
-  if (!trackResult.hasActiveTracks) {
-    console.error(`❌ [STREAM-VALIDATOR] Stream sem tracks ativas para ${participantId}`);
-    return { isValid: false, stream };
-  }
-
-  console.log(`✅ [STREAM-VALIDATOR] Stream validada com sucesso para ${participantId}`);
-  streamLogger.logValidation(participantId, isMobile, deviceType, true, {
-    reason: 'stream_validated_with_active_tracks',
-    tracksCount: stream.getTracks().length,
-    activeTracks: stream.getTracks().filter(t => t.readyState === 'live').length
-  });
-  
-  return { isValid: true, stream };
-};
+export interface VideoDataValidationResult {
+  isValid: boolean;
+  stream: MediaStream | null;
+  hasVideoData: boolean;
+  activationResult?: TrackActivationResult;
+}
 
 export const validateStreamWithVideoData = async (
-  stream: MediaStream | null, 
+  stream: MediaStream,
   participantId: string = 'unknown',
-  maxWaitTime: number = 5000
-): Promise<{ isValid: boolean; stream: MediaStream | null; hasVideoData: boolean }> => {
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  const deviceType = isMobile ? 'mobile' : 'desktop';
+  timeout: number = 5000
+): Promise<VideoDataValidationResult> => {
+  console.log(`🎯 [STREAM-VIDEO-VALIDATION] Iniciando validação completa para ${participantId}`);
   
-  // Primeiro valida tracks básicas
-  const trackValidation = await validateStreamWithTrackWait(stream, participantId, maxWaitTime);
-  
-  if (!trackValidation.isValid || !trackValidation.stream) {
-    return { isValid: false, stream: trackValidation.stream, hasVideoData: false };
+  if (!stream || !stream.active) {
+    console.error(`❌ [STREAM-VIDEO-VALIDATION] Stream inválido ou inativo para ${participantId}`);
+    return {
+      isValid: false,
+      stream: null,
+      hasVideoData: false
+    };
   }
 
-  // Cria elemento de vídeo temporário para validar dados
+  // Primeiro aguarda tracks ficarem ativas
+  const activationResult = await waitForTrackActivation(stream, participantId, timeout);
+  
+  if (!activationResult.isActive) {
+    console.error(`❌ [STREAM-VIDEO-VALIDATION] Tracks não ativaram para ${participantId}`);
+    return {
+      isValid: false,
+      stream: null,
+      hasVideoData: false,
+      activationResult
+    };
+  }
+
+  // Cria video temporário para testar dados
   const tempVideo = document.createElement('video');
   tempVideo.muted = true;
   tempVideo.playsInline = true;
-  tempVideo.srcObject = trackValidation.stream;
-
+  tempVideo.autoplay = true;
+  tempVideo.style.cssText = 'position: absolute; top: -9999px; left: -9999px; width: 1px; height: 1px;';
+  
   try {
-    // Aguarda dados de vídeo
-    const videoDataResult = await waitForVideoData(tempVideo, participantId, maxWaitTime);
+    document.body.appendChild(tempVideo);
+    tempVideo.srcObject = stream;
     
-    // Cleanup
-    tempVideo.srcObject = null;
-    tempVideo.remove();
-
-    if (videoDataResult.hasVideoData) {
-      console.log(`✅ [STREAM-VIDEO-VALIDATOR] Stream com dados de vídeo validada para ${participantId}:`, {
-        dimensions: videoDataResult.dimensions,
-        tracksCount: trackValidation.stream.getTracks().length
-      });
+    console.log(`📹 [STREAM-VIDEO-VALIDATION] Testando dados de vídeo para ${participantId}...`);
+    
+    // Aguarda dados de vídeo aparecerem
+    const hasVideoData = await new Promise<boolean>((resolve) => {
+      let attempts = 0;
+      const maxAttempts = timeout / 200;
       
-      streamLogger.logValidation(participantId, isMobile, deviceType, true, {
-        reason: 'stream_validated_with_video_data',
-        tracksCount: trackValidation.stream.getTracks().length,
-        videoDimensions: videoDataResult.dimensions
-      });
+      const checkVideoData = () => {
+        attempts++;
+        
+        const hasData = tempVideo.videoWidth > 0 && tempVideo.videoHeight > 0;
+        const hasMetadata = tempVideo.readyState >= 1;
+        
+        console.log(`🔍 [STREAM-VIDEO-VALIDATION] Check ${attempts} para ${participantId}:`, {
+          hasData,
+          hasMetadata,
+          dimensions: `${tempVideo.videoWidth}x${tempVideo.videoHeight}`,
+          readyState: tempVideo.readyState
+        });
+        
+        if (hasData && hasMetadata) {
+          console.log(`✅ [STREAM-VIDEO-VALIDATION] Dados de vídeo confirmados para ${participantId}`);
+          resolve(true);
+          return;
+        }
+        
+        if (attempts >= maxAttempts) {
+          console.warn(`⚠️ [STREAM-VIDEO-VALIDATION] Timeout aguardando dados para ${participantId}`);
+          resolve(false);
+          return;
+        }
+        
+        setTimeout(checkVideoData, 200);
+      };
       
-      return { isValid: true, stream: trackValidation.stream, hasVideoData: true };
-    } else {
-      console.error(`❌ [STREAM-VIDEO-VALIDATOR] Stream sem dados de vídeo para ${participantId}`);
-      return { isValid: false, stream: trackValidation.stream, hasVideoData: false };
+      // Listeners para acelerar detecção
+      tempVideo.addEventListener('loadedmetadata', () => {
+        console.log(`📊 [STREAM-VIDEO-VALIDATION] Metadata carregada para ${participantId}`);
+        setTimeout(checkVideoData, 100);
+      }, { once: true });
+      
+      tempVideo.addEventListener('canplay', () => {
+        console.log(`▶️ [STREAM-VIDEO-VALIDATION] CanPlay ativado para ${participantId}`);
+        setTimeout(checkVideoData, 100);
+      }, { once: true });
+      
+      checkVideoData();
+    });
+    
+    const result: VideoDataValidationResult = {
+      isValid: hasVideoData,
+      stream: hasVideoData ? stream : null,
+      hasVideoData,
+      activationResult
+    };
+    
+    console.log(`🎯 [STREAM-VIDEO-VALIDATION] Resultado final para ${participantId}:`, result);
+    
+    return result;
+    
+  } finally {
+    // Cleanup do video temporário
+    try {
+      tempVideo.srcObject = null;
+      if (tempVideo.parentNode) {
+        tempVideo.parentNode.removeChild(tempVideo);
+      }
+    } catch (error) {
+      console.warn('⚠️ [STREAM-VIDEO-VALIDATION] Erro no cleanup:', error);
     }
-  } catch (error) {
-    console.error(`❌ [STREAM-VIDEO-VALIDATOR] Erro ao validar dados de vídeo para ${participantId}:`, error);
-    
-    // Cleanup em caso de erro
-    tempVideo.srcObject = null;
-    tempVideo.remove();
-    
-    return { isValid: false, stream: trackValidation.stream, hasVideoData: false };
   }
 };
