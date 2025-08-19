@@ -1,6 +1,7 @@
 // ============= Participant WebRTC Handshake Logic =============
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { streamLogger } from '@/utils/debug/StreamLogger';
+import { candidateMonitor } from '@/utils/webrtc/CandidateMonitor';
 
 class ParticipantHandshakeManager {
   private peerConnection: RTCPeerConnection | null = null;
@@ -396,16 +397,38 @@ class ParticipantHandshakeManager {
         duration: `${streamDuration.toFixed(1)}ms`
       });
 
-      // STEP 2: Create new peer connection BEFORE any operation
+      // STEP 2: Create new peer connection with dynamic TURN configuration
       const pcStartTime = performance.now();
-      const configuration: RTCConfiguration = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' }
-        ],
-        iceCandidatePoolSize: 10
-      };
+      
+      // CORREÇÃO CRÍTICA: Executar diagnóstico TURN antes de criar RTCPeerConnection
+      console.log('🧊 [PARTICIPANT] Running TURN diagnostic before peer connection...');
+      try {
+        const { turnConnectivityService } = await import('@/services/TurnConnectivityService');
+        const diagnostic = await turnConnectivityService.runDiagnostic();
+        
+        console.log('🧊 [PARTICIPANT] TURN diagnostic result:', {
+          workingServers: diagnostic.workingServers.length,
+          totalServers: diagnostic.allServersStatus.length,
+          overallHealth: diagnostic.overallHealth
+        });
+        
+        // Use método público forceRefresh que já aplica configuração otimizada
+        const result = await turnConnectivityService.forceRefresh();
+        
+      } catch (diagError) {
+        console.warn('⚠️ [PARTICIPANT] TURN diagnostic failed, using fallback:', diagError);
+      }
+      
+      // Usar configuração dinâmica TURN em vez de hardcoded STUN
+      const { getWebRTCConfig } = await import('@/utils/webrtc/WebRTCConfig');
+      const configuration = getWebRTCConfig();
+      
+      console.log('🧊 [PARTICIPANT] Using ICE configuration:', {
+        serverCount: configuration.iceServers?.length || 0,
+        hasSTUN: configuration.iceServers?.some(s => s.urls.toString().includes('stun')),
+        hasTURN: configuration.iceServers?.some(s => s.urls.toString().includes('turn')),
+        iceTransportPolicy: configuration.iceTransportPolicy || 'all'
+      });
 
       this.peerConnection = new RTCPeerConnection(configuration);
       const pcDuration = performance.now() - pcStartTime;
@@ -423,11 +446,32 @@ class ParticipantHandshakeManager {
       const addTrackDuration = performance.now() - addTrackStartTime;
       console.log(`✅ [PARTICIPANT] All tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
 
-      // Set up event handlers
+      // Set up event handlers with enhanced ICE candidate logging
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log('🚨 CRÍTICO [PARTICIPANT] ICE candidate generated, sending to host');
+          const candidateType = event.candidate.candidate.includes('host') ? 'host' : 
+                               event.candidate.candidate.includes('srflx') ? 'srflx' : 
+                               event.candidate.candidate.includes('relay') ? 'relay' : 'unknown';
+          
+          console.log('🧊 [PARTICIPANT] ICE candidate generated:', {
+            type: candidateType,
+            protocol: event.candidate.protocol,
+            address: event.candidate.address,
+            port: event.candidate.port,
+            candidate: event.candidate.candidate.substring(0, 50) + '...'
+          });
+          
+          // Track relay candidates specifically
+          if (candidateType === 'relay') {
+            console.log('✅ [PARTICIPANT] RELAY candidate generated - NAT traversal should work!');
+          }
+          
+          // Record candidate for monitoring
+          candidateMonitor.recordCandidate(hostId, event.candidate, 'participant');
+          
           unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
+        } else {
+          console.log('🧊 [PARTICIPANT] ICE gathering complete (candidate: null)');
         }
       };
 
