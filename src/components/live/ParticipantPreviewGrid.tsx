@@ -115,8 +115,8 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   });
 
   return (
-    <div className="absolute top-4 left-4 w-1/3 h-1/3 max-w-md max-h-80">
-      <div className={`grid ${getGridClass(participantCount)} ${getGridRows(participantCount)} gap-2 h-full w-full`}>
+    <div className="absolute inset-0 p-6">
+      <div className={`grid ${getGridClass(participantCount)} ${getGridRows(participantCount)} gap-4 h-full w-full`}>
         {allParticipants.map((participant, index) => (
           <UnifiedVideoContainer
             key={participant.id}

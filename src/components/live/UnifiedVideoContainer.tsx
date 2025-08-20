@@ -187,8 +187,8 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
       data-participant-id={participant.id}
       data-video-container="true"
       style={{ 
-        minHeight: '80px', 
-        minWidth: '120px',
+        minHeight: '200px', 
+        minWidth: '300px',
         backgroundColor: hasValidVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
       }}
     >
