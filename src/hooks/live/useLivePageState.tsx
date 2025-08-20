@@ -29,6 +29,11 @@ export const useLivePageState = () => {
   const [finalActionTimerId, setFinalActionTimerId] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
+  // Debug para monitorar mudanças no estado transmissionOpen
+  useEffect(() => {
+    console.log('🎯 ESTADO TRANSMISSÃO MUDOU:', { transmissionOpen, timestamp: new Date().toISOString() });
+  }, [transmissionOpen]);
+
   // FASE 1: Usar hook de inicialização WebRTC com diagnóstico TURN
   const webrtcInit = useWebRTCInitialization({
     sessionId: sessionId || '',

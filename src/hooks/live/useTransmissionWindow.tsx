@@ -575,22 +575,70 @@ export const useTransmissionWindow = () => {
     }
   };
 
-  const finishTransmission = (state: any, handleFinalAction: () => void) => {
+  const finishTransmission = (state: any, handleFinalAction?: () => void) => {
+    console.log('🛑 FINALIZANDO TRANSMISSÃO: Iniciando processo de finalização');
+    console.log('🛑 Estado antes da finalização:', { 
+      transmissionOpen: state.transmissionOpen,
+      windowExists: !!transmissionWindowRef.current,
+      windowClosed: transmissionWindowRef.current?.closed 
+    });
+    
+    // Fechar a janela de transmissão se estiver aberta
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-      transmissionWindowRef.current.close();
-      transmissionWindowRef.current = null;
+      console.log('🛑 FINALIZANDO: Fechando janela de transmissão');
+      try {
+        transmissionWindowRef.current.close();
+        transmissionWindowRef.current = null;
+        console.log('🛑 FINALIZANDO: Janela fechada com sucesso');
+      } catch (error) {
+        console.error('🛑 ERRO ao fechar janela:', error);
+      }
+    } else {
+      console.log('🛑 FINALIZANDO: Nenhuma janela ativa para fechar');
+    }
+    
+    // CRÍTICO: Sempre definir transmissionOpen como false
+    console.log('🛑 FINALIZANDO: Definindo transmissionOpen como false');
+    try {
       state.setTransmissionOpen(false);
+      console.log('🛑 FINALIZANDO: Estado atualizado com sucesso');
+    } catch (error) {
+      console.error('🛑 ERRO ao atualizar estado:', error);
     }
 
+    // Forçar re-render se necessário
+    setTimeout(() => {
+      if (state.transmissionOpen === true) {
+        console.log('🛑 CRÍTICO: Estado ainda é true, forçando nova atualização');
+        state.setTransmissionOpen(false);
+      }
+    }, 100);
+
+    // Processar ação final se configurada
     if (state.finalAction !== 'none') {
+      console.log('🛑 FINALIZANDO: Executando ação final:', state.finalAction);
       state.setFinalActionTimeLeft(20);
       state.setFinalActionOpen(true);
+      
+      // Executar callback se fornecido
+      if (handleFinalAction) {
+        console.log('🛑 FINALIZANDO: Executando handleFinalAction');
+        try {
+          handleFinalAction();
+        } catch (error) {
+          console.error('🛑 ERRO ao executar handleFinalAction:', error);
+        }
+      }
     } else {
+      console.log('🛑 FINALIZANDO: Sem ação final configurada');
       toast({
         title: "Transmissão finalizada",
         description: "A transmissão foi encerrada com sucesso."
       });
     }
+    
+    console.log('🛑 FINALIZAÇÃO COMPLETA: Estado transmissionOpen deve estar false');
+    console.log('🛑 Estado final:', { transmissionOpen: state.transmissionOpen });
   };
 
   return {
