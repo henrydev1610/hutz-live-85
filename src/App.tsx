@@ -12,6 +12,7 @@ import LightShowPage from './pages/LightShowPage';
 import QuizPage from './pages/QuizPage';
 import NotFound from './pages/NotFound';
 import ParticipantPage from './pages/ParticipantPage';
+import TransmissionWindowPage from './pages/TransmissionWindowPage';
 
 function App() {
   // FASE 1: CRÍTICO - Enforçar HTTPS e validar contexto seguro na inicialização
@@ -51,6 +52,7 @@ function App() {
         <Route path="/lightshow" element={<LightShowPage />} />
         <Route path="/quiz" element={<QuizPage />} />
         <Route path="/participant/:sessionId" element={<ParticipantPage />} />
+        <Route path="/transmission" element={<TransmissionWindowPage />} />
         <Route path="/404" element={<NotFound />} />
         <Route path="*" element={<Navigate to="/404" replace />} />
       </Routes>

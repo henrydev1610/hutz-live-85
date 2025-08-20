@@ -1,7 +1,11 @@
 {
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/transmission-window.html",
+      "destination": "/transmission-window.html"
+    },
+    {
+      "source": "/((?!.*\\.html$).*)",
       "destination": "/index.html"
     }
   ]

@@ -5,11 +5,15 @@ services:
     plan: free
     staticPublishPath: dist
     routes:
+      # Serve static HTML files directly
+      - type: rewrite
+        src: '/transmission-window.html'
+        dest: '/transmission-window.html'
       # Rewrite específico para 404
       - type: rewrite
         src: '/404'
         dest: '/index.html'
-      # Reescreve **todas** as outras URLs para /index.html  
+      # Reescreve outras URLs para /index.html (exceto arquivos .html)  
       - type: rewrite
-        src: '/.*'
+        src: '/(?!.*\.html$).*'
         dest: '/index.html'
