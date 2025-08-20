@@ -130,75 +130,24 @@ const TransmissionWindowPage: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background overflow-hidden">
-      {/* Header fixo */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-sm border-b border-white/10 p-4">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-lg font-bold text-white">
-              Transmissão ao Vivo - Hutz Live
-            </h1>
-            <p className="text-sm text-white/70">Sessão: {searchParams.get('sessionId')}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-white/90">{status}</p>
-            <p className="text-xs text-white/60">
-              {participantList.filter(p => p.selected).length} participantes selecionados
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Interface principal - replicando LivePreview */}
-      <div className="pt-24 h-screen">
-        <div className="relative w-full h-full bg-black live-transmission-window">
-          {/* Container com background */}
-          <div className="absolute inset-0" style={{ backgroundColor: selectedBackgroundColor }}>
-            {backgroundImage && (
-              <img 
-                src={backgroundImage} 
-                alt="Background" 
-                className="w-full h-full object-cover"
-              />
-            )}
-          </div>
-          
-          {/* Grid de participantes */}
-          <ParticipantPreviewGrid 
-            participantList={participantList}
-            participantCount={participantCount}
-            participantStreams={participantStreams}
-          />
-          
-          {/* QR Code overlay */}
-          <QRCodeOverlay
-            qrCodeVisible={qrCodeVisible}
-            qrCodeSvg={qrCodeSvg}
-            qrCodePosition={qrCodePosition}
-            setQrCodePosition={setQrCodePosition}
-            qrDescriptionPosition={qrDescriptionPosition}
-            setQrDescriptionPosition={setQrDescriptionPosition}
-            qrCodeDescription={qrCodeDescription}
-            selectedFont={selectedFont}
-            selectedTextColor={selectedTextColor}
-            qrDescriptionFontSize={qrDescriptionFontSize}
-          />
-          
-          {/* Live indicator */}
-          <LiveIndicator />
-        </div>
-      </div>
-
-      {/* Debug Panel minimizado */}
-      <div className="fixed bottom-4 right-4 z-50 max-w-xs">
-        <div className="bg-black/80 backdrop-blur-sm border border-white/20 rounded-lg p-3">
-          <div className="text-xs text-white/80 space-y-1 max-h-20 overflow-y-auto">
-            {debugMessages.slice(-3).map((msg, index) => (
-              <p key={index} className="font-mono break-all">
-                {msg}
-              </p>
-            ))}
-          </div>
+    <div className="min-h-screen h-screen bg-black overflow-hidden">
+      {/* Interface principal - tela cheia idêntica à foto */}
+      <div className="relative w-full h-full bg-black live-transmission-window">
+        {/* Grid de participantes - 2x2 com 4 slots fixos */}
+        <ParticipantPreviewGrid 
+          participantList={participantList}
+          participantCount={4}
+          participantStreams={participantStreams}
+        />
+        
+        {/* Indicador AO VIVO no canto superior direito */}
+        <LiveIndicator />
+        
+        {/* Mensagem de QR Code no canto inferior direito */}
+        <div className="absolute bottom-6 right-6 z-50">
+          <p className="text-white/70 text-sm font-medium">
+            QR Code gerado com sucesso. Compartilhe com os participantes.
+          </p>
         </div>
       </div>
     </div>
