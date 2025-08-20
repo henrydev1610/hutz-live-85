@@ -11,17 +11,20 @@ const FALLBACK_CONFIG: RTCConfiguration = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    
+
     // Cloudflare STUN (backup)
     { urls: 'stun:stun.cloudflare.com:3478' },
-    
-    // Metered TURN servers (fallback)
-    { urls: 'turn:a.relay.metered.ca:80', username: 'e8347d251935bbaf5a4bacf6', credential: 'ccp2JzxHYZOMd/X7' },
-    { urls: 'turn:a.relay.metered.ca:443', username: 'e8347d251935bbaf5a4bacf6', credential: 'ccp2JzxHYZOMd/X7' },
-    { urls: 'turn:a.relay.metered.ca:80?transport=tcp', username: 'e8347d251935bbaf5a4bacf6', credential: 'ccp2JzxHYZOMd/X7' },
-    { urls: 'turn:a.relay.metered.ca:443?transport=tcp', username: 'e8347d251935bbaf5a4bacf6', credential: 'ccp2JzxHYZOMd/X7' }
+
+    // Metered TURN servers (atualizados)
+  { urls: 'turn:a.relay.metered.ca:80', username: '76db9f87433b9f3e608e6e95', credential: 'vFE0f16Bv6vF7aEF' },
+  { urls: 'turn:a.relay.metered.ca:443', username: '76db9f87433b9f3e608e6e95', credential: 'vFE0f16Bv6vF7aEF' },
+  { urls: 'turn:a.relay.metered.ca:80?transport=tcp', username: '76db9f87433b9f3e608e6e95', credential: 'vFE0f16Bv6vF7aEF' },
+  { urls: 'turn:a.relay.metered.ca:443?transport=tcp', username: '76db9f87433b9f3e608e6e95', credential: 'vFE0f16Bv6vF7aEF' }
+
   ],
   iceCandidatePoolSize: 10
+};
+
 };
 
 // Chame isso ao receber `ice-servers` do backend
