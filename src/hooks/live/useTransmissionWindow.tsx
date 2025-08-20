@@ -534,7 +534,9 @@ export const useTransmissionWindow = () => {
             qrCodeDescription: state.qrCodeDescription,
             selectedFont: state.selectedFont,
             selectedTextColor: state.selectedTextColor,
-            qrDescriptionFontSize: state.qrDescriptionFontSize
+            qrDescriptionFontSize: state.qrDescriptionFontSize,
+            backgroundImage: state.backgroundImage,
+            selectedBackgroundColor: state.selectedBackgroundColor
           }, '*');
           
           console.log('✅ FASE 1: Functions and initial configurations sent to transmission window');

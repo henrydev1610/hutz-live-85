@@ -94,6 +94,8 @@ const TransmissionWindowPage: React.FC = () => {
       }
       
       if (event.data.type === 'update-qr-positions') {
+        updateDebug(`Recebendo configurações QR: visible=${event.data.qrCodeVisible}, svg=${!!event.data.qrCodeSvg}, bg=${event.data.selectedBackgroundColor}`);
+        
         const { 
           qrCodeVisible: visible, 
           qrCodeSvg: svg, 
@@ -102,18 +104,32 @@ const TransmissionWindowPage: React.FC = () => {
           qrCodeDescription: desc,
           selectedFont: font,
           selectedTextColor: textColor,
-          qrDescriptionFontSize: fontSize 
+          qrDescriptionFontSize: fontSize,
+          backgroundImage: bgImage,
+          selectedBackgroundColor: bgColor
         } = event.data;
         
-        updateDebug('Atualizando configurações de QR Code');
-        setQrCodeVisible(visible);
-        setQrCodeSvg(svg);
-        setQrCodePosition(pos);
-        setQrDescriptionPosition(descPos);
-        setQrCodeDescription(desc);
-        setSelectedFont(font);
-        setSelectedTextColor(textColor);
-        setQrDescriptionFontSize(fontSize);
+        updateDebug('Aplicando configurações de QR Code e background');
+        console.log('🎨 QR CONFIG:', { visible, svg: !!svg, bgColor, bgImage: !!bgImage, desc });
+        
+        setQrCodeVisible(visible || false);
+        setQrCodeSvg(svg || null);
+        if (pos) setQrCodePosition(pos);
+        if (descPos) setQrDescriptionPosition(descPos);
+        setQrCodeDescription(desc || '');
+        setSelectedFont(font || 'Arial');
+        setSelectedTextColor(textColor || '#FFFFFF');
+        setQrDescriptionFontSize(fontSize || 16);
+        
+        // Aplicar configurações de background
+        if (bgImage !== undefined) {
+          setBackgroundImage(bgImage);
+          updateDebug(`Background image ${bgImage ? 'aplicada' : 'removida'}`);
+        }
+        if (bgColor) {
+          setSelectedBackgroundColor(bgColor);
+          updateDebug(`Background color aplicada: ${bgColor}`);
+        }
       }
       
       if (event.data.type === 'transmission-ready') {
@@ -133,6 +149,22 @@ const TransmissionWindowPage: React.FC = () => {
     <div className="min-h-screen h-screen bg-black overflow-hidden">
       {/* Interface principal - tela cheia idêntica à foto */}
       <div className="relative w-full h-full bg-black live-transmission-window">
+        {/* Container com background color ou imagem */}
+        <div 
+          className="absolute inset-0" 
+          style={{ 
+            backgroundColor: selectedBackgroundColor || '#000000'
+          }}
+        >
+          {backgroundImage && (
+            <img 
+              src={backgroundImage} 
+              alt="Background" 
+              className="w-full h-full object-cover"
+            />
+          )}
+        </div>
+        
         {/* Grid de participantes - 2x2 com 4 slots fixos */}
         <ParticipantPreviewGrid 
           participantList={participantList}
@@ -140,10 +172,24 @@ const TransmissionWindowPage: React.FC = () => {
           participantStreams={participantStreams}
         />
         
+        {/* QR Code overlay - renderizar mesmo que não visível inicialmente */}
+        <QRCodeOverlay
+          qrCodeVisible={qrCodeVisible}
+          qrCodeSvg={qrCodeSvg}
+          qrCodePosition={qrCodePosition}
+          setQrCodePosition={setQrCodePosition}
+          qrDescriptionPosition={qrDescriptionPosition}
+          setQrDescriptionPosition={setQrDescriptionPosition}
+          qrCodeDescription={qrCodeDescription}
+          selectedFont={selectedFont}
+          selectedTextColor={selectedTextColor}
+          qrDescriptionFontSize={qrDescriptionFontSize}
+        />
+        
         {/* Indicador AO VIVO no canto superior direito */}
         <LiveIndicator />
         
-        {/* Mensagem de QR Code no canto inferior direito */}
+        {/* Mensagem de QR Code no canto inferior direito - sempre visível */}
         <div className="absolute bottom-6 right-6 z-50">
           <p className="text-white/70 text-sm font-medium">
             QR Code gerado com sucesso. Compartilhe com os participantes.

@@ -235,6 +235,8 @@ const LivePage: React.FC = () => {
           selectedFont: state.selectedFont,
           selectedTextColor: state.selectedTextColor,
           qrDescriptionFontSize: state.qrDescriptionFontSize,
+          backgroundImage: state.backgroundImage,
+          selectedBackgroundColor: state.selectedBackgroundColor,
           cacheVersion: Date.now(), // Force cache refresh
           environment: getEnvironmentInfo()
         }, '*');
@@ -250,7 +252,9 @@ const LivePage: React.FC = () => {
     state.qrCodeDescription,
     state.selectedFont,
     state.selectedTextColor,
-    state.qrDescriptionFontSize
+    state.qrDescriptionFontSize,
+    state.backgroundImage,
+    state.selectedBackgroundColor
   ]);
 
   return (
