@@ -17,11 +17,18 @@ interface CircuitBreakerConfig {
   connectionTimeout: number;     // Timeout para conexões WebRTC (ms)
 }
 
+// PLANO: Detectar ambiente para timeouts diferenciados
+const isDesktopEnvironment = !navigator.userAgent.match(/Mobile|Android|iPhone|iPad/i);
+const isCorporateNetwork = window.location.protocol === 'https:' && 
+  (window.location.hostname.includes('.corp') || 
+   window.location.hostname.includes('.local') ||
+   navigator.userAgent.includes('Corporate'));
+
 const DEFAULT_CONFIG: CircuitBreakerConfig = {
-  failureThreshold: 3,           // FASE 2: 3 falhas para abrir (reduzido)
-  recoveryTimeout: 10000,        // FASE 2: 10s recovery (reduzido de 30s)
-  monitorInterval: 5000,         // FASE 2: 5s monitor (reduzido)
-  connectionTimeout: 5000        // FASE 2: 5s timeout (reduzido de 15s)
+  failureThreshold: isDesktopEnvironment ? 4 : 3,     // PLANO: Desktop mais tolerante
+  recoveryTimeout: isDesktopEnvironment ? 30000 : 15000,  // PLANO: 30s desktop, 15s mobile  
+  monitorInterval: isDesktopEnvironment ? 10000 : 5000,   // PLANO: Monitor menos frequente desktop
+  connectionTimeout: isDesktopEnvironment ? 15000 : 8000  // PLANO: 15s desktop, 8s mobile
 };
 
 export const useWebRTCCircuitBreaker = (config: Partial<CircuitBreakerConfig> = {}) => {
@@ -38,15 +45,22 @@ export const useWebRTCCircuitBreaker = (config: Partial<CircuitBreakerConfig> = 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const monitorRef = useRef<NodeJS.Timeout | null>(null);
 
-  // FASE 2: Registrar falha e abrir circuit se necessário
+  // PLANO: Registrar falha com backoff exponencial
   const recordFailure = useCallback((reason?: string) => {
     const now = Date.now();
     const newFailureCount = state.failureCount + 1;
     
-    console.warn(`🔥 [CIRCUIT] WebRTC failure recorded (${newFailureCount}/${fullConfig.failureThreshold}): ${reason || 'Unknown'}`);
+    // PLANO: Distinguir tipos de falha para tratamento adequado
+    const isNetworkFailure = reason?.includes('network') || reason?.includes('timeout');
+    const isConfigFailure = reason?.includes('credential') || reason?.includes('ice-server');
+    
+    console.warn(`🔥 [CIRCUIT] WebRTC failure recorded (${newFailureCount}/${fullConfig.failureThreshold}) [${isDesktopEnvironment ? 'DESKTOP' : 'MOBILE'}]: ${reason || 'Unknown'}`);
     
     if (newFailureCount >= fullConfig.failureThreshold) {
-      const nextRetry = now + fullConfig.recoveryTimeout;
+      // PLANO: Backoff exponencial baseado no número de falhas
+      const baseTimeout = fullConfig.recoveryTimeout;
+      const exponentialTimeout = Math.min(baseTimeout * Math.pow(1.5, newFailureCount - fullConfig.failureThreshold), 120000); // Max 2min
+      const nextRetry = now + exponentialTimeout;
       
       setState({
         isOpen: true,
@@ -56,15 +70,24 @@ export const useWebRTCCircuitBreaker = (config: Partial<CircuitBreakerConfig> = 
         state: 'open'
       });
 
-      console.error(`🚫 [CIRCUIT] Circuit breaker OPENED - blocking WebRTC connections for ${fullConfig.recoveryTimeout/1000}s`);
-      toast.error(`🚫 WebRTC travado detectado - aguardando ${fullConfig.recoveryTimeout/1000}s para retry`, { duration: 5000 });
+      const timeoutSeconds = Math.ceil(exponentialTimeout / 1000);
+      console.error(`🚫 [CIRCUIT] Circuit breaker OPENED - blocking WebRTC connections for ${timeoutSeconds}s (backoff: ${newFailureCount - fullConfig.failureThreshold + 1})`);
+      
+      const deviceType = isDesktopEnvironment ? 'Desktop' : 'Mobile';
+      const networkType = isCorporateNetwork ? 'Corporativa' : 'Pública';
+      toast.error(`🚫 ${deviceType} WebRTC instável (${networkType}) - aguardando ${timeoutSeconds}s`, { duration: 8000 });
 
-      // FASE 2: Auto-recovery após timeout
+      // PLANO: Auto-recovery com timeout escalonado
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
         console.log('🔄 [CIRCUIT] Attempting recovery - switching to half-open');
         setState(prev => ({ ...prev, state: 'half-open' }));
-      }, fullConfig.recoveryTimeout);
+        
+        // PLANO: Toast para recuperação
+        if (isDesktopEnvironment) {
+          toast.info('🔄 Desktop WebRTC: Tentando reconexão...', { duration: 3000 });
+        }
+      }, exponentialTimeout);
     } else {
       setState(prev => ({
         ...prev,

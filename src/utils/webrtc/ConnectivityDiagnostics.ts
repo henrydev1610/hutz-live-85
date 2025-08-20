@@ -63,11 +63,14 @@ export class ConnectivityDiagnostics {
           }
         };
 
-        // Timeout de 10 segundos
+        // PLANO: Timeout diferenciado por ambiente
+        const isDesktop = !navigator.userAgent.match(/Mobile|Android|iPhone|iPad/i);
+        const testTimeout = isDesktop ? 20000 : 12000; // 20s desktop, 12s mobile
+        
         timeout = setTimeout(() => {
-          console.log('❌ CONNECTIVITY TEST: TURN test timeout');
+          console.log(`❌ CONNECTIVITY TEST: TURN test timeout (${testTimeout/1000}s) [${isDesktop ? 'DESKTOP' : 'MOBILE'}]`);
           resolveOnce(false);
-        }, 10000);
+        }, testTimeout);
 
         pc.onicecandidate = (event) => {
           if (event.candidate) {

@@ -28,10 +28,12 @@ class TurnConnectivityService {
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private isRunningDiagnostic = false;
 
-  // FASE 2: Timeouts otimizados para detecção rápida
-  private readonly TURN_TEST_TIMEOUT = 5000; // 5s (reduzido de 15s)
-  private readonly HEALTH_CHECK_INTERVAL = 30000; // 30s
-  private readonly CACHE_DURATION = 60000; // 1min cache
+  // PLANO: Timeouts diferenciados para desktop vs mobile
+  private readonly DESKTOP_TURN_TIMEOUT = 15000; // 15s para desktop (corporativo)
+  private readonly MOBILE_TURN_TIMEOUT = 8000;   // 8s para mobile
+  private readonly HEALTH_CHECK_INTERVAL = 45000; // 45s entre checks
+  private readonly CACHE_DURATION = 120000; // 2min cache para servidores funcionais
+  private readonly isDesktop = !navigator.userAgent.match(/Mobile|Android|iPhone|iPad/i);
 
   static getInstance(): TurnConnectivityService {
     if (!TurnConnectivityService.instance) {
@@ -64,32 +66,51 @@ class TurnConnectivityService {
     }
 
     this.isRunningDiagnostic = true;
-    console.log('🧊 [TURN] Starting TURN connectivity diagnostic...');
+    console.log(`🧊 [TURN] Starting ${this.isDesktop ? 'DESKTOP' : 'MOBILE'} TURN connectivity diagnostic...`);
     
     if (showToasts) {
-      toast.info('🧊 Testando servidores TURN...', { duration: 2000 });
+      toast.info(`🧊 Testando servidores TURN (${this.isDesktop ? 'Desktop' : 'Mobile'} mode)...`, { duration: 3000 });
     }
 
     const startTime = Date.now();
-    const serverTests = this.turnServers.map(server => this.testTurnServer(server));
+    
+    // PLANO: Verificar cache primeiro para acelerar
+    const cachedResults: TurnServerStatus[] = [];
+    const serversToTest: RTCIceServer[] = [];
+    
+    this.turnServers.forEach(server => {
+      const url = Array.isArray(server.urls) ? server.urls[0] : server.urls;
+      const cached = this.getCachedServerStatus(url);
+      
+      if (cached) {
+        cachedResults.push(cached);
+      } else {
+        serversToTest.push(server);
+      }
+    });
+    
+    console.log(`🧊 [TURN] Using ${cachedResults.length} cached results, testing ${serversToTest.length} servers`);
+    
+    // PLANO: Teste sequencial ao invés de paralelo para melhor diagnóstico
+    const newResults: TurnServerStatus[] = [];
+    for (const server of serversToTest) {
+      try {
+        const result = await this.testTurnServer(server);
+        newResults.push(result);
+        
+        // PLANO: Parar no primeiro servidor funcionais para acelerar
+        if (result.status === 'connected' && this.isDesktop && newResults.length >= 2) {
+          console.log('🧊 [TURN] Desktop: Found 2 working servers, stopping early test');
+          break;
+        }
+      } catch (error) {
+        console.error('🧊 [TURN] Server test error:', error);
+      }
+    }
     
     try {
-      const results = await Promise.allSettled(serverTests);
-      const allServersStatus: TurnServerStatus[] = results.map((result, index) => {
-        if (result.status === 'fulfilled') {
-          return result.value;
-        } else {
-          const server = this.turnServers[index];
-          const url = Array.isArray(server.urls) ? server.urls[0] : server.urls;
-          return {
-            url,
-            username: (server as any).username,
-            status: 'failed' as const,
-            error: result.reason?.message || 'Unknown error',
-            lastTested: Date.now()
-          };
-        }
-      });
+      // PLANO: Combinar resultados cached e novos testes
+      const allServersStatus: TurnServerStatus[] = [...cachedResults, ...newResults];
 
       const workingServers = allServersStatus.filter(s => s.status === 'connected');
       const bestServer = workingServers.sort((a, b) => (a.latency || 999999) - (b.latency || 999999))[0];
@@ -135,23 +156,73 @@ class TurnConnectivityService {
   private async testTurnServer(server: RTCIceServer): Promise<TurnServerStatus> {
     const url = Array.isArray(server.urls) ? server.urls[0] : server.urls;
     const username = (server as any).username;
+    const credential = (server as any).credential;
     
-    console.log(`🧊 [TURN] Testing server: ${url}`);
+    // PLANO: Validação de credenciais antes do teste
+    if (!username || !credential) {
+      console.warn(`🧊 [TURN] Invalid credentials for ${url}`);
+      return {
+        url,
+        username,
+        status: 'failed',
+        error: 'Missing credentials',
+        lastTested: Date.now()
+      };
+    }
+    
+    console.log(`🧊 [TURN] Testing server: ${url} (${this.isDesktop ? 'DESKTOP' : 'MOBILE'} mode)`);
     const startTime = Date.now();
+    const timeout = this.isDesktop ? this.DESKTOP_TURN_TIMEOUT : this.MOBILE_TURN_TIMEOUT;
 
     try {
-      // FASE 2: Usar timeout otimizado (5s)
-      const isWorking = await Promise.race([
-        connectivityDiagnostics.testTurnConnectivity(server),
-        new Promise<boolean>((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), this.TURN_TEST_TIMEOUT)
-        )
-      ]);
+      // PLANO: Teste sequencial UDP primeiro, depois TCP
+      let isWorking = false;
+      
+      // Tentar UDP primeiro
+      try {
+        isWorking = await Promise.race([
+          this.testTurnProtocol(server, 'udp'),
+          new Promise<boolean>((_, reject) => 
+            setTimeout(() => reject(new Error('UDP Timeout')), timeout * 0.6) // 60% do tempo para UDP
+          )
+        ]);
+        
+        if (isWorking) {
+          console.log(`✅ [TURN] UDP success: ${url}`);
+        }
+      } catch (udpError) {
+        console.log(`⚠️ [TURN] UDP failed for ${url}, trying TCP: ${udpError}`);
+        
+        // Fallback para TCP se UDP falhar
+        try {
+          isWorking = await Promise.race([
+            this.testTurnProtocol(server, 'tcp'),
+            new Promise<boolean>((_, reject) => 
+              setTimeout(() => reject(new Error('TCP Timeout')), timeout * 0.4) // 40% restante para TCP
+            )
+          ]);
+          
+          if (isWorking) {
+            console.log(`✅ [TURN] TCP fallback success: ${url}`);
+          }
+        } catch (tcpError) {
+          throw new Error(`Both UDP and TCP failed: ${tcpError}`);
+        }
+      }
 
       const latency = Date.now() - startTime;
       
       if (isWorking) {
         console.log(`✅ [TURN] Server working: ${url} (${latency}ms)`);
+        
+        // PLANO: Cache servidores funcionais por mais tempo
+        const cacheKey = `turn-${url}`;
+        localStorage.setItem(cacheKey, JSON.stringify({
+          status: 'connected',
+          latency,
+          timestamp: Date.now()
+        }));
+        
         return {
           url,
           username,
@@ -169,11 +240,52 @@ class TurnConnectivityService {
       return {
         url,
         username,
-        status: latency >= this.TURN_TEST_TIMEOUT ? 'timeout' : 'failed',
+        status: latency >= (this.isDesktop ? this.DESKTOP_TURN_TIMEOUT : this.MOBILE_TURN_TIMEOUT) ? 'timeout' : 'failed',
         error: error instanceof Error ? error.message : 'Unknown error',
         lastTested: Date.now()
       };
     }
+  }
+
+  // PLANO: Teste específico por protocolo (UDP/TCP)
+  private async testTurnProtocol(server: RTCIceServer, protocol: 'udp' | 'tcp'): Promise<boolean> {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    const protocolUrl = urls.find(url => url.includes(`?transport=${protocol}`)) || urls[0];
+    
+    const testServer = {
+      ...server,
+      urls: protocolUrl
+    };
+    
+    return connectivityDiagnostics.testTurnConnectivity(testServer);
+  }
+
+  // PLANO: Verificar cache de servidores funcionais
+  private getCachedServerStatus(url: string): TurnServerStatus | null {
+    try {
+      const cacheKey = `turn-${url}`;
+      const cached = localStorage.getItem(cacheKey);
+      
+      if (cached) {
+        const data = JSON.parse(cached);
+        const age = Date.now() - data.timestamp;
+        
+        // PLANO: Cache válido por 2 minutos para servidores funcionais
+        if (age < this.CACHE_DURATION && data.status === 'connected') {
+          console.log(`📋 [TURN] Using cached result for ${url}: ${data.latency}ms`);
+          return {
+            url,
+            status: 'connected',
+            latency: data.latency,
+            lastTested: data.timestamp
+          };
+        }
+      }
+    } catch (error) {
+      console.warn(`⚠️ [TURN] Cache read error for ${url}:`, error);
+    }
+    
+    return null;
   }
 
   // FASE 3: Aplicar configuração otimizada baseada nos testes
