@@ -20,97 +20,113 @@ export const useStreamTransmission = () => {
     transmissionWindowRef: MutableRefObject<Window | null>
   ) => {
     try {
-      // FASE C: Garantir ponte Host → Popup
-      if (typeof window !== 'undefined') {
-        if (!window.__mlStreams__) window.__mlStreams__ = new Map();
-        window.__mlStreams__.set(participantId, stream);
-        console.log(`[HOST-BRIDGE] window.__mlStreams__.set participantId=${participantId} streamId=${stream.id} tracks=${stream.getTracks().length}`);
-
-        // FASE C: Implementar window.getParticipantStream() de forma robusta
-        if (typeof window.getParticipantStream !== 'function') {
-          window.getParticipantStream = (id: string) => {
-            const stream = window.__mlStreams__?.get(id) ?? null;
-            console.log('🔍 PONTE HOST→POPUP: getParticipantStream solicitado para:', id, {
-              found: !!stream,
-              streamActive: stream?.active,
-              videoTracks: stream?.getVideoTracks().length || 0,
-              audioTracks: stream?.getAudioTracks().length || 0,
-              mapSize: window.__mlStreams__?.size || 0,
-              availableIds: Array.from(window.__mlStreams__?.keys() || [])
-            });
-            console.log(`[HOST-BRIDGE] window.getParticipantStream registered participantId=${id} found=${!!stream}`);
-            return stream;
-          };
-          console.log('✅ PONTE HOST→POPUP: window.getParticipantStream registrado globalmente');
-        }
-
-        // FASE C: Garantir que hostStreamCallback é ativo
-        if (typeof window.hostStreamCallback !== 'function') {
-          console.warn('⚠️ PONTE HOST→POPUP: window.hostStreamCallback não definido ainda');
-        }
-      }
-
-      console.log('📡 CRITICAL SUCCESS: Stream registrado no host para:', participantId, {
-        tracks: stream.getTracks().length,
-        video: stream.getVideoTracks().length,
-        audio: stream.getAudioTracks().length,
+      console.log('📡 STREAM TRANSMISSION: Processing stream for:', participantId, {
         streamId: stream.id,
-        active: stream.active
+        streamActive: stream.active,
+        tracksCount: stream.getTracks().length,
+        videoTracks: stream.getVideoTracks().length,
+        audioTracks: stream.getAudioTracks().length,
+        windowAvailable: !!transmissionWindowRef.current
       });
 
-      // FASE 3: Critical validation logging
+      // Initialize global streams map if not exists
+      if (!window.__mlStreams__) {
+        window.__mlStreams__ = new Map<string, MediaStream>();
+        console.log('🗺️ STREAM TRANSMISSION: Initialized global streams map');
+      }
+
+      // Register stream globally on the HOST window
+      window.__mlStreams__.set(participantId, stream);
+      console.log('🗺️ STREAM TRANSMISSION: Stream registered in global map:', participantId);
+
+      // Ensure getParticipantStream function is available with enhanced logging
+      if (typeof window.getParticipantStream !== 'function') {
+        console.log('🔧 STREAM TRANSMISSION: Creating getParticipantStream function');
+        window.getParticipantStream = (pid: string) => {
+          const streamFromMap = window.__mlStreams__?.get(pid) || null;
+          console.log(`🔍 STREAM TRANSMISSION: getParticipantStream called for ${pid}:`, {
+            found: !!streamFromMap,
+            streamId: streamFromMap?.id,
+            streamActive: streamFromMap?.active,
+            tracksCount: streamFromMap?.getTracks()?.length || 0,
+            mapSize: window.__mlStreams__?.size || 0,
+            availableIds: Array.from(window.__mlStreams__?.keys() || [])
+          });
+          return streamFromMap;
+        };
+        console.log('✅ STREAM TRANSMISSION: getParticipantStream function created');
+      }
+
+      // Critical validation logging
       ProtocolValidationLogger.logStreamRegistration(participantId, stream);
 
-      // 2) NOTIFICA A POPUP (apenas metadados / sinalização)
+      // Send message to transmission window if available
       if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-        console.log(`[POPUP-BRIDGE] sending postMessage type=participant-stream-ready participantId=${participantId}`);
-        transmissionWindowRef.current.postMessage({
+        const streamInfo = {
+          id: stream.id,
+          active: stream.active,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length,
+          hasVideo: stream.getVideoTracks().length > 0,
+          timestamp: Date.now()
+        };
+
+        try {
+          transmissionWindowRef.current.postMessage({
+            type: 'participant-stream-ready',
+            participantId,
+            streamInfo
+          }, '*');
+          
+          console.log('📡 STREAM TRANSMISSION: Message sent to transmission window:', {
+            participantId,
+            streamInfo
+          });
+        } catch (error) {
+          console.error('❌ STREAM TRANSMISSION: Error sending message to window:', error);
+        }
+      } else {
+        console.log('⚠️ STREAM TRANSMISSION: Transmission window not available yet, stream registered for later access');
+      }
+
+      // Enhanced BroadcastChannel with better error handling
+      try {
+        const sessionId = window.sessionStorage?.getItem('currentSessionId');
+        const channel = new BroadcastChannel(sessionId ? `live-session-${sessionId}` : 'stream-updates');
+        channel.postMessage({
           type: 'participant-stream-ready',
           participantId,
-          // só metadados; a popup vai chamar window.opener.getParticipantStream(id)
-          streamInfo: {
-            id: stream.id,
-            active: stream.active,
-            videoTracks: stream.getVideoTracks().length,
-            audioTracks: stream.getAudioTracks().length,
-            hasVideo: stream.getVideoTracks().length > 0
-          },
+          streamId: stream.id,
+          hasStream: true,
+          streamActive: stream.active,
+          trackCount: stream.getTracks().length,
+          videoTrackCount: stream.getVideoTracks().length,
           timestamp: Date.now()
-        }, '*');
-        console.log('✅ Notificação enviada à transmission window (postMessage)');
-      } else {
-        console.log('ℹ️ Transmission window não disponível (ok em preview/fechada)');
+        });
+        console.log('📻 STREAM TRANSMISSION: Backup broadcast sent via BroadcastChannel');
+        setTimeout(() => channel.close(), 1000);
+      } catch (error) {
+        console.warn('⚠️ STREAM TRANSMISSION: BroadcastChannel not available:', error);
       }
 
-      // 3) BroadcastChannel (opcional / redundância)
-      if (typeof window !== 'undefined') {
-        const sessionId = window.sessionStorage?.getItem('currentSessionId');
-        if (sessionId) {
-          const channel = new BroadcastChannel(`live-session-${sessionId}`);
-          channel.postMessage({
-            type: 'video-stream',
-            participantId,
-            hasStream: true,
-            streamActive: stream.active,
-            trackCount: stream.getTracks().length,
-            videoTrackCount: stream.getVideoTracks().length,
-            timestamp: Date.now()
-          });
-          console.log('✅ Notificação enviada via BroadcastChannel');
-          setTimeout(() => channel.close(), 1000);
-        }
-      }
+      // Add event listeners to clean up on stream end
+      const tracks = stream.getTracks();
+      tracks.forEach(track => {
+        const handleTrackEnd = () => {
+          console.log(`🧹 STREAM TRANSMISSION: Track ended for ${participantId}, cleaning up`);
+          if (window.__mlStreams__?.has(participantId)) {
+            window.__mlStreams__.delete(participantId);
+            console.log('🧹 STREAM TRANSMISSION: Removed from global map:', participantId);
+          }
+          track.removeEventListener('ended', handleTrackEnd);
+        };
+        track.addEventListener('ended', handleTrackEnd);
+      });
 
-      // 4) LIMPEZA AUTOMÁTICA QUANDO O TRACK ACABAR
-      const handleEnded = () => {
-        if (window.__mlStreams__) {
-          window.__mlStreams__.delete(participantId);
-        }
-      };
-      stream.getTracks().forEach(t => t.addEventListener('ended', handleEnded));
+      console.log('✅ STREAM TRANSMISSION: Stream processing completed for:', participantId);
 
     } catch (error) {
-      console.error('❌ Failed to send stream to transmission:', error);
+      console.error('❌ STREAM TRANSMISSION: Failed to send stream to transmission:', error);
     }
   }, []);
 

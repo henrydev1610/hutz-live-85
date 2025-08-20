@@ -33,15 +33,17 @@ export const useTransmissionWindow = () => {
           // A função getParticipantStream deve estar no window host (opener), não na transmission window
           console.log('🎬 Host: Transmission window carregada, garantindo acesso aos streams');
           
-          // Verificar se a função global existe no host
+          // Verificar se a função existe no host
           if (typeof window.getParticipantStream !== 'function') {
-            console.warn('⚠️ Host: window.getParticipantStream não encontrada, criando...');
+            console.warn('⚠️ Host: window.getParticipantStream não encontrada, criando fallback...');
             window.getParticipantStream = (participantId: string) => {
-              console.log('🎬 Host: getParticipantStream solicitado para:', participantId);
+              console.log('🎬 Host: getParticipantStream fallback solicitado para:', participantId);
               const stream = state.participantStreams?.[participantId] || window.__mlStreams__?.get(participantId) || null;
-              console.log('🎬 Host: stream encontrado:', !!stream, stream?.id);
+              console.log('🎬 Host: stream encontrado via fallback:', !!stream, stream?.id);
               return stream;
             };
+          } else {
+            console.log('✅ Host: window.getParticipantStream já existe');
           }
           
           // Enviar configurações iniciais para replicar interface LivePreview

@@ -46,19 +46,27 @@ const TransmissionWindowPage: React.FC = () => {
     updateDebug(message);
   };
 
-  const getStreamFromHost = async (participantId: string): Promise<MediaStream | null> => {
+  const getStreamFromHost = async (participantId: string, retryCount = 0): Promise<MediaStream | null> => {
+    const maxRetries = 3;
+    
     try {
-      updateDebug(`🎯 TRANSMISSION: Solicitando stream para participante: ${participantId}`);
+      updateDebug(`🎯 TRANSMISSION: Solicitando stream para participante: ${participantId} (tentativa ${retryCount + 1}/${maxRetries + 1})`);
       
       if (!window.opener) {
         updateDebug(`❌ TRANSMISSION: window.opener não disponível`);
         return null;
       }
 
-      // Verificar se a função existe no host
+      // Verificar se a função existe no host com retry
       if (typeof window.opener.getParticipantStream !== 'function') {
-        updateDebug(`❌ TRANSMISSION: window.opener.getParticipantStream não é função`);
-        updateDebug(`🔍 TRANSMISSION: Tipo: ${typeof window.opener.getParticipantStream}`);
+        updateDebug(`❌ TRANSMISSION: window.opener.getParticipantStream não é função - tipo: ${typeof window.opener.getParticipantStream}`);
+        
+        // Se é a primeira tentativa, aguardar um pouco e tentar novamente
+        if (retryCount < maxRetries) {
+          updateDebug(`🔄 TRANSMISSION: Aguardando host estar pronto... retry ${retryCount + 1}`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return getStreamFromHost(participantId, retryCount + 1);
+        }
         return null;
       }
 
@@ -67,6 +75,23 @@ const TransmissionWindowPage: React.FC = () => {
       
       if (!stream) {
         updateDebug(`⚠️ TRANSMISSION: Stream null/undefined retornado para ${participantId}`);
+        
+        // Tentar fallback direto no global map
+        if (window.opener.__mlStreams__) {
+          const fallbackStream = window.opener.__mlStreams__.get(participantId);
+          if (fallbackStream) {
+            updateDebug(`🔄 TRANSMISSION: Fallback - encontrado stream no global map para ${participantId}`);
+            return fallbackStream;
+          }
+        }
+        
+        // Se não encontrou e ainda há tentativas, retry
+        if (retryCount < maxRetries) {
+          updateDebug(`🔄 TRANSMISSION: Stream não encontrado, retry em 800ms... (${retryCount + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, 800));
+          return getStreamFromHost(participantId, retryCount + 1);
+        }
+        
         return null;
       }
 
@@ -78,15 +103,42 @@ const TransmissionWindowPage: React.FC = () => {
       const tracks = stream.getTracks();
       if (tracks.length === 0) {
         updateDebug(`⚠️ TRANSMISSION: Stream sem tracks para ${participantId}`);
+        
+        // Retry se ainda há tentativas
+        if (retryCount < maxRetries) {
+          updateDebug(`🔄 TRANSMISSION: Stream sem tracks, retry em 500ms...`);
+          await new Promise(resolve => setTimeout(resolve, 500));
+          return getStreamFromHost(participantId, retryCount + 1);
+        }
         return null;
       }
 
-      updateDebug(`✅ TRANSMISSION: Stream válido recebido para ${participantId} - ${tracks.length} tracks, active: ${stream.active}`);
+      // Validar se as tracks estão ativas
+      const activeTracks = tracks.filter(track => track.readyState === 'live');
+      if (activeTracks.length === 0) {
+        updateDebug(`⚠️ TRANSMISSION: Todas as tracks estão inativas para ${participantId}`);
+        
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          return getStreamFromHost(participantId, retryCount + 1);
+        }
+        return null;
+      }
+
+      updateDebug(`✅ TRANSMISSION: Stream válido recebido para ${participantId} - ${tracks.length} tracks (${activeTracks.length} ativas), active: ${stream.active}`);
       return stream;
       
     } catch (error) {
       updateDebug(`❌ TRANSMISSION: Erro ao obter stream para ${participantId}: ${error}`);
       console.error('TRANSMISSION ERROR:', error);
+      
+      // Retry em caso de erro
+      if (retryCount < maxRetries) {
+        updateDebug(`🔄 TRANSMISSION: Erro - retry em 1000ms... (${retryCount + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return getStreamFromHost(participantId, retryCount + 1);
+      }
+      
       return null;
     }
   };
@@ -118,7 +170,7 @@ const TransmissionWindowPage: React.FC = () => {
         updateDebug(`🎯 TRANSMISSION: Processando stream para participante: ${participantId}`);
         updateDebug(`🎯 TRANSMISSION: Stream info recebida: ${JSON.stringify(streamInfo)}`);
         
-        // Aguardar um pouco para garantir que o stream está disponível no host
+        // Aguardar um pouco mais para garantir que o stream está disponível no host
         setTimeout(async () => {
           const stream = await getStreamFromHost(participantId);
           if (stream) {
@@ -134,11 +186,27 @@ const TransmissionWindowPage: React.FC = () => {
             await createVideoInTransmission(participantId, stream);
             
             updateStatus(`✅ Stream e vídeo criados para: ${participantId}`);
+            
+            // Confirmar sucesso para o host
+            if (window.opener) {
+              window.opener.postMessage({ 
+                type: 'transmission-stream-success', 
+                participantId 
+              }, '*');
+            }
           } else {
             updateStatus(`❌ Falha ao carregar stream para: ${participantId}`);
-            updateDebug(`❌ TRANSMISSION: Stream não disponível para ${participantId}`);
+            updateDebug(`❌ TRANSMISSION: Stream não disponível para ${participantId} após todas as tentativas`);
+            
+            // Notificar host sobre falha
+            if (window.opener) {
+              window.opener.postMessage({ 
+                type: 'transmission-stream-failed', 
+                participantId 
+              }, '*');
+            }
           }
-        }, 300); // Dar tempo para o stream estar disponível no host
+        }, 500); // Dar mais tempo para o stream estar disponível no host
       }
       
       // Novos handlers para replicar interface do LivePreview
