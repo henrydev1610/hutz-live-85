@@ -496,9 +496,10 @@ export const useTransmissionWindow = () => {
     const left = (window.screen.width - width) / 2;
     const top = (window.screen.height - height) / 2;
 
-    // FASE 1: Usar HTML estático ao invés de blob
+    // FASE 1: Usar rota React ao invés de arquivo HTML estático
+    const sessionId = state.sessionId || 'default';
     const newWindow = window.open(
-      '/transmission-window.html',
+      `/transmission?sessionId=${sessionId}`,
       'LiveTransmissionWindow',
       `width=${width},height=${height},left=${left},top=${top}`
     );
@@ -508,6 +509,18 @@ export const useTransmissionWindow = () => {
       state.setTransmissionOpen(true);
 
       console.log('✅ FASE 1: Transmission window opened successfully');
+
+      // Aguardar o carregamento da nova janela antes de expor funções
+      setTimeout(() => {
+        if (newWindow && !newWindow.closed) {
+          // Expor função global para a janela de transmissão acessar streams
+          newWindow.getParticipantStream = (participantId: string) => {
+            console.log('🎬 Host: getParticipantStream solicitado para:', participantId);
+            return state.participantStreams?.[participantId] || null;
+          };
+          console.log('✅ FASE 1: Functions exposed to transmission window');
+        }
+      }, 1500);
 
       // Handler de mensagens vindas da popup
       const handleTransmissionMessage = (event: MessageEvent) => {
@@ -533,6 +546,13 @@ export const useTransmissionWindow = () => {
         newWindow.removeEventListener('beforeunload', beforeUnloadHandler);
       };
       newWindow.addEventListener('beforeunload', beforeUnloadHandler);
+    } else {
+      console.error('❌ TRANSMISSION: Falha ao abrir janela de transmissão');
+      toast({
+        title: "Erro na Transmissão",
+        description: "Não foi possível abrir a janela de transmissão. Verifique se pop-ups estão habilitados.",
+        variant: "destructive"
+      });
     }
   };
 
