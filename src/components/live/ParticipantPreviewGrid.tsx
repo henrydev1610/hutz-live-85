@@ -97,6 +97,15 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
     return 'grid-cols-4';
   };
 
+  const getGridRows = (count: number) => {
+    if (count <= 1) return 'grid-rows-1';
+    if (count <= 2) return 'grid-rows-1';
+    if (count <= 4) return 'grid-rows-2';
+    if (count <= 6) return 'grid-rows-2';
+    if (count <= 9) return 'grid-rows-3';
+    return 'grid-rows-4';
+  };
+
   console.log('🎭 FASE 3: PREVIEW GRID - Rendering participants', {
     realParticipants: realParticipants.length,
     selectedParticipants: selectedParticipants.length,
@@ -106,8 +115,8 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   });
 
   return (
-    <div className="absolute inset-0 p-4">
-      <div className={`grid ${getGridClass(participantCount)} gap-2 h-full`}>
+    <div className="absolute inset-0 p-6">
+      <div className={`grid ${getGridClass(participantCount)} ${getGridRows(participantCount)} gap-4 h-full w-full`}>
         {allParticipants.map((participant, index) => (
           <UnifiedVideoContainer
             key={participant.id}

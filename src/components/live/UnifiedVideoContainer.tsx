@@ -182,13 +182,13 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
 
   return (
     <div 
-      className="participant-video aspect-video bg-gray-800/60 rounded-md overflow-hidden relative"
+      className="participant-video aspect-video bg-gray-800/60 rounded-md overflow-hidden relative flex-1 w-full h-full max-w-full max-h-full"
       id={containerId}
       data-participant-id={participant.id}
       data-video-container="true"
       style={{ 
-        minHeight: '120px', 
-        minWidth: '160px',
+        minHeight: '200px', 
+        minWidth: '300px',
         backgroundColor: hasValidVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
       }}
     >
@@ -196,8 +196,13 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
       <div 
         ref={containerRef} 
         id={unifiedVideoId}
-        className="w-full h-full relative"
+        className="w-full h-full relative flex items-center justify-center"
         data-unified-video="true"
+        style={{
+          aspectRatio: '16/9',
+          minHeight: 'inherit',
+          minWidth: 'inherit'
+        }}
       />
       
       {/* CORREÇÃO 4: STATUS VISUAL APRIMORADO - sem "disconnected" durante negociação */}
