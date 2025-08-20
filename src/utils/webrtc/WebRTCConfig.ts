@@ -25,8 +25,6 @@ const FALLBACK_CONFIG: RTCConfiguration = {
   iceCandidatePoolSize: 10
 };
 
-};
-
 // Chame isso ao receber `ice-servers` do backend
 export function setDynamicIceServers(servers: RTCIceServer[], opts?: { relayOnly?: boolean }) {
   if (Array.isArray(servers) && servers.length) {
