@@ -772,7 +772,7 @@ this.socket.on('ice-servers', (data) => {
     
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
+      this.reconnectTimer = null
     }
     
     if (this.circuitBreakerTimer) {
