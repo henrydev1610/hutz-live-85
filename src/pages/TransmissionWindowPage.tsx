@@ -204,25 +204,6 @@ const TransmissionWindowPage: React.FC = () => {
         {/* Indicador AO VIVO no canto superior direito */}
         <LiveIndicator />
         
-        {/* Debug console visível na janela de transmissão */}
-        <div className="absolute top-4 left-4 z-50 bg-black/80 backdrop-blur-sm border border-white/20 rounded-lg p-3 max-w-md">
-          <div className="text-xs text-white/80 space-y-1">
-            <p className="text-white font-semibold mb-2">Debug Console:</p>
-            <p>QR Visível: {qrCodeVisible ? '✅' : '❌'}</p>
-            <p>QR SVG: {qrCodeSvg ? '✅' : '❌'}</p>
-            <p>Background: {backgroundImage ? 'Imagem' : selectedBackgroundColor}</p>
-            <p>Participantes: {participantList.length}</p>
-            <p>Streams: {Object.keys(participantStreams).length}</p>
-            <div className="mt-2">
-              <p className="text-white/60 text-xs">Logs:</p>
-              {debugMessages.slice(-2).map((msg, index) => (
-                <p key={index} className="text-xs text-white/60 font-mono truncate">
-                  {msg}
-                </p>
-              ))}
-            </div>
-          </div>
-        </div>
         
         {/* Mensagem de QR Code no canto inferior direito - sempre visível */}
         <div className="absolute bottom-6 right-6 z-50">
