@@ -510,7 +510,7 @@ export const useTransmissionWindow = () => {
 
       console.log('✅ FASE 1: Transmission window opened successfully');
 
-      // Aguardar o carregamento da nova janela antes de expor funções
+      // Aguardar o carregamento da nova janela antes de expor funções e configurações
       setTimeout(() => {
         if (newWindow && !newWindow.closed) {
           // Expor função global para a janela de transmissão acessar streams
@@ -518,7 +518,26 @@ export const useTransmissionWindow = () => {
             console.log('🎬 Host: getParticipantStream solicitado para:', participantId);
             return state.participantStreams?.[participantId] || null;
           };
-          console.log('✅ FASE 1: Functions exposed to transmission window');
+          
+          // Enviar configurações iniciais para replicar interface LivePreview
+          newWindow.postMessage({
+            type: 'update-participants',
+            participants: state.participantList || []
+          }, '*');
+          
+          newWindow.postMessage({
+            type: 'update-qr-positions',
+            qrCodeVisible: state.qrCodeVisible,
+            qrCodeSvg: state.qrCodeSvg,
+            qrCodePosition: state.qrCodePosition,
+            qrDescriptionPosition: state.qrDescriptionPosition,
+            qrCodeDescription: state.qrCodeDescription,
+            selectedFont: state.selectedFont,
+            selectedTextColor: state.selectedTextColor,
+            qrDescriptionFontSize: state.qrDescriptionFontSize
+          }, '*');
+          
+          console.log('✅ FASE 1: Functions and initial configurations sent to transmission window');
         }
       }, 1500);
 

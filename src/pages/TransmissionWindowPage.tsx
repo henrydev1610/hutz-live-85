@@ -1,11 +1,33 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Participant } from '@/components/live/ParticipantGrid';
+import ParticipantPreviewGrid from '@/components/live/ParticipantPreviewGrid';
+import QRCodeOverlay from '@/components/live/QRCodeOverlay';
+import LiveIndicator from '@/components/live/LiveIndicator';
 
 const TransmissionWindowPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState('Inicializando janela de transmissão...');
   const [debugMessages, setDebugMessages] = useState<string[]>([]);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  
+  // States para replicar a interface do LivePreview
+  const [participantList, setParticipantList] = useState<Participant[]>([]);
+  const [participantStreams, setParticipantStreams] = useState<{[id: string]: MediaStream}>({});
+  const [participantCount, setParticipantCount] = useState(4);
+  
+  // States para QR Code
+  const [qrCodeVisible, setQrCodeVisible] = useState(false);
+  const [qrCodeSvg, setQrCodeSvg] = useState<string | null>(null);
+  const [qrCodePosition, setQrCodePosition] = useState({ x: 20, y: 20, width: 150, height: 150 });
+  const [qrDescriptionPosition, setQrDescriptionPosition] = useState({ x: 20, y: 180, width: 200, height: 50 });
+  const [qrCodeDescription, setQrCodeDescription] = useState('');
+  const [selectedFont, setSelectedFont] = useState('Arial');
+  const [selectedTextColor, setSelectedTextColor] = useState('#FFFFFF');
+  const [qrDescriptionFontSize, setQrDescriptionFontSize] = useState(16);
+  
+  // States para background
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
+  const [selectedBackgroundColor, setSelectedBackgroundColor] = useState('#000000');
 
   const updateDebug = (message: string) => {
     console.log(`[TransmissionWindow] ${message}`);
@@ -35,25 +57,6 @@ const TransmissionWindowPage: React.FC = () => {
     }
   };
 
-  const assignStreamToVideo = (participantId: string, stream: MediaStream) => {
-    if (!videoRef.current) return;
-
-    const videoElement = videoRef.current;
-    updateDebug(`Atribuindo stream ao elemento de vídeo para: ${participantId}`);
-    
-    videoElement.srcObject = stream;
-    videoElement.muted = true;
-    videoElement.playsInline = true;
-    
-    videoElement.onloadedmetadata = () => {
-      updateDebug(`Metadata do vídeo carregada para: ${participantId}`);
-      videoElement.play().catch(e => updateDebug(`Erro ao reproduzir vídeo: ${e.message}`));
-    };
-    
-    videoElement.onplay = () => updateStatus(`Transmitindo: ${participantId}`);
-    videoElement.onerror = (e) => updateDebug(`Erro no elemento de vídeo: ${e}`);
-  };
-
   useEffect(() => {
     const initializePopup = () => {
       updateStatus('Janela de transmissão pronta');
@@ -63,7 +66,7 @@ const TransmissionWindowPage: React.FC = () => {
       }
     };
 
-    const handleMessage = async (event: MessageEvent) => {
+  const handleMessage = async (event: MessageEvent) => {
       updateDebug(`Mensagem recebida: ${event.data.type}`);
       
       if (event.data.type === 'participant-stream-ready') {
@@ -72,10 +75,45 @@ const TransmissionWindowPage: React.FC = () => {
         
         const stream = await getStreamFromHost(participantId);
         if (stream) {
-          assignStreamToVideo(participantId, stream);
+          // Atualizar o stream nos states
+          setParticipantStreams(prev => ({
+            ...prev,
+            [participantId]: stream
+          }));
+          updateStatus(`Stream carregado para: ${participantId}`);
         } else {
           updateStatus(`Falha ao carregar stream para: ${participantId}`);
         }
+      }
+      
+      // Novos handlers para replicar interface do LivePreview
+      if (event.data.type === 'update-participants') {
+        const { participants } = event.data;
+        updateDebug(`Atualizando ${participants?.length || 0} participantes`);
+        setParticipantList(participants || []);
+      }
+      
+      if (event.data.type === 'update-qr-positions') {
+        const { 
+          qrCodeVisible: visible, 
+          qrCodeSvg: svg, 
+          qrCodePosition: pos, 
+          qrDescriptionPosition: descPos,
+          qrCodeDescription: desc,
+          selectedFont: font,
+          selectedTextColor: textColor,
+          qrDescriptionFontSize: fontSize 
+        } = event.data;
+        
+        updateDebug('Atualizando configurações de QR Code');
+        setQrCodeVisible(visible);
+        setQrCodeSvg(svg);
+        setQrCodePosition(pos);
+        setQrDescriptionPosition(descPos);
+        setQrCodeDescription(desc);
+        setSelectedFont(font);
+        setSelectedTextColor(textColor);
+        setQrDescriptionFontSize(fontSize);
       }
       
       if (event.data.type === 'transmission-ready') {
@@ -92,39 +130,71 @@ const TransmissionWindowPage: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-4xl space-y-6">
-        {/* Header */}
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-foreground mb-2">
-            Janela de Transmissão - Hutz Live
-          </h1>
-          <p className="text-muted-foreground">Sessão: {searchParams.get('sessionId')}</p>
+    <div className="min-h-screen bg-background overflow-hidden">
+      {/* Header fixo */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-sm border-b border-white/10 p-4">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-lg font-bold text-white">
+              Transmissão ao Vivo - Hutz Live
+            </h1>
+            <p className="text-sm text-white/70">Sessão: {searchParams.get('sessionId')}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-white/90">{status}</p>
+            <p className="text-xs text-white/60">
+              {participantList.filter(p => p.selected).length} participantes selecionados
+            </p>
+          </div>
         </div>
+      </div>
 
-        {/* Status */}
-        <div className="bg-card p-4 rounded-lg border text-center">
-          <p className="text-lg font-medium text-foreground">{status}</p>
-        </div>
-
-        {/* Video Container */}
-        <div className="bg-muted rounded-lg p-8 flex items-center justify-center" style={{ minHeight: '400px' }}>
-          <video
-            ref={videoRef}
-            className="max-w-full max-h-full rounded-lg shadow-lg"
-            style={{ maxHeight: '400px', width: 'auto' }}
-            playsInline
-            muted
-            autoPlay
+      {/* Interface principal - replicando LivePreview */}
+      <div className="pt-24 h-screen">
+        <div className="relative w-full h-full bg-black live-transmission-window">
+          {/* Container com background */}
+          <div className="absolute inset-0" style={{ backgroundColor: selectedBackgroundColor }}>
+            {backgroundImage && (
+              <img 
+                src={backgroundImage} 
+                alt="Background" 
+                className="w-full h-full object-cover"
+              />
+            )}
+          </div>
+          
+          {/* Grid de participantes */}
+          <ParticipantPreviewGrid 
+            participantList={participantList}
+            participantCount={participantCount}
+            participantStreams={participantStreams}
           />
+          
+          {/* QR Code overlay */}
+          <QRCodeOverlay
+            qrCodeVisible={qrCodeVisible}
+            qrCodeSvg={qrCodeSvg}
+            qrCodePosition={qrCodePosition}
+            setQrCodePosition={setQrCodePosition}
+            qrDescriptionPosition={qrDescriptionPosition}
+            setQrDescriptionPosition={setQrDescriptionPosition}
+            qrCodeDescription={qrCodeDescription}
+            selectedFont={selectedFont}
+            selectedTextColor={selectedTextColor}
+            qrDescriptionFontSize={qrDescriptionFontSize}
+          />
+          
+          {/* Live indicator */}
+          <LiveIndicator />
         </div>
+      </div>
 
-        {/* Debug Panel */}
-        <div className="bg-card p-4 rounded-lg border">
-          <h3 className="font-medium text-foreground mb-2">Debug Log</h3>
-          <div className="space-y-1 max-h-32 overflow-y-auto">
-            {debugMessages.map((msg, index) => (
-              <p key={index} className="text-xs text-muted-foreground font-mono">
+      {/* Debug Panel minimizado */}
+      <div className="fixed bottom-4 right-4 z-50 max-w-xs">
+        <div className="bg-black/80 backdrop-blur-sm border border-white/20 rounded-lg p-3">
+          <div className="text-xs text-white/80 space-y-1 max-h-20 overflow-y-auto">
+            {debugMessages.slice(-3).map((msg, index) => (
+              <p key={index} className="font-mono break-all">
                 {msg}
               </p>
             ))}
