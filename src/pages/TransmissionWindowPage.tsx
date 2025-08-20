@@ -13,7 +13,7 @@ const TransmissionWindowPage: React.FC = () => {
   // States para replicar a interface do LivePreview
   const [participantList, setParticipantList] = useState<Participant[]>([]);
   const [participantStreams, setParticipantStreams] = useState<{[id: string]: MediaStream}>({});
-  const [participantCount, setParticipantCount] = useState(4);
+  const [participantCount, setParticipantCount] = useState(2); // Valor dinâmico baseado no host
   
   // States para QR Code
   const [qrCodeVisible, setQrCodeVisible] = useState(false);
@@ -106,11 +106,12 @@ const TransmissionWindowPage: React.FC = () => {
           selectedTextColor: textColor,
           qrDescriptionFontSize: fontSize,
           backgroundImage: bgImage,
-          selectedBackgroundColor: bgColor
+          selectedBackgroundColor: bgColor,
+          participantCount: newParticipantCount
         } = event.data;
         
         updateDebug('Aplicando configurações de QR Code e background');
-        console.log('🎨 QR CONFIG:', { visible, svg: !!svg, bgColor, bgImage: !!bgImage, desc });
+        console.log('🎨 QR CONFIG:', { visible, svg: !!svg, bgColor, bgImage: !!bgImage, desc, participantCount: newParticipantCount });
         
         setQrCodeVisible(visible || false);
         setQrCodeSvg(svg || null);
@@ -120,6 +121,12 @@ const TransmissionWindowPage: React.FC = () => {
         setSelectedFont(font || 'Arial');
         setSelectedTextColor(textColor || '#FFFFFF');
         setQrDescriptionFontSize(fontSize || 16);
+        
+        // Aplicar participantCount se fornecido
+        if (newParticipantCount !== undefined) {
+          setParticipantCount(newParticipantCount);
+          updateDebug(`Participant count atualizado: ${newParticipantCount}`);
+        }
         
         // Aplicar configurações de background
         if (bgImage !== undefined) {
@@ -178,10 +185,10 @@ const TransmissionWindowPage: React.FC = () => {
           )}
         </div>
         
-        {/* Grid de participantes - 2x2 com 4 slots fixos */}
+        {/* Grid de participantes - quantidade dinâmica baseada na configuração */}
         <ParticipantPreviewGrid 
           participantList={participantList}
-          participantCount={4}
+          participantCount={participantCount}
           participantStreams={participantStreams}
         />
         

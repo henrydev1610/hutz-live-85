@@ -53,7 +53,8 @@ export const useTransmissionWindow = () => {
             selectedTextColor: state.selectedTextColor,
             qrDescriptionFontSize: state.qrDescriptionFontSize,
             backgroundImage: state.backgroundImage,
-            selectedBackgroundColor: state.selectedBackgroundColor
+            selectedBackgroundColor: state.selectedBackgroundColor,
+            participantCount: state.participantCount // Incluir participantCount
           }, '*');
           
           console.log('✅ FASE 1: Functions and initial configurations sent to transmission window');
@@ -83,7 +84,8 @@ export const useTransmissionWindow = () => {
               selectedTextColor: state.selectedTextColor,
               qrDescriptionFontSize: state.qrDescriptionFontSize,
               backgroundImage: state.backgroundImage,
-              selectedBackgroundColor: state.selectedBackgroundColor
+              selectedBackgroundColor: state.selectedBackgroundColor,
+              participantCount: state.participantCount // Incluir participantCount
             }, '*');
             
             console.log('✅ HOST: Configurações iniciais enviadas');

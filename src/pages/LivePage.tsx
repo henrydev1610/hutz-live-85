@@ -237,6 +237,7 @@ const LivePage: React.FC = () => {
           qrDescriptionFontSize: state.qrDescriptionFontSize,
           backgroundImage: state.backgroundImage,
           selectedBackgroundColor: state.selectedBackgroundColor,
+          participantCount: state.participantCount, // Incluir participantCount
           cacheVersion: Date.now(), // Force cache refresh
           environment: getEnvironmentInfo()
         }, '*');
@@ -254,7 +255,8 @@ const LivePage: React.FC = () => {
     state.selectedTextColor,
     state.qrDescriptionFontSize,
     state.backgroundImage,
-    state.selectedBackgroundColor
+    state.selectedBackgroundColor,
+    state.participantCount // Adicionar participantCount às dependências
   ]);
 
   return (
