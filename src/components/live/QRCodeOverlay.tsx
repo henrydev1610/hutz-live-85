@@ -101,7 +101,15 @@ const QRCodeOverlay: React.FC<QRCodeOverlayProps> = ({
     };
   }, [isResizingQrCode, isResizingText, resizeStartPos, initialSize, qrCodePosition.width, setQrCodePosition, setQrDescriptionPosition]);
 
-  if (!qrCodeVisible) return null;
+  if (!qrCodeVisible && qrCodeSvg) {
+    console.log('🎨 QR WARNING: QR Code não visível mas SVG existe!', { qrCodeVisible, qrCodeSvg: !!qrCodeSvg });
+  }
+
+  // MODO DEBUG: Sempre mostrar se tiver SVG
+  if (!qrCodeSvg) {
+    console.log('🎨 QR DEBUG: Nenhum SVG disponível', { qrCodeSvg });
+    return null;
+  }
 
   return (
     <>

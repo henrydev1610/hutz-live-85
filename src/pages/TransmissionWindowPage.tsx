@@ -66,7 +66,7 @@ const TransmissionWindowPage: React.FC = () => {
       }
     };
 
-  const handleMessage = async (event: MessageEvent) => {
+    const handleMessage = async (event: MessageEvent) => {
       updateDebug(`Mensagem recebida: ${event.data.type}`);
       
       if (event.data.type === 'participant-stream-ready') {
@@ -139,6 +139,19 @@ const TransmissionWindowPage: React.FC = () => {
 
     window.addEventListener('message', handleMessage);
     initializePopup();
+    
+    // Solicitar configurações iniciais do host imediatamente
+    const requestInitialConfig = () => {
+      if (window.opener) {
+        updateDebug('Solicitando configurações QR do host');
+        window.opener.postMessage({ type: 'request-initial-config' }, '*');
+      }
+    };
+    
+    // Solicitar múltiplas vezes para garantir que chegue
+    setTimeout(requestInitialConfig, 500);
+    setTimeout(requestInitialConfig, 1500);
+    setTimeout(requestInitialConfig, 3000);
 
     return () => {
       window.removeEventListener('message', handleMessage);
@@ -172,22 +185,44 @@ const TransmissionWindowPage: React.FC = () => {
           participantStreams={participantStreams}
         />
         
-        {/* QR Code overlay - renderizar mesmo que não visível inicialmente */}
-        <QRCodeOverlay
-          qrCodeVisible={qrCodeVisible}
-          qrCodeSvg={qrCodeSvg}
-          qrCodePosition={qrCodePosition}
-          setQrCodePosition={setQrCodePosition}
-          qrDescriptionPosition={qrDescriptionPosition}
-          setQrDescriptionPosition={setQrDescriptionPosition}
-          qrCodeDescription={qrCodeDescription}
-          selectedFont={selectedFont}
-          selectedTextColor={selectedTextColor}
-          qrDescriptionFontSize={qrDescriptionFontSize}
-        />
+        {/* QR Code overlay - sempre renderizar para debug */}
+        <div className="absolute inset-0 pointer-events-none z-40">
+          <QRCodeOverlay
+            qrCodeVisible={true} // Forçar visível para debug
+            qrCodeSvg={qrCodeSvg}
+            qrCodePosition={qrCodePosition}
+            setQrCodePosition={setQrCodePosition}
+            qrDescriptionPosition={qrDescriptionPosition}
+            setQrDescriptionPosition={setQrDescriptionPosition}
+            qrCodeDescription={qrCodeDescription || "Escaneie o QR Code para participar"}
+            selectedFont={selectedFont}
+            selectedTextColor={selectedTextColor}
+            qrDescriptionFontSize={qrDescriptionFontSize}
+          />
+        </div>
         
         {/* Indicador AO VIVO no canto superior direito */}
         <LiveIndicator />
+        
+        {/* Debug console visível na janela de transmissão */}
+        <div className="absolute top-4 left-4 z-50 bg-black/80 backdrop-blur-sm border border-white/20 rounded-lg p-3 max-w-md">
+          <div className="text-xs text-white/80 space-y-1">
+            <p className="text-white font-semibold mb-2">Debug Console:</p>
+            <p>QR Visível: {qrCodeVisible ? '✅' : '❌'}</p>
+            <p>QR SVG: {qrCodeSvg ? '✅' : '❌'}</p>
+            <p>Background: {backgroundImage ? 'Imagem' : selectedBackgroundColor}</p>
+            <p>Participantes: {participantList.length}</p>
+            <p>Streams: {Object.keys(participantStreams).length}</p>
+            <div className="mt-2">
+              <p className="text-white/60 text-xs">Logs:</p>
+              {debugMessages.slice(-2).map((msg, index) => (
+                <p key={index} className="text-xs text-white/60 font-mono truncate">
+                  {msg}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
         
         {/* Mensagem de QR Code no canto inferior direito - sempre visível */}
         <div className="absolute bottom-6 right-6 z-50">
