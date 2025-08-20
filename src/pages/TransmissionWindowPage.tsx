@@ -4,6 +4,7 @@ import { Participant } from '@/components/live/ParticipantGrid';
 import ParticipantPreviewGrid from '@/components/live/ParticipantPreviewGrid';
 import QRCodeOverlay from '@/components/live/QRCodeOverlay';
 import LiveIndicator from '@/components/live/LiveIndicator';
+import { useTransmissionVideoManager } from '@/hooks/live/useTransmissionVideoManager';
 
 const TransmissionWindowPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -14,6 +15,12 @@ const TransmissionWindowPage: React.FC = () => {
   const [participantList, setParticipantList] = useState<Participant[]>([]);
   const [participantStreams, setParticipantStreams] = useState<{[id: string]: MediaStream}>({});
   const [participantCount, setParticipantCount] = useState(2); // Valor dinâmico baseado no host
+  
+  // Hook para gerenciar vídeos na transmissão
+  const { createVideoForStream } = useTransmissionVideoManager({ 
+    participantStreams, 
+    setParticipantStreams 
+  });
   
   // States para QR Code
   const [qrCodeVisible, setQrCodeVisible] = useState(false);
@@ -57,6 +64,16 @@ const TransmissionWindowPage: React.FC = () => {
     }
   };
 
+  const createVideoInTransmission = async (participantId: string, stream: MediaStream) => {
+    try {
+      updateDebug(`🎯 TRANSMISSION: Iniciando criação de vídeo para ${participantId}`);
+      await createVideoForStream(participantId, stream);
+      updateDebug(`✅ TRANSMISSION: Processamento concluído para ${participantId}`);
+    } catch (error) {
+      updateDebug(`❌ TRANSMISSION: Erro ao processar ${participantId}: ${error}`);
+    }
+  };
+
   useEffect(() => {
     const initializePopup = () => {
       updateStatus('Janela de transmissão pronta');
@@ -71,7 +88,7 @@ const TransmissionWindowPage: React.FC = () => {
       
       if (event.data.type === 'participant-stream-ready') {
         const { participantId } = event.data;
-        updateDebug(`Processando stream para participante: ${participantId}`);
+        updateDebug(`🎯 TRANSMISSION: Processando stream para participante: ${participantId}`);
         
         const stream = await getStreamFromHost(participantId);
         if (stream) {
@@ -80,9 +97,13 @@ const TransmissionWindowPage: React.FC = () => {
             ...prev,
             [participantId]: stream
           }));
-          updateStatus(`Stream carregado para: ${participantId}`);
+          
+          // Criar elementos de vídeo na transmissão
+          await createVideoInTransmission(participantId, stream);
+          
+          updateStatus(`✅ Stream e vídeo criados para: ${participantId}`);
         } else {
-          updateStatus(`Falha ao carregar stream para: ${participantId}`);
+          updateStatus(`❌ Falha ao carregar stream para: ${participantId}`);
         }
       }
       
