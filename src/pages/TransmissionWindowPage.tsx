@@ -48,18 +48,45 @@ const TransmissionWindowPage: React.FC = () => {
 
   const getStreamFromHost = async (participantId: string): Promise<MediaStream | null> => {
     try {
-      if (window.opener && typeof window.opener.getParticipantStream === 'function') {
-        updateDebug(`Solicitando stream para participante: ${participantId}`);
-        const stream = await window.opener.getParticipantStream(participantId);
-        if (stream && stream.getTracks && stream.getTracks().length > 0) {
-          updateDebug(`Stream recebido com ${stream.getTracks().length} tracks`);
-          return stream;
-        }
+      updateDebug(`🎯 TRANSMISSION: Solicitando stream para participante: ${participantId}`);
+      
+      if (!window.opener) {
+        updateDebug(`❌ TRANSMISSION: window.opener não disponível`);
+        return null;
       }
-      updateDebug(`Falha ao obter stream para participante: ${participantId}`);
-      return null;
+
+      // Verificar se a função existe no host
+      if (typeof window.opener.getParticipantStream !== 'function') {
+        updateDebug(`❌ TRANSMISSION: window.opener.getParticipantStream não é função`);
+        updateDebug(`🔍 TRANSMISSION: Tipo: ${typeof window.opener.getParticipantStream}`);
+        return null;
+      }
+
+      updateDebug(`✅ TRANSMISSION: Chamando window.opener.getParticipantStream('${participantId}')`);
+      const stream = await window.opener.getParticipantStream(participantId);
+      
+      if (!stream) {
+        updateDebug(`⚠️ TRANSMISSION: Stream null/undefined retornado para ${participantId}`);
+        return null;
+      }
+
+      if (!stream.getTracks) {
+        updateDebug(`❌ TRANSMISSION: Stream inválido (sem getTracks) para ${participantId}`);
+        return null;
+      }
+
+      const tracks = stream.getTracks();
+      if (tracks.length === 0) {
+        updateDebug(`⚠️ TRANSMISSION: Stream sem tracks para ${participantId}`);
+        return null;
+      }
+
+      updateDebug(`✅ TRANSMISSION: Stream válido recebido para ${participantId} - ${tracks.length} tracks, active: ${stream.active}`);
+      return stream;
+      
     } catch (error) {
-      updateDebug(`Erro ao obter stream: ${error}`);
+      updateDebug(`❌ TRANSMISSION: Erro ao obter stream para ${participantId}: ${error}`);
+      console.error('TRANSMISSION ERROR:', error);
       return null;
     }
   };
@@ -87,24 +114,31 @@ const TransmissionWindowPage: React.FC = () => {
       updateDebug(`Mensagem recebida: ${event.data.type}`);
       
       if (event.data.type === 'participant-stream-ready') {
-        const { participantId } = event.data;
+        const { participantId, streamInfo } = event.data;
         updateDebug(`🎯 TRANSMISSION: Processando stream para participante: ${participantId}`);
+        updateDebug(`🎯 TRANSMISSION: Stream info recebida: ${JSON.stringify(streamInfo)}`);
         
-        const stream = await getStreamFromHost(participantId);
-        if (stream) {
-          // Atualizar o stream nos states
-          setParticipantStreams(prev => ({
-            ...prev,
-            [participantId]: stream
-          }));
-          
-          // Criar elementos de vídeo na transmissão
-          await createVideoInTransmission(participantId, stream);
-          
-          updateStatus(`✅ Stream e vídeo criados para: ${participantId}`);
-        } else {
-          updateStatus(`❌ Falha ao carregar stream para: ${participantId}`);
-        }
+        // Aguardar um pouco para garantir que o stream está disponível no host
+        setTimeout(async () => {
+          const stream = await getStreamFromHost(participantId);
+          if (stream) {
+            updateDebug(`✅ TRANSMISSION: Stream obtido com sucesso para ${participantId}`);
+            
+            // Atualizar o stream nos states
+            setParticipantStreams(prev => ({
+              ...prev,
+              [participantId]: stream
+            }));
+            
+            // Criar elementos de vídeo na transmissão
+            await createVideoInTransmission(participantId, stream);
+            
+            updateStatus(`✅ Stream e vídeo criados para: ${participantId}`);
+          } else {
+            updateStatus(`❌ Falha ao carregar stream para: ${participantId}`);
+            updateDebug(`❌ TRANSMISSION: Stream não disponível para ${participantId}`);
+          }
+        }, 300); // Dar tempo para o stream estar disponível no host
       }
       
       // Novos handlers para replicar interface do LivePreview

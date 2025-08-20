@@ -158,8 +158,20 @@ export const useParticipantManagement = ({
 
     // Set up global access for participant stream retrieval (single instance)
     window.getParticipantStream = (participantId: string) => {
-      const stream = participantStreams[participantId];
-      console.log('📥 HOST: getParticipantStream requested for:', participantId, stream ? stream.id : 'not found');
+      // Tentar múltiplas fontes de streams
+      const streamFromState = participantStreams[participantId];
+      const streamFromGlobalMap = window.__mlStreams__?.get(participantId);
+      const stream = streamFromState || streamFromGlobalMap || null;
+      
+      console.log('📥 HOST: getParticipantStream requested for:', participantId, {
+        foundInState: !!streamFromState,
+        foundInGlobalMap: !!streamFromGlobalMap,
+        finalStream: !!stream,
+        streamId: stream?.id,
+        streamActive: stream?.active,
+        tracksCount: stream?.getTracks()?.length || 0
+      });
+      
       return stream;
     };
 

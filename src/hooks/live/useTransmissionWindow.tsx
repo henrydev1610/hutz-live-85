@@ -30,11 +30,19 @@ export const useTransmissionWindow = () => {
       // Aguardar o carregamento da nova janela antes de expor funções e configurações
       setTimeout(() => {
         if (newWindow && !newWindow.closed) {
-          // Expor função global para a janela de transmissão acessar streams
-          newWindow.getParticipantStream = (participantId: string) => {
-            console.log('🎬 Host: getParticipantStream solicitado para:', participantId);
-            return state.participantStreams?.[participantId] || null;
-          };
+          // A função getParticipantStream deve estar no window host (opener), não na transmission window
+          console.log('🎬 Host: Transmission window carregada, garantindo acesso aos streams');
+          
+          // Verificar se a função global existe no host
+          if (typeof window.getParticipantStream !== 'function') {
+            console.warn('⚠️ Host: window.getParticipantStream não encontrada, criando...');
+            window.getParticipantStream = (participantId: string) => {
+              console.log('🎬 Host: getParticipantStream solicitado para:', participantId);
+              const stream = state.participantStreams?.[participantId] || window.__mlStreams__?.get(participantId) || null;
+              console.log('🎬 Host: stream encontrado:', !!stream, stream?.id);
+              return stream;
+            };
+          }
           
           // Enviar configurações iniciais para replicar interface LivePreview
           newWindow.postMessage({
