@@ -1,12 +1,38 @@
 import { twilioWebRTCService } from '../../services/TwilioWebRTCService';
 import { getBackendBaseURL } from '@/utils/connectionUtils';
 
-// MIGRAÇÃO 100% TWILIO - Forçando uso exclusivo da Twilio
+// MIGRAÇÃO 100% TWILIO - Configuração principal com TURN hardcoded
 let dynamicIceServers: RTCIceServer[] | null = null;
 let relayOnly = false;
 let forceTwilioOnly = true; // 🎯 MIGRAÇÃO: Forçar APENAS Twilio
 
-// Configuração STUN-only para emergência (sem TURN do Metered.ca)
+// 🎯 FASE 2: Credenciais TURN hardcoded PRINCIPAIS (não fallback)
+const HARDCODED_TURN_SERVERS: RTCIceServer[] = [
+  // Twilio STUN
+  {
+    urls: 'stun:global.stun.twilio.com:3478'
+  },
+  // Twilio TURN UDP 
+  {
+    credential: 'wZcIQonQHjmSdjbXOYD5s7NN+ELMKW61UVyZQigiem4=',
+    urls: 'turn:global.turn.twilio.com:3478?transport=udp',
+    username: '07ca22aa27ab7cd941eff000d059e2c5c2a386a82c64f428817817044f515d80'
+  },
+  // Twilio TURN TCP porta 3478
+  {
+    credential: 'wZcIQonQHjmSdjbXOYD5s7NN+ELMKW61UVyZQigiem4=',
+    urls: 'turn:global.turn.twilio.com:3478?transport=tcp',
+    username: '07ca22aa27ab7cd941eff000d059e2c5c2a386a82c64f428817817044f515d80'
+  },
+  // Twilio TURN TCP porta 443 (para redes restritivas)
+  {
+    credential: 'wZcIQonQHjmSdjbXOYD5s7NN+ELMKW61UVyZQigiem4=',
+    urls: 'turn:global.turn.twilio.com:443?transport=tcp',
+    username: '07ca22aa27ab7cd941eff000d059e2c5c2a386a82c64f428817817044f515d80'
+  }
+];
+
+// Configuração STUN-only para emergência absoluta
 const STUN_ONLY_FALLBACK: RTCConfiguration = {
   iceServers: [
     // Google STUN servers (free) - apenas para emergência
@@ -17,33 +43,18 @@ const STUN_ONLY_FALLBACK: RTCConfiguration = {
     { urls: 'stun:stun4.l.google.com:19302' },
     
     // Cloudflare STUN (backup)  
-    { urls: 'stun:stun.cloudflare.com:3478' },
-  // credenciais turn da twilio adicionadas no iceServers
-  {
-    urls: 'stun:global.stun.twilio.com:3478'
-  },
-  {
-    credential: 'wZcIQonQHjmSdjbXOYD5s7NN+ELMKW61UVyZQigiem4=',
-    urls: 'turn:global.turn.twilio.com:3478?transport=udp',
-    username: '07ca22aa27ab7cd941eff000d059e2c5c2a386a82c64f428817817044f515d80'
-  },
-  {
-    credential: 'wZcIQonQHjmSdjbXOYD5s7NN+ELMKW61UVyZQigiem4=',
-    urls: 'turn:global.turn.twilio.com:3478?transport=tcp',
-    username: '07ca22aa27ab7cd941eff000d059e2c5c2a386a82c64f428817817044f515d80'
-  },
-  {
-    credential: 'wZcIQonQHjmSdjbXOYD5s7NN+ELMKW61UVyZQigiem4=',
-    urls: 'turn:global.turn.twilio.com:443?transport=tcp',
-    username: '07ca22aa27ab7cd941eff000d059e2c5c2a386a82c64f428817817044f515d80'
-  }
-
-
+    { urls: 'stun:stun.cloudflare.com:3478' }
     
     // 🚫 REMOVIDO: Metered.ca TURN servers (migração 100% Twilio)
   ],
   iceCandidatePoolSize: 10
 };
+
+// 🎯 FASE 2: Função para obter TURN servers hardcoded (para TurnConnectivityService)
+export function getHardcodedTurnServers(): RTCIceServer[] {
+  console.log('🧊 [HARDCODED] Returning hardcoded TURN servers:', HARDCODED_TURN_SERVERS.length);
+  return [...HARDCODED_TURN_SERVERS]; // Clone para evitar mutação
+}
 
 // Chame isso ao receber `ice-servers` do backend
 export function setDynamicIceServers(servers: RTCIceServer[], opts?: { relayOnly?: boolean }) {
@@ -59,17 +70,17 @@ export function setDynamicIceServers(servers: RTCIceServer[], opts?: { relayOnly
   if (typeof opts?.relayOnly === 'boolean') relayOnly = !!opts.relayOnly;
 }
 
-// 🎯 MIGRAÇÃO 100% TWILIO - Configuração exclusiva
+// 🎯 FASE 2: MIGRAÇÃO 100% TWILIO - Configuração com TURN hardcoded
 export async function getWebRTCConfig(): Promise<RTCConfiguration> {
-  console.log('🌐 TWILIO-ONLY: Starting WebRTC config initialization...');
+  console.log('🌐 TWILIO-HYBRID: Starting WebRTC config with TURN fallback...');
   
   let iceServers: RTCIceServer[] = [];
   let usingTwilio = false;
 
-  // 🎯 FASE 1: TENTAR TWILIO (OBRIGATÓRIO)
+  // 🎯 FASE 1: TENTAR TWILIO PRIMEIRO
   if (forceTwilioOnly) {
     try {
-      console.log('🌐 TWILIO: Fetching ICE servers (100% migration mode)...');
+      console.log('🌐 TWILIO: Fetching ICE servers (hybrid mode with TURN fallback)...');
       
       // Verificar se Twilio está inicializado
       if (!twilioWebRTCService.isTwilioEnabled()) {
@@ -80,28 +91,50 @@ export async function getWebRTCConfig(): Promise<RTCConfiguration> {
       iceServers = await twilioWebRTCService.getIceServers();
       
       if (iceServers && iceServers.length > 0) {
-        console.log('✅ TWILIO: Successfully retrieved ICE servers:', iceServers.length);
-        usingTwilio = true;
+        // Filtrar para verificar se tem TURN servers
+        const turnServers = iceServers.filter(server => 
+          Array.isArray(server.urls) 
+            ? server.urls.some(url => url.startsWith('turn:'))
+            : typeof server.urls === 'string' && server.urls.startsWith('turn:')
+        );
+        
+        if (turnServers.length > 0) {
+          console.log('✅ TWILIO: Successfully retrieved ICE servers with TURN:', turnServers.length);
+          usingTwilio = true;
+        } else {
+          console.warn('⚠️ TWILIO: No TURN servers found in response, using hardcoded fallback');
+        }
       }
     } catch (error) {
       console.error('🚨 TWILIO: Failed to get ICE servers:', error);
     }
   }
 
-  // 🚨 EMERGÊNCIA: Se Twilio falhar completamente, usar apenas STUN
+  // 🎯 FASE 2: Se Twilio falhar OU não tiver TURN, usar TURN hardcoded
   if (!usingTwilio) {
-    console.warn('🚨 FALLBACK: Twilio unavailable, using STUN-only mode');
-    iceServers = STUN_ONLY_FALLBACK.iceServers;
+    console.log('🧊 HARDCODED: Using hardcoded TURN servers as primary fallback');
+    iceServers = HARDCODED_TURN_SERVERS;
   }
 
   const cfg: RTCConfiguration = {
     iceServers,
-    iceCandidatePoolSize: usingTwilio ? 15 : 5, // Maior pool para Twilio
+    iceCandidatePoolSize: usingTwilio ? 15 : 10, // Pool otimizado para TURN
   };
   
   if (relayOnly) cfg.iceTransportPolicy = 'relay';
   
-  console.log(`🎯 WEBRTC CONFIG: ${usingTwilio ? 'Twilio' : 'STUN-only'} | Servers: ${iceServers.length}`);
+  console.log(`🎯 WEBRTC CONFIG: ${usingTwilio ? 'Twilio' : 'Hardcoded-TURN'} | Servers: ${iceServers.length}`);
+  
+  // Debug: Mostrar tipos de servidores
+  const stunCount = iceServers.filter(s => 
+    Array.isArray(s.urls) ? s.urls.some(url => url.startsWith('stun:')) : s.urls.startsWith('stun:')
+  ).length;
+  const turnCount = iceServers.filter(s => 
+    Array.isArray(s.urls) ? s.urls.some(url => url.startsWith('turn:')) : s.urls.startsWith('turn:')
+  ).length;
+  
+  console.log(`🎯 WEBRTC DEBUG: STUN: ${stunCount}, TURN: ${turnCount}`);
+  
   return cfg;
 }
 
@@ -126,29 +159,47 @@ export function useRelayOnly(enable = true) {
   relayOnly = enable;
 }
 
-// Para fluxos que exigem obrigatoriamente TURN (NAT extremo) - Simplificado para Twilio
+// 🎯 FASE 2: Para fluxos que exigem obrigatoriamente TURN (NAT extremo) 
 export async function getTurnOnlyConfig(): Promise<RTCConfiguration> {
-  console.log('🎯 TURN-ONLY: Using Twilio for relay-only configuration...');
+  console.log('🎯 TURN-ONLY: Using hardcoded TURN for relay-only configuration...');
   
-  // Tentar buscar do Twilio
+  // Tentar buscar do Twilio primeiro
   try {
-    const iceServers = await twilioWebRTCService.getIceServers();
-    if (iceServers && iceServers.length > 0) {
-      return {
-        iceServers,
-        iceTransportPolicy: 'relay',
-        iceCandidatePoolSize: 10,
-      };
+    const twilioServers = await twilioWebRTCService.getIceServers();
+    if (twilioServers && twilioServers.length > 0) {
+      // Filtrar apenas TURN servers
+      const turnOnly = twilioServers.filter(server => 
+        Array.isArray(server.urls) 
+          ? server.urls.some(url => url.startsWith('turn:'))
+          : typeof server.urls === 'string' && server.urls.startsWith('turn:')
+      );
+      
+      if (turnOnly.length > 0) {
+        console.log('✅ TURN-ONLY: Using Twilio TURN servers:', turnOnly.length);
+        return {
+          iceServers: turnOnly,
+          iceTransportPolicy: 'relay',
+          iceCandidatePoolSize: 10,
+        };
+      }
     }
   } catch (error) {
-    console.warn('⚠️ TWILIO TURN failed, using STUN fallback:', error);
+    console.warn('⚠️ TWILIO TURN failed, using hardcoded TURN:', error);
   }
 
-  // Fallback: apenas STUN (sem TURN)
+  // Fallback: usar TURN hardcoded (sem STUN)
+  const turnOnlyHardcoded = HARDCODED_TURN_SERVERS.filter(server => 
+    Array.isArray(server.urls) 
+      ? server.urls.some(url => url.startsWith('turn:'))
+      : typeof server.urls === 'string' && server.urls.startsWith('turn:')
+  );
+  
+  console.log('🧊 TURN-ONLY: Using hardcoded TURN servers:', turnOnlyHardcoded.length);
+  
   return {
-    iceServers: STUN_ONLY_FALLBACK.iceServers,
+    iceServers: turnOnlyHardcoded,
     iceTransportPolicy: 'relay',
-    iceCandidatePoolSize: 5,
+    iceCandidatePoolSize: 10,
   };
 }
 
