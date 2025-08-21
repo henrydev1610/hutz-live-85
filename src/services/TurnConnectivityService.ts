@@ -1,6 +1,7 @@
 // FASE 1: Serviço de diagnóstico automático TURN
 import { getWebRTCConfig, setDynamicIceServers } from '@/utils/webrtc/WebRTCConfig';
 import { connectivityDiagnostics } from '@/utils/webrtc/ConnectivityDiagnostics';
+import { twilioWebRTCService } from '@/services/TwilioWebRTCService';
 import { toast } from 'sonner';
 
 interface TurnServerStatus {
@@ -55,7 +56,6 @@ class TurnConnectivityService {
     try {
       // FASE 2: Carregar primeiro do Twilio, depois fallback
       console.log('🧊 [TURN] Loading servers from Twilio...');
-      const { twilioWebRTCService } = await import('@/services/TwilioWebRTCService');
       
       if (twilioWebRTCService.isTwilioEnabled()) {
         const twilioServers = await twilioWebRTCService.getIceServers();
