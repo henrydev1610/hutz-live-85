@@ -142,4 +142,88 @@ router.get('/stats', (req, res) => {
   }
 });
 
+// GET /api/twilio/test - Endpoint de teste para validar credenciais Twilio
+router.get('/test', async (req, res) => {
+  try {
+    console.log('🧪 TWILIO TEST: Starting credential validation...');
+    
+    const testResults = {
+      credentials: {
+        accountSid: !!process.env.TWILIO_ACCOUNT_SID,
+        authToken: !!process.env.TWILIO_AUTH_TOKEN,
+        apiKey: !!process.env.TWILIO_API_KEY,
+        apiSecret: !!process.env.TWILIO_API_SECRET
+      },
+      service: {
+        initialized: twilioTokenService.initialized
+      },
+      tests: {}
+    };
+
+    // Teste 1: Inicialização
+    if (!twilioTokenService.initialized) {
+      const initResult = twilioTokenService.initialize();
+      testResults.tests.initialization = initResult;
+    } else {
+      testResults.tests.initialization = true;
+    }
+
+    // Teste 2: Geração de token
+    try {
+      const tokenResult = await twilioTokenService.generateToken('test-user', 'test-room');
+      testResults.tests.tokenGeneration = {
+        success: true,
+        hasToken: !!tokenResult.token,
+        identity: tokenResult.identity,
+        roomName: tokenResult.roomName
+      };
+    } catch (tokenError) {
+      testResults.tests.tokenGeneration = {
+        success: false,
+        error: tokenError.message
+      };
+    }
+
+    // Teste 3: ICE servers
+    try {
+      const iceResult = await twilioTokenService.getIceServers();
+      testResults.tests.iceServers = {
+        success: true,
+        serverCount: iceResult.iceServers ? iceResult.iceServers.length : 0,
+        source: iceResult.source || 'twilio',
+        hasTurnServers: iceResult.iceServers ? 
+          iceResult.iceServers.some(s => s.urls.includes('turn:')) : false,
+        servers: iceResult.iceServers ? iceResult.iceServers.map(s => ({
+          urls: s.urls,
+          hasCredential: !!s.credential,
+          username: s.username || 'N/A'
+        })) : []
+      };
+    } catch (iceError) {
+      testResults.tests.iceServers = {
+        success: false,
+        error: iceError.message
+      };
+    }
+
+    console.log('✅ TWILIO TEST: Test completed', testResults);
+
+    res.json({
+      success: true,
+      message: 'Twilio integration test completed',
+      results: testResults,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ TWILIO TEST ERROR:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Test failed',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 module.exports = router;

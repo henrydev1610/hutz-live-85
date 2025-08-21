@@ -143,43 +143,102 @@ class TwilioTokenService {
 
     try {
       console.log('🌐 TWILIO: Generating fresh ICE servers via Network Traversal Service...');
+      console.log('🔑 TWILIO: Using credentials:', {
+        accountSid: process.env.TWILIO_ACCOUNT_SID?.substring(0, 10) + '...',
+        authToken: process.env.TWILIO_AUTH_TOKEN ? 'Present' : 'Missing'
+      });
       
-      // Gerar token para Network Traversal Service
-      const token = new twilio.jwt.AccessToken(
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_API_KEY,
-        process.env.TWILIO_API_SECRET,
-        { ttl: 24 * 60 * 60 }
-      );
-
-      // Adicionar Video Grant para acessar ICE servers
-      const videoGrant = new twilio.jwt.AccessToken.VideoGrant();
-      token.addGrant(videoGrant);
-
-      // Buscar ICE servers usando o SDK
-      const iceServers = await this.client.tokens.create();
+      // Fazer requisição direta para o Network Traversal Service
+      const https = require('https');
+      const querystring = require('querystring');
       
-      console.log('🔍 TWILIO: ICE server response:', {
-        hasIceServers: !!(iceServers.iceServers),
-        serverCount: iceServers.iceServers ? iceServers.iceServers.length : 0,
-        dateCreated: iceServers.dateCreated,
-        ttl: iceServers.ttl
+      const postData = querystring.stringify({
+        ttl: 86400 // 24 horas em segundos
+      });
+      
+      const auth = Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64');
+      
+      const options = {
+        hostname: 'stun.twilio.com',
+        port: 443,
+        path: '/v1/Tokens',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(postData),
+          'Authorization': `Basic ${auth}`
+        }
+      };
+
+      console.log('📡 TWILIO: Making request to Network Traversal Service...');
+      console.log('🔗 TWILIO: URL: https://stun.twilio.com/v1/Tokens');
+      
+      const iceServerResponse = await new Promise((resolve, reject) => {
+        const req = https.request(options, (res) => {
+          let data = '';
+          
+          console.log('📊 TWILIO: Response status:', res.statusCode);
+          console.log('📊 TWILIO: Response headers:', res.headers);
+          
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+          
+          res.on('end', () => {
+            if (res.statusCode === 200 || res.statusCode === 201) {
+              try {
+                const parsed = JSON.parse(data);
+                resolve(parsed);
+              } catch (parseError) {
+                console.error('❌ TWILIO: Failed to parse response:', parseError);
+                reject(parseError);
+              }
+            } else {
+              console.error('❌ TWILIO: HTTP error:', res.statusCode, data);
+              reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            }
+          });
+        });
+        
+        req.on('error', (error) => {
+          console.error('❌ TWILIO: Request error:', error);
+          reject(error);
+        });
+        
+        req.write(postData);
+        req.end();
+      });
+      
+      console.log('🔍 TWILIO: ICE server response received:', {
+        hasIceServers: !!(iceServerResponse.ice_servers),
+        serverCount: iceServerResponse.ice_servers ? iceServerResponse.ice_servers.length : 0,
+        dateCreated: iceServerResponse.date_created,
+        ttl: iceServerResponse.ttl,
+        username: iceServerResponse.username,
+        password: iceServerResponse.password ? 'Present' : 'Missing'
       });
 
+      // Transformar resposta para formato padrão WebRTC
+      const iceServers = iceServerResponse.ice_servers || [];
+      
+      console.log('🔍 TWILIO: Raw ICE servers:', iceServers);
+
       const servers = {
-        iceServers: iceServers.iceServers || this.getFallbackIceServers().iceServers,
+        iceServers: iceServers,
         generatedAt: Date.now(),
-        expiresAt: Date.now() + (23 * 60 * 60 * 1000) // 23 horas
+        expiresAt: Date.now() + (23 * 60 * 60 * 1000), // 23 horas
+        source: 'twilio'
       };
 
       // Cache por 23 horas
       tokenCache.set(cacheKey, servers, 23 * 60 * 60);
+      
       console.log('✅ TWILIO: Generated fresh ICE servers successfully', {
         count: servers.iceServers.length,
-        types: servers.iceServers.map(s => ({ 
-          urls: s.urls, 
-          hasCredential: !!(s.credential),
-          username: s.username
+        types: servers.iceServers.map(server => ({ 
+          urls: Array.isArray(server.urls) ? server.urls : [server.urls], 
+          hasCredential: !!(server.credential),
+          username: server.username || 'N/A'
         }))
       });
 
@@ -188,9 +247,9 @@ class TwilioTokenService {
     } catch (error) {
       console.error('❌ TWILIO: Failed to get ICE servers:', error.message);
       console.error('🔧 TWILIO: Error details:', {
-        code: error.code,
-        status: error.status,
-        moreInfo: error.moreInfo
+        name: error.name,
+        message: error.message,
+        stack: error.stack?.split('\n')[0]
       });
       console.log('🔄 TWILIO: Falling back to default ICE servers');
       return this.getFallbackIceServers();
