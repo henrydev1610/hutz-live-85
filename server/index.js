@@ -6,6 +6,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const roomsRouter = require('./routes/rooms');
 const twilioRouter = require('./routes/twilio');
+const twilioTestRouter = require('./routes/twilioTest');
 const twilioTokenService = require('./services/twilioTokenService');
 const { initializeSocketHandlers } = require('./signaling/socket');
 
@@ -163,6 +164,7 @@ app.get('/', (req, res) => {
 // Rotas da API
 app.use('/api/rooms', roomsRouter);
 app.use('/api/twilio', twilioRouter);
+app.use('/api/twilio-test', twilioTestRouter);
 
 // Status endpoint com configurações
 app.get('/status', (req, res) => {

@@ -1,4 +1,5 @@
 import { twilioWebRTCService } from '../../services/TwilioWebRTCService';
+import { getBackendBaseURL } from '@/utils/connectionUtils';
 
 // MIGRAÇÃO 100% TWILIO - Forçando uso exclusivo da Twilio
 let dynamicIceServers: RTCIceServer[] | null = null;
@@ -135,27 +136,57 @@ export const MEDIA_CONSTRAINTS = {
   audio: true
 };
 
-// 🎯 Debug commands para migração 100% Twilio
-if (typeof window !== 'undefined') {
-  (window as any).__webrtcCfg = async () => await getWebRTCConfig();
-  (window as any).__twilioToggle = (enabled: boolean) => setTwilioPreference(enabled);
-  (window as any).__twilioStatus = () => twilioWebRTCService.getServiceStats();
-  (window as any).__twilioTest = async () => {
-    console.log('🧪 TESTING Twilio migration...');
-    const config = await getWebRTCConfig();
-    const stats = twilioWebRTCService.getServiceStats();
-    const diagnostic = await twilioWebRTCService.runConnectivityDiagnostic();
-    
-    return {
-      webrtcConfig: config,
-      twilioStats: stats,
-      connectivityDiagnostic: diagnostic,
-      migrationMode: forceTwilioOnly
+  // Debug commands para migração 100% Twilio
+  if (typeof window !== 'undefined') {
+    (window as any).__webrtcCfg = async () => await getWebRTCConfig();
+    (window as any).__twilioToggle = (enabled: boolean) => setTwilioPreference(enabled);
+    (window as any).__twilioStatus = () => twilioWebRTCService.getServiceStats();
+    (window as any).__twilioTest = async () => {
+      console.log('🧪 TESTING Twilio migration...');
+      const config = await getWebRTCConfig();
+      const stats = twilioWebRTCService.getServiceStats();
+      const diagnostic = await twilioWebRTCService.runConnectivityDiagnostic();
+      
+      return {
+        webrtcConfig: config,
+        twilioStats: stats,
+        connectivityDiagnostic: diagnostic,
+        migrationMode: forceTwilioOnly
+      };
     };
-  };
-  (window as any).__forceTwilioRefresh = async () => {
-    console.log('🔄 Forcing Twilio cache refresh...');
-    await twilioWebRTCService.refreshCache();
-    return await twilioWebRTCService.getServiceStats();
-  };
-}
+    (window as any).__forceTwilioRefresh = async () => {
+      console.log('🔄 Forcing Twilio cache refresh...');
+      await twilioWebRTCService.refreshCache();
+      return await twilioWebRTCService.getServiceStats();
+    };
+    (window as any).__twilioCredentialTest = async () => {
+      console.log('🧪 TESTING Twilio credentials via backend...');
+      try {
+        const response = await fetch(`${getBackendBaseURL()}/api/twilio-test/credentials`);
+        const data = await response.json();
+        
+        console.log('📋 CREDENTIAL TEST REPORT:', data.report);
+        return data.report;
+      } catch (error) {
+        console.error('❌ Credential test failed:', error);
+        return { error: error.message };
+      }
+    };
+    (window as any).__twilioReset = async () => {
+      console.log('🔄 Resetting Twilio service...');
+      try {
+        const response = await fetch(`${getBackendBaseURL()}/api/twilio-test/reset`, { method: 'POST' });
+        const data = await response.json();
+        
+        console.log('🔄 Reset result:', data);
+        
+        // Também resetar o frontend
+        await twilioWebRTCService.refreshCache();
+        
+        return data;
+      } catch (error) {
+        console.error('❌ Reset failed:', error);
+        return { error: error.message };
+      }
+    };
+  }

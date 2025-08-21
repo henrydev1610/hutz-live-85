@@ -16,21 +16,41 @@ class TwilioTokenService {
 
   // Inicializar cliente Twilio
   initialize() {
+    console.log('🚀 TWILIO: Starting Twilio Token Service initialization...');
+    
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const apiKey = process.env.TWILIO_API_KEY;
+    const apiSecret = process.env.TWILIO_API_SECRET;
+
+    console.log('🔍 TWILIO CREDENTIALS CHECK:');
+    console.log(`   Account SID: ${accountSid ? '✅ Found' : '❌ Missing'}`);
+    console.log(`   Auth Token: ${authToken ? '✅ Found' : '❌ Missing'}`);
+    console.log(`   API Key: ${apiKey ? '✅ Found' : '❌ Missing'}`);
+    console.log(`   API Secret: ${apiSecret ? '✅ Found' : '❌ Missing'}`);
 
     if (!accountSid || !authToken) {
-      console.warn('⚠️ Twilio credentials not found. Token service will be disabled.');
+      console.error('❌ TWILIO: Missing basic credentials (Account SID or Auth Token)');
+      console.error('🔧 TWILIO: Add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to server/.env');
+      return false;
+    }
+
+    if (!apiKey || !apiSecret) {
+      console.error('❌ TWILIO: Missing API credentials (API Key or API Secret)');
+      console.error('🔧 TWILIO: Add TWILIO_API_KEY and TWILIO_API_SECRET to server/.env');
       return false;
     }
 
     try {
+      console.log('🔧 TWILIO: Creating Twilio client...');
       this.client = twilio(accountSid, authToken);
       this.initialized = true;
-      console.log('✅ Twilio Token Service initialized successfully');
+      console.log('✅ TWILIO: Token Service initialized successfully');
+      console.log('🎯 TWILIO: Ready to generate tokens and ICE servers');
       return true;
     } catch (error) {
-      console.error('❌ Failed to initialize Twilio client:', error);
+      console.error('❌ TWILIO: Failed to initialize client:', error.message);
+      console.error('🔧 TWILIO: Check if credentials are valid');
       return false;
     }
   }
@@ -105,8 +125,11 @@ class TwilioTokenService {
 
   // Obter configuração de ICE servers via Twilio Network Traversal Service
   async getIceServers() {
+    console.log('🌐 TWILIO: Starting ICE server retrieval...');
+    
     if (!this.initialized) {
-      console.warn('⚠️ Twilio not initialized, returning fallback ICE servers');
+      console.warn('⚠️ TWILIO: Service not initialized, returning fallback ICE servers');
+      console.warn('🔧 TWILIO: Check credentials and initialization logs above');
       return this.getFallbackIceServers();
     }
 
@@ -114,11 +137,13 @@ class TwilioTokenService {
     const cachedServers = tokenCache.get(cacheKey);
     
     if (cachedServers) {
-      console.log('🔄 Returning cached ICE servers');
+      console.log('🔄 TWILIO: Returning cached ICE servers');
       return cachedServers;
     }
 
     try {
+      console.log('🌐 TWILIO: Generating fresh ICE servers via Network Traversal Service...');
+      
       // Gerar token para Network Traversal Service
       const token = new twilio.jwt.AccessToken(
         process.env.TWILIO_ACCOUNT_SID,
@@ -133,6 +158,13 @@ class TwilioTokenService {
 
       // Buscar ICE servers usando o SDK
       const iceServers = await this.client.tokens.create();
+      
+      console.log('🔍 TWILIO: ICE server response:', {
+        hasIceServers: !!(iceServers.iceServers),
+        serverCount: iceServers.iceServers ? iceServers.iceServers.length : 0,
+        dateCreated: iceServers.dateCreated,
+        ttl: iceServers.ttl
+      });
 
       const servers = {
         iceServers: iceServers.iceServers || this.getFallbackIceServers().iceServers,
@@ -142,13 +174,25 @@ class TwilioTokenService {
 
       // Cache por 23 horas
       tokenCache.set(cacheKey, servers, 23 * 60 * 60);
-      console.log('✅ Generated fresh ICE servers from Twilio');
+      console.log('✅ TWILIO: Generated fresh ICE servers successfully', {
+        count: servers.iceServers.length,
+        types: servers.iceServers.map(s => ({ 
+          urls: s.urls, 
+          hasCredential: !!(s.credential),
+          username: s.username
+        }))
+      });
 
       return servers;
 
     } catch (error) {
-      console.error('❌ Failed to get ICE servers from Twilio:', error);
-      console.log('🔄 Falling back to default ICE servers');
+      console.error('❌ TWILIO: Failed to get ICE servers:', error.message);
+      console.error('🔧 TWILIO: Error details:', {
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo
+      });
+      console.log('🔄 TWILIO: Falling back to default ICE servers');
       return this.getFallbackIceServers();
     }
   }
