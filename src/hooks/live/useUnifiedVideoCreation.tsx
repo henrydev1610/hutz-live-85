@@ -15,7 +15,7 @@ export const useUnifiedVideoCreation = () => {
 
   const createVideoElementUnified = useCallback(async (
     container: HTMLElement, 
-    stream: MediaStream,
+    stream: MediaStream | any,
     participantId: string
   ): Promise<HTMLVideoElement | null> => {
     if (!container || !stream) {
@@ -26,11 +26,17 @@ export const useUnifiedVideoCreation = () => {
     const containerId = container.id || `container-${participantId}`;
     const isMobile = detectMobileAggressively();
     
+    // 🚨 FASE 4: DETECTAR TWILIO VIDEO TRACK
+    const isTwilioTrack = stream && typeof stream.attach === 'function';
+    const streamInfo = isTwilioTrack ? 
+      { kind: stream.kind, enabled: stream.enabled, sid: stream.sid } :
+      { streamId: stream.id, tracks: stream.getTracks().length };
+
     console.log(`🎬 UNIFIED VIDEO: Creating video for ${participantId}`, {
       containerId,
       isMobile,
-      streamId: stream.id,
-      tracks: stream.getTracks().length
+      isTwilioTrack,
+      ...streamInfo
     });
 
     // Clear any existing video in container
@@ -77,9 +83,18 @@ export const useUnifiedVideoCreation = () => {
     const elId = videoElement.id || `video-${participantId}`;
     videoElement.id = elId;
     
-    console.log(`HOST-UI-ATTACH-START {id=${participantId}, elId=${elId}}`);
-    videoElement.srcObject = stream;
-    console.log(`HOST-UI-ATTACH-DONE {id=${participantId}, elId=${elId}, readyState=${videoElement.readyState}}`);
+    console.log(`HOST-UI-ATTACH-START {id=${participantId}, elId=${elId}, isTwilio=${isTwilioTrack}}`);
+    
+    // 🚨 FASE 4: USAR TWILIO .attach() OU srcObject BASEADO NO TIPO
+    if (isTwilioTrack) {
+      console.log(`🔥 TWILIO ATTACH: Usando track.attach() para ${participantId}`);
+      stream.attach(videoElement);
+      console.log(`HOST-UI-TWILIO-ATTACH-DONE {id=${participantId}, elId=${elId}, kind=${stream.kind}}`);
+    } else {
+      console.log(`📺 STANDARD ATTACH: Usando srcObject para ${participantId}`);
+      videoElement.srcObject = stream;
+      console.log(`HOST-UI-ATTACH-DONE {id=${participantId}, elId=${elId}, readyState=${videoElement.readyState}}`);
+    }
 
     // Unified event handling
     return new Promise((resolve) => {

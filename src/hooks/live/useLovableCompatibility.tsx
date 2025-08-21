@@ -75,15 +75,28 @@ export const useLovableCompatibility = () => {
   }, [state.isLovable]);
 
   // Função para processar stream baseado no ambiente
-  const processStreamForEnvironment = async (participantId: string, stream: MediaStream) => {
+  const processStreamForEnvironment = async (participantId: string, stream: MediaStream | any) => {
     if (!state.isInitialized) {
       console.warn('⚠️ LOVABLE COMPATIBILITY: Não inicializado ainda');
       return;
     }
 
+    // 🚨 FASE 2: TWILIO VIDEO BYPASS - Detectar e permitir Twilio direto
+    const isTwilioTrack = environmentDetector.isTwilioTrack(stream) || 
+                         environmentDetector.isTwilioVideoActive();
+    
+    if (isTwilioTrack) {
+      console.log(`🔥 TWILIO DIRECT MODE: Bypass do fallback para ${participantId}`, {
+        isTwilioSDK: environmentDetector.isTwilioVideoActive(),
+        hasAttachMethod: stream && typeof stream.attach === 'function'
+      });
+      return; // Não processar - deixar Twilio usar .attach() direto
+    }
+
     console.log(`🔄 LOVABLE COMPATIBILITY: Processando stream para ${participantId}`, {
       fallbackMode: state.fallbackMode,
-      isLovable: state.isLovable
+      isLovable: state.isLovable,
+      isTwilioTrack
     });
 
     switch (state.fallbackMode) {
@@ -106,8 +119,35 @@ export const useLovableCompatibility = () => {
   };
 
   // Função para criar elemento de vídeo compatível
-  const createCompatibleVideoElement = (container: HTMLElement, participantId: string): HTMLElement | null => {
+  const createCompatibleVideoElement = (container: HTMLElement, participantId: string, stream?: MediaStream | any): HTMLElement | null => {
     if (!state.isInitialized) return null;
+
+    // 🚨 FASE 3: TWILIO VIDEO BYPASS - Permitir criação direta de <video> para Twilio
+    const isTwilioTrack = (stream && environmentDetector.isTwilioTrack(stream)) || 
+                         environmentDetector.isTwilioVideoActive();
+    
+    if (isTwilioTrack && state.isLovable) {
+      console.log(`🔥 TWILIO DIRECT VIDEO: Criando <video> direto no Lovable para ${participantId}`);
+      const video = document.createElement('video');
+      video.autoplay = true;
+      video.playsInline = true;
+      video.muted = true;
+      video.controls = false;
+      video.className = 'w-full h-full object-cover absolute inset-0 z-10';
+      video.style.cssText = `
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        z-index: 10 !important;
+        background-color: transparent !important;
+      `;
+      container.appendChild(video);
+      return video; // Twilio usará .attach() neste elemento
+    }
 
     switch (state.fallbackMode) {
       case 'canvas':
@@ -150,6 +190,11 @@ export const useLovableCompatibility = () => {
     shouldUseFallback: state.requiresFallback,
     isCanvasMode: state.fallbackMode === 'canvas',
     isHttpMode: state.fallbackMode === 'http',
-    isDirectMode: state.fallbackMode === 'none'
+    isDirectMode: state.fallbackMode === 'none',
+    
+    // Twilio específico
+    supportsTwilioVideo: environmentDetector.supportsTwilioVideo(),
+    isTwilioActive: environmentDetector.isTwilioVideoActive(),
+    isTwilioTrack: environmentDetector.isTwilioTrack.bind(environmentDetector)
   };
 };

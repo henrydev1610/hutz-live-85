@@ -36,9 +36,15 @@ export class LovableWebRTCBridge {
   }
 
   // FASE 3: Converter MediaStream para dados transferíveis
-  public async convertStreamToTransferable(participantId: string, stream: MediaStream): Promise<void> {
+  public async convertStreamToTransferable(participantId: string, stream: MediaStream | any): Promise<void> {
     if (!this.isLovableEnvironment) {
       console.log(`✅ Ambiente padrão: usando srcObject diretamente para ${participantId}`);
+      return;
+    }
+
+    // 🚨 TWILIO BYPASS: Não processar tracks do Twilio Video - eles usam .attach() direto
+    if (stream && typeof stream.attach === 'function') {
+      console.log(`🔥 TWILIO BYPASS: Ignorando processamento de canvas para track Twilio ${participantId}`);
       return;
     }
 
