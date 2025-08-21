@@ -42,7 +42,7 @@ export class SignalingHandler {
     }
     
     console.log('✅ [SIG] Using ConnectionHandler for PeerConnection');
-    const peerConnection = this.connectionHandler.createPeerConnection(participantId);
+    const peerConnection = await this.connectionHandler.createPeerConnection(participantId);
     
     try {
       if (targetUserId === 'host' && DEBUG) {

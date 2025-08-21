@@ -29,7 +29,9 @@
     "uuid": "^9.0.1",
     "qrcode": "^1.5.3",
     "@socket.io/redis-adapter": "^8.2.1",
-    "redis": "^4.6.11"
+    "redis": "^4.6.11",
+    "twilio": "^4.20.0",
+    "node-cache": "^5.1.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.2",

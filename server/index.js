@@ -5,6 +5,8 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const roomsRouter = require('./routes/rooms');
+const twilioRouter = require('./routes/twilio');
+const twilioTokenService = require('./services/twilioTokenService');
 const { initializeSocketHandlers } = require('./signaling/socket');
 
 // Carregar variáveis de ambiente
@@ -130,6 +132,9 @@ if (process.env.REDIS_URL) {
   }
 }
 
+// Inicializar Twilio Token Service
+twilioTokenService.initialize();
+
 // Inicializar handlers do Socket.IO
 initializeSocketHandlers(io);
 
@@ -157,6 +162,7 @@ app.get('/', (req, res) => {
 
 // Rotas da API
 app.use('/api/rooms', roomsRouter);
+app.use('/api/twilio', twilioRouter);
 
 // Status endpoint com configurações
 app.get('/status', (req, res) => {

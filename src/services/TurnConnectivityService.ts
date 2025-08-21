@@ -43,12 +43,16 @@ class TurnConnectivityService {
   }
 
   constructor() {
-    this.loadTurnServers();
+    this.initializeAsync();
+  }
+
+  private async initializeAsync() {
+    await this.loadTurnServers();
     this.startHealthMonitoring();
   }
 
-  private loadTurnServers() {
-    const config = getWebRTCConfig();
+  private async loadTurnServers() {
+    const config = await getWebRTCConfig();
     this.turnServers = config.iceServers?.filter(server => 
       Array.isArray(server.urls) 
         ? server.urls.some(url => url.startsWith('turn:'))

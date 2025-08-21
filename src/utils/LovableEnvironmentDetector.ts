@@ -100,7 +100,7 @@ export class LovableEnvironmentDetector {
     try {
       // FASE 2: Padronizar para usar configuração global do sistema
       const { getActiveWebRTCConfig } = await import('@/utils/webrtc/WebRTCConfig');
-      const config = getActiveWebRTCConfig();
+      const config = await getActiveWebRTCConfig();
       const pc = new RTCPeerConnection(config);
       await pc.close();
       console.log('✅ RTCPeerConnection funcional com configuração padrão do sistema');
