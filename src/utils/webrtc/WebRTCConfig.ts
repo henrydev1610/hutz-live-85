@@ -20,24 +20,20 @@ const STUN_ONLY_FALLBACK: RTCConfiguration = {
     { urls: 'stun:stun.cloudflare.com:3478' },
   // credenciais turn da twilio adicionadas no iceServers
   {
-    url: 'stun:global.stun.twilio.com:3478',
     urls: 'stun:global.stun.twilio.com:3478'
   },
   {
     credential: 'wZcIQonQHjmSdjbXOYD5s7NN+ELMKW61UVyZQigiem4=',
-    url: 'turn:global.turn.twilio.com:3478?transport=udp',
     urls: 'turn:global.turn.twilio.com:3478?transport=udp',
     username: '07ca22aa27ab7cd941eff000d059e2c5c2a386a82c64f428817817044f515d80'
   },
   {
     credential: 'wZcIQonQHjmSdjbXOYD5s7NN+ELMKW61UVyZQigiem4=',
-    url: 'turn:global.turn.twilio.com:3478?transport=tcp',
     urls: 'turn:global.turn.twilio.com:3478?transport=tcp',
     username: '07ca22aa27ab7cd941eff000d059e2c5c2a386a82c64f428817817044f515d80'
   },
   {
     credential: 'wZcIQonQHjmSdjbXOYD5s7NN+ELMKW61UVyZQigiem4=',
-    url: 'turn:global.turn.twilio.com:443?transport=tcp',
     urls: 'turn:global.turn.twilio.com:443?transport=tcp',
     username: '07ca22aa27ab7cd941eff000d059e2c5c2a386a82c64f428817817044f515d80'
   }
