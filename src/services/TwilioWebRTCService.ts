@@ -46,17 +46,55 @@ class TwilioWebRTCService {
   }
 
   private async initializeService() {
-    try {
-      // Verificar se Twilio está disponível no backend
-      const response = await fetch(`${getBackendBaseURL()}/api/twilio/stats`);
-      if (response.ok) {
-        const data = await response.json();
-        this.state.isEnabled = data.service?.initialized || false;
-        console.log(`🎭 Twilio Service: ${this.state.isEnabled ? 'Enabled' : 'Disabled'}`);
+    const maxRetries = 3;
+    let attempt = 0;
+    
+    while (attempt < maxRetries) {
+      try {
+        attempt++;
+        console.log(`🌐 TWILIO: Initialization attempt ${attempt}/${maxRetries}...`);
+        
+        // Timeout mais robusto para inicialização
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+        
+        const response = await fetch(`${getBackendBaseURL()}/api/twilio/stats`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          const data = await response.json();
+          this.state.isEnabled = data.service?.initialized || false;
+          
+          console.log(`✅ TWILIO: Service initialized - ${this.state.isEnabled ? 'ENABLED' : 'DISABLED'}`, {
+            attempt: attempt,
+            backendInitialized: data.service?.initialized,
+            uptime: data.uptime,
+            environment: data.environment
+          });
+          
+          return; // Sucesso!
+        } else {
+          throw new Error(`Backend stats failed: HTTP ${response.status} ${response.statusText}`);
+        }
+      } catch (error) {
+        console.error(`🚨 TWILIO: Initialization attempt ${attempt} failed:`, error);
+        
+        if (attempt >= maxRetries) {
+          console.error('❌ TWILIO: All initialization attempts failed - service disabled');
+          this.state.isEnabled = false;
+          return;
+        }
+        
+        // Backoff exponencial
+        const waitTime = Math.pow(2, attempt) * 1000;
+        console.log(`⏳ TWILIO: Retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
       }
-    } catch (error) {
-      console.warn('⚠️ Twilio service initialization failed:', error);
-      this.state.isEnabled = false;
     }
   }
 
@@ -113,10 +151,12 @@ class TwilioWebRTCService {
     }
   }
 
-  // Obter ICE servers do Twilio
+  // Obter ICE servers do Twilio - Versão aprimorada para migração 100%
   async getIceServers(): Promise<RTCIceServer[]> {
+    console.log('🌐 TWILIO: Attempting to get ICE servers (migration mode)...');
+    
     if (!this.isTwilioEnabled()) {
-      console.log('🚫 Twilio disabled, using fallback ICE servers');
+      console.warn('🚫 TWILIO: Service disabled, using STUN-only fallback');
       return this.getFallbackIceServers();
     }
 
@@ -127,34 +167,58 @@ class TwilioWebRTCService {
     }
 
     try {
-      const response = await fetch(`${getBackendBaseURL()}/api/twilio/ice-servers`);
+      console.log('🌐 TWILIO: Fetching fresh ICE servers from backend...');
       
+      // Timeout mais robusto para a migração
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+      
+      const response = await fetch(`${getBackendBaseURL()}/api/twilio/ice-servers`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        throw new Error(`ICE servers request failed: ${response.status}`);
+        throw new Error(`ICE servers request failed: HTTP ${response.status} ${response.statusText}`);
       }
 
       const data: TwilioIceServersResponse = await response.json();
+      
+      if (!data.success || !data.iceServers || !Array.isArray(data.iceServers) || data.iceServers.length === 0) {
+        throw new Error(`Invalid Twilio ICE servers response: ${JSON.stringify(data)}`);
+      }
       
       // Cache dos ICE servers
       this.state.cachedIceServers = data;
       this.state.lastIceServersFetch = Date.now();
 
-      console.log(`✅ Twilio ICE servers fetched (${data.source})`);
+      console.log(`✅ TWILIO: ICE servers retrieved successfully (${data.source})`, {
+        count: data.iceServers.length,
+        servers: data.iceServers.map(s => ({ 
+          urls: s.urls, 
+          hasCredential: !!(s as any).credential 
+        }))
+      });
+      
       if (data.warning) {
-        console.warn(`⚠️ ${data.warning}`);
+        console.warn(`⚠️ TWILIO WARNING: ${data.warning}`);
       }
 
       return data.iceServers;
 
     } catch (error) {
-      console.error('❌ Failed to fetch Twilio ICE servers:', error);
-      console.log('🔄 Falling back to default ICE servers');
+      console.error('🚨 TWILIO: Failed to fetch ICE servers:', error);
+      console.log('🚨 FALLBACK: Using STUN-only servers');
       return this.getFallbackIceServers();
     }
   }
 
-  // ICE servers de fallback (Metered.ca + STUN)
+  // ICE servers de fallback - STUN APENAS (Migração 100% Twilio)
   private getFallbackIceServers(): RTCIceServer[] {
+    console.log('🚨 FALLBACK: Using STUN-only servers (Twilio migration mode)');
     return [
       // Google STUN servers
       { urls: 'stun:stun.l.google.com:19302' },
@@ -162,29 +226,10 @@ class TwilioWebRTCService {
       { urls: 'stun:stun2.l.google.com:19302' },
       
       // Cloudflare STUN
-      { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: 'stun:stun.cloudflare.com:3478' }
       
-      // Metered.ca TURN servers (backup)
-      { 
-        urls: 'turn:a.relay.metered.ca:80', 
-        username: '76db9f87433b9f3e608e6e95', 
-        credential: 'vFE0f16Bv6vF7aEF' 
-      },
-      { 
-        urls: 'turn:a.relay.metered.ca:443', 
-        username: '76db9f87433b9f3e608e6e95', 
-        credential: 'vFE0f16Bv6vF7aEF' 
-      },
-      { 
-        urls: 'turn:a.relay.metered.ca:80?transport=tcp', 
-        username: '76db9f87433b9f3e608e6e95', 
-        credential: 'vFE0f16Bv6vF7aEF' 
-      },
-      { 
-        urls: 'turn:a.relay.metered.ca:443?transport=tcp', 
-        username: '76db9f87433b9f3e608e6e95', 
-        credential: 'vFE0f16Bv6vF7aEF' 
-      }
+      // 🚫 REMOVIDO: Metered.ca TURN servers (migração 100% Twilio)
+      // Apenas Twilio deve fornecer TURN servers
     ];
   }
 

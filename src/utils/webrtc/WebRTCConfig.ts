@@ -1,29 +1,23 @@
 import { twilioWebRTCService } from '../../services/TwilioWebRTCService';
 
-// Mantém ICE dinâmico aqui em memória (setado quando o backend envia via socket)
+// MIGRAÇÃO 100% TWILIO - Forçando uso exclusivo da Twilio
 let dynamicIceServers: RTCIceServer[] | null = null;
 let relayOnly = false;
-let preferTwilio = true; // Feature flag para migração gradual
+let forceTwilioOnly = true; // 🎯 MIGRAÇÃO: Forçar APENAS Twilio
 
-// Configuração de fallback robusta com STUN/TURN
-const FALLBACK_CONFIG: RTCConfiguration = {
+// Configuração STUN-only para emergência (sem TURN do Metered.ca)
+const STUN_ONLY_FALLBACK: RTCConfiguration = {
   iceServers: [
-    // Google STUN servers (free)
+    // Google STUN servers (free) - apenas para emergência
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-
-    // Cloudflare STUN (backup)
-    { urls: 'stun:stun.cloudflare.com:3478' },
-
-    // Metered TURN servers (atualizados)
-  { urls: 'turn:a.relay.metered.ca:80', username: '76db9f87433b9f3e608e6e95', credential: 'vFE0f16Bv6vF7aEF' },
-  { urls: 'turn:a.relay.metered.ca:443', username: '76db9f87433b9f3e608e6e95', credential: 'vFE0f16Bv6vF7aEF' },
-  { urls: 'turn:a.relay.metered.ca:80?transport=tcp', username: '76db9f87433b9f3e608e6e95', credential: 'vFE0f16Bv6vF7aEF' },
-  { urls: 'turn:a.relay.metered.ca:443?transport=tcp', username: '76db9f87433b9f3e608e6e95', credential: 'vFE0f16Bv6vF7aEF' }
-
+    
+    // Cloudflare STUN (backup)  
+    { urls: 'stun:stun.cloudflare.com:3478' }
+    // 🚫 REMOVIDO: Metered.ca TURN servers (migração 100% Twilio)
   ],
   iceCandidatePoolSize: 10
 };
@@ -42,34 +36,49 @@ export function setDynamicIceServers(servers: RTCIceServer[], opts?: { relayOnly
   if (typeof opts?.relayOnly === 'boolean') relayOnly = !!opts.relayOnly;
 }
 
-// Use SEMPRE este getter na hora de criar o RTCPeerConnection
+// 🎯 MIGRAÇÃO 100% TWILIO - Configuração exclusiva
 export async function getWebRTCConfig(): Promise<RTCConfiguration> {
+  console.log('🌐 TWILIO-ONLY: Starting WebRTC config initialization...');
+  
   let iceServers: RTCIceServer[] = [];
+  let usingTwilio = false;
 
-  // Tentar buscar ICE servers do Twilio primeiro (se habilitado)
-  if (preferTwilio && twilioWebRTCService.isTwilioEnabled()) {
+  // 🎯 FASE 1: TENTAR TWILIO (OBRIGATÓRIO)
+  if (forceTwilioOnly) {
     try {
-      console.log('🎭 Attempting to use Twilio ICE servers...');
+      console.log('🌐 TWILIO: Fetching ICE servers (100% migration mode)...');
+      
+      // Verificar se Twilio está inicializado
+      if (!twilioWebRTCService.isTwilioEnabled()) {
+        console.warn('⚠️ TWILIO: Service not initialized, enabling Twilio...');
+        twilioWebRTCService.enableTwilio(true);
+      }
+      
       iceServers = await twilioWebRTCService.getIceServers();
-      console.log('✅ Using Twilio ICE servers');
+      
+      if (iceServers && iceServers.length > 0) {
+        console.log('✅ TWILIO: Successfully retrieved ICE servers:', iceServers.length);
+        usingTwilio = true;
+      }
     } catch (error) {
-      console.warn('⚠️ Twilio ICE servers failed, falling back to dynamic/static:', error);
+      console.error('🚨 TWILIO: Failed to get ICE servers:', error);
     }
   }
 
-  // Fallback para ICE servers dinâmicos ou estáticos
-  if (!iceServers.length) {
-    iceServers = dynamicIceServers?.length ? dynamicIceServers : FALLBACK_CONFIG.iceServers;
-    console.log('🔄 Using fallback ICE servers');
+  // 🚨 EMERGÊNCIA: Se Twilio falhar completamente, usar apenas STUN
+  if (!usingTwilio) {
+    console.warn('🚨 FALLBACK: Twilio unavailable, using STUN-only mode');
+    iceServers = STUN_ONLY_FALLBACK.iceServers;
   }
 
   const cfg: RTCConfiguration = {
     iceServers,
-    iceCandidatePoolSize: 10,
+    iceCandidatePoolSize: usingTwilio ? 15 : 5, // Maior pool para Twilio
   };
   
   if (relayOnly) cfg.iceTransportPolicy = 'relay';
   
+  console.log(`🎯 WEBRTC CONFIG: ${usingTwilio ? 'Twilio' : 'STUN-only'} | Servers: ${iceServers.length}`);
   return cfg;
 }
 
@@ -80,13 +89,13 @@ export async function getActiveWebRTCConfig(): Promise<RTCConfiguration> {
 
 // Controles de feature flag
 export function setTwilioPreference(enabled: boolean) {
-  preferTwilio = enabled;
+  forceTwilioOnly = enabled;
   twilioWebRTCService.enableTwilio(enabled);
   console.log(`🎛️ Twilio preference: ${enabled ? 'ON' : 'OFF'}`);
 }
 
 export function getTwilioPreference(): boolean {
-  return preferTwilio && twilioWebRTCService.isTwilioEnabled();
+  return forceTwilioOnly && twilioWebRTCService.isTwilioEnabled();
 }
 
 // Caso queira forçar relay em algum cenário específico (ex.: ambiente Lovable)
@@ -94,26 +103,27 @@ export function useRelayOnly(enable = true) {
   relayOnly = enable;
 }
 
-// Para fluxos que exigem obrigatoriamente TURN (NAT extremo)
+// Para fluxos que exigem obrigatoriamente TURN (NAT extremo) - Simplificado para Twilio
 export async function getTurnOnlyConfig(): Promise<RTCConfiguration> {
-  let iceServers: RTCIceServer[] = [];
-
-  // Tentar Twilio primeiro para TURN-only
-  if (preferTwilio && twilioWebRTCService.isTwilioEnabled()) {
-    try {
-      iceServers = await twilioWebRTCService.getIceServers();
-      console.log('✅ Using Twilio TURN servers for relay-only config');
-    } catch (error) {
-      console.warn('⚠️ Twilio TURN failed, using fallback for relay-only:', error);
+  console.log('🎯 TURN-ONLY: Using Twilio for relay-only configuration...');
+  
+  // Tentar buscar do Twilio
+  try {
+    const iceServers = await twilioWebRTCService.getIceServers();
+    if (iceServers && iceServers.length > 0) {
+      return {
+        iceServers,
+        iceTransportPolicy: 'relay',
+        iceCandidatePoolSize: 10,
+      };
     }
+  } catch (error) {
+    console.warn('⚠️ TWILIO TURN failed, using STUN fallback:', error);
   }
 
-  if (!iceServers.length) {
-    iceServers = dynamicIceServers ?? FALLBACK_CONFIG.iceServers;
-  }
-
+  // Fallback: apenas STUN (sem TURN)
   return {
-    iceServers,
+    iceServers: STUN_ONLY_FALLBACK.iceServers,
     iceTransportPolicy: 'relay',
     iceCandidatePoolSize: 5,
   };
@@ -125,9 +135,27 @@ export const MEDIA_CONSTRAINTS = {
   audio: true
 };
 
-// Helper de debug no console (agora async)
+// 🎯 Debug commands para migração 100% Twilio
 if (typeof window !== 'undefined') {
   (window as any).__webrtcCfg = async () => await getWebRTCConfig();
   (window as any).__twilioToggle = (enabled: boolean) => setTwilioPreference(enabled);
   (window as any).__twilioStatus = () => twilioWebRTCService.getServiceStats();
+  (window as any).__twilioTest = async () => {
+    console.log('🧪 TESTING Twilio migration...');
+    const config = await getWebRTCConfig();
+    const stats = twilioWebRTCService.getServiceStats();
+    const diagnostic = await twilioWebRTCService.runConnectivityDiagnostic();
+    
+    return {
+      webrtcConfig: config,
+      twilioStats: stats,
+      connectivityDiagnostic: diagnostic,
+      migrationMode: forceTwilioOnly
+    };
+  };
+  (window as any).__forceTwilioRefresh = async () => {
+    console.log('🔄 Forcing Twilio cache refresh...');
+    await twilioWebRTCService.refreshCache();
+    return await twilioWebRTCService.getServiceStats();
+  };
 }
