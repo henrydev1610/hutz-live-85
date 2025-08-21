@@ -163,6 +163,25 @@ export const MEDIA_CONSTRAINTS = {
     (window as any).__webrtcCfg = async () => await getWebRTCConfig();
     (window as any).__twilioToggle = (enabled: boolean) => setTwilioPreference(enabled);
     (window as any).__twilioStatus = () => twilioWebRTCService.getServiceStats();
+    
+    // TURN Connectivity Debug Commands
+    (window as any).__turnTest = async () => {
+      console.log('🧊 TESTING TURN connectivity...');
+      const { turnConnectivityService } = await import('@/services/TurnConnectivityService');
+      return await turnConnectivityService.forceRefresh();
+    };
+    (window as any).__turnStatus = async () => {
+      const { turnConnectivityService } = await import('@/services/TurnConnectivityService');
+      return turnConnectivityService.getLastDiagnostic();
+    };
+    (window as any).__turnHealth = async () => {
+      const { turnConnectivityService } = await import('@/services/TurnConnectivityService');
+      return {
+        isHealthy: turnConnectivityService.isHealthy(),
+        workingServers: turnConnectivityService.getWorkingServerCount(),
+        lastDiagnostic: turnConnectivityService.getLastDiagnostic()
+      };
+    };
     (window as any).__twilioTest = async () => {
       console.log('🧪 TESTING Twilio migration...');
       const config = await getWebRTCConfig();
