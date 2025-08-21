@@ -46,7 +46,7 @@ class TwilioWebRTCService {
   }
 
   private async initializeService() {
-    const maxRetries = 3;
+    const maxRetries = 5;
     let attempt = 0;
     
     console.log('🚀 TWILIO: Starting frontend service initialization...');
@@ -57,9 +57,9 @@ class TwilioWebRTCService {
         attempt++;
         console.log(`🌐 TWILIO: Initialization attempt ${attempt}/${maxRetries}...`);
         
-        // FASE 2: Verificação mais robusta de credenciais Twilio
+        // FASE 1: Verificação de conectividade com backend
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
         
         try {
           // Teste de conectividade básica primeiro

@@ -12,6 +12,7 @@ import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
 import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
+import { useTwilioVideoIntegration } from '@/hooks/live/useTwilioVideoIntegration';
 import { generateSessionId } from '@/utils/sessionUtils';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
@@ -23,6 +24,27 @@ const LivePage: React.FC = () => {
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
+  
+  // Generate identity for Twilio
+  const identity = React.useMemo(() => {
+    return `host-${Math.random().toString(36).substr(2, 9)}`;
+  }, []);
+
+  // Initialize Twilio Video integration for host
+  const twilioVideo = useTwilioVideoIntegration({
+    sessionId: state.sessionId,
+    identity,
+    isHost: true
+  });
+
+  React.useEffect(() => {
+    console.log('🎥 LIVE PAGE: Twilio Video state:', {
+      isConnected: twilioVideo.isConnected,
+      isConnecting: twilioVideo.isConnecting,
+      participantCount: twilioVideo.participants.length,
+      error: twilioVideo.error
+    });
+  }, [twilioVideo.isConnected, twilioVideo.isConnecting, twilioVideo.participants.length, twilioVideo.error]);
   
   // Auto-geração de QR Code quando sessionId existir
   useAutoQRGeneration({ 
