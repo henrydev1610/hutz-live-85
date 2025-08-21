@@ -397,44 +397,67 @@ export class UnifiedWebRTCManager {
   cleanup(): void {
     console.log('🧹 UNIFIED: Cleaning up WebRTC manager');
 
-    // Clear connection timeouts
-    this.connectionTimeouts.forEach(timeout => clearTimeout(timeout));
-    this.connectionTimeouts.clear();
+    // FASE 1: Cleanup mais robusto para evitar "relay already exists"
+    try {
+      // Clear connection timeouts
+      this.connectionTimeouts.forEach(timeout => clearTimeout(timeout));
+      this.connectionTimeouts.clear();
 
-    // Clear retry timeouts
-    this.retryTimeouts.forEach(timeout => clearTimeout(timeout));
-    this.retryTimeouts.clear();
-    this.retryAttempts.clear();
+      // Clear retry timeouts
+      this.retryTimeouts.forEach(timeout => clearTimeout(timeout));
+      this.retryTimeouts.clear();
+      this.retryAttempts.clear();
 
-    // Clear ICE candidate buffers
-    this.iceCandidateBuffer.clear();
+      // Clear ICE candidate buffers
+      this.iceCandidateBuffer.clear();
 
-    // Clear health monitoring
-    if (this.healthCheckInterval) {
-      clearInterval(this.healthCheckInterval);
-      this.healthCheckInterval = null;
-    }
+      // Clear health monitoring
+      if (this.healthCheckInterval) {
+        clearInterval(this.healthCheckInterval);
+        this.healthCheckInterval = null;
+      }
 
-    // Close peer connections
-    this.peerConnections.forEach(pc => pc.close());
-    this.peerConnections.clear();
+      // FASE 1: Close peer connections com try-catch individual
+      this.peerConnections.forEach((pc, participantId) => {
+        try {
+          if (pc.connectionState !== 'closed') {
+            console.log(`🔥 CLEANUP: Closing connection for ${participantId}`);
+            pc.close();
+          }
+        } catch (error) {
+          console.warn(`⚠️ CLEANUP: Error closing ${participantId}:`, error);
+        }
+      });
+      this.peerConnections.clear();
 
-    // Reset state
-    this.connectionState = {
-      websocket: 'disconnected',
-      webrtc: 'disconnected',
-      overall: 'disconnected'
-    };
+      // FASE 1: Clear global relay references se existir
+      if (typeof window !== 'undefined') {
+        // Clear any global WebRTC references that might cause "relay already exists"
+        delete (window as any).__webrtcRelays;
+        delete (window as any).__activeConnections;
+      }
 
-    this.connectionMetrics.clear();
-    this.roomId = null;
-    this.participantId = null;
-    this.isHost = false;
-    this.webrtcReady = false;
+      // Reset state
+      this.connectionState = {
+        websocket: 'disconnected',
+        webrtc: 'disconnected',
+        overall: 'disconnected'
+      };
 
-    // Disconnect WebSocket
-    if (unifiedWebSocketService.isConnected()) {
-      unifiedWebSocketService.disconnect();
+      this.connectionMetrics.clear();
+      this.roomId = null;
+      this.participantId = null;
+      this.isHost = false;
+      this.webrtcReady = false;
+
+      // Disconnect WebSocket
+      if (unifiedWebSocketService.isConnected()) {
+        unifiedWebSocketService.disconnect();
+      }
+
+      console.log('✅ UNIFIED: Cleanup completed successfully');
+    } catch (error) {
+      console.error('❌ UNIFIED: Error during cleanup:', error);
     }
   }
 

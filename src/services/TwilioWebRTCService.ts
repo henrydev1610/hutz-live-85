@@ -57,53 +57,92 @@ class TwilioWebRTCService {
         attempt++;
         console.log(`🌐 TWILIO: Initialization attempt ${attempt}/${maxRetries}...`);
         
-        // Teste de conectividade básica primeiro
-        const healthCheck = await fetch(`${getBackendBaseURL()}/health`, { method: 'GET' });
-        if (!healthCheck.ok) {
-          throw new Error(`Backend health check failed: ${healthCheck.status}`);
-        }
-        console.log('✅ TWILIO: Backend is accessible');
-        
-        // Timeout mais robusto para inicialização
+        // FASE 2: Verificação mais robusta de credenciais Twilio
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
         
-        const response = await fetch(`${getBackendBaseURL()}/api/twilio/stats`, {
-          method: 'GET',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Origin': window.location.origin
-          },
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-          const data = await response.json();
-          this.state.isEnabled = data.service?.initialized || false;
+        try {
+          // Teste de conectividade básica primeiro
+          const healthCheck = await fetch(`${getBackendBaseURL()}/health`, { 
+            method: 'GET',
+            signal: controller.signal
+          });
+          if (!healthCheck.ok) {
+            throw new Error(`Backend health check failed: ${healthCheck.status}`);
+          }
+          console.log('✅ TWILIO: Backend is accessible');
           
-          console.log(`✅ TWILIO: Service initialized - ${this.state.isEnabled ? 'ENABLED' : 'DISABLED'}`, {
-            attempt: attempt,
-            backendInitialized: data.service?.initialized,
-            uptime: data.uptime,
-            environment: data.environment,
-            cache: data.cache
+          // Verificar se credenciais Twilio estão configuradas
+          const credentialCheck = await fetch(`${getBackendBaseURL()}/api/twilio-test/credentials`, {
+            method: 'GET',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Origin': window.location.origin
+            },
+            signal: controller.signal
           });
           
-          // Log mais detalhado sobre o estado do serviço
-          if (!this.state.isEnabled) {
-            console.warn('⚠️ TWILIO: Backend service not initialized - check server logs');
-            console.warn('🔧 TWILIO: Verify credentials in server/.env');
-            console.warn('📋 TWILIO: Check server console for credential validation');
-          } else {
-            console.log('🎯 TWILIO: Service ready for token generation and ICE servers');
+          if (credentialCheck.ok) {
+            const credData = await credentialCheck.json();
+            console.log('🔑 TWILIO: Credential check result:', credData.report);
+            
+            if (!credData.report?.validCredentials) {
+              console.warn('⚠️ TWILIO: Invalid credentials detected - service may be limited');
+            }
           }
           
-          return; // Sucesso!
-        } else {
-          const errorText = await response.text();
-          throw new Error(`Backend stats failed: HTTP ${response.status} ${response.statusText} - ${errorText}`);
+          // Verificar status do serviço
+          const response = await fetch(`${getBackendBaseURL()}/api/twilio/stats`, {
+            method: 'GET',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Origin': window.location.origin
+            },
+            signal: controller.signal
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (response.ok) {
+            const data = await response.json();
+            this.state.isEnabled = data.service?.initialized || false;
+            
+            console.log(`✅ TWILIO: Service initialized - ${this.state.isEnabled ? 'ENABLED' : 'DISABLED'}`, {
+              attempt: attempt,
+              backendInitialized: data.service?.initialized,
+              uptime: data.uptime,
+              environment: data.environment,
+              cache: data.cache
+            });
+            
+            // FASE 2: Log detalhado sobre estado das credenciais
+            if (!this.state.isEnabled) {
+              console.warn('⚠️ TWILIO: Backend service not initialized');
+              console.warn('🔧 TWILIO: Check server/.env for valid Twilio credentials:');
+              console.warn('   TWILIO_ACCOUNT_SID=ACxxxxxxxxxxx');
+              console.warn('   TWILIO_AUTH_TOKEN=xxxxxxxxxx');
+              console.warn('   TWILIO_API_KEY=SKxxxxxxxxxx');
+              console.warn('   TWILIO_API_SECRET=xxxxxxxxxx');
+              console.warn('📋 TWILIO: Check server console for credential validation errors');
+            } else {
+              console.log('🎯 TWILIO: Service ready for token generation and ICE servers');
+              
+              // FASE 2: Teste imediato de ICE servers para validação
+              try {
+                const testServers = await this.getIceServers();
+                console.log(`✅ TWILIO: ICE servers test successful - ${testServers.length} servers available`);
+              } catch (testError) {
+                console.warn('⚠️ TWILIO: ICE servers test failed:', testError);
+              }
+            }
+            
+            return; // Sucesso!
+          } else {
+            const errorText = await response.text();
+            throw new Error(`Backend stats failed: HTTP ${response.status} ${response.statusText} - ${errorText}`);
+          }
+        } finally {
+          clearTimeout(timeoutId);
         }
       } catch (error) {
         console.error(`🚨 TWILIO: Initialization attempt ${attempt} failed:`, error);
@@ -116,15 +155,18 @@ class TwilioWebRTCService {
           console.error('🔧 TWILIO: Ensure server is running and accessible');
         } else if (error.message.includes('health check failed')) {
           console.error('🚨 TWILIO: Backend is not responding to health checks');
+        } else if (error.message.includes('credentials')) {
+          console.error('🔑 TWILIO: Credential validation failed - check server/.env');
         }
         
         if (attempt >= maxRetries) {
           console.error('❌ TWILIO: All initialization attempts failed - service disabled');
           console.error('🔧 TWILIO: Troubleshooting steps:');
-          console.error('   1. Check if backend server is running');
+          console.error('   1. Check if backend server is running on port 3001');
           console.error('   2. Verify backend URL in environment variables');
           console.error('   3. Check CORS configuration');
-          console.error('   4. Verify Twilio credentials in server/.env');
+          console.error('   4. Verify ALL Twilio credentials in server/.env');
+          console.error('   5. Check server logs for specific errors');
           this.state.isEnabled = false;
           return;
         }

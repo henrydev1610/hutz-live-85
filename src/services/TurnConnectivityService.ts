@@ -52,14 +52,39 @@ class TurnConnectivityService {
   }
 
   private async loadTurnServers() {
-    const config = await getWebRTCConfig();
-    this.turnServers = config.iceServers?.filter(server => 
-      Array.isArray(server.urls) 
-        ? server.urls.some(url => url.startsWith('turn:'))
-        : typeof server.urls === 'string' && server.urls.startsWith('turn:')
-    ) || [];
-    
-    console.log('🧊 [TURN] Loaded TURN servers:', this.turnServers.length);
+    try {
+      // FASE 2: Carregar primeiro do Twilio, depois fallback
+      console.log('🧊 [TURN] Loading servers from Twilio...');
+      const { twilioWebRTCService } = await import('@/services/TwilioWebRTCService');
+      
+      if (twilioWebRTCService.isTwilioEnabled()) {
+        const twilioServers = await twilioWebRTCService.getIceServers();
+        const turnServers = twilioServers.filter(server => 
+          Array.isArray(server.urls) 
+            ? server.urls.some(url => url.startsWith('turn:'))
+            : typeof server.urls === 'string' && server.urls.startsWith('turn:')
+        );
+        
+        if (turnServers.length > 0) {
+          this.turnServers = turnServers;
+          console.log('✅ [TURN] Loaded Twilio TURN servers:', turnServers.length);
+          return;
+        }
+      }
+      
+      // Fallback para config tradicional se Twilio falhar
+      const config = await getWebRTCConfig();
+      this.turnServers = config.iceServers?.filter(server => 
+        Array.isArray(server.urls) 
+          ? server.urls.some(url => url.startsWith('turn:'))
+          : typeof server.urls === 'string' && server.urls.startsWith('turn:')
+      ) || [];
+      
+      console.log('🧊 [TURN] Loaded fallback TURN servers:', this.turnServers.length);
+    } catch (error) {
+      console.error('❌ [TURN] Failed to load TURN servers:', error);
+      this.turnServers = [];
+    }
   }
 
   // FASE 1: Teste automático de conectividade TURN
