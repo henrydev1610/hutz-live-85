@@ -8,10 +8,12 @@ import { secureContextEnforcer } from '@/utils/security/SecureContextEnforcer';
 import Index from './pages/Index';
 import Dashboard from './pages/Dashboard';
 import LivePage from './pages/LivePage';
+import NewLivePage from './pages/NewLivePage';
 import LightShowPage from './pages/LightShowPage';
 import QuizPage from './pages/QuizPage';
 import NotFound from './pages/NotFound';
 import ParticipantPage from './pages/ParticipantPage';
+import NewParticipantPage from './pages/NewParticipantPage';
 import TransmissionWindowPage from './pages/TransmissionWindowPage';
 
 function App() {
@@ -48,10 +50,10 @@ function App() {
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/live" element={<LivePage />} />
+        <Route path="/live" element={<NewLivePage />} />
         <Route path="/lightshow" element={<LightShowPage />} />
         <Route path="/quiz" element={<QuizPage />} />
-        <Route path="/participant/:sessionId" element={<ParticipantPage />} />
+        <Route path="/participant/:sessionId" element={<NewParticipantPage />} />
         <Route path="/transmission" element={<TransmissionWindowPage />} />
         <Route path="/404" element={<NotFound />} />
         <Route path="*" element={<Navigate to="/404" replace />} />
