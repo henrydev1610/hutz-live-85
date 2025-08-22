@@ -39,16 +39,23 @@ export class ConnectivityDiagnostics {
   async testTurnConnectivity(turnServer: RTCIceServer): Promise<boolean> {
     return new Promise((resolve) => {
       try {
-        console.log('🔍 CONNECTIVITY TEST: Testing TURN server:', turnServer.urls);
+        // CRÍTICO: Mostrar credenciais sendo usadas no teste
+        const serverInfo = {
+          urls: turnServer.urls,
+          username: turnServer.username || 'NO_USERNAME',
+          hasCredential: !!turnServer.credential
+        };
+        console.log('🔍 CONNECTIVITY TEST: Testing TURN server with credentials:', serverInfo);
         
-        // Usar server específico para teste TURN
+        // Usar server específico para teste TURN - MANTER OBJETO COMPLETO
         const pc = new RTCPeerConnection({
-          iceServers: [turnServer],
+          iceServers: [turnServer], // Objeto completo com username/credential
           iceTransportPolicy: 'relay'
         });
 
         let timeout: NodeJS.Timeout;
         let resolved = false;
+        let candidatesFound: string[] = [];
 
         const cleanup = () => {
           if (timeout) clearTimeout(timeout);
@@ -58,14 +65,15 @@ export class ConnectivityDiagnostics {
         const resolveOnce = (result: boolean) => {
           if (!resolved) {
             resolved = true;
+            console.log(`🔍 TURN TEST RESULT: ${result ? 'SUCCESS' : 'FAILED'} - Candidates found:`, candidatesFound);
             cleanup();
             resolve(result);
           }
         };
 
-        // PLANO: Timeout diferenciado por ambiente
+        // CORREÇÃO: Timeout aumentado para dar tempo ao TURN allocation
         const isDesktop = !navigator.userAgent.match(/Mobile|Android|iPhone|iPad/i);
-        const testTimeout = isDesktop ? 20000 : 12000; // 20s desktop, 12s mobile
+        const testTimeout = isDesktop ? 30000 : 20000; // 30s desktop, 20s mobile
         
         timeout = setTimeout(() => {
           console.log(`❌ CONNECTIVITY TEST: TURN test timeout (${testTimeout/1000}s) [${isDesktop ? 'DESKTOP' : 'MOBILE'}]`);
@@ -74,10 +82,22 @@ export class ConnectivityDiagnostics {
 
         pc.onicecandidate = (event) => {
           if (event.candidate) {
-            if (event.candidate.type === 'relay') {
-              console.log('✅ CONNECTIVITY TEST: TURN relay candidate found');
+            const candidate = event.candidate.candidate || '';
+            candidatesFound.push(`${event.candidate.type}:${candidate.substring(0, 50)}...`);
+            
+            // CORREÇÃO CRÍTICA: Detectar candidato relay pela string, não pelo type
+            if (candidate.includes(' relay ')) {
+              console.log('✅ CONNECTIVITY TEST: TURN relay candidate found:', candidate);
               this.turnTestResults.set(turnServer.urls as string, true);
               resolveOnce(true);
+            } else {
+              console.log('🔍 CONNECTIVITY TEST: ICE candidate (non-relay):', {
+                type: event.candidate.type,
+                protocol: event.candidate.protocol,
+                address: event.candidate.address,
+                port: event.candidate.port,
+                candidate: candidate.substring(0, 100)
+              });
             }
           }
         };

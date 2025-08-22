@@ -211,6 +211,15 @@ class TurnConnectivityService {
     const username = (server as any).username;
     const credential = (server as any).credential;
     
+    // CRÍTICO: Log detalhado das credenciais sendo testadas
+    const credentialInfo = {
+      url,
+      username: username || 'NO_USERNAME',
+      hasCredential: !!credential,
+      credentialLength: credential ? credential.length : 0
+    };
+    console.log('🧊 [TURN] Testing server with credentials:', credentialInfo);
+    
     // PLANO: Validação de credenciais antes do teste
     if (!username || !credential) {
       console.warn(`🧊 [TURN] Invalid credentials for ${url}`);
@@ -228,40 +237,8 @@ class TurnConnectivityService {
     const timeout = this.isDesktop ? this.DESKTOP_TURN_TIMEOUT : this.MOBILE_TURN_TIMEOUT;
 
     try {
-      // PLANO: Teste sequencial UDP primeiro, depois TCP
-      let isWorking = false;
-      
-      // Tentar UDP primeiro
-      try {
-        isWorking = await Promise.race([
-          this.testTurnProtocol(server, 'udp'),
-          new Promise<boolean>((_, reject) => 
-            setTimeout(() => reject(new Error('UDP Timeout')), timeout * 0.6) // 60% do tempo para UDP
-          )
-        ]);
-        
-        if (isWorking) {
-          console.log(`✅ [TURN] UDP success: ${url}`);
-        }
-      } catch (udpError) {
-        console.log(`⚠️ [TURN] UDP failed for ${url}, trying TCP: ${udpError}`);
-        
-        // Fallback para TCP se UDP falhar
-        try {
-          isWorking = await Promise.race([
-            this.testTurnProtocol(server, 'tcp'),
-            new Promise<boolean>((_, reject) => 
-              setTimeout(() => reject(new Error('TCP Timeout')), timeout * 0.4) // 40% restante para TCP
-            )
-          ]);
-          
-          if (isWorking) {
-            console.log(`✅ [TURN] TCP fallback success: ${url}`);
-          }
-        } catch (tcpError) {
-          throw new Error(`Both UDP and TCP failed: ${tcpError}`);
-        }
-      }
+      // CRÍTICO: Usar ConnectivityDiagnostics para teste mais robusto
+      const isWorking = await connectivityDiagnostics.testTurnConnectivity(server);
 
       const latency = Date.now() - startTime;
       
