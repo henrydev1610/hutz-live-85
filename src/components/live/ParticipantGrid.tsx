@@ -141,8 +141,9 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     };
   }, []);
 
-  // VIDEO CREATION REMOVED - Now handled by centralized StreamDisplayManager
-  // This grid only handles participant data, not video creation
+  // FASE 2: VIDEO CREATION COMPLETELY REMOVED FROM PARTICIPANT GRID
+  // All video creation is now handled by centralized StreamDisplayManager
+  // This component only manages participant data and UI state
 
   // Enhanced broadcast channel listener for better stream reception
   useEffect(() => {
