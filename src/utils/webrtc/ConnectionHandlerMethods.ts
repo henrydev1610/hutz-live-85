@@ -167,3 +167,110 @@ export function validateTransceiversPostNegotiation(
   
   return allValid;
 }
+
+// FASE 5: Métodos adicionais para detecção de rede e otimização
+export function detectRestrictiveNetwork(): boolean {
+  try {
+    // Verificar se está em ambiente corporativo
+    const userAgent = navigator.userAgent.toLowerCase();
+    const hostname = window.location.hostname;
+    
+    // Indicadores de rede corporativa/restritiva
+    const corporateIndicators = [
+      hostname.includes('.corp'),
+      hostname.includes('.internal'),
+      hostname.includes('localhost') && window.location.protocol === 'https:',
+      userAgent.includes('corporate'),
+      userAgent.includes('enterprise')
+    ];
+    
+    // Verificar connection API se disponível
+    const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+    if (connection) {
+      // Conexões lentas/limitadas podem indicar restrições
+      if (connection.effectiveType === '2g' || connection.effectiveType === 'slow-2g') {
+        console.log('🐌 [NETWORK] Slow connection detected - using TURN relay');
+        return true;
+      }
+      
+      if (connection.saveData) {
+        console.log('💾 [NETWORK] Data saver mode - using TURN relay');
+        return true;
+      }
+    }
+    
+    const hasIndicators = corporateIndicators.some(indicator => indicator);
+    if (hasIndicators) {
+      console.log('🏢 [NETWORK] Corporate network detected - using TURN relay');
+    }
+    
+    return hasIndicators;
+    
+  } catch (error) {
+    console.warn('⚠️ [NETWORK] Failed to detect network type:', error);
+    return false; // Default to allow direct connections
+  }
+}
+
+// FASE 5: Timeout inteligente baseado na qualidade da rede
+export function getAdaptiveTimeout(): number {
+  try {
+    const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+    
+    if (connection) {
+      switch (connection.effectiveType) {
+        case 'slow-2g':
+        case '2g':
+          return 45000; // 45s para conexões muito lentas
+        case '3g':
+          return 30000; // 30s para 3G
+        case '4g':
+        default:
+          return 20000; // 20s para 4G+ ou desconhecido
+      }
+    }
+    
+    return 25000; // Default 25s
+  } catch (error) {
+    return 25000; // Fallback conservador
+  }
+}
+
+// FASE 5: Priorização inteligente de servidores ICE
+export function prioritizeIceServers(servers: RTCIceServer[]): RTCIceServer[] {
+  // Separar por tipo
+  const turnServers = servers.filter(s => 
+    (s.urls as string).includes('turn:') || 
+    (s.urls as string).includes('turns:')
+  );
+  const stunServers = servers.filter(s => 
+    (s.urls as string).includes('stun:')
+  );
+  
+  // Priorizar TURN UDP > TURN TCP > TURN TLS > STUN
+  const prioritizedTurn = turnServers.sort((a, b) => {
+    const aUrl = a.urls as string;
+    const bUrl = b.urls as string;
+    
+    // UDP tem prioridade mais alta
+    if (aUrl.includes('?transport=tcp') && !bUrl.includes('?transport=tcp')) return 1;
+    if (!aUrl.includes('?transport=tcp') && bUrl.includes('?transport=tcp')) return -1;
+    
+    // TURNS (TLS) tem prioridade mais baixa
+    if (aUrl.startsWith('turns:') && bUrl.startsWith('turn:')) return 1;
+    if (aUrl.startsWith('turn:') && bUrl.startsWith('turns:')) return -1;
+    
+    return 0;
+  });
+  
+  // Ordem final: TURN prioritizados + STUN como fallback
+  const result = [...prioritizedTurn, ...stunServers];
+  
+  console.log('🔄 [ICE] Servers prioritized:', result.map(s => ({
+    url: s.urls,
+    type: (s.urls as string).includes('turn') ? 'TURN' : 'STUN',
+    transport: (s.urls as string).includes('tcp') ? 'TCP' : 'UDP'
+  })));
+  
+  return result;
+}

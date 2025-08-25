@@ -1,6 +1,7 @@
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { setupOnTrackWithTimeout, setupICEGatheringTimeout, validateTransceiversPostNegotiation } from './ConnectionHandlerMethods';
 import { getActiveWebRTCConfig } from '@/utils/webrtc/WebRTCConfig';
+import { detectRestrictiveNetwork, getAdaptiveTimeout, prioritizeIceServers } from './ConnectionHandlerMethods';
 
 export class ConnectionHandler {
   private peerConnections: Map<string, RTCPeerConnection>;
@@ -21,6 +22,10 @@ export class ConnectionHandler {
   private circuitBreaker: Map<string, { failures: number, lastFailure: number, isOpen: boolean }> = new Map();
   private readonly CIRCUIT_BREAKER_THRESHOLD = 3;
   private readonly CIRCUIT_BREAKER_TIMEOUT = 30000; // 30 segundos
+  
+  // FASE 5: Cache de detecção de rede
+  private networkTypeCache: { type: string, timestamp: number } | null = null;
+  private readonly NETWORK_CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
 
   constructor(
     peerConnections: Map<string, RTCPeerConnection>,
@@ -132,11 +137,31 @@ export class ConnectionHandler {
     }
     (window as any).__relayIds.add(uniqueId);
     
-    // FASE 1: Usar configuração ativa de STUN/TURN (dinâmica ou fallback)
+    // FASE 1: Usar configuração otimizada de STUN/TURN
     const config = getActiveWebRTCConfig();
-    console.log(`🔧 [WRTC] Criando conexão ${uniqueId} com ICE servers:`,
-      (config.iceServers || []).map(s => ({ urls: (s as any).urls, hasCred: !!(s as any).credential }))
-    );
+    
+    // FASE 5: Detectar redes restritivas e aplicar relay obrigatório
+    const isRestrictiveNetwork = detectRestrictiveNetwork();
+    if (isRestrictiveNetwork) {
+      config.iceTransportPolicy = 'relay';
+      console.log('🚫 [WRTC] Rede restritiva detectada - forçando TURN relay');
+    }
+    
+    // FASE 5: Priorizar servidores ICE para melhor conectividade
+    if (config.iceServers) {
+      config.iceServers = prioritizeIceServers(config.iceServers);
+    }
+    
+    console.log(`🔧 [WRTC] Configuração WebRTC para ${uniqueId}:`, {
+      iceServers: (config.iceServers || []).map(s => ({ 
+        urls: (s as any).urls, 
+        hasCred: !!(s as any).credential,
+        type: (s as any).urls.includes('turn') ? 'TURN' : 'STUN'
+      })),
+      icePolicy: config.iceTransportPolicy,
+      bundlePolicy: config.bundlePolicy,
+      candidatePoolSize: config.iceCandidatePoolSize
+    });
     
     const peerConnection = new RTCPeerConnection(config);
     

@@ -63,15 +63,23 @@ export class ConnectivityDiagnostics {
           }
         };
 
-        // Timeout de 10 segundos
+        // Timeout aumentado para 30 segundos
         timeout = setTimeout(() => {
-          console.log('❌ CONNECTIVITY TEST: TURN test timeout');
+          console.log('❌ CONNECTIVITY TEST: TURN test timeout after 30s');
           resolveOnce(false);
-        }, 10000);
+        }, 30000);
 
         pc.onicecandidate = (event) => {
           if (event.candidate) {
-            if (event.candidate.type === 'relay') {
+            console.log('🔍 CONNECTIVITY TEST: ICE candidate received:', {
+              type: event.candidate.type,
+              protocol: event.candidate.protocol,
+              candidate: event.candidate.candidate
+            });
+            
+            // CORREÇÃO: Detecção correta de candidatos relay
+            if (event.candidate.type === 'relay' || 
+                event.candidate.candidate.includes(' relay ')) {
               console.log('✅ CONNECTIVITY TEST: TURN relay candidate found');
               this.turnTestResults.set(turnServer.urls as string, true);
               resolveOnce(true);

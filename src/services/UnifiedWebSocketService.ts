@@ -3,6 +3,7 @@ import { getWebSocketURL, detectSlowNetwork } from '@/utils/connectionUtils';
 import { setDynamicIceServers } from '@/utils/webrtc/WebRTCConfig';
 import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
 import { OfflineFallback } from '@/utils/fallback/OfflineFallback';
+import { turnServerDiagnostics } from '@/utils/webrtc/TurnServerDiagnostics';
 
 export interface UnifiedSignalingCallbacks {
   onConnected?: () => void;
@@ -377,6 +378,9 @@ this.socket.on('ice-servers', (data) => {
 
   // aplica no config dinâmico usado pelo RTCPeerConnection
   setDynamicIceServers(data.iceServers);
+
+  // FASE 4: Iniciar health check automático dos TURN servers
+  turnServerDiagnostics.startHealthCheck();
 
   // mantém o evento para quem ouve no front
   window.dispatchEvent(new CustomEvent('ice-servers-updated', {

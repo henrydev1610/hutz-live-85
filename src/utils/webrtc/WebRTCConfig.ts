@@ -2,10 +2,10 @@
 let dynamicIceServers: RTCIceServer[] | null = null;
 let relayOnly = false;
 
-// Configuração de fallback robusta com STUN/TURN
+// Configuração de fallback APENAS com STUN (TURN vem do backend)
 const FALLBACK_CONFIG: RTCConfiguration = {
   iceServers: [
-    // Google STUN servers (free)
+    // Google STUN servers apenas (TURN removido - vem do backend)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
@@ -13,17 +13,9 @@ const FALLBACK_CONFIG: RTCConfiguration = {
     { urls: 'stun:stun4.l.google.com:19302' },
     
     // Cloudflare STUN (backup)
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    
-    // Metered TURN servers (fallback)
-    // Metered TURN servers (fallback)
-    { urls: 'turn:global.relay.metered.ca:80', username: '6e7024d461b468b60c4d799e', credential: '39pmxgOL1LzAz9i+' },
-    { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: '6e7024d461b468b60c4d799e', credential: '39pmxgOL1LzAz9i+' },
-    { urls: 'turn:global.relay.metered.ca:443', username: '6e7024d461b468b60c4d799e', credential: '39pmxgOL1LzAz9i+' },
-    { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: '6e7024d461b468b60c4d799e', credential: '39pmxgOL1LzAz9i+' }
-
+    { urls: 'stun:stun.cloudflare.com:3478' }
   ],
-  iceCandidatePoolSize: 10
+  iceCandidatePoolSize: 5
 };
 
 // Chame isso ao receber `ice-servers` do backend
@@ -45,12 +37,21 @@ export function getWebRTCConfig(): RTCConfiguration {
   const iceServers = dynamicIceServers?.length ? dynamicIceServers : FALLBACK_CONFIG.iceServers;
   const cfg: RTCConfiguration = {
     iceServers,
-    iceCandidatePoolSize: 10,
+    iceCandidatePoolSize: 5, // Otimizado para melhor performance
+    bundlePolicy: 'max-bundle', // Agrupa todos os media streams
   };
-  if (relayOnly) cfg.iceTransportPolicy = 'relay';
   
-  // Usar relay apenas se explicitamente configurado
-  if (relayOnly) cfg.iceTransportPolicy = 'relay';
+  // CORREÇÃO: Aplicar relay apenas uma vez
+  if (relayOnly) {
+    cfg.iceTransportPolicy = 'relay';
+  }
+  
+  console.log('🔧 [WRTC-CONFIG] Configuração aplicada:', {
+    serversCount: iceServers.length,
+    isRelay: relayOnly,
+    policy: cfg.iceTransportPolicy,
+    source: dynamicIceServers?.length ? 'dynamic' : 'fallback'
+  });
   
   return cfg;
 }
