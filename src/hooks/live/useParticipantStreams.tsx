@@ -6,7 +6,6 @@ import { useStreamTransmission } from './useStreamTransmission';
 import { useStreamStateManagement } from './useStreamStateManagement';
 import { useStreamBuffer } from './useStreamBuffer';
 import { getWebRTCManagerInstance, getWebRTCManager  } from '@/utils/webrtc';
-import { validateStreamWithVideoData } from '@/utils/media/trackActivationWaiter';
 
 interface UseParticipantStreamsProps {
   setParticipantStreams: React.Dispatch<React.SetStateAction<{[id: string]: MediaStream}>>;
@@ -164,40 +163,15 @@ export const useParticipantStreams = ({
       console.warn('⚠️ FASE 2: BroadcastChannel não disponível:', error);
     }
 
-    // CORREÇÃO CRÍTICA: Aguardar tracks e dados de vídeo antes de validar
-    console.log('🚨 CRÍTICO [STREAM-VALIDATOR] Iniciando validação com aguardo de dados de vídeo para:', participantId);
-    const validationResult = await validateStreamWithVideoData(stream, participantId, 5000);
-    
-    if (!validationResult.isValid) {
-      console.error('❌ STREAM-CRÍTICO: Validação de stream falhou para:', participantId, {
-        streamExists: !!stream,
-        streamId: stream?.id,
-        tracksCount: stream?.getTracks()?.length || 0,
-        activeTracks: stream?.getTracks()?.filter(t => t.readyState === 'live')?.length || 0,
-        hasVideoData: validationResult.hasVideoData
-      });
-      
-      const errorTitle = validationResult.hasVideoData ? "❌ Stream Sem Tracks" : "❌ Stream Sem Dados de Vídeo";
-      const errorDesc = validationResult.hasVideoData ? 
-        `Stream de ${participantId.substring(0, 8)} não possui tracks ativas` :
-        `Stream de ${participantId.substring(0, 8)} não possui dados de vídeo ativos`;
-      
+    if (!validateStream(stream, participantId)) {
+      console.warn('❌ STREAM-CRÍTICO: Validação de stream falhou para:', participantId);
       toast({
-        title: errorTitle,
-        description: errorDesc,
+        title: "❌ Stream Inválido",
+        description: `Stream de ${participantId.substring(0, 8)} não passou na validação`,
         variant: "destructive"
       });
-      
-      // Adiciona ao buffer para retry automático
-      addToBuffer(participantId, stream);
       return;
     }
-
-    console.log('✅ STREAM-CRÍTICO: Stream validada com tracks ativas e dados de vídeo para:', participantId, {
-      tracksCount: stream.getTracks().length,
-      activeTracks: stream.getTracks().filter(t => t.readyState === 'live').length,
-      hasVideoData: validationResult.hasVideoData
-    });
 
     setParticipantStreams(prev => {
       const updated = { ...prev, [participantId]: stream };

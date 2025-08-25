@@ -5,7 +5,6 @@ export interface EnvironmentCapabilities {
   supportsMediaStream: boolean;
   supportsPostMessage: boolean;
   requiresFallback: boolean;
-  supportsTwilioVideo: boolean;
   environment: 'lovable' | 'vercel' | 'local' | 'other';
   limitations: string[];
 }
@@ -32,13 +31,12 @@ export class LovableEnvironmentDetector {
         supportsDirectWebRTC: false,  // Limitado no Lovable
         supportsMediaStream: false,   // srcObject bloqueado
         supportsPostMessage: true,    // Funciona
-        requiresFallback: true,       // Sempre precisar fallback - EXCETO para Twilio
-        supportsTwilioVideo: true,    // Twilio funciona com .attach() direto
+        requiresFallback: true,       // Sempre precisar fallback
         environment: 'lovable',
         limitations: [
           'MediaStream srcObject bloqueado',
           'WebRTC limitado por iframe sandbox',
-          'CSP restritivo - EXCETO Twilio Video',
+          'CSP restritivo',
           'CORS policies rígidas',
           'Isolamento de contexto'
         ]
@@ -52,7 +50,6 @@ export class LovableEnvironmentDetector {
         supportsMediaStream: true,
         supportsPostMessage: true,
         requiresFallback: false,
-        supportsTwilioVideo: true,
         environment: 'vercel',
         limitations: []
       };
@@ -65,7 +62,6 @@ export class LovableEnvironmentDetector {
         supportsMediaStream: true,
         supportsPostMessage: true,
         requiresFallback: false,
-        supportsTwilioVideo: true,
         environment: 'local',
         limitations: []
       };
@@ -77,7 +73,6 @@ export class LovableEnvironmentDetector {
       supportsMediaStream: true,
       supportsPostMessage: true,
       requiresFallback: false,
-      supportsTwilioVideo: true,
       environment: 'other',
       limitations: []
     };
@@ -105,7 +100,7 @@ export class LovableEnvironmentDetector {
     try {
       // FASE 2: Padronizar para usar configuração global do sistema
       const { getActiveWebRTCConfig } = await import('@/utils/webrtc/WebRTCConfig');
-      const config = await getActiveWebRTCConfig();
+      const config = getActiveWebRTCConfig();
       const pc = new RTCPeerConnection(config);
       await pc.close();
       console.log('✅ RTCPeerConnection funcional com configuração padrão do sistema');
@@ -174,21 +169,6 @@ export class LovableEnvironmentDetector {
 
   public requiresFallback(): boolean {
     return this.capabilities.requiresFallback;
-  }
-
-  public supportsTwilioVideo(): boolean {
-    return this.capabilities.supportsTwilioVideo;
-  }
-
-  public isTwilioTrack(track: any): boolean {
-    // Detectar se é um track do Twilio Video (tem método .attach)
-    return track && typeof track.attach === 'function' && track.kind;
-  }
-
-  public isTwilioVideoActive(): boolean {
-    // Verificar se Twilio Video SDK está carregado
-    return typeof window !== 'undefined' && 
-           ((window as any).Twilio?.Video !== undefined);
   }
 }
 

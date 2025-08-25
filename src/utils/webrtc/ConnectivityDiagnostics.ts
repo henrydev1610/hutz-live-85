@@ -39,23 +39,16 @@ export class ConnectivityDiagnostics {
   async testTurnConnectivity(turnServer: RTCIceServer): Promise<boolean> {
     return new Promise((resolve) => {
       try {
-        // CRÍTICO: Mostrar credenciais sendo usadas no teste
-        const serverInfo = {
-          urls: turnServer.urls,
-          username: turnServer.username || 'NO_USERNAME',
-          hasCredential: !!turnServer.credential
-        };
-        console.log('🔍 CONNECTIVITY TEST: Testing TURN server with credentials:', serverInfo);
+        console.log('🔍 CONNECTIVITY TEST: Testing TURN server:', turnServer.urls);
         
-        // Usar server específico para teste TURN - MANTER OBJETO COMPLETO
+        // Usar server específico para teste TURN
         const pc = new RTCPeerConnection({
-          iceServers: [turnServer], // Objeto completo com username/credential
+          iceServers: [turnServer],
           iceTransportPolicy: 'relay'
         });
 
         let timeout: NodeJS.Timeout;
         let resolved = false;
-        let candidatesFound: string[] = [];
 
         const cleanup = () => {
           if (timeout) clearTimeout(timeout);
@@ -65,39 +58,23 @@ export class ConnectivityDiagnostics {
         const resolveOnce = (result: boolean) => {
           if (!resolved) {
             resolved = true;
-            console.log(`🔍 TURN TEST RESULT: ${result ? 'SUCCESS' : 'FAILED'} - Candidates found:`, candidatesFound);
             cleanup();
             resolve(result);
           }
         };
 
-        // CORREÇÃO: Timeout aumentado para dar tempo ao TURN allocation
-        const isDesktop = !navigator.userAgent.match(/Mobile|Android|iPhone|iPad/i);
-        const testTimeout = isDesktop ? 30000 : 20000; // 30s desktop, 20s mobile
-        
+        // Timeout de 10 segundos
         timeout = setTimeout(() => {
-          console.log(`❌ CONNECTIVITY TEST: TURN test timeout (${testTimeout/1000}s) [${isDesktop ? 'DESKTOP' : 'MOBILE'}]`);
+          console.log('❌ CONNECTIVITY TEST: TURN test timeout');
           resolveOnce(false);
-        }, testTimeout);
+        }, 10000);
 
         pc.onicecandidate = (event) => {
           if (event.candidate) {
-            const candidate = event.candidate.candidate || '';
-            candidatesFound.push(`${event.candidate.type}:${candidate.substring(0, 50)}...`);
-            
-            // CORREÇÃO CRÍTICA: Detectar candidato relay pela string, não pelo type
-            if (candidate.includes(' relay ')) {
-              console.log('✅ CONNECTIVITY TEST: TURN relay candidate found:', candidate);
+            if (event.candidate.type === 'relay') {
+              console.log('✅ CONNECTIVITY TEST: TURN relay candidate found');
               this.turnTestResults.set(turnServer.urls as string, true);
               resolveOnce(true);
-            } else {
-              console.log('🔍 CONNECTIVITY TEST: ICE candidate (non-relay):', {
-                type: event.candidate.type,
-                protocol: event.candidate.protocol,
-                address: event.candidate.address,
-                port: event.candidate.port,
-                candidate: candidate.substring(0, 100)
-              });
             }
           }
         };

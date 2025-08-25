@@ -22,7 +22,7 @@ class HostHandshakeManager {
       });
 
       // Event handlers
-      pc.ontrack = async (event) => {
+      pc.ontrack = (event) => {
         console.log(`🚨 CRÍTICO [HOST] ontrack DISPARADO para ${participantId}:`, {
           streamCount: event.streams.length,
           trackKind: event.track.kind,
@@ -33,73 +33,19 @@ class HostHandshakeManager {
         
         if (event.streams.length > 0) {
           const stream = event.streams[0];
-          
-          // IMPLEMENTAÇÃO CRÍTICA: Validar tracks ANTES de processar
-          const { validateMediaStreamTracks, waitForActiveTracks, shouldProcessStream } = await import('@/utils/media/trackValidation');
-          
-          console.log(`🚨 CRÍTICO [HOST] Stream recebido de ${participantId} - validando tracks:`, {
+          console.log(`✅ CRÍTICO [HOST] Stream recebido de ${participantId}:`, {
             streamId: stream.id,
-            initialTracksCount: stream.getTracks().length,
-            initialVideoTracks: stream.getVideoTracks().length,
-            initialAudioTracks: stream.getAudioTracks().length
-          });
-
-          // ETAPA 1: Verificação imediata - se não há tracks, aguardar
-          const immediateValidation = validateMediaStreamTracks(stream, participantId);
-          
-          if (!immediateValidation.hasActiveTracks) {
-            console.log(`⏳ [HOST] Stream vazio recebido para ${participantId} - aguardando tracks ativas...`);
-            
-            // ETAPA 2: Aguardar tracks ficarem ativas com timeout de 5s
-            const trackValidation = await waitForActiveTracks(stream, participantId, 5000);
-            
-            if (!trackValidation.hasActiveTracks) {
-              console.error(`❌ [HOST] STREAM REJEITADO: Nenhuma track ativa após timeout para ${participantId}:`, trackValidation);
-              return;
-            }
-            
-            console.log(`✅ [HOST] Tracks ativas confirmadas após espera para ${participantId}:`, trackValidation);
-          }
-
-          // ETAPA 3: Verificação final - só processa se tiver video tracks ativas
-          if (!shouldProcessStream(stream, participantId)) {
-            console.warn(`❌ [HOST] STREAM REJEITADO: Sem tracks de vídeo ativas para ${participantId}`);
-            return;
-          }
-
-          console.log(`🎥 [HOST] STREAM APROVADO para processamento: ${participantId}`, {
-            streamId: stream.id,
-            videoTracksAtivas: stream.getVideoTracks().filter(t => t.readyState === 'live').length,
-            audioTracksAtivas: stream.getAudioTracks().filter(t => t.readyState === 'live').length
+            videoTracks: stream.getVideoTracks().length,
+            audioTracks: stream.getAudioTracks().length,
+            videoEnabled: stream.getVideoTracks()[0]?.enabled,
+            audioEnabled: stream.getAudioTracks()[0]?.enabled
           });
           
           // Dispatch custom event para notificar que stream foi recebido
           console.log(`🚨 CRÍTICO [HOST] Dispatching participant-stream-connected event para ${participantId}`);
-          
-          // DIAGNÓSTICO: Verificar se há listeners
-          const eventListeners = (window as any).getEventListeners?.('participant-stream-connected');
-          console.log(`🔍 [HOST] Event listeners registrados:`, eventListeners?.length || 'N/A');
-          
-          // Dispatch com logs detalhados
-          const eventDetail = { participantId, stream };
-          console.log(`📤 [HOST] Event detail:`, {
-            participantId,
-            streamId: stream.id,
-            streamActive: stream.active,
-            videoTracks: stream.getVideoTracks().length,
-            timestamp: Date.now()
-          });
-          
           window.dispatchEvent(new CustomEvent('participant-stream-connected', {
-            detail: eventDetail
+            detail: { participantId, stream }
           }));
-          
-          // Verificação imediata se evento foi processado
-          setTimeout(() => {
-            console.log(`🔍 [HOST] Verificando se stream foi processado após 1s para ${participantId}`);
-            const streamElements = document.querySelectorAll(`[data-participant-id="${participantId}"]`);
-            console.log(`📊 [HOST] Elementos encontrados para ${participantId}:`, streamElements.length);
-          }, 1000);
           
           console.log(`✅ CRÍTICO [HOST] Event participant-stream-connected dispatched para ${participantId}`);
         } else {
@@ -121,11 +67,6 @@ class HostHandshakeManager {
       pc.onconnectionstatechange = () => {
         const state = pc.connectionState;
         console.log(`[HOST] Connection state for ${participantId}: ${state}`);
-        
-        // CORREÇÃO 3: Emitir eventos de estado WebRTC
-        window.dispatchEvent(new CustomEvent('webrtc-negotiation-state', {
-          detail: { participantId, state: state === 'connected' ? 'connected' : state }
-        }));
         
         if (state === 'connected') {
           // Clear timeout on successful connection
@@ -155,20 +96,16 @@ class HostHandshakeManager {
 
       hostPeerConnections.set(participantId, pc);
       
-      // CORREÇÃO 1: Timeout adaptativo baseado no tipo de dispositivo
-      const isMobileParticipant = participantId.includes('mobile') || participantId.includes('participant');
-      const timeoutDuration = isMobileParticipant ? 30000 : 15000; // 30s mobile, 15s desktop
-      
-      console.log(`[HOST] Setting ${isMobileParticipant ? 'MOBILE' : 'DESKTOP'} timeout for ${participantId}: ${timeoutDuration}ms`);
-      
+      // Desktop-optimized timeout: 10 seconds max
       const timeout = setTimeout(() => {
-        console.log(`[HOST] ${isMobileParticipant ? 'Mobile' : 'Desktop'} handshake timeout for ${participantId} (${timeoutDuration}ms)`);
+        console.log(`[HOST] Desktop handshake timeout for ${participantId} (10s) - force cleanup`);
+        this.cleanupHostHandshake(participantId);
         
-        // CORREÇÃO 2: Fallback automático - tentar criar offer direto do host
-        console.log(`[HOST] FALLBACK: Attempting direct offer creation for ${participantId}`);
-        this.attemptDirectOfferCreation(participantId);
-        
-      }, timeoutDuration);
+        // Dispatch desktop timeout event
+        window.dispatchEvent(new CustomEvent('desktop-handshake-timeout', {
+          detail: { participantId, timeout: 10000 }
+        }));
+      }, 10000); // Desktop: 10 seconds timeout
       
       handshakeTimeouts.set(participantId, timeout);
     }
@@ -191,11 +128,6 @@ class HostHandshakeManager {
         console.error('❌ CRÍTICO [HOST] Invalid offer data:', data);
         return;
       }
-
-      // CORREÇÃO 3: Emitir estado de negociação
-      window.dispatchEvent(new CustomEvent('webrtc-negotiation-state', {
-        detail: { participantId: data.participantId, state: 'negotiating' }
-      }));
 
       console.log(`✅ [HOST] Processing offer from ${data.participantId}`);
 
@@ -236,31 +168,18 @@ class HostHandshakeManager {
 
       // PASSO 6: Enviar answer
       console.log(`🚨 CRÍTICO [HOST] Sending answer to ${data.participantId}`);
-      
-      // Validar se answer tem SDP antes de enviar
-      if (!answer.sdp) {
-        console.error(`❌ CRÍTICO [HOST] Answer sem SDP para ${data.participantId}:`, answer);
-        return;
-      }
+      unifiedWebSocketService.emit('webrtc-answer', {
+        answer,
+        toSocketId: data.fromSocketId,
+        hostId: 'host',
+        participantId: data.participantId,
+        timestamp: Date.now()
+      });
 
-      // CORREÇÃO CRÍTICA: Usar sendWebRTCAnswer em vez de emit
-      unifiedWebSocketService.sendWebRTCAnswer(data.participantId, answer.sdp, answer.type);
-      
-      console.log(`✅ CRÍTICO [HOST] Answer sent to ${data.participantId} via sendWebRTCAnswer - Aguardando ontrack...`);
-      console.log(`📋 CRÍTICO [HOST] Answer details: type=${answer.type}, sdpLength=${answer.sdp.length}`);
-
-      // CORREÇÃO 3: Emitir estado conectando após answer
-      window.dispatchEvent(new CustomEvent('webrtc-negotiation-state', {
-        detail: { participantId: data.participantId, state: 'connecting' }
-      }));
+      console.log(`✅ CRÍTICO [HOST] Answer sent to ${data.participantId} - Aguardando ontrack...`);
 
     } catch (error) {
       console.error('❌ CRÍTICO [HOST] Error handling offer:', error);
-      
-      // CORREÇÃO 3: Emitir estado de erro
-      window.dispatchEvent(new CustomEvent('webrtc-negotiation-state', {
-        detail: { participantId: data.participantId, state: 'failed' }
-      }));
     }
   }
 
@@ -388,38 +307,6 @@ class HostHandshakeManager {
       });
     });
     return states;
-  }
-
-  // CORREÇÃO 2: Método de fallback para criar offer direto do host
-  async attemptDirectOfferCreation(participantId: string): Promise<void> {
-    try {
-      console.log(`🚀 [HOST] FALLBACK: Creating direct offer for ${participantId}`);
-      
-      const pc = this.getOrCreatePC(participantId);
-      
-      // Criar offer do lado host
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      
-      console.log(`✅ [HOST] FALLBACK: Direct offer created for ${participantId}`);
-      
-      // Enviar offer diretamente para o participante
-      unifiedWebSocketService.sendWebRTCOffer(participantId, offer.sdp!, offer.type!);
-      
-      console.log(`📤 [HOST] FALLBACK: Direct offer sent to ${participantId}`);
-      
-      // Manter timeout ativo mas com tempo menor para response
-      setTimeout(() => {
-        if (pc.connectionState !== 'connected') {
-          console.log(`[HOST] FALLBACK timeout - cleaning up ${participantId}`);
-          this.cleanupHostHandshake(participantId);
-        }
-      }, 15000); // 15s para resposta ao fallback
-      
-    } catch (error) {
-      console.error(`❌ [HOST] FALLBACK failed for ${participantId}:`, error);
-      this.cleanupHostHandshake(participantId);
-    }
   }
 
   resetHostWebRTC(): void {

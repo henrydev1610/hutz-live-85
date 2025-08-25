@@ -5,22 +5,16 @@ import { streamLogger } from '@/utils/debug/StreamLogger';
 class ParticipantHandshakeManager {
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
-  private pendingCandidates: { candidate: RTCIceCandidate; timestamp: number; retries: number }[] = [];
+  private pendingCandidates: RTCIceCandidate[] = [];
   private isOfferInProgress: boolean = false;
-  private isPeerConnectionReady: boolean = false;
   private participantId: string | null = null;
   private connectionTimeout: NodeJS.Timeout | null = null;
-  private candidateFlushTimeout: NodeJS.Timeout | null = null;
   private reconnectAttempts: number = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
   private readonly CONNECTION_TIMEOUT_MS = 30000;
-  private readonly CANDIDATE_BUFFER_TIMEOUT_MS = 5000;
-  private readonly MAX_CANDIDATE_RETRIES = 3;
   private hasReconnected: boolean = false;
   private lastConnectionTime: number = 0;
   private handshakeStartTime: number = 0;
-  private peerConnectionCreationTime: number = 0;
-  private clearMonitoring: (() => void) | null = null;
   
   constructor() {
     this.setupParticipantHandlers();
@@ -129,13 +123,12 @@ class ParticipantHandshakeManager {
       return;
     }
 
-    console.log('🚨 CRÍTICO [PARTICIPANT] Setting up event handlers with DUAL REGISTRATION');
+    console.log('🚨 CRÍTICO [PARTICIPANT] Setting up event handlers');
     
-    // CORREÇÃO 5: DUAL EVENT REGISTRATION - Registrar tanto no eventEmitter quanto no socket diretamente
-    const socketInstance = (unifiedWebSocketService as any).socket;
-    console.log('🔧 DUAL REGISTRATION: Socket instance available:', !!socketInstance);
+    // Limpar handlers existentes primeiro para evitar duplicação  
+    // Note: UnifiedWebSocketService não tem método off(), então apenas registramos novos handlers
     
-    // PHASE 1: EARLY PEERCONNECTION CREATION - Listen for WebRTC offer request from host
+    // Listen for WebRTC offer request from host
     unifiedWebSocketService.on('webrtc-request-offer', async (data: any) => {
       const hostId = data?.fromUserId;
       console.log(`🚨 CRÍTICO [PARTICIPANT] Offer request received from host: ${hostId}`, {
@@ -149,12 +142,6 @@ class ParticipantHandshakeManager {
         console.warn('⚠️ [PARTICIPANT] Invalid offer request:', data);
         return;
       }
-
-      // PHASE 1: CREATE PEERCONNECTION IMMEDIATELY BEFORE ANYTHING ELSE
-      const pcCreationStart = performance.now();
-      await this.createPeerConnectionEarly(hostId);
-      const pcCreationDuration = performance.now() - pcCreationStart;
-      console.log(`✅ [PARTICIPANT] PeerConnection created early in ${pcCreationDuration.toFixed(1)}ms`);
 
       // Check host readiness
       const hostReadiness = await this.checkHostReadiness(hostId);
@@ -180,10 +167,10 @@ class ParticipantHandshakeManager {
       await this.createAndSendOffer(hostId);
     });
 
-    // CORREÇÃO 5: DUAL EVENT REGISTRATION - Handler para respostas (answers) do host
-    const answerHandler = async (data: any) => {
+    // Handler para respostas (answers) do host
+    unifiedWebSocketService.on('webrtc-answer', async (data: any) => {
       const hostId = data?.fromUserId || data?.fromSocketId || data?.hostId;
-      let answer = data?.answer;
+      const answer = data?.answer;
 
       console.log(`🚨 CRÍTICO [PARTICIPANT] Answer recebido do host`, {
         hostId,
@@ -197,19 +184,8 @@ class ParticipantHandshakeManager {
         timestamp: Date.now()
       });
 
-      // CORREÇÃO 2: VALIDAÇÃO CRÍTICA DE PAYLOAD - Melhorar validação para aceitar diferentes formatos
-      if (!answer && data?.sdp && data?.type) {
-        console.log('🔄 [PARTICIPANT] Fallback: Using data directly as answer');
-        answer = { sdp: data.sdp, type: data.type };
-      }
-
-      if (!hostId) {
-        console.error('❌ [PARTICIPANT] Missing hostId in answer:', data);
-        return;
-      }
-
-      if (!answer?.sdp || !answer?.type) {
-        console.error('❌ [PARTICIPANT] Invalid answer format after fallback:', data);
+      if (!hostId || !answer?.sdp || !answer?.type) {
+        console.error('❌ [PARTICIPANT] Invalid answer format:', data);
         return;
       }
 
@@ -221,112 +197,35 @@ class ParticipantHandshakeManager {
       }
 
       try {
-        // CORREÇÃO 1: Validação crítica pré-setRemoteDescription
-        const currentSignalingState = this.peerConnection.signalingState;
-        console.log(`🚨 CRÍTICO [PARTICIPANT] Pre-validation - signalingState: ${currentSignalingState}`);
-        
-        if (currentSignalingState !== 'have-local-offer') {
-          console.error(`❌ CRÍTICO [PARTICIPANT] Invalid signaling state for answer: ${currentSignalingState} (expected: have-local-offer)`);
-          throw new Error(`Invalid signaling state: ${currentSignalingState}`);
-        }
-
-        // Validar formato do SDP
-        if (!answer.sdp || answer.sdp.length < 100) {
-          console.error('❌ CRÍTICO [PARTICIPANT] Invalid answer SDP format');
-          throw new Error('Invalid answer SDP format');
-        }
-
         console.log('🚨 CRÍTICO [PARTICIPANT] Setting remote description from answer...');
         await this.peerConnection.setRemoteDescription(answer);
-        
-        // CORREÇÃO 2: Validação pós-setRemoteDescription
-        const newSignalingState = this.peerConnection.signalingState;
-        console.log(`✅ [PARTICIPANT] setRemoteDescription SUCCESS: ${currentSignalingState} → ${newSignalingState}`);
-        
-        if (newSignalingState !== 'stable') {
-          console.warn(`⚠️ [PARTICIPANT] Unexpected signaling state after answer: ${newSignalingState}`);
-        }
-
+        console.log('✅ [PARTICIPANT] Remote description set successfully');
         console.log(`🚨 CRÍTICO [PARTICIPANT] Connection state após setRemoteDescription: ${this.peerConnection.connectionState}`);
 
-        // PHASE 2: ENHANCED ICE CANDIDATE SYNCHRONIZATION
+        // Flush all pending candidates immediately
         if (this.pendingCandidates.length > 0) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Applying ${this.pendingCandidates.length} buffered candidates with enhanced sync`);
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Applying ${this.pendingCandidates.length} buffered candidates`);
           
           const candidatesToFlush = [...this.pendingCandidates];
           this.pendingCandidates = [];
-          let appliedCount = 0;
-          let failedCount = 0;
-          let retriedCount = 0;
           
-          for (const candidateEntry of candidatesToFlush) {
-            const { candidate, timestamp, retries } = candidateEntry;
-            const age = Date.now() - timestamp;
-            
+          for (const candidate of candidatesToFlush) {
             try {
-              // PHASE 3: ROBUST STATE VALIDATION
-              if (!candidate.candidate || !candidate.sdpMid) {
-                console.warn('⚠️ [PARTICIPANT] Invalid candidate format, skipping');
-                failedCount++;
-                continue;
-              }
-
-              // Skip candidates older than timeout
-              if (age > this.CANDIDATE_BUFFER_TIMEOUT_MS) {
-                console.warn(`⚠️ [PARTICIPANT] Skipping old candidate (age: ${age}ms)`);
-                failedCount++;
-                continue;
-              }
-              
               await this.peerConnection.addIceCandidate(candidate);
-              appliedCount++;
-              console.log(`✅ [PARTICIPANT] ICE candidate applied: ${candidate.candidate.split(' ')[7] || 'unknown'} (age: ${age}ms)`);
+              console.log('✅ [PARTICIPANT] ICE candidate aplicado do buffer');
             } catch (err) {
               console.error('❌ [PARTICIPANT] Error flushing candidate:', err);
-              
-              // PHASE 3: RETRY MECHANISM FOR FAILED CANDIDATES
-              if (retries < this.MAX_CANDIDATE_RETRIES) {
-                console.log(`🔄 [PARTICIPANT] Retrying candidate (attempt ${retries + 1}/${this.MAX_CANDIDATE_RETRIES})`);
-                this.pendingCandidates.push({
-                  candidate,
-                  timestamp,
-                  retries: retries + 1
-                });
-                retriedCount++;
-              } else {
-                failedCount++;
-              }
             }
           }
-          console.log(`✅ [PARTICIPANT] ICE candidates processed: ${appliedCount} applied, ${failedCount} failed, ${retriedCount} retried`);
+          console.log('✅ [PARTICIPANT] Buffer de ICE candidates limpo');
         }
         
-        // CORREÇÃO 4: Aguardar negociação completa
-        this.waitForConnectionEstablishment(hostId);
-        
-        console.log('✅ [PARTICIPANT] Answer processing complete - waiting for connection establishment');
-        
-        // CORREÇÃO 4: SIGNALING STATE MONITORING - Iniciar monitoramento específico para have-local-offer
-        this.startSignalingStateMonitoring(hostId);
-        
+        console.log('✅ [PARTICIPANT] Connection established successfully');
       } catch (err) {
         console.error('❌ CRÍTICO [PARTICIPANT] Error applying answer:', err);
-        console.error('❌ CRÍTICO [PARTICIPANT] Answer error details:', {
-          error: err.message,
-          signalingState: this.peerConnection?.signalingState,
-          connectionState: this.peerConnection?.connectionState,
-          hasRemoteDescription: !!this.peerConnection?.remoteDescription
-        });
         this.handleConnectionFailure(hostId);
       }
-    };
-
-    // CORREÇÃO 5: DUAL REGISTRATION - Registrar nos dois lugares
-    unifiedWebSocketService.on('webrtc-answer', answerHandler);
-    if (socketInstance) {
-      socketInstance.on('webrtc-answer', answerHandler);
-      console.log('✅ [PARTICIPANT] DUAL REGISTRATION: webrtc-answer handler registered on both eventEmitter and socket');
-    }
+    });
 
     // Receive ICE candidates from host with consistent buffering
     unifiedWebSocketService.on('webrtc-candidate', async (data: any) => {
@@ -347,292 +246,27 @@ class ParticipantHandshakeManager {
         return;
       }
 
-      // PHASE 1: EARLY PC CREATION SHOULD HAVE PREVENTED THIS
       if (!this.peerConnection) {
-        console.error('❌ [PARTICIPANT] CRITICAL: PC doesn\'t exist even after early creation! Buffering candidate from:', hostId);
-        this.bufferCandidateWithTimeout(candidate, hostId);
+        console.warn('⚠️ [PARTICIPANT] PC doesn\'t exist, buffering candidate from:', hostId);
+        this.pendingCandidates.push(candidate);
         return;
       }
 
-      // PHASE 2 & 3: ENHANCED ICE CANDIDATE PROCESSING WITH STATE VALIDATION
-      const hasRemoteDesc = this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type;
-      const signalingState = this.peerConnection.signalingState;
-      const connectionState = this.peerConnection.connectionState;
-      
-      console.log(`🚨 CRÍTICO [PARTICIPANT] ICE candidate decision:`, {
-        hasRemoteDesc: !!hasRemoteDesc,
-        signalingState,
-        connectionState,
-        isPeerConnectionReady: this.isPeerConnectionReady,
-        candidateType: candidate.candidate?.includes('host') ? 'host' : 
-                      candidate.candidate?.includes('srflx') ? 'srflx' : 'relay'
-      });
-      
-      // PHASE 3: ROBUST STATE VALIDATION - Apply immediately only if PC is fully ready
-      const canApplyImmediately = hasRemoteDesc && 
-                                 (signalingState === 'stable' || signalingState === 'have-remote-offer') &&
-                                 this.isPeerConnectionReady;
-      
-      if (canApplyImmediately) {
+      // Apply immediately OR buffer consistently
+      if (this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
         try {
-          // Validate candidate before applying
-          if (!candidate.candidate || !candidate.sdpMid) {
-            console.warn('⚠️ [PARTICIPANT] Invalid candidate format from host, ignoring');
-            return;
-          }
-          
           await this.peerConnection.addIceCandidate(candidate);
-          console.log(`✅ [PARTICIPANT] ICE candidate applied immediately from ${hostId}: ${candidate.candidate.split(' ')[7] || 'unknown'}`);
+          console.log(`✅ [PARTICIPANT] ICE candidate applied immediately from ${hostId}`);
         } catch (err) {
-          console.warn('⚠️ [PARTICIPANT] Error adding immediate candidate:', err);
-          // Buffer the candidate for retry
-          this.bufferCandidateWithTimeout(candidate, hostId);
+          console.warn('⚠️ [PARTICIPANT] Error adding candidate from:', hostId, err);
         }
       } else {
-        console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId} - waiting for proper state`);
-        this.bufferCandidateWithTimeout(candidate, hostId);
+        this.pendingCandidates.push(candidate);
+        console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId} (total: ${this.pendingCandidates.length})`);
       }
     });
     
     console.log('✅ [PARTICIPANT] Event handlers configurados com sucesso');
-  }
-
-  // PHASE 1: EARLY PEERCONNECTION CREATION - Create PC immediately when offer is requested
-  private async createPeerConnectionEarly(hostId: string): Promise<void> {
-    const createStartTime = performance.now();
-    console.log(`🚨 PHASE 1 [PARTICIPANT] Creating PeerConnection early for: ${hostId}`);
-    
-    // Close existing PC if any
-    if (this.peerConnection) {
-      console.log('[PARTICIPANT] Closing existing PC for early creation');
-      this.peerConnection.close();
-      this.peerConnection = null;
-    }
-    
-    // Reset state
-    this.isPeerConnectionReady = false;
-    this.pendingCandidates = [];
-    this.clearCandidateFlushTimeout();
-    
-    // Create new PeerConnection with optimized configuration
-    const configuration: RTCConfiguration = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun.cloudflare.com:3478' }
-      ],
-      iceCandidatePoolSize: 10,
-      bundlePolicy: 'max-bundle',
-      rtcpMuxPolicy: 'require'
-    };
-
-    this.peerConnection = new RTCPeerConnection(configuration);
-    this.peerConnectionCreationTime = performance.now();
-    
-    // Setup event handlers immediately
-    this.setupPeerConnectionEventHandlers(hostId);
-    
-    // Mark as ready
-    this.isPeerConnectionReady = true;
-    
-    const duration = performance.now() - createStartTime;
-    console.log(`✅ PHASE 1 [PARTICIPANT] PeerConnection created early in ${duration.toFixed(1)}ms - Ready for ICE candidates`);
-  }
-
-  // PHASE 2: ENHANCED ICE CANDIDATE BUFFERING with timeout and retry logic
-  private bufferCandidateWithTimeout(candidate: RTCIceCandidate, hostId: string): void {
-    const candidateEntry = {
-      candidate,
-      timestamp: Date.now(),
-      retries: 0
-    };
-    
-    this.pendingCandidates.push(candidateEntry);
-    console.log(`📦 PHASE 2 [PARTICIPANT] ICE candidate buffered from ${hostId} (total: ${this.pendingCandidates.length})`);
-    
-    // Start flush timeout if this is the first candidate
-    if (this.pendingCandidates.length === 1) {
-      this.setCandidateFlushTimeout();
-    }
-  }
-
-  // PHASE 3: Setup PeerConnection event handlers
-  private setupPeerConnectionEventHandlers(hostId: string): void {
-    if (!this.peerConnection) {
-      console.error('❌ [PARTICIPANT] Cannot setup handlers - PC is null');
-      return;
-    }
-
-    console.log(`🔧 PHASE 3 [PARTICIPANT] Setting up PC event handlers for: ${hostId}`);
-
-    // ICE candidate handler
-    this.peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        const candidateType = event.candidate.candidate?.includes('host') ? 'host' : 
-                             event.candidate.candidate?.includes('srflx') ? 'srflx' : 'relay';
-        console.log(`🧊 [PARTICIPANT] ICE candidate generated (${candidateType}), sending to host`);
-        unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
-      } else {
-        console.log('🧊 [PARTICIPANT] ICE gathering complete (null candidate)');
-      }
-    };
-
-    // ICE connection state change handler
-    this.peerConnection.oniceconnectionstatechange = () => {
-      const state = this.peerConnection?.iceConnectionState;
-      const elapsed = performance.now() - this.peerConnectionCreationTime;
-      console.log(`🧊 [PARTICIPANT] ICE connection state: ${state} (${elapsed.toFixed(1)}ms since PC creation)`);
-      
-      if (state === 'connected' || state === 'completed') {
-        console.log(`✅ [PARTICIPANT] ICE connection established: ${state}`);
-        this.clearConnectionTimeout();
-      } else if (state === 'failed') {
-        console.error(`❌ [PARTICIPANT] ICE connection failed`);
-        this.handleConnectionFailure(hostId);
-      }
-    };
-
-    // Connection state change handler  
-    this.peerConnection.onconnectionstatechange = () => {
-      const state = this.peerConnection?.connectionState;
-      const elapsed = performance.now() - this.peerConnectionCreationTime;
-      console.log(`🔗 [PARTICIPANT] Connection state: ${state} (${elapsed.toFixed(1)}ms since PC creation)`);
-      
-      if (state === 'connected') {
-        console.log(`✅ [PARTICIPANT] WebRTC connection established`);
-        this.clearConnectionTimeout();
-        this.reconnectAttempts = 0;
-        
-        // Notify successful connection
-        window.dispatchEvent(new CustomEvent('participant-connected', {
-          detail: { 
-            participantId: this.participantId, 
-            hostId,
-            timestamp: Date.now(), 
-            method: 'early-pc-creation' 
-          }
-        }));
-      } else if (state === 'failed') {
-        console.error(`❌ [PARTICIPANT] Connection failed: ${state}`);
-        this.handleConnectionFailure(hostId);
-      }
-    };
-
-    // Signaling state change handler
-    this.peerConnection.onsignalingstatechange = () => {
-      const state = this.peerConnection?.signalingState;
-      console.log(`📡 [PARTICIPANT] Signaling state: ${state}`);
-    };
-
-    console.log(`✅ [PARTICIPANT] PC event handlers configured for: ${hostId}`);
-  }
-
-  // PHASE 2: Candidate flush timeout management
-  private setCandidateFlushTimeout(): void {
-    this.clearCandidateFlushTimeout();
-    
-    this.candidateFlushTimeout = setTimeout(() => {
-      if (this.pendingCandidates.length > 0) {
-        console.warn(`⚠️ PHASE 2 [PARTICIPANT] Auto-flushing ${this.pendingCandidates.length} buffered candidates after timeout`);
-        this.flushBufferedCandidates();
-      }
-    }, this.CANDIDATE_BUFFER_TIMEOUT_MS);
-  }
-
-  private clearCandidateFlushTimeout(): void {
-    if (this.candidateFlushTimeout) {
-      clearTimeout(this.candidateFlushTimeout);
-      this.candidateFlushTimeout = null;
-    }
-  }
-
-  // PHASE 2 & 3: Enhanced candidate flushing with retry logic
-  private async flushBufferedCandidates(): Promise<void> {
-    if (!this.peerConnection || this.pendingCandidates.length === 0) {
-      return;
-    }
-
-    console.log(`🔄 PHASE 2 [PARTICIPANT] Flushing ${this.pendingCandidates.length} buffered candidates`);
-    
-    const candidatesToFlush = [...this.pendingCandidates];
-    this.pendingCandidates = [];
-    let appliedCount = 0;
-    let failedCount = 0;
-    let retriedCount = 0;
-    
-    for (const candidateEntry of candidatesToFlush) {
-      const { candidate, timestamp, retries } = candidateEntry;
-      const age = Date.now() - timestamp;
-      
-      try {
-        // PHASE 3: Validate candidate and connection state
-        if (!candidate.candidate || !candidate.sdpMid) {
-          console.warn('⚠️ [PARTICIPANT] Invalid candidate format, skipping');
-          failedCount++;
-          continue;
-        }
-
-        // Skip very old candidates
-        if (age > this.CANDIDATE_BUFFER_TIMEOUT_MS * 2) {
-          console.warn(`⚠️ [PARTICIPANT] Skipping very old candidate (age: ${age}ms)`);
-          failedCount++;
-          continue;
-        }
-
-        // Check if PC is in suitable state
-        const signalingState = this.peerConnection.signalingState;
-        const hasRemoteDesc = !!this.peerConnection.remoteDescription;
-        
-        if (!hasRemoteDesc && signalingState !== 'have-local-offer') {
-          console.warn(`⚠️ [PARTICIPANT] PC not ready for candidate (signaling: ${signalingState}, remoteDesc: ${hasRemoteDesc})`);
-          
-          // Retry later if within retry limit
-          if (retries < this.MAX_CANDIDATE_RETRIES) {
-            this.pendingCandidates.push({
-              candidate,
-              timestamp,
-              retries: retries + 1
-            });
-            retriedCount++;
-            continue;
-          } else {
-            failedCount++;
-            continue;
-          }
-        }
-        
-        await this.peerConnection.addIceCandidate(candidate);
-        appliedCount++;
-        
-        const candidateType = candidate.candidate.includes('host') ? 'host' : 
-                             candidate.candidate.includes('srflx') ? 'srflx' : 'relay';
-        console.log(`✅ [PARTICIPANT] Buffered candidate applied: ${candidateType} (age: ${age}ms)`);
-        
-      } catch (err) {
-        console.error('❌ [PARTICIPANT] Error applying buffered candidate:', err);
-        
-        // Retry mechanism
-        if (retries < this.MAX_CANDIDATE_RETRIES) {
-          console.log(`🔄 [PARTICIPANT] Retrying candidate (attempt ${retries + 1}/${this.MAX_CANDIDATE_RETRIES})`);
-          this.pendingCandidates.push({
-            candidate,
-            timestamp,
-            retries: retries + 1
-          });
-          retriedCount++;
-        } else {
-          failedCount++;
-        }
-      }
-    }
-    
-    console.log(`✅ PHASE 2 [PARTICIPANT] Candidate flush complete: ${appliedCount} applied, ${failedCount} failed, ${retriedCount} retried`);
-    
-    // Set timeout for retried candidates
-    if (retriedCount > 0) {
-      this.setCandidateFlushTimeout();
-    }
   }
 
   async createAndSendOffer(hostId: string): Promise<void> {
@@ -645,18 +279,10 @@ class ParticipantHandshakeManager {
     this.handshakeStartTime = offerStartTime;
     console.log(`🚨 CRÍTICO [PARTICIPANT] Starting offer creation sequence for ${hostId}`);
 
-    // PHASE 4: EVENT ORDER VALIDATION - PC should already exist from early creation
-    if (!this.peerConnection || !this.isPeerConnectionReady) {
-      console.error('❌ [PARTICIPANT] CRITICAL: PeerConnection not ready for offer creation!');
-      throw new Error('PeerConnection not ready for offer creation');
-    }
-
-    // Check if PC is in valid state for offer creation
-    if (this.peerConnection.signalingState !== 'stable') {
-      console.warn('⚠️ [PARTICIPANT] PC not in stable state for offer:', this.peerConnection.signalingState);
-      // Try to reset to stable state
+    if (this.peerConnection && this.peerConnection.connectionState !== 'closed') {
+      console.log('[PARTICIPANT] createAndSendOffer: Closing existing peer connection');
       this.peerConnection.close();
-      await this.createPeerConnectionEarly(hostId);
+      this.peerConnection = null;
     }
 
     this.isOfferInProgress = true;
@@ -681,31 +307,82 @@ class ParticipantHandshakeManager {
         duration: `${streamDuration.toFixed(1)}ms`
       });
 
-      // STEP 2: Add tracks to existing peer connection
+      // STEP 2: Create new peer connection BEFORE any operation
+      const pcStartTime = performance.now();
+      const configuration: RTCConfiguration = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ],
+        iceCandidatePoolSize: 10
+      };
+
+      this.peerConnection = new RTCPeerConnection(configuration);
+      const pcDuration = performance.now() - pcStartTime;
+      console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
+
+      // STEP 3: Add tracks to peer connection BEFORE creating offer
       const addTrackStartTime = performance.now();
-      console.log('🚨 CRÍTICO [PARTICIPANT] Adding tracks to existing RTCPeerConnection...');
-      
-      // Clear existing tracks first
-      this.peerConnection.getSenders().forEach(sender => {
-        if (sender.track) {
-          this.peerConnection?.removeTrack(sender);
-        }
-      });
-      
-      // Add new tracks
+      console.log('🚨 CRÍTICO [PARTICIPANT] Anexando stream ao RTCPeerConnection...');
       stream.getTracks().forEach((track, index) => {
         if (this.peerConnection && stream) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Adicionando track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
           this.peerConnection.addTrack(track, stream);
         }
       });
       const addTrackDuration = performance.now() - addTrackStartTime;
-      console.log(`✅ [PARTICIPANT] All tracks added to existing RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
+      console.log(`✅ [PARTICIPANT] All tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
 
-      // Event handlers should already be set up from early PC creation, but ensure they're correct
-      if (!this.peerConnection.onicecandidate) {
-        this.setupPeerConnectionEventHandlers(hostId);
-      }
+      // Set up event handlers
+      this.peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log('🚨 CRÍTICO [PARTICIPANT] ICE candidate generated, sending to host');
+          unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
+        }
+      };
+
+      // Enhanced connection state monitoring with detailed logging and recovery logic
+      this.peerConnection.onconnectionstatechange = () => {
+        const state = this.peerConnection?.connectionState;
+        const iceState = this.peerConnection?.iceConnectionState;
+        const elapsed = performance.now() - this.handshakeStartTime;
+        console.log(`🔍 CONNECTION: State changed to ${state} for participant (${elapsed.toFixed(1)}ms since start) - ICE: ${iceState}`);
+        
+        if (state === 'connected') {
+          this.clearConnectionTimeout();
+          this.reconnectAttempts = 0;
+          console.log(`✅ CONNECTION: WebRTC connection established (${elapsed.toFixed(1)}ms total)`);
+          
+          // Notify successful connection
+          window.dispatchEvent(new CustomEvent('participant-connected', {
+            detail: { participantId: this.participantId, timestamp: Date.now(), method: 'connection-state' }
+          }));
+        } else if (state === 'failed') {
+          console.warn(`❌ CONNECTION: Connection failed definitively (${state}) - initiating recovery`);
+          this.handleConnectionFailure(hostId);
+        } else if (state === 'disconnected') {
+          console.warn(`📤 CONNECTION: Connection disconnected (${state}) - may be temporary`);
+          // Don't immediately trigger recovery for disconnected state - could be temporary
+        } else if (state === 'connecting') {
+          console.log(`🔄 CONNECTION: Connection attempting to establish (${state})`);
+        }
+      };
+
+      this.peerConnection.oniceconnectionstatechange = () => {
+        const state = this.peerConnection?.iceConnectionState;
+        console.log(`🧊 ICE: State changed to ${state}`);
+        
+        if (state === 'connected' || state === 'completed') {
+          this.clearConnectionTimeout();
+          console.log(`✅ ICE: Connection established (${state})`);
+        } else if (state === 'failed') {
+          console.warn(`❌ ICE: Connection failed`);
+          this.handleConnectionFailure(hostId);
+        } else if (state === 'checking') {
+          console.log(`🔍 ICE: Checking connectivity...`);
+        }
+      };
 
       // STEP 4: Create offer AFTER stream is added
       const offerCreateStartTime = performance.now();
@@ -768,132 +445,6 @@ class ParticipantHandshakeManager {
     }
   }
 
-  // CORREÇÃO 4: SIGNALING STATE MONITORING - Detector específico para have-local-offer travado
-  private startSignalingStateMonitoring(hostId: string): void {
-    console.log('🚨 CRÍTICO [PARTICIPANT] Starting signaling state monitoring for have-local-offer');
-    
-    if (!this.peerConnection) return;
-    
-    let checkCount = 0;
-    const maxChecks = 20; // 10 segundos com checks de 500ms
-    
-    const signalingMonitor = setInterval(() => {
-      checkCount++;
-      
-      if (!this.peerConnection) {
-        clearInterval(signalingMonitor);
-        return;
-      }
-      
-      const signalingState = this.peerConnection.signalingState;
-      console.log(`🔍 [PARTICIPANT] Signaling check ${checkCount}/${maxChecks}: ${signalingState}`);
-      
-      if (signalingState === 'stable') {
-        console.log('✅ [PARTICIPANT] Signaling state reached stable - monitoring complete');
-        clearInterval(signalingMonitor);
-        return;
-      }
-      
-      if (signalingState === 'have-local-offer' && checkCount >= maxChecks) {
-        console.error('❌ CRÍTICO [PARTICIPANT] Stuck in have-local-offer for >10s - forcing handshake restart');
-        clearInterval(signalingMonitor);
-        this.handleConnectionFailure(hostId);
-        return;
-      }
-    }, 500);
-  }
-
-  // CORREÇÃO 4: Método para aguardar estabelecimento completo da conexão
-  private waitForConnectionEstablishment(hostId: string): void {
-    console.log('🚨 CRÍTICO [PARTICIPANT] Starting connection establishment monitoring...');
-    
-    let connectionCheckInterval: NodeJS.Timeout;
-    let timeoutTimer: NodeJS.Timeout;
-    let checkCount = 0;
-    const maxChecks = 60; // 30 segundos com checks de 500ms
-    
-    const checkConnection = () => {
-      checkCount++;
-      
-      if (!this.peerConnection) {
-        console.error('❌ [PARTICIPANT] PeerConnection lost during establishment monitoring');
-        this.clearMonitoring();
-        return;
-      }
-      
-      const connectionState = this.peerConnection.connectionState;
-      const iceConnectionState = this.peerConnection.iceConnectionState;
-      const signalingState = this.peerConnection.signalingState;
-      
-      console.log(`🔍 [PARTICIPANT] Connection check ${checkCount}/${maxChecks}: conn=${connectionState}, ice=${iceConnectionState}, sig=${signalingState}`);
-      
-      // Sucesso: conexão estabelecida
-      if (connectionState === 'connected' && (iceConnectionState === 'connected' || iceConnectionState === 'completed')) {
-        console.log('✅ [PARTICIPANT] Connection establishment SUCCESS - validating stream tracks');
-        
-        // Validar que o stream tem tracks ativas
-        if (this.localStream) {
-          const activeTracks = this.localStream.getTracks().filter(t => t.readyState === 'live');
-          console.log(`🎥 [PARTICIPANT] Stream validation: ${activeTracks.length} active tracks`);
-          
-          if (activeTracks.length > 0) {
-            console.log('🚨 CRÍTICO [PARTICIPANT] Stream negotiation COMPLETE - tracks active and ready');
-            window.dispatchEvent(new CustomEvent('participant-stream-ready', {
-              detail: { 
-                participantId: this.participantId, 
-                hostId, 
-                streamId: this.localStream.id,
-                trackCount: activeTracks.length,
-                timestamp: Date.now() 
-              }
-            }));
-          } else {
-            console.warn('⚠️ [PARTICIPANT] No active tracks found in stream');
-          }
-        }
-        
-        this.clearMonitoring();
-        return;
-      }
-      
-      // Falha: conexão falhou
-      if (connectionState === 'failed' || iceConnectionState === 'failed') {
-        console.error('❌ [PARTICIPANT] Connection establishment FAILED');
-        this.clearMonitoring();
-        this.handleConnectionFailure(hostId);
-        return;
-      }
-      
-      // Timeout: muitas tentativas
-      if (checkCount >= maxChecks) {
-        console.error('❌ [PARTICIPANT] Connection establishment TIMEOUT');
-        this.clearMonitoring();
-        this.handleConnectionFailure(hostId);
-        return;
-      }
-    };
-    
-    const clearMonitoring = () => {
-      if (connectionCheckInterval) clearInterval(connectionCheckInterval);
-      if (timeoutTimer) clearTimeout(timeoutTimer);
-    };
-    
-    this.clearMonitoring = clearMonitoring;
-    
-    // Iniciar monitoramento
-    connectionCheckInterval = setInterval(checkConnection, 500);
-    
-    // Timeout de segurança
-    timeoutTimer = setTimeout(() => {
-      console.error('❌ [PARTICIPANT] Connection establishment HARD TIMEOUT (30s)');
-      clearMonitoring();
-      this.handleConnectionFailure(hostId);
-    }, 30000);
-    
-    // Primeira verificação imediata
-    checkConnection();
-  }
-
   private handleConnectionFailure(hostId: string): void {
     console.log(`🔧 RECOVERY: Connection failure recovery initiated for: ${hostId}`);
     
@@ -946,7 +497,6 @@ class ParticipantHandshakeManager {
     
     // Clear pending candidates
     this.pendingCandidates = [];
-    this.isPeerConnectionReady = false;
     
     // Controlled retry with backoff - only if under retry limit
     if (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
@@ -1022,10 +572,8 @@ class ParticipantHandshakeManager {
     }
     
     this.clearConnectionTimeout();
-    this.clearCandidateFlushTimeout();
     this.pendingCandidates = [];
     this.reconnectAttempts = 0;
-    this.isPeerConnectionReady = false;
     
     console.log('🧹 [PARTICIPANT] Handshake cleanup complete');
   }

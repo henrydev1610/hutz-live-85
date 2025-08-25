@@ -3,17 +3,9 @@ services:
     name: hutz-live-frontend
     env: static
     plan: free
-    staticPublishPath: dist
+    staticPublishPath: dist           # ou ./build, conforme sua config de build
     routes:
-      # Serve static HTML files directly
+      # Reescreve **todas** as URLs para /index.html
       - type: rewrite
-        src: '/transmission-window.html'
-        dest: '/transmission-window.html'
-      # Rewrite específico para 404
-      - type: rewrite
-        src: '/404'
-        dest: '/index.html'
-      # Reescreve outras URLs para /index.html (exceto arquivos .html)  
-      - type: rewrite
-        src: '/(?!.*\.html$).*'
+        src: '/.*'
         dest: '/index.html'

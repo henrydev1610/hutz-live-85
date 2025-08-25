@@ -1,9 +1,0 @@
-Options -MultiViews
-RewriteEngine On
-# Don't rewrite if it's an existing file (like .html files)
-RewriteCond %{REQUEST_FILENAME} !-f
-# Don't rewrite if it's a directory
-RewriteCond %{REQUEST_FILENAME} !-d
-# Don't rewrite .html files
-RewriteCond %{REQUEST_URI} !\.html$
-RewriteRule ^ index.html [QR,L]

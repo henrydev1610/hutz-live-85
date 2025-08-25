@@ -1,14 +1,12 @@
 
 import { useCallback, useRef } from 'react';
 import { detectMobileAggressively } from '@/utils/media/deviceDetection';
-import { twilioVideoService } from '@/services/TwilioVideoService';
 
 interface VideoCreationState {
   [containerId: string]: {
     videoElement: HTMLVideoElement | null;
     isPlaying: boolean;
     lastUpdate: number;
-    isTwilioTrack?: boolean;
   };
 }
 
@@ -17,7 +15,7 @@ export const useUnifiedVideoCreation = () => {
 
   const createVideoElementUnified = useCallback(async (
     container: HTMLElement, 
-    stream: MediaStream | any,
+    stream: MediaStream,
     participantId: string
   ): Promise<HTMLVideoElement | null> => {
     if (!container || !stream) {
@@ -28,69 +26,12 @@ export const useUnifiedVideoCreation = () => {
     const containerId = container.id || `container-${participantId}`;
     const isMobile = detectMobileAggressively();
     
-    // 🚨 FASE 4: DETECTAR TWILIO VIDEO TRACK
-    const isTwilioTrack = stream && typeof stream.attach === 'function';
-    const streamInfo = isTwilioTrack ? 
-      { kind: stream.kind, enabled: stream.enabled, sid: stream.sid } :
-      { streamId: stream.id, tracks: stream.getTracks().length };
-
     console.log(`🎬 UNIFIED VIDEO: Creating video for ${participantId}`, {
       containerId,
       isMobile,
-      isTwilioTrack,
-      ...streamInfo
+      streamId: stream.id,
+      tracks: stream.getTracks().length
     });
-
-    // Check if Twilio Video should handle this
-    if (twilioVideoService.isConnected()) {
-      console.log('🎯 UNIFIED: Attempting Twilio Video integration');
-      
-      // Set participant ID on container for Twilio to find
-      container.setAttribute('data-participant-id', participantId);
-      
-      // Try Twilio Video attachment first
-      const videoElement = document.createElement('video');
-      const attached = twilioVideoService.attachVideoToElement(participantId, videoElement);
-      
-      if (attached) {
-        console.log('✅ UNIFIED: Twilio Video attachment successful');
-        
-        // Configure video element
-        videoElement.autoplay = true;
-        videoElement.playsInline = true;
-        videoElement.muted = true;
-        videoElement.controls = false;
-        videoElement.className = 'w-full h-full object-cover absolute inset-0 z-10';
-        videoElement.style.cssText = `
-          display: block !important;
-          width: 100% !important;
-          height: 100% !important;
-          object-fit: cover !important;
-          position: absolute !important;
-          top: 0 !important;
-          left: 0 !important;
-          z-index: 10 !important;
-          background-color: transparent !important;
-        `;
-        
-        // Clear container and add video
-        const existingVideo = container.querySelector('video');
-        if (existingVideo) {
-          existingVideo.remove();
-        }
-        container.appendChild(videoElement);
-        
-        // Save state
-        videoStatesRef.current[containerId] = {
-          videoElement,
-          isPlaying: true,
-          lastUpdate: Date.now(),
-          isTwilioTrack: true
-        };
-        
-        return videoElement;
-      }
-    }
 
     // Clear any existing video in container
     const existingVideo = container.querySelector('video');
@@ -136,18 +77,9 @@ export const useUnifiedVideoCreation = () => {
     const elId = videoElement.id || `video-${participantId}`;
     videoElement.id = elId;
     
-    console.log(`HOST-UI-ATTACH-START {id=${participantId}, elId=${elId}, isTwilio=${isTwilioTrack}}`);
-    
-    // 🚨 FASE 4: USAR TWILIO .attach() OU srcObject BASEADO NO TIPO
-    if (isTwilioTrack) {
-      console.log(`🔥 TWILIO ATTACH: Usando track.attach() para ${participantId}`);
-      stream.attach(videoElement);
-      console.log(`HOST-UI-TWILIO-ATTACH-DONE {id=${participantId}, elId=${elId}, kind=${stream.kind}}`);
-    } else {
-      console.log(`📺 STANDARD ATTACH: Usando srcObject para ${participantId}`);
-      videoElement.srcObject = stream;
-      console.log(`HOST-UI-ATTACH-DONE {id=${participantId}, elId=${elId}, readyState=${videoElement.readyState}}`);
-    }
+    console.log(`HOST-UI-ATTACH-START {id=${participantId}, elId=${elId}}`);
+    videoElement.srcObject = stream;
+    console.log(`HOST-UI-ATTACH-DONE {id=${participantId}, elId=${elId}, readyState=${videoElement.readyState}}`);
 
     // Unified event handling
     return new Promise((resolve) => {
@@ -158,8 +90,7 @@ export const useUnifiedVideoCreation = () => {
         videoStatesRef.current[containerId] = {
           videoElement,
           isPlaying: true,
-          lastUpdate: Date.now(),
-          isTwilioTrack: isTwilioTrack
+          lastUpdate: Date.now()
         };
         
         resolve(videoElement);

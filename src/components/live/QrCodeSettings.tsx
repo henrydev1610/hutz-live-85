@@ -1,4 +1,4 @@
-import { QrCode, ExternalLink, Check, Copy, Minus, Plus } from 'lucide-react';
+import { QrCode, ExternalLink, Check, Copy } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,8 +9,6 @@ interface QrCodeSettingsProps {
   qrCodeGenerated: boolean;
   qrCodeVisible: boolean;
   qrCodeURL: string;
-  qrCodePosition: { x: number; y: number; width: number; height: number };
-  setQrCodePosition: React.Dispatch<React.SetStateAction<{ x: number; y: number; width: number; height: number }>>;
   finalAction: 'none' | 'image' | 'coupon';
   setFinalAction: (action: 'none' | 'image' | 'coupon') => void;
   finalActionImage: string | null;
@@ -27,8 +25,6 @@ const QrCodeSettings = ({
   qrCodeGenerated,
   qrCodeVisible,
   qrCodeURL,
-  qrCodePosition,
-  setQrCodePosition,
   finalAction,
   setFinalAction,
   finalActionImage,
@@ -41,24 +37,6 @@ const QrCodeSettings = ({
   onQRCodeToTransmission
 }: QrCodeSettingsProps) => {
   const { toast } = useToast();
-
-  const increaseQrSize = () => {
-    const newSize = Math.min(qrCodePosition.width + 20, 300);
-    setQrCodePosition(prev => ({
-      ...prev,
-      width: newSize,
-      height: newSize
-    }));
-  };
-
-  const decreaseQrSize = () => {
-    const newSize = Math.max(qrCodePosition.width - 20, 80);
-    setQrCodePosition(prev => ({
-      ...prev,
-      width: newSize,
-      height: newSize
-    }));
-  };
 
   const copyQrCodeUrl = () => {
     if (navigator.clipboard) {
@@ -184,33 +162,6 @@ const QrCodeSettings = ({
             </div>
             
             <div className="mt-4 space-y-4">
-              <div>
-                <Label className="mb-2 block">
-                  Tamanho do QR Code
-                </Label>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={decreaseQrSize}
-                    disabled={qrCodePosition.width <= 80}
-                    className="border-white/20"
-                  >
-                    <Minus className="h-4 w-4" />
-                  </Button>
-                  <span className="text-sm px-2 min-w-[60px] text-center">
-                    {qrCodePosition.width}px
-                  </span>
-                  <Button
-                    variant="outline"
-                    onClick={increaseQrSize}
-                    disabled={qrCodePosition.width >= 300}
-                    className="border-white/20"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              
               <div>
                 <Label className="block mb-2">
                   Ação ao Finalizar Transmissão

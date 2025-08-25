@@ -49,65 +49,25 @@ export const useDirectVideoCreation = ({
     video.srcObject = mediaStream;
     container.appendChild(video);
 
-    // Enhanced play with video data validation
-    const playVideoWithValidation = async () => {
+    // Force play
+    const playVideo = async () => {
       try {
-        // Aguarda metadados se necessário
-        if (video.readyState < 1) {
-          console.log(`🔄 DIRECT: Aguardando metadados para ${participantId}`);
-          await new Promise((resolve) => {
-            const handler = () => {
-              video.removeEventListener('loadedmetadata', handler);
-              resolve(undefined);
-            };
-            video.addEventListener('loadedmetadata', handler);
-          });
-        }
-
-        // Aguarda dados de vídeo (dimensões > 0)
-        let attempts = 0;
-        const maxAttempts = 30; // 3 segundos
-        
-        while (attempts < maxAttempts && (video.videoWidth === 0 || video.videoHeight === 0)) {
-          console.log(`🔍 DIRECT: Aguardando dados de vídeo (${attempts + 1}/${maxAttempts}) para ${participantId}`);
-          await new Promise(resolve => setTimeout(resolve, 100));
-          attempts++;
-        }
-
-        if (video.videoWidth > 0 && video.videoHeight > 0) {
-          console.log(`✅ DIRECT: Dados de vídeo confirmados ${video.videoWidth}x${video.videoHeight} para ${participantId}`);
-        } else {
-          console.warn(`⚠️ DIRECT: Prosseguindo sem dados de vídeo confirmados para ${participantId}`);
-        }
-
         await video.play();
         console.log(`✅ DIRECT: Video playing for ${participantId}`);
-        
-        // Dispatch evento de vídeo pronto
-        window.dispatchEvent(new CustomEvent('video-display-ready', {
-          detail: { participantId, success: true, dimensions: { width: video.videoWidth, height: video.videoHeight } }
-        }));
       } catch (error) {
         console.log(`⚠️ DIRECT: Play failed for ${participantId}:`, error);
         // Retry after short delay
         setTimeout(() => {
-          playVideoWithValidation().catch(e => console.log(`⚠️ DIRECT: Retry failed:`, e));
-        }, 500);
+          video.play().catch(e => console.log(`⚠️ DIRECT: Retry failed:`, e));
+        }, 100);
       }
     };
 
-    // Try to play with validation
-    playVideoWithValidation();
+    // Try to play immediately and on events
+    playVideo();
     
-    video.addEventListener('loadedmetadata', () => {
-      console.log(`📊 DIRECT: Metadados carregados para ${participantId}`);
-      playVideoWithValidation();
-    });
-    
-    video.addEventListener('canplay', () => {
-      console.log(`▶️ DIRECT: Video can play para ${participantId}`);
-      playVideoWithValidation();
-    });
+    video.addEventListener('loadedmetadata', playVideo);
+    video.addEventListener('canplay', playVideo);
 
     return video;
   }, [participantId, containerId]);

@@ -156,30 +156,10 @@ export const useParticipantManagement = ({
       });
     };
 
-    // Initialize global streams map if it doesn't exist
-    if (!window.__mlStreams__) {
-      window.__mlStreams__ = new Map<string, MediaStream>();
-      console.log('🗺️ HOST: Initialized global streams map');
-    }
-
     // Set up global access for participant stream retrieval (single instance)
     window.getParticipantStream = (participantId: string) => {
-      // Tentar múltiplas fontes de streams
-      const streamFromState = participantStreams[participantId];
-      const streamFromGlobalMap = window.__mlStreams__?.get(participantId);
-      const stream = streamFromState || streamFromGlobalMap || null;
-      
-      console.log('📥 HOST: getParticipantStream requested for:', participantId, {
-        foundInState: !!streamFromState,
-        foundInGlobalMap: !!streamFromGlobalMap,
-        finalStream: !!stream,
-        streamId: stream?.id,
-        streamActive: stream?.active,
-        tracksCount: stream?.getTracks()?.length || 0,
-        allStreamsInState: Object.keys(participantStreams),
-        allStreamsInGlobalMap: Array.from(window.__mlStreams__?.keys() || [])
-      });
-      
+      const stream = participantStreams[participantId];
+      console.log('📥 HOST: getParticipantStream requested for:', participantId, stream ? stream.id : 'not found');
       return stream;
     };
 
@@ -189,37 +169,9 @@ export const useParticipantManagement = ({
       console.log('🧹 HOST: Cleaning up unified WebRTC system');
       setParticipantJoinCallback(() => {});
       delete window.getParticipantStream;
-      if (window.__mlStreams__) {
-        window.__mlStreams__.clear();
-      }
       window.removeEventListener('participant-discovered', handleParticipantDiscovered);
     };
   }, [isHost, setParticipantList, participantStreams]);
-
-  // Effect to register streams in global map when they change
-  useEffect(() => {
-    if (!isHost) return;
-    
-    Object.entries(participantStreams).forEach(([participantId, stream]) => {
-      if (stream && window.__mlStreams__) {
-        if (!window.__mlStreams__.has(participantId)) {
-          window.__mlStreams__.set(participantId, stream);
-          console.log('🗺️ HOST: Registered stream in global map:', participantId, stream.id);
-        }
-      }
-    });
-
-    // Clean up streams that are no longer in participantStreams
-    if (window.__mlStreams__) {
-      const currentParticipantIds = Object.keys(participantStreams);
-      Array.from(window.__mlStreams__.keys()).forEach(participantId => {
-        if (!currentParticipantIds.includes(participantId)) {
-          window.__mlStreams__?.delete(participantId);
-          console.log('🗺️ HOST: Removed stream from global map:', participantId);
-        }
-      });
-    }
-  }, [isHost, participantStreams]);
 
   const testConnection = () => {
     console.log('🧪 ENHANCED MANAGEMENT: Testing connection with cache clearing...');

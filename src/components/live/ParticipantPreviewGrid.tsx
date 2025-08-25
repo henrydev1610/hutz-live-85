@@ -17,16 +17,12 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   // FASE 3: CONTAINER PRE-CREATION - Estado para slots P1-P4
   const [slots, setSlots] = useState<Participant[]>([]);
   
-  // Detectar se estamos na janela de transmissão
-  const isTransmissionWindow = window.name === 'transmission-window' || window.location.pathname.includes('transmission');
-  
   // FASE 3: Pré-criar slots P1-P4 na inicialização
   useEffect(() => {
-    const context = isTransmissionWindow ? 'TRANSMISSION' : 'HOST';
-    console.log(`🏗️ FASE 3: PRE-CREATION [${context}] - Inicializando slots P1-P${participantCount}`);
+    console.log('🏗️ FASE 3: PRE-CREATION - Inicializando slots P1-P4');
     
     const preCreatedSlots = Array.from({ length: participantCount }, (_, i) => ({
-      id: isTransmissionWindow ? `transmission-slot-p${i + 1}` : `slot-p${i + 1}`,
+      id: `slot-p${i + 1}`,
       name: `P${i + 1}`,
       joinedAt: Date.now(),
       lastActive: Date.now(),
@@ -37,33 +33,31 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
     }));
     
     setSlots(preCreatedSlots);
-    console.log(`🏗️ ${context}: Criados ${preCreatedSlots.length} slots`);
-  }, [participantCount, isTransmissionWindow]);
+  }, [participantCount]);
   
   // PONTE WEBRTC→REACT: Múltiplos listeners para garantir bridge
   useEffect(() => {
-    const context = isTransmissionWindow ? 'TRANSMISSION' : 'HOST';
-    console.log(`🌉 PONTE WEBRTC→REACT [${context}]: Configurando listeners no grid`);
+    console.log('🌉 PONTE WEBRTC→REACT: Configurando listeners no grid');
     
     const handleStreamConnected = (event: CustomEvent) => {
       const { participantId, stream } = event.detail;
-      console.log(`🌉 PONTE BRIDGE [${context}]: Stream WebRTC recebido no grid:`, participantId, stream?.id);
+      console.log('🌉 PONTE BRIDGE: Stream WebRTC recebido no grid:', participantId, stream?.id);
       
       // Forçar re-render completo do grid
       setSlots(currentSlots => {
-        console.log(`🔄 PONTE BRIDGE [${context}]: Forçando re-render do grid para stream:`, participantId);
+        console.log('🔄 PONTE BRIDGE: Forçando re-render do grid para stream:', participantId);
         return [...currentSlots];
       });
     };
     
     const handleForceUpdate = (event: CustomEvent) => {
       const { participantId, streamId } = event.detail;
-      console.log(`🔄 PONTE FORCE [${context}]: Forçando atualização para:`, participantId, streamId);
+      console.log('🔄 PONTE FORCE: Forçando atualização para:', participantId, streamId);
       
       // Re-render forçado mais agressivo
       setSlots(currentSlots => {
         const updated = currentSlots.map(slot => ({ ...slot }));
-        console.log(`🔄 PONTE FORCE [${context}]: Grid atualizado forçadamente`);
+        console.log('🔄 PONTE FORCE: Grid atualizado forçadamente');
         return updated;
       });
     };
@@ -78,7 +72,7 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
       window.removeEventListener('force-stream-state-update', handleForceUpdate as EventListener);
       window.removeEventListener('stream-received', handleStreamConnected as EventListener);
     };
-  }, [isTransmissionWindow]);
+  }, []);
   
   // Combinar participantes reais com slots pré-criados
   const realParticipants = participantList.filter(p => !p.id.startsWith('placeholder-') && !p.id.startsWith('slot-'));
@@ -103,17 +97,7 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
     return 'grid-cols-4';
   };
 
-  const getGridRows = (count: number) => {
-    if (count <= 1) return 'grid-rows-1';
-    if (count <= 2) return 'grid-rows-1';
-    if (count <= 4) return 'grid-rows-2';
-    if (count <= 6) return 'grid-rows-2';
-    if (count <= 9) return 'grid-rows-3';
-    return 'grid-rows-4';
-  };
-
-  const context = isTransmissionWindow ? 'TRANSMISSION' : 'HOST';
-  console.log(`🎭 FASE 3: PREVIEW GRID [${context}] - Rendering participants`, {
+  console.log('🎭 FASE 3: PREVIEW GRID - Rendering participants', {
     realParticipants: realParticipants.length,
     selectedParticipants: selectedParticipants.length,
     slots: slots.length,
@@ -122,8 +106,8 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   });
 
   return (
-    <div className="absolute inset-0 p-8">
-      <div className={`grid ${getGridClass(participantCount)} ${getGridRows(participantCount)} gap-6 h-full w-full`}>
+    <div className="absolute inset-0 p-4">
+      <div className={`grid ${getGridClass(participantCount)} gap-2 h-full`}>
         {allParticipants.map((participant, index) => (
           <UnifiedVideoContainer
             key={participant.id}

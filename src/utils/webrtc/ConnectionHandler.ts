@@ -53,7 +53,7 @@ export class ConnectionHandler {
     }
     
     try {
-      const peerConnection = await this.createPeerConnection(participantId);
+      const peerConnection = this.createPeerConnection(participantId);
       await this.initiateCall(participantId);
       console.log(`✅ FASE 2: Handshake initiated successfully with ${participantId}`);
       
@@ -70,7 +70,7 @@ export class ConnectionHandler {
     }
   }
 
-  async createPeerConnection(participantId: string): Promise<RTCPeerConnection> {
+  createPeerConnection(participantId: string): RTCPeerConnection {
     console.log(`🔗 [WRTC] Creating peer connection: ${participantId}`);
     const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
     if (DEBUG) {
@@ -133,7 +133,7 @@ export class ConnectionHandler {
     (window as any).__relayIds.add(uniqueId);
     
     // FASE 1: Usar configuração ativa de STUN/TURN (dinâmica ou fallback)
-    const config = await getActiveWebRTCConfig();
+    const config = getActiveWebRTCConfig();
     console.log(`🔧 [WRTC] Criando conexão ${uniqueId} com ICE servers:`,
       (config.iceServers || []).map(s => ({ urls: (s as any).urls, hasCred: !!(s as any).credential }))
     );
@@ -562,7 +562,7 @@ export class ConnectionHandler {
   async handleOffer(participantId: string, offer: RTCSessionDescriptionInit): Promise<void> {
     console.log(`📥 WEBRTC DIAGNÓSTICO: Received offer from ${participantId}`);
     
-    const peerConnection = this.peerConnections.get(participantId) || await this.createPeerConnection(participantId);
+    const peerConnection = this.peerConnections.get(participantId) || this.createPeerConnection(participantId);
     
     try {
       await peerConnection.setRemoteDescription(offer);

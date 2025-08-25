@@ -1,6 +1,1 @@
-# Serve static HTML files directly
-/transmission-window.html  /transmission-window.html  200
-# Handle 404 errors
-/404   /index.html   200
-# SPA fallback for all other routes
 /*    /index.html   200

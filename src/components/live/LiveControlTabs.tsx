@@ -25,8 +25,6 @@ interface LiveControlTabsProps {
   setSelectedTextColor: React.Dispatch<React.SetStateAction<string>>;
   qrDescriptionFontSize: number;
   setQrDescriptionFontSize: React.Dispatch<React.SetStateAction<number>>;
-  qrCodePosition: { x: number; y: number; width: number; height: number };
-  setQrCodePosition: React.Dispatch<React.SetStateAction<{ x: number; y: number; width: number; height: number }>>;
   selectedBackgroundColor: string;
   setSelectedBackgroundColor: React.Dispatch<React.SetStateAction<string>>;
   backgroundImage: string | null;
@@ -64,8 +62,6 @@ const LiveControlTabs: React.FC<LiveControlTabsProps> = ({
   setSelectedTextColor,
   qrDescriptionFontSize,
   setQrDescriptionFontSize,
-  qrCodePosition,
-  setQrCodePosition,
   selectedBackgroundColor,
   setSelectedBackgroundColor,
   backgroundImage,
@@ -148,8 +144,6 @@ const LiveControlTabs: React.FC<LiveControlTabsProps> = ({
           qrCodeGenerated={qrCodeGenerated}
           qrCodeVisible={qrCodeVisible}
           qrCodeURL={qrCodeURL}
-          qrCodePosition={qrCodePosition}
-          setQrCodePosition={setQrCodePosition}
           finalAction={finalAction}
           setFinalAction={setFinalAction}
           finalActionImage={finalActionImage}

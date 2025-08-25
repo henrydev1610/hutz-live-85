@@ -26,12 +26,12 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   multiplier: 1.5
 };
 
-// FASE 2: Timeouts otimizados para detecção rápida de TURN travado
+// DESKTOP: Timeouts realistas para WebRTC
 const DESKTOP_TIMEOUTS = {
-  connectionTimeout: 5000,     // 5s para detecção rápida de falha (reduzido de 15s)
-  forceCleanup: 8000,          // 8s antes de força limpeza (reduzido de 20s)
-  healthCheckInterval: 15000,  // 15s entre checks de saúde (reduzido de 30s)
-  retryGracePeriod: 10000      // 10s grace period (reduzido de 45s)
+  connectionTimeout: 15000,    // 15s para negociação WebRTC
+  forceCleanup: 20000,         // 20s antes de força limpeza  
+  healthCheckInterval: 30000,  // 30s entre checks de saúde
+  retryGracePeriod: 45000      // 45s grace period antes do primeiro retry
 };
 
 export class UnifiedWebRTCManager {
@@ -397,67 +397,44 @@ export class UnifiedWebRTCManager {
   cleanup(): void {
     console.log('🧹 UNIFIED: Cleaning up WebRTC manager');
 
-    // FASE 1: Cleanup mais robusto para evitar "relay already exists"
-    try {
-      // Clear connection timeouts
-      this.connectionTimeouts.forEach(timeout => clearTimeout(timeout));
-      this.connectionTimeouts.clear();
+    // Clear connection timeouts
+    this.connectionTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.connectionTimeouts.clear();
 
-      // Clear retry timeouts
-      this.retryTimeouts.forEach(timeout => clearTimeout(timeout));
-      this.retryTimeouts.clear();
-      this.retryAttempts.clear();
+    // Clear retry timeouts
+    this.retryTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.retryTimeouts.clear();
+    this.retryAttempts.clear();
 
-      // Clear ICE candidate buffers
-      this.iceCandidateBuffer.clear();
+    // Clear ICE candidate buffers
+    this.iceCandidateBuffer.clear();
 
-      // Clear health monitoring
-      if (this.healthCheckInterval) {
-        clearInterval(this.healthCheckInterval);
-        this.healthCheckInterval = null;
-      }
+    // Clear health monitoring
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
 
-      // FASE 1: Close peer connections com try-catch individual
-      this.peerConnections.forEach((pc, participantId) => {
-        try {
-          if (pc.connectionState !== 'closed') {
-            console.log(`🔥 CLEANUP: Closing connection for ${participantId}`);
-            pc.close();
-          }
-        } catch (error) {
-          console.warn(`⚠️ CLEANUP: Error closing ${participantId}:`, error);
-        }
-      });
-      this.peerConnections.clear();
+    // Close peer connections
+    this.peerConnections.forEach(pc => pc.close());
+    this.peerConnections.clear();
 
-      // FASE 1: Clear global relay references se existir
-      if (typeof window !== 'undefined') {
-        // Clear any global WebRTC references that might cause "relay already exists"
-        delete (window as any).__webrtcRelays;
-        delete (window as any).__activeConnections;
-      }
+    // Reset state
+    this.connectionState = {
+      websocket: 'disconnected',
+      webrtc: 'disconnected',
+      overall: 'disconnected'
+    };
 
-      // Reset state
-      this.connectionState = {
-        websocket: 'disconnected',
-        webrtc: 'disconnected',
-        overall: 'disconnected'
-      };
+    this.connectionMetrics.clear();
+    this.roomId = null;
+    this.participantId = null;
+    this.isHost = false;
+    this.webrtcReady = false;
 
-      this.connectionMetrics.clear();
-      this.roomId = null;
-      this.participantId = null;
-      this.isHost = false;
-      this.webrtcReady = false;
-
-      // Disconnect WebSocket
-      if (unifiedWebSocketService.isConnected()) {
-        unifiedWebSocketService.disconnect();
-      }
-
-      console.log('✅ UNIFIED: Cleanup completed successfully');
-    } catch (error) {
-      console.error('❌ UNIFIED: Error during cleanup:', error);
+    // Disconnect WebSocket
+    if (unifiedWebSocketService.isConnected()) {
+      unifiedWebSocketService.disconnect();
     }
   }
 

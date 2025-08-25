@@ -80,36 +80,7 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
   // ✅ ETAPA 4: MOBILE DETECTION WITH DEBUGGING
   const isMobile = participant.isMobile ?? detectMobileAggressively();
   
-  // ✅ CORREÇÃO 4: STATUS VISUAL APRIMORADO - não mostrar "disconnected" durante negociação
-  const [isNegotiating, setIsNegotiating] = useState(false);
-  
-  // CORREÇÃO CRÍTICA: Verificar tracks antes de marcar como "com vídeo"
-  const [hasValidVideo, setHasValidVideo] = useState(false);
-  
-  useEffect(() => {
-    const checkStreamTracks = async () => {
-      if (!stream) {
-        setHasValidVideo(false);
-        return;
-      }
-
-      const { shouldProcessStream } = await import('@/utils/media/trackValidation');
-      const isValid = shouldProcessStream(stream, participant.id);
-      
-      console.log(`🔍 UNIFIED CONTAINER: Verificação de tracks para ${participant.id}:`, {
-        streamId: stream.id,
-        isValid,
-        trackCount: stream.getTracks().length,
-        videoTracks: stream.getVideoTracks().length,
-        activeTracks: stream.getTracks().filter(t => t.readyState === 'live').length
-      });
-      
-      setHasValidVideo(isValid);
-    };
-
-    checkStreamTracks();
-  }, [stream, participant.id]);
-
+  // ✅ ETAPA 5: STATUS VISUAL EM TEMPO REAL
   const { 
     status, 
     statusText, 
@@ -119,99 +90,40 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
     hasActiveVideo 
   } = useRealTimeStatus({
     participantId: participant.id,
-    hasVideo: hasValidVideo, // Usar validação crítica em vez de participant.hasVideo
+    hasVideo: participant.hasVideo,
     active: participant.active,
     stream
   });
 
-  // Override status during WebRTC negotiation
-  const displayStatus = isNegotiating && status === 'disconnected' ? 'connecting' : status;
-  const displayStatusText = isNegotiating && statusText === 'Desconectado' ? 'Negociando...' : statusText;
-  const displayStatusColor = isNegotiating && statusColor === 'text-red-400' ? 'text-yellow-400' : statusColor;
-
-  // ✅ CORREÇÃO 3: Monitor de negociação WebRTC
-  useEffect(() => {
-    const handleWebRTCNegotiation = (event: CustomEvent) => {
-      const { participantId, state } = event.detail;
-      if (participantId === participant.id) {
-        console.log(`🔄 WEBRTC STATE: ${participantId} -> ${state}`);
-        setIsNegotiating(state === 'negotiating' || state === 'connecting');
-      }
-    };
-
-    window.addEventListener('webrtc-negotiation-state', handleWebRTCNegotiation as EventListener);
-    return () => window.removeEventListener('webrtc-negotiation-state', handleWebRTCNegotiation as EventListener);
-  }, [participant.id]);
-
-  // ✅ CORREÇÃO 1: BRIDGE REATIVO - Stream disponível mas sem vídeo  
-  useEffect(() => {
-    if (!stream || !containerRef.current) return;
-    
-    // Verificar se já existe elemento de vídeo
-    const existingVideo = containerRef.current.querySelector('video');
-    if (existingVideo) return;
-    
-    console.log(`🎯 BRIDGE REATIVO: Stream disponível mas sem vídeo para ${participant.id}`, {
-      streamId: stream.id.substring(0, 8),
-      hasContainer: !!containerRef.current,
-      containerId: containerRef.current?.id
-    });
-    
-    // Aguardar um tick para garantir que o DOM está pronto
-    const timer = setTimeout(() => {
-      if (!containerRef.current) return;
-      
-      // Disparar evento para StreamDisplayManager processar
-      window.dispatchEvent(new CustomEvent('react-container-ready', {
-        detail: {
-          participantId: participant.id,
-          stream,
-          container: containerRef.current,
-          timestamp: Date.now()
-        }
-      }));
-      
-      console.log(`✅ BRIDGE REATIVO: Evento disparado para ${participant.id}`);
-    }, 100);
-    
-    return () => clearTimeout(timer);
-  }, [participant.id, stream]);
-
   // Video creation is now handled by the centralized StreamDisplayManager
-  // This component handles display state, UI, and React-WebRTC bridge
+  // This component only handles display state and UI
 
   return (
     <div 
-      className="participant-video aspect-video bg-gray-800/60 rounded-md overflow-hidden relative flex-1 w-full h-full max-w-full max-h-full"
+      className="participant-video aspect-video bg-gray-800/60 rounded-md overflow-hidden relative"
       id={containerId}
       data-participant-id={participant.id}
       data-video-container="true"
       style={{ 
-        minHeight: '200px', 
-        minWidth: '300px',
-        backgroundColor: hasValidVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
+        minHeight: '120px', 
+        minWidth: '160px',
+        backgroundColor: participant.hasVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
       }}
     >
       {/* ✅ ETAPA 3: MAIN VIDEO CONTAINER WITH MULTIPLE IDs FOR COMPATIBILITY */}
       <div 
         ref={containerRef} 
         id={unifiedVideoId}
-        className="w-full h-full relative flex items-center justify-center"
+        className="w-full h-full relative"
         data-unified-video="true"
-        style={{
-          aspectRatio: '16/9',
-          minHeight: 'inherit',
-          minWidth: 'inherit'
-        }}
       />
       
-      {/* CORREÇÃO 4: STATUS VISUAL APRIMORADO - sem "disconnected" durante negociação */}
+      {/* FASE 5: STATUS VISUAL EM TEMPO REAL - indicador unificado */}
       <div className="absolute top-1 right-1 bg-black/70 text-white text-xs px-2 py-1 rounded z-30">
         <div className="flex items-center gap-1">
           <span>{statusIcon}</span>
-          <span className={displayStatusColor}>{displayStatusText}</span>
+          <span className={statusColor}>{statusText}</span>
           {isMobile && <span>📱</span>}
-          {isNegotiating && <span className="animate-spin">⚙️</span>}
         </div>
       </div>
       
@@ -270,7 +182,7 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
       </div>
       
       {/* Video indicator */}
-      {hasValidVideo && isVideoReady && (
+      {participant.hasVideo && isVideoReady && (
         <div className="absolute top-2 right-2 z-20">
           <div className="bg-green-500 w-2 h-2 rounded-full animate-pulse"></div>
         </div>
