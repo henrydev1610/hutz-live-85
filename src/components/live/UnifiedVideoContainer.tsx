@@ -1,11 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Participant } from './ParticipantGrid';
-import { useUnifiedVideoCreation } from '@/hooks/live/useUnifiedVideoCreation';
-import { useRealTimeStatus } from '@/hooks/live/useRealTimeStatus';
 import { detectMobileAggressively } from '@/utils/media/deviceDetection';
-import { lovableBridge } from '@/utils/LovableWebRTCBridge';
-import { environmentDetector } from '@/utils/LovableEnvironmentDetector';
 
 interface UnifiedVideoContainerProps {
   participant: Participant;
@@ -19,110 +15,102 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
   stream
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { createVideoElementUnified } = useUnifiedVideoCreation();
-  
-  // ✅ ETAPA 3: CONTAINER COM MÚLTIPLOS IDs PADRONIZADOS
-  const containerId = `video-container-${participant.id}`;
-  const unifiedVideoId = `unified-video-${participant.id}`;
-  
-  // ✅ ETAPA 4: ENSURE CONTAINER HAS STANDARDIZED IDs
-  useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.id = containerId;
-      containerRef.current.setAttribute('data-participant-id', participant.id);
-      containerRef.current.setAttribute('data-video-container', 'true');
-      
-      // Also add unified video ID as class for compatibility
-      containerRef.current.classList.add(`unified-video-${participant.id}`);
-      
-      console.log(`📦 UNIFIED CONTAINER: IDs set for ${participant.id}`, {
-        containerId,
-        unifiedVideoId,
-        hasRef: !!containerRef.current
-      });
-    }
-  }, [participant.id, containerId, unifiedVideoId]);
 
-  // ✅ ETAPA 1: ENHANCED VIDEO DISPLAY EVENT LISTENER
+  // 1. Criar <video> no primeiro mount
   useEffect(() => {
-    const handleVideoDisplayReady = (event: CustomEvent) => {
-      const { participantId, success, error } = event.detail;
-      
-      if (participantId === participant.id) {
-        console.log(`🎥 UNIFIED CONTAINER: Video display event for ${participantId}`, { success, error });
-        
-        if (success) {
-          setIsVideoReady(true);
-          setError(null);
-          console.log(`✅ UNIFIED CONTAINER: Video display ready for ${participant.id}`);
-        } else {
-          setError(error || 'Video display failed');
-          console.error(`❌ UNIFIED CONTAINER: Video display failed for ${participant.id}:`, error);
-        }
-      }
-    };
-
-    // Listen for both event types for redundancy
-    const eventTypes = ['video-display-ready', 'participant-stream-received'];
-    eventTypes.forEach(eventType => {
-      window.addEventListener(eventType, handleVideoDisplayReady as EventListener);
-    });
+    const el = containerRef.current;
+    if (!el || videoRef.current) return;
     
-    return () => {
-      eventTypes.forEach(eventType => {
-        window.removeEventListener(eventType, handleVideoDisplayReady as EventListener);
-      });
-    };
+    const v = document.createElement('video');
+    v.id = `unified-video-${participant.id}`;
+    v.autoplay = true;
+    v.playsInline = true;
+    v.muted = true;
+    v.style.width = '100%';
+    v.style.height = '100%';
+    v.style.objectFit = 'cover';
+    
+    el.appendChild(v);
+    videoRef.current = v;
+    
+    console.log(`📦 VIDEO CREATED: Element created for ${participant.id}`, {
+      videoId: v.id,
+      container: el.id
+    });
   }, [participant.id]);
 
-  // ✅ ETAPA 4: MOBILE DETECTION WITH DEBUGGING
-  const isMobile = participant.isMobile ?? detectMobileAggressively();
-  
-  // ✅ ETAPA 5: STATUS VISUAL EM TEMPO REAL
-  const { 
-    status, 
-    statusText, 
-    statusColor, 
-    statusIcon, 
-    isConnected, 
-    hasActiveVideo 
-  } = useRealTimeStatus({
-    participantId: participant.id,
-    hasVideo: participant.hasVideo,
-    active: participant.active,
-    stream
-  });
-
-  // Video creation is now handled by the centralized StreamDisplayManager
-  // This component only handles display state and UI
-
-  return (
-    <div 
-      className="participant-video aspect-video bg-gray-800/60 rounded-md overflow-hidden relative"
-      id={containerId}
-      data-participant-id={participant.id}
-      data-video-container="true"
-      style={{ 
-        minHeight: '120px', 
-        minWidth: '160px',
-        backgroundColor: participant.hasVideo ? 'transparent' : 'rgba(55, 65, 81, 0.6)'
-      }}
-    >
-      {/* ✅ ETAPA 3: MAIN VIDEO CONTAINER WITH MULTIPLE IDs FOR COMPATIBILITY */}
-      <div 
-        ref={containerRef} 
-        id={unifiedVideoId}
-        className="w-full h-full relative"
-        data-unified-video="true"
-      />
+  // 2. Aplicar srcObject sempre que stream mudar
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !stream) {
+      if (!stream) {
+        setIsVideoReady(false);
+        setError(null);
+      }
+      return;
+    }
+    
+    if (v.srcObject !== stream) {
+      v.srcObject = stream;
+      setError(null);
       
-      {/* FASE 5: STATUS VISUAL EM TEMPO REAL - indicador unificado */}
+      const handleLoadedMetadata = () => {
+        setIsVideoReady(true);
+        console.log(`✅ VIDEO READY: Video playing for ${participant.id}`, {
+          videoWidth: v.videoWidth,
+          videoHeight: v.videoHeight,
+          streamId: stream.id
+        });
+      };
+      
+      const handleError = (e: Event) => {
+        setError('Erro ao reproduzir vídeo');
+        setIsVideoReady(false);
+        console.error(`❌ VIDEO ERROR: Error playing video for ${participant.id}:`, e);
+      };
+      
+      v.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
+      v.addEventListener('error', handleError, { once: true });
+      
+      console.log(`🎥 STREAM APPLIED: srcObject set for ${participant.id}`, {
+        streamId: stream.id,
+        streamActive: stream.active
+      });
+    }
+  }, [stream, participant.id]);
+
+  // Mobile detection for status display
+  const isMobile = participant.isMobile ?? detectMobileAggressively();
+
+  // Simple status determination
+  const getStatus = () => {
+    if (!participant.active) return { text: 'Aguardando', color: 'text-gray-400', icon: '⏳' };
+    if (error) return { text: 'Erro', color: 'text-red-400', icon: '❌' };
+    if (!stream) return { text: 'Conectado', color: 'text-green-400', icon: '🔗' };
+    if (isVideoReady) return { text: 'Ativo', color: 'text-green-400', icon: '📹' };
+    return { text: 'Carregando', color: 'text-yellow-400', icon: '⏳' };
+  };
+
+  const status = getStatus();
+
+  // 3. Render com container standardizado
+  return (
+    <div
+      id={`video-container-participant-${participant.id}`}
+      ref={containerRef}
+      data-video-container="true"
+      data-participant-id={participant.id}
+      className="relative w-full h-full overflow-hidden aspect-video bg-gray-800/60 rounded-md"
+      style={{ minWidth: 160, minHeight: 120, backgroundColor: 'transparent' }}
+    >
+      {/* Status indicator */}
       <div className="absolute top-1 right-1 bg-black/70 text-white text-xs px-2 py-1 rounded z-30">
         <div className="flex items-center gap-1">
-          <span>{statusIcon}</span>
-          <span className={statusColor}>{statusText}</span>
+          <span>{status.icon}</span>
+          <span className={status.color}>{status.text}</span>
           {isMobile && <span>📱</span>}
         </div>
       </div>
