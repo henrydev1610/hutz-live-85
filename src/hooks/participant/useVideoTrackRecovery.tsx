@@ -20,7 +20,6 @@ export const useVideoTrackRecovery = ({
   const visibilityRecoveryTimer = useRef<NodeJS.Timeout>();
   const MAX_RECOVERY_ATTEMPTS = 3;
   const RECOVERY_BACKOFF = 2000;
-  const frameCheckInterval = useRef<NodeJS.Timeout>();
 
   const recoverVideoTrack = useCallback(async (reason: string): Promise<boolean> => {
     if (recoveryInProgress.current) {
@@ -44,7 +43,7 @@ export const useVideoTrackRecovery = ({
         await new Promise(resolve => setTimeout(resolve, RECOVERY_BACKOFF * recoveryAttempts.current));
       }
 
-      // Create new stream with same constraints  
+      // Create new stream with same constraints
       const newStream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: 'environment',
@@ -58,9 +57,6 @@ export const useVideoTrackRecovery = ({
       if (!newVideoTrack || newVideoTrack.readyState !== 'live') {
         throw new Error('New track is not live');
       }
-
-      // Verify track produces frames before proceeding
-      await verifyTrackProducesFrames(newStream, videoRef);
 
       // Update preview video
       if (videoRef.current) {
@@ -180,73 +176,9 @@ export const useVideoTrackRecovery = ({
     };
   }, [currentStream, recoverVideoTrack]);
 
-  // Frame production verification
-  const verifyTrackProducesFrames = useCallback(async (
-    stream: MediaStream, 
-    videoRef: React.RefObject<HTMLVideoElement>
-  ): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Track did not produce frames within 3 seconds'));
-      }, 3000);
-
-      if (videoRef.current) {
-        const video = videoRef.current;
-        video.srcObject = stream;
-        video.playsInline = true;
-        video.autoplay = true;
-        video.muted = true;
-
-        const checkFrames = () => {
-          if (video.videoWidth > 0 && video.videoHeight > 0) {
-            console.log(`📊 [FRAME-CHECK] Video producing frames: ${video.videoWidth}x${video.videoHeight}`);
-            clearTimeout(timeout);
-            resolve();
-          } else {
-            setTimeout(checkFrames, 100);
-          }
-        };
-
-        video.onloadedmetadata = checkFrames;
-        video.play().catch(reject);
-      } else {
-        clearTimeout(timeout);
-        resolve(); // Fallback if no video ref
-      }
-    });
-  }, []);
-
-  // Continuous frame monitoring
-  const startFrameMonitoring = useCallback((track: MediaStreamTrack) => {
-    if (frameCheckInterval.current) {
-      clearInterval(frameCheckInterval.current);
-    }
-
-    frameCheckInterval.current = setInterval(() => {
-      if (videoRef.current) {
-        const video = videoRef.current;
-        if (video.videoWidth <= 2 || video.videoHeight <= 2) {
-          console.warn('📉 [FRAME-MONITOR] Video dimensions too small, possible muted track');
-          if (!track.muted && track.readyState === 'live') {
-            recoverVideoTrack('video dimensions too small');
-          }
-        }
-      }
-    }, 5000); // Check every 5 seconds
-  }, [videoRef, recoverVideoTrack]);
-
-  const stopFrameMonitoring = useCallback(() => {
-    if (frameCheckInterval.current) {
-      clearInterval(frameCheckInterval.current);
-      frameCheckInterval.current = undefined;
-    }
-  }, []);
-
   return {
     recoverVideoTrack,
     setupTrackHealthMonitoring,
-    startFrameMonitoring,
-    stopFrameMonitoring,
     isRecoveryInProgress: () => recoveryInProgress.current,
     getRecoveryAttempts: () => recoveryAttempts.current,
     resetRecoveryAttempts: () => { recoveryAttempts.current = 0; }

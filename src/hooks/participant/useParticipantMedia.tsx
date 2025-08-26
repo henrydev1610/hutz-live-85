@@ -10,9 +10,6 @@ import { useMediaControls } from './useMediaControls';
 import { useStreamMutex } from './useStreamMutex';
 import { useTrackHealthMonitor } from './useTrackHealthMonitor';
 import { useVideoTrackRecovery } from './useVideoTrackRecovery';
-import { useUserGestureRecovery } from './useUserGestureRecovery';
-import { useMobileLifecycle } from './useMobileLifecycle';
-import { useProgressiveRecovery } from './useProgressiveRecovery';
 
 export const useParticipantMedia = (participantId: string) => {
   const mediaState = useMediaState();
@@ -46,34 +43,8 @@ export const useParticipantMedia = (participantId: string) => {
 
   // Stream protection and monitoring
   const mutex = useStreamMutex(participantId);
-
-  // Progressive recovery integration
-  const progressiveRecovery = useProgressiveRecovery({
-    currentStream: localStreamRef,
-    videoRef: localVideoRef,
-    onStreamUpdate: (newStream) => {
-      localStreamRef.current = newStream;
-      (window as any).__participantSharedStream = newStream;
-      setHasVideo(newStream.getVideoTracks().length > 0);
-      setHasAudio(newStream.getAudioTracks().length > 0);
-      console.log('📱 [PARTICIPANT-MEDIA] Stream updated via progressive recovery');
-    },
-    webrtcSender: (window as any).__participantWebRTCSender,
-    onUserGestureRequired: (reason) => {
-      userGestureRecovery.requestUserGesture(reason);
-    },
-    participantId
-  });
-
-  // User gesture recovery
-  const userGestureRecovery = useUserGestureRecovery({
-    onRecoveryRequested: async () => {
-      return await progressiveRecovery.executeProgressiveRecovery('user gesture triggered');
-    },
-    participantId
-  });
   
-  // Enhanced track health monitoring with progressive recovery
+  // Enhanced track health monitoring with recovery
   const trackHealth = useTrackHealthMonitor(
     participantId,
     localStreamRef.current,
@@ -82,48 +53,15 @@ export const useParticipantMedia = (participantId: string) => {
     },
     // onTrackMuted callback
     (track) => {
-      console.warn('🚨 [MEDIA] Track muted detected, triggering progressive recovery');
-      progressiveRecovery.executeProgressiveRecovery(`track muted: ${track.kind}`);
+      console.warn('🚨 [MEDIA] Track muted detected, triggering recovery');
+      trackRecovery.recoverVideoTrack(`track muted: ${track.kind}`);
     },
     // onTrackEnded callback  
     (track) => {
-      console.error('⚰️ [MEDIA] Track ended detected, triggering progressive recovery');
-      progressiveRecovery.executeProgressiveRecovery(`track ended: ${track.kind}`);
+      console.error('⚰️ [MEDIA] Track ended detected, triggering recovery');
+      trackRecovery.recoverVideoTrack(`track ended: ${track.kind}`);
     }
   );
-
-  // Mobile lifecycle management
-  const mobileLifecycle = useMobileLifecycle({
-    onPageVisible: () => {
-      console.log('👁️ [MOBILE-LIFECYCLE] Page visible - checking track health');
-      setTimeout(() => {
-        if (localStreamRef.current) {
-          const videoTrack = localStreamRef.current.getVideoTracks()[0];
-          if (videoTrack && (videoTrack.muted || videoTrack.readyState !== 'live')) {
-            progressiveRecovery.executeProgressiveRecovery('page visible but track muted');
-          }
-        }
-      }, 1000);
-    },
-    onPageHidden: () => {
-      console.log('😴 [MOBILE-LIFECYCLE] Page hidden - reducing background activity');
-    },
-    onFocusLost: () => {
-      console.log('👀 [MOBILE-LIFECYCLE] Focus lost - monitoring for recovery needs');
-    },
-    onFocusRegained: () => {
-      console.log('🎯 [MOBILE-LIFECYCLE] Focus regained - checking stream health');
-      setTimeout(() => {
-        if (localStreamRef.current) {
-          const videoTrack = localStreamRef.current.getVideoTracks()[0];
-          if (videoTrack && videoTrack.muted) {
-            progressiveRecovery.executeProgressiveRecovery('focus regained but track muted');
-          }
-        }
-      }, 500);
-    },
-    participantId
-  });
 
   // Video track recovery system
   const trackRecovery = useVideoTrackRecovery({
@@ -570,10 +508,6 @@ export const useParticipantMedia = (participantId: string) => {
     // Track recovery utilities
     recoverVideoTrack: trackRecovery.recoverVideoTrack,
     isRecoveryInProgress: trackRecovery.isRecoveryInProgress,
-    // Progressive recovery system
-    progressiveRecovery,
-    userGestureRecovery,
-    mobileLifecycle,
     ...mediaControls
   };
 };

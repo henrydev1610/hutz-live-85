@@ -13,7 +13,6 @@ import ParticipantConnectionStatus from '@/components/participant/ParticipantCon
 import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
-import { UserGestureOverlay } from '@/components/participant/UserGestureOverlay';
 import StreamDebugPanel from '@/utils/debug/StreamDebugPanel';
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { clearConnectionCache, validateURLConsistency } from '@/utils/connectionUtils';
@@ -791,13 +790,6 @@ const ParticipantPage = () => {
       <StreamDebugPanel 
         isOpen={showDebugPanel} 
         onClose={() => setShowDebugPanel(false)} 
-      />
-
-      {/* User Gesture Recovery Overlay */}
-      <UserGestureOverlay
-        isVisible={media.userGestureRecovery?.requiresUserGesture || false}
-        isRecovering={media.userGestureRecovery?.isRecovering || false}
-        onUserGesture={() => media.userGestureRecovery?.handleUserGesture()}
       />
     </div>
   );
