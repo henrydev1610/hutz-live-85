@@ -7,6 +7,8 @@ import { setupVideoElement } from '@/utils/media/videoPlayback';
 import { streamLogger } from '@/utils/debug/StreamLogger';
 import { useMediaState } from './useMediaState';
 import { useMediaControls } from './useMediaControls';
+import { useStreamMutex } from './useStreamMutex';
+import { useTrackHealthMonitor } from './useTrackHealthMonitor';
 
 export const useParticipantMedia = (participantId: string) => {
   const mediaState = useMediaState();
@@ -38,11 +40,33 @@ export const useParticipantMedia = (participantId: string) => {
     setHasScreenShare
   });
 
+  // Stream protection and monitoring
+  const mutex = useStreamMutex(participantId);
+  
+  const trackHealthMonitor = useTrackHealthMonitor(
+    participantId,
+    localStreamRef.current,
+    (status) => {
+      if (!status.isHealthy && localStreamRef.current) {
+        console.warn(`⚠️ [MEDIA] Stream health degraded for ${participantId}:`, status);
+        toast.warning('Stream health degraded - may affect video transmission');
+      }
+    }
+  );
+
   const initializeMedia = useCallback(async () => {
-    const isMobile = detectMobileAggressively();
-    const deviceType = isMobile ? 'mobile' : 'desktop';
-    
-    try {
+    // MUTEX PROTECTION: Prevent media operations during WebRTC handshake
+    if (!mutex.isOperationAllowed('initialize-media')) {
+      console.warn(`🚫 [MEDIA] Cannot initialize - blocked by ${mutex.currentOperation}`);
+      toast.warning('Media initialization blocked - operation in progress');
+      return null;
+    }
+
+    return await mutex.withMutexLock('initialize-media', async () => {
+      const isMobile = detectMobileAggressively();
+      const deviceType = isMobile ? 'mobile' : 'desktop';
+      
+      try {
       console.log(`🎬 MEDIA: Starting ${isMobile ? 'MOBILE' : 'DESKTOP'} camera initialization`);
       console.log(`🔒 HTTPS Check: ${window.location.protocol}`);
       console.log(`📱 User Agent: ${navigator.userAgent}`);
@@ -101,8 +125,28 @@ export const useParticipantMedia = (participantId: string) => {
       // [P-MEDIA] success tracks={video:<n>, audio:<n>} streamId=<id>
       console.log(`[P-MEDIA] success tracks={video:${videoTracks.length}, audio:${audioTracks.length}} streamId=${stream.id}`);
       
-      // Persistir stream na window para diagnóstico
+      // CRITICAL: Set this stream globally for handshake reuse with validation
+      (window as any).__participantSharedStream = stream;
       (window as any).__participantLocalStream = stream;
+      console.log('✅ MEDIA: Stream shared globally for handshake reuse');
+      
+      // Enhanced stream validation for WebRTC compatibility
+      const activeVideoTracks = stream.getVideoTracks().filter(t => t.readyState === 'live' && t.enabled);
+      const activeAudioTracks = stream.getAudioTracks().filter(t => t.readyState === 'live' && t.enabled);
+      
+      console.log('🔍 [MEDIA] WebRTC compatibility check:', {
+        streamActive: stream.active,
+        streamId: stream.id,
+        totalTracks: stream.getTracks().length,
+        activeVideoTracks: activeVideoTracks.length,
+        activeAudioTracks: activeAudioTracks.length,
+        readyForWebRTC: stream.active && activeVideoTracks.length > 0
+      });
+      
+      if (!stream.active || activeVideoTracks.length === 0) {
+        console.warn('⚠️ [MEDIA] Stream may not be suitable for WebRTC transmission');
+        toast.warning('⚠️ Stream criado mas pode ter problemas na transmissão');
+      }
       
       console.log(`✅ MEDIA: Stream obtained:`, {
         videoTracks: videoTracks.length,
@@ -137,30 +181,38 @@ export const useParticipantMedia = (participantId: string) => {
       
       // REMOÇÃO: Não emitir stream-started aqui - será feito na página
       
-      return stream;
-      
-    } catch (error) {
-      console.error(`❌ MEDIA: Failed to initialize ${isMobile ? 'mobile' : 'desktop'} camera:`, error);
-      
-      const err = error as Error;
-      console.log(`[P-MEDIA] error name=${err.name} message=${err.message}`);
-      
-      streamLogger.logStreamError(participantId, isMobile, deviceType, err, 0);
-      
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      toast.error(`Camera initialization failed: ${errorMsg}`);
-      
-      setHasVideo(false);
-      setHasAudio(false);
-      return null;
-    }
-  }, [participantId, localVideoRef, localStreamRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled]);
+        return stream;
+        
+      } catch (error) {
+        console.error(`❌ MEDIA: Failed to initialize ${isMobile ? 'mobile' : 'desktop'} camera:`, error);
+        
+        const err = error as Error;
+        console.log(`[P-MEDIA] error name=${err.name} message=${err.message}`);
+        
+        streamLogger.logStreamError(participantId, isMobile, deviceType, err, 0);
+        
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        toast.error(`Camera initialization failed: ${errorMsg}`);
+        
+        setHasVideo(false);
+        setHasAudio(false);
+        return null;
+      }
+    });
+  }, [participantId, localVideoRef, localStreamRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, mutex]);
 
   const retryMediaInitialization = useCallback(async () => {
-    const isMobile = detectMobileAggressively();
-    const deviceType = isMobile ? 'mobile' : 'desktop';
-    
-    console.log('🔄 MEDIA: Retrying media initialization...');
+    // MUTEX PROTECTION: Prevent retry during WebRTC operations
+    if (!mutex.isOperationAllowed('retry-media')) {
+      console.warn(`🚫 [MEDIA] Cannot retry - blocked by ${mutex.currentOperation}`);
+      return null;
+    }
+
+    return await mutex.withMutexLock('retry-media', async () => {
+      const isMobile = detectMobileAggressively();
+      const deviceType = isMobile ? 'mobile' : 'desktop';
+      
+      console.log('🔄 MEDIA: Retrying media initialization...');
     
     streamLogger.log(
       'STREAM_START' as any,
@@ -218,20 +270,28 @@ export const useParticipantMedia = (participantId: string) => {
         );
       }
       
-      return stream;
-    } catch (error) {
-      console.error('❌ MEDIA: Retry failed:', error);
-      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
-      toast.error('Failed to retry media connection');
-      throw error;
-    }
-  }, [participantId, initializeMedia, localStreamRef, setHasVideo, setHasAudio]);
+        return stream;
+      } catch (error) {
+        console.error('❌ MEDIA: Retry failed:', error);
+        streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
+        toast.error('Failed to retry media connection');
+        throw error;
+      }
+    });
+  }, [participantId, initializeMedia, localStreamRef, setHasVideo, setHasAudio, mutex]);
 
   const switchCamera = useCallback(async (facing: 'user' | 'environment') => {
-    const isMobile = detectMobileAggressively();
-    const deviceType = isMobile ? 'mobile' : 'desktop';
-    
-    if (!isMobile) {
+    // MUTEX PROTECTION: Prevent camera switch during WebRTC operations
+    if (!mutex.isOperationAllowed('switch-camera')) {
+      console.warn(`🚫 [MEDIA] Cannot switch camera - blocked by ${mutex.currentOperation}`);
+      return null;
+    }
+
+    return await mutex.withMutexLock('switch-camera', async () => {
+      const isMobile = detectMobileAggressively();
+      const deviceType = isMobile ? 'mobile' : 'desktop';
+      
+      if (!isMobile) {
       streamLogger.log(
         'STREAM_ERROR' as any,
         participantId,
@@ -324,27 +384,28 @@ export const useParticipantMedia = (participantId: string) => {
       
       toast.success(`📱 ${facing === 'user' ? 'Front' : 'Back'} camera activated!`);
       
-      return newStream;
-      
-    } catch (error) {
-      console.error(`❌ CAMERA SWITCH: Failed to switch to ${facing}:`, error);
-      
-      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
-      
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      toast.error(`Failed to switch camera: ${errorMsg}`);
-      
-      // Try to reinitialize
-      try {
-        await retryMediaInitialization();
-      } catch (recoveryError) {
-        console.error('❌ CAMERA SWITCH: Recovery also failed:', recoveryError);
-        streamLogger.logStreamError(participantId, isMobile, deviceType, recoveryError as Error, 0);
+        return newStream;
+        
+      } catch (error) {
+        console.error(`❌ CAMERA SWITCH: Failed to switch to ${facing}:`, error);
+        
+        streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
+        
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        toast.error(`Failed to switch camera: ${errorMsg}`);
+        
+        // Try to reinitialize
+        try {
+          await retryMediaInitialization();
+        } catch (recoveryError) {
+          console.error('❌ CAMERA SWITCH: Recovery also failed:', recoveryError);
+          streamLogger.logStreamError(participantId, isMobile, deviceType, recoveryError as Error, 0);
+        }
+        
+        throw error;
       }
-      
-      throw error;
-    }
-  }, [participantId, localStreamRef, localVideoRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, retryMediaInitialization]);
+    });
+  }, [participantId, localStreamRef, localVideoRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, retryMediaInitialization, mutex]);
 
   const cleanup = useCallback(() => {
     const isMobile = detectMobileAggressively();
@@ -403,6 +464,10 @@ export const useParticipantMedia = (participantId: string) => {
     retryMediaInitialization,
     switchCamera,
     cleanup,
+    // Stream protection utilities
+    isStreamOperationAllowed: mutex.isOperationAllowed,
+    currentStreamOperation: mutex.currentOperation,
+    trackHealthStatus: trackHealthMonitor.lastHealthStatus,
     ...mediaControls
   };
 };

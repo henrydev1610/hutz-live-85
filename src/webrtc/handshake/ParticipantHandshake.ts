@@ -20,24 +20,27 @@ class ParticipantHandshakeManager {
     this.setupParticipantHandlers();
   }
 
-  // ROUTE LOAD: Use shared stream from participant page
+  // GUARANTEED SINGLE STREAM: Always use shared stream from participant page
   async initializeOnRouteLoad(): Promise<MediaStream | null> {
     console.log('[PART] Route load initialization - checking for shared stream');
     
-    // Try to get shared stream from participant page
+    // PRIORITY 1: Try to get shared stream from participant page
     const sharedStream = (window as any).__participantSharedStream;
     if (sharedStream && sharedStream.getTracks().length > 0) {
-      const activeTracks = sharedStream.getTracks().filter(t => t.readyState === 'live');
+      const activeTracks = sharedStream.getTracks().filter(t => t.readyState === 'live' && t.enabled);
       if (activeTracks.length > 0) {
-        console.log('[PART] Using shared stream from participant page');
+        console.log('[PART] Using validated shared stream from participant page');
         this.localStream = sharedStream;
         this.setupStreamHealthMonitoring(sharedStream);
         return sharedStream;
+      } else {
+        console.warn('[PART] Shared stream found but no active tracks - will not fallback to avoid duplication');
+        return null;
       }
     }
     
-    console.log('[PART] No shared stream available, falling back to getUserMedia');
-    return await this.getUserMediaForOffer();
+    console.log('[PART] No shared stream available - this is unexpected');
+    return null;
   }
 
   async getUserMediaForOffer(): Promise<MediaStream> {
@@ -78,29 +81,23 @@ class ParticipantHandshakeManager {
   }
 
   async ensureLocalStream(): Promise<MediaStream | null> {
-    // PRIORITY 1: Use shared stream from participant page (prevents duplication)
+    // GUARANTEED SINGLE SOURCE: Only use shared stream from participant page
     const sharedStream = (window as any).__participantSharedStream;
     if (sharedStream && sharedStream.getTracks().length > 0) {
       const activeTracks = sharedStream.getTracks().filter(track => track.readyState === 'live' && track.enabled);
       if (activeTracks.length > 0) {
-        console.log('[PART] ensureLocalStream: Using shared stream');
+        console.log('[PART] ensureLocalStream: Using validated shared stream');
         this.localStream = sharedStream;
         return sharedStream;
+      } else {
+        console.error('[PART] ensureLocalStream: Shared stream has no active tracks');
+        return null;
       }
     }
     
-    // PRIORITY 2: Check existing local stream
-    if (this.localStream) {
-      const activeTracks = this.localStream.getTracks().filter(track => track.readyState === 'live' && track.enabled);
-      if (activeTracks.length > 0) {
-        console.log('[PART] ensureLocalStream: Using existing local stream');
-        return this.localStream;
-      }
-    }
-    
-    // FALLBACK: Create new stream only if nothing else works
-    console.log('[PART] ensureLocalStream: Creating new stream as fallback');
-    return await this.getUserMediaForOffer();
+    // NO FALLBACK TO PREVENT DUPLICATION - let participant page handle stream creation
+    console.error('[PART] ensureLocalStream: No shared stream available - this should not happen');
+    return null;
   }
 
   private setupStreamHealthMonitoring(stream: MediaStream): void {
