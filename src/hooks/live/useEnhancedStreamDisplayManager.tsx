@@ -22,6 +22,26 @@ interface QueueMetrics {
 const RETRY_DELAYS = [200, 400, 800, 1600, 3200]; // ms
 const MAX_RETRY_ATTEMPTS = 5;
 
+// TOLERANT CONTAINER RESOLVER
+function getParticipantContainer(participantId: string): HTMLElement | null {
+  const selectors = [
+    `#video-container-participant-${CSS.escape(participantId)}`, // Novo padrão (UnifiedVideoContainer)
+    `#participant-video-participant-${CSS.escape(participantId)}`, // Legado
+    `[data-video-container="true"][data-participant-id="${CSS.escape(participantId)}"]` // Data attributes
+  ];
+  
+  for (const selector of selectors) {
+    const element = document.querySelector(selector) as HTMLElement | null;
+    if (element) {
+      console.log(`✅ CONTAINER-RESOLVER: Found container for ${participantId} using ${selector}`);
+      return element;
+    }
+  }
+  
+  console.warn(`❌ CONTAINER-RESOLVER: No container found for ${participantId} with any pattern`);
+  return null;
+}
+
 export const useEnhancedStreamDisplayManager = () => {
   const activeStreamCreations = useRef(new Set<string>());
   const pendingRequests = useRef(new Map<string, MediaStream>());
@@ -156,11 +176,10 @@ export const useEnhancedStreamDisplayManager = () => {
         };
       },
       testContainerAvailability: (participantId: string) => {
-        const containerId = `video-container-${participantId}`;
-        const container = document.getElementById(containerId);
-        console.log(`🧪 ENHANCED: Container test ${containerId}`, {
+        const container = getParticipantContainer(participantId);
+        console.log(`🧪 ENHANCED: Container test participant-${participantId}`, {
           exists: !!container,
-          hasRef: !!container,
+          containerId: container?.id,
           className: container?.className,
           childCount: container?.children.length
         });
@@ -251,13 +270,13 @@ export const useEnhancedStreamDisplayManager = () => {
     
     console.log(`🎯 [${correlationId}] ENHANCED-JOB: Attempt ${attemptCount + 1}/${MAX_RETRY_ATTEMPTS} for ${participantId}`);
     
-    // Check container availability
-    const containerId = `video-container-${participantId}`;
-    const container = document.getElementById(containerId);
+    // Check container availability with tolerant resolver
+    const container = getParticipantContainer(participantId);
     
-    console.log(`📦 [${correlationId}] ENHANCED-CONTAINER: ${containerId}`, {
+    console.log(`📦 [${correlationId}] ENHANCED-CONTAINER: participant-${participantId}`, {
       exists: !!container,
       ready: container?.offsetParent !== null,
+      containerId: container?.id,
       className: container?.className,
       childCount: container?.children.length,
       attempt: attemptCount + 1
@@ -343,19 +362,12 @@ export const useEnhancedStreamDisplayManager = () => {
     });
 
     try {
-      // FASE 2: STANDARDIZED CONTAINER DISCOVERY
-      const containerId = `video-container-${participantId}`;
+      // FASE 2: TOLERANT CONTAINER DISCOVERY  
+      const container = getParticipantContainer(participantId);
       const unifiedVideoId = `unified-video-${participantId}`;
       
-      let container = document.getElementById(containerId);
-      
       if (!container) {
-        // Try alternative discovery methods
-        container = document.querySelector(`[data-participant-id="${participantId}"]`) as HTMLElement;
-      }
-      
-      if (!container) {
-        console.error(`❌ ${logPrefix} ENHANCED-VIDEO: Container ${containerId} not found for ${participantId}`);
+        console.error(`❌ ${logPrefix} ENHANCED-VIDEO: Container not found for ${participantId}`);
         return false;
       }
 
