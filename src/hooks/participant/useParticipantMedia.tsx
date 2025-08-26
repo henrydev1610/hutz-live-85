@@ -173,12 +173,28 @@ export const useParticipantMedia = (participantId: string) => {
       'Media retry initialization started'
     );
     
-    // Clean up previous stream
+    // PROTECTED CLEANUP: Don't stop tracks if they're being used by WebRTC
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
-        streamLogger.logTrackEvent(participantId, isMobile, deviceType, 'track_stopped_for_retry', track);
-        track.stop();
-      });
+      const isStreamInUse = (window as any).__participantSharedStream === localStreamRef.current;
+      
+      if (isStreamInUse) {
+        console.log('🔒 MEDIA: Skipping track cleanup - stream is being used by WebRTC handshake');
+        streamLogger.log(
+          'VALIDATION' as any,
+          participantId,
+          isMobile,
+          deviceType,
+          { timestamp: Date.now(), duration: 0 },
+          undefined,
+          'TRACK_PROTECTION',
+          'Tracks protected from cleanup during WebRTC use'
+        );
+      } else {
+        localStreamRef.current.getTracks().forEach(track => {
+          streamLogger.logTrackEvent(participantId, isMobile, deviceType, 'track_stopped_for_retry', track);
+          track.stop();
+        });
+      }
       localStreamRef.current = null;
     }
     
@@ -245,12 +261,28 @@ export const useParticipantMedia = (participantId: string) => {
     );
     
     try {
-      // Stop current stream
+      // PROTECTED CLEANUP: Don't stop tracks if they're being used by WebRTC
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => {
-          streamLogger.logTrackEvent(participantId, isMobile, deviceType, 'track_stopped_for_switch', track);
-          track.stop();
-        });
+        const isStreamInUse = (window as any).__participantSharedStream === localStreamRef.current;
+        
+        if (isStreamInUse) {
+          console.log('🔒 CAMERA SWITCH: Stream is in use by WebRTC - creating new stream without stopping current');
+          streamLogger.log(
+            'VALIDATION' as any,
+            participantId,
+            isMobile,
+            deviceType,
+            { timestamp: Date.now(), duration: 0 },
+            undefined,
+            'TRACK_PROTECTION',
+            'Current tracks protected during camera switch'
+          );
+        } else {
+          localStreamRef.current.getTracks().forEach(track => {
+            streamLogger.logTrackEvent(participantId, isMobile, deviceType, 'track_stopped_for_switch', track);
+            track.stop();
+          });
+        }
         localStreamRef.current = null;
       }
 

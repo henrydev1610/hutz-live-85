@@ -20,21 +20,24 @@ class ParticipantHandshakeManager {
     this.setupParticipantHandlers();
   }
 
-  // ROUTE LOAD: Get media immediately on route load
+  // ROUTE LOAD: Use shared stream from participant page
   async initializeOnRouteLoad(): Promise<MediaStream | null> {
-    const startTime = performance.now();
-    console.log('[PART] Route load initialization - getUserMedia start');
+    console.log('[PART] Route load initialization - checking for shared stream');
     
-    try {
-      const stream = await this.getUserMediaForOffer();
-      const duration = performance.now() - startTime;
-      console.log(`[PART] getUserMedia: ok (${duration.toFixed(1)}ms)`);
-      return stream;
-    } catch (error) {
-      const duration = performance.now() - startTime;
-      console.log(`[PART] getUserMedia: error (${duration.toFixed(1)}ms)`, error);
-      throw error;
+    // Try to get shared stream from participant page
+    const sharedStream = (window as any).__participantSharedStream;
+    if (sharedStream && sharedStream.getTracks().length > 0) {
+      const activeTracks = sharedStream.getTracks().filter(t => t.readyState === 'live');
+      if (activeTracks.length > 0) {
+        console.log('[PART] Using shared stream from participant page');
+        this.localStream = sharedStream;
+        this.setupStreamHealthMonitoring(sharedStream);
+        return sharedStream;
+      }
     }
+    
+    console.log('[PART] No shared stream available, falling back to getUserMedia');
+    return await this.getUserMediaForOffer();
   }
 
   async getUserMediaForOffer(): Promise<MediaStream> {
@@ -75,13 +78,28 @@ class ParticipantHandshakeManager {
   }
 
   async ensureLocalStream(): Promise<MediaStream | null> {
-    if (this.localStream) {
-      const activeTracks = this.localStream.getTracks().filter(track => track.readyState === 'live');
+    // PRIORITY 1: Use shared stream from participant page (prevents duplication)
+    const sharedStream = (window as any).__participantSharedStream;
+    if (sharedStream && sharedStream.getTracks().length > 0) {
+      const activeTracks = sharedStream.getTracks().filter(track => track.readyState === 'live' && track.enabled);
       if (activeTracks.length > 0) {
+        console.log('[PART] ensureLocalStream: Using shared stream');
+        this.localStream = sharedStream;
+        return sharedStream;
+      }
+    }
+    
+    // PRIORITY 2: Check existing local stream
+    if (this.localStream) {
+      const activeTracks = this.localStream.getTracks().filter(track => track.readyState === 'live' && track.enabled);
+      if (activeTracks.length > 0) {
+        console.log('[PART] ensureLocalStream: Using existing local stream');
         return this.localStream;
       }
     }
     
+    // FALLBACK: Create new stream only if nothing else works
+    console.log('[PART] ensureLocalStream: Creating new stream as fallback');
     return await this.getUserMediaForOffer();
   }
 
@@ -322,17 +340,46 @@ class ParticipantHandshakeManager {
       const pcDuration = performance.now() - pcStartTime;
       console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
 
-      // STEP 3: Add tracks to peer connection BEFORE creating offer
+      // STEP 3: VALIDATE AND ADD tracks to peer connection BEFORE creating offer
       const addTrackStartTime = performance.now();
-      console.log('🚨 CRÍTICO [PARTICIPANT] Anexando stream ao RTCPeerConnection...');
-      stream.getTracks().forEach((track, index) => {
+      console.log('🚨 CRÍTICO [PARTICIPANT] Validating and adding tracks to RTCPeerConnection...');
+      
+      const tracks = stream.getTracks();
+      const validTracks = tracks.filter(track => track.readyState === 'live' && track.enabled);
+      
+      console.log(`🔍 [PARTICIPANT] Track validation:`, {
+        totalTracks: tracks.length,
+        validTracks: validTracks.length,
+        trackDetails: tracks.map(t => ({
+          kind: t.kind,
+          readyState: t.readyState,
+          enabled: t.enabled,
+          muted: t.muted
+        }))
+      });
+      
+      if (validTracks.length === 0) {
+        throw new Error('No valid tracks found in stream for WebRTC');
+      }
+      
+      validTracks.forEach((track, index) => {
         if (this.peerConnection && stream) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Adicionando track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding validated track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
           this.peerConnection.addTrack(track, stream);
+          
+          // Track health monitoring after adding to peer connection
+          track.addEventListener('ended', () => {
+            console.warn(`⚠️ [PARTICIPANT] Track ${track.kind} ended after being added to PC`);
+          });
+          
+          track.addEventListener('mute', () => {
+            console.warn(`⚠️ [PARTICIPANT] Track ${track.kind} muted after being added to PC`);
+          });
         }
       });
+      
       const addTrackDuration = performance.now() - addTrackStartTime;
-      console.log(`✅ [PARTICIPANT] All tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
+      console.log(`✅ [PARTICIPANT] ${validTracks.length} validated tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
 
       // Set up event handlers
       this.peerConnection.onicecandidate = (event) => {

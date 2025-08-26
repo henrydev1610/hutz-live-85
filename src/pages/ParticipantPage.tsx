@@ -223,27 +223,7 @@ const ParticipantPage = () => {
       return;
     }
     
-    console.log('🚀 PARTICIPANT PAGE: Route load - initializing getUserMedia immediately for session:', sessionId);
-    
-    // Call getUserMedia on route load
-    const initializeMediaOnLoad = async () => {
-      try {
-        console.log('[PART] Route load initialization - starting getUserMedia');
-        const stream = await media.initializeMedia();
-        
-        if (stream) {
-          const videoTracks = stream.getVideoTracks();
-          if (videoTracks.length > 0) {
-            const settings = videoTracks[0].getSettings();
-            console.log(`[PART] getUserMedia: ok - ${settings.facingMode || 'unknown'} camera ready`);
-          }
-        }
-      } catch (error) {
-        console.log(`[PART] getUserMedia: error -`, error);
-      }
-    };
-    
-    initializeMediaOnLoad();
+    console.log('🚀 PARTICIPANT PAGE: Route load - starting auto-connect for session:', sessionId);
     
     streamLogger.log(
       'STREAM_START' as any,
@@ -307,7 +287,8 @@ const ParticipantPage = () => {
         toast.warning('⚠️ Validação de câmera inconclusiva - tentando conectar');
       }
       
-      // Force mobile camera initialization with enhanced monitoring
+      // SINGLE MEDIA INITIALIZATION - Get stream once and reuse
+      console.log('📱 PARTICIPANT: Initializing camera stream...');
       const stream = await media.initializeMedia();
       
       // Validar stream após obtenção
@@ -319,6 +300,10 @@ const ParticipantPage = () => {
           console.warn('⚠️ PARTICIPANT: Stream health validation failed');
           toast.warning('⚠️ Stream obtido mas com problemas de saúde');
         }
+        
+        // CRITICAL: Set this stream globally for handshake reuse
+        (window as any).__participantSharedStream = stream;
+        console.log('✅ PARTICIPANT: Stream shared globally for handshake reuse');
       }
       
       // ÚNICO PONTO: notifyStreamStarted será chamado pelo UnifiedWebRTCManager
@@ -392,18 +377,37 @@ const ParticipantPage = () => {
         if (hostId && stream) {
           console.log(`🎯 [PART] Host detected: ${hostId}, starting handshake`);
           
-          // Validar tracks ativas e configurar monitoramento
-          const activeTracks = stream.getTracks().filter(t => t.readyState === 'live');
+          // TRACK HEALTH VALIDATION before WebRTC handshake
+          const activeTracks = stream.getTracks().filter(t => t.readyState === 'live' && t.enabled);
+          const videoTracks = stream.getVideoTracks().filter(t => t.readyState === 'live' && t.enabled);
+          
+          console.log(`🔍 [PART] Track health check:`, {
+            totalTracks: stream.getTracks().length,
+            activeTracks: activeTracks.length,
+            activeVideoTracks: videoTracks.length,
+            trackDetails: stream.getTracks().map(t => ({
+              kind: t.kind,
+              readyState: t.readyState,
+              enabled: t.enabled,
+              muted: t.muted
+            }))
+          });
+          
           if (activeTracks.length === 0) {
             console.warn(`⚠️ [PART] No active tracks in stream`);
             toast.warning('⚠️ Stream sem tracks ativos');
+          } else if (videoTracks.length === 0) {
+            console.warn(`⚠️ [PART] No active video tracks in stream`);
+            toast.warning('⚠️ Stream sem vídeo ativo');
           } else {
             setupStreamTransmissionMonitoring(stream, participantId);
+            console.log(`✅ [PART] Stream validated with ${videoTracks.length} video tracks ready for handshake`);
           }
           
           // ÚNICO CAMINHO: initParticipantWebRTC → setLocalStream → connectToHost
           const { webrtc } = await initParticipantWebRTC(sessionId!, participantId, stream);
           if (webrtc) {
+            // Ensure the same stream is used consistently
             webrtc.setLocalStream(stream);
             await new Promise(resolve => setTimeout(resolve, 1000));
             await webrtc.connectToHost();
