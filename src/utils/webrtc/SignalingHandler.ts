@@ -53,14 +53,10 @@ export class SignalingHandler {
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       
-      // FASE 5: Mark remote description set and flush buffered ICE
-      const { iceBuffer } = await import('@/utils/webrtc/ICECandidateBuffer');
-      const bufferedCandidates = iceBuffer.markHostRemoteDescriptionSet(participantId);
-      
-      console.log(`📤 FASE 5: Answer sent to: ${participantId}`);
+      console.log(`📤 [SIG] Answer sent to: ${participantId}`);
       if (DEBUG && answer.sdp) {
         const hasRecvOnlyVideo = answer.sdp.includes('a=recvonly');
-        console.log('🔍 FASE 5: Answer SDP:', {
+        console.log('🔍 [SIG] Answer SDP:', {
           hasRecvOnlyVideo,
           sdpLength: answer.sdp.length,
           containsVideo: answer.sdp.includes('m=video')
@@ -68,20 +64,6 @@ export class SignalingHandler {
       }
       
       unifiedWebSocketService.sendAnswer(participantId, answer);
-      
-      // FASE 5: Apply buffered ICE candidates
-      if (bufferedCandidates.length > 0) {
-        console.log(`🚀 FASE 5: Applying ${bufferedCandidates.length} buffered ICE candidates for ${participantId}`);
-        
-        for (const buffered of bufferedCandidates) {
-          try {
-            await peerConnection.addIceCandidate(buffered.candidate);
-            console.log(`✅ FASE 5: Applied buffered ICE candidate from ${participantId}`);
-          } catch (error) {
-            console.error(`❌ FASE 5: Failed to apply buffered ICE: ${error}`);
-          }
-        }
-      }
     } catch (error) {
       console.error('❌ [SIG] Failed to handle offer:', error);
     }
@@ -108,34 +90,22 @@ export class SignalingHandler {
   }
 
   async handleIceCandidate(data: any) {
-    console.log(`🧊 FASE 5: ICE from: ${data.fromUserId || data.fromSocketId}`);
+    console.log(`🧊 [SIG] ICE from: ${data.fromUserId || data.fromSocketId}`);
     const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
-    if (DEBUG) console.log('🔍 FASE 5: ICE data:', { hasCandidate: !!data.candidate, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
+    if (DEBUG) console.log('🔍 [SIG] ICE data:', { hasCandidate: !!data.candidate, fromUserId: data.fromUserId, fromSocketId: data.fromSocketId });
     
     const participantId = data.fromUserId || data.fromSocketId;
     const peerConnection = this.peerConnections.get(participantId);
     
-    // FASE 5: Import ICE buffer for host-side coordination
-    const { iceBuffer } = await import('@/utils/webrtc/ICECandidateBuffer');
-    
     if (peerConnection) {
-      // FASE 5: Only apply ICE if remote description is set
-      if (iceBuffer.shouldApplyHostICE(participantId)) {
-        try {
-          await peerConnection.addIceCandidate(data.candidate);
-          if (DEBUG) console.log(`✅ FASE 5: ICE applied immediately: ${participantId}`);
-        } catch (error) {
-          console.error(`❌ FASE 5: Failed to add ICE: ${error}`);
-        }
-      } else {
-        // FASE 5: Buffer ICE until remote description is set
-        console.log(`📦 FASE 5: Buffering ICE from ${participantId} (remote description not set)`);
-        iceBuffer.bufferHostICE(data.candidate, participantId);
+      try {
+        await peerConnection.addIceCandidate(data.candidate);
+        if (DEBUG) console.log(`✅ [SIG] ICE added: ${participantId}`);
+      } catch (error) {
+        console.error(`❌ [SIG] Failed to add ICE: ${error}`);
       }
     } else {
-      console.warn(`⚠️ FASE 5: No peer connection for ICE: ${participantId}`);
-      // FASE 5: Buffer for when peer connection is created
-      iceBuffer.bufferHostICE(data.candidate, participantId);
+      console.warn(`⚠️ [SIG] No peer connection for ICE: ${participantId}`);
     }
   }
 

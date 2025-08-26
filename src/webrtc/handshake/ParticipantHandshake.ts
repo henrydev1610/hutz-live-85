@@ -214,29 +214,26 @@ class ParticipantHandshakeManager {
       try {
         console.log('🚨 CRÍTICO [PARTICIPANT] Setting remote description from answer...');
         await this.peerConnection.setRemoteDescription(answer);
-        console.log('✅ FASE 3: Remote description set successfully');
-        console.log(`🚨 FASE 3: Connection state após setRemoteDescription: ${this.peerConnection.connectionState}`);
+        console.log('✅ [PARTICIPANT] Remote description set successfully');
+        console.log(`🚨 CRÍTICO [PARTICIPANT] Connection state após setRemoteDescription: ${this.peerConnection.connectionState}`);
 
-        // FASE 3: Mark answer received and flush buffered ICE candidates
-        const { iceBuffer } = await import('@/utils/webrtc/ICECandidateBuffer');
-        const bufferedCandidates = iceBuffer.markParticipantAnswerReceived();
-        
-        if (bufferedCandidates.length > 0) {
-          console.log(`🚀 FASE 3: Flushing ${bufferedCandidates.length} buffered ICE candidates`);
+        // Flush all pending candidates immediately
+        if (this.pendingCandidates.length > 0) {
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Applying ${this.pendingCandidates.length} buffered candidates`);
           
-          for (const buffered of bufferedCandidates) {
+          const candidatesToFlush = [...this.pendingCandidates];
+          this.pendingCandidates = [];
+          
+          for (const candidate of candidatesToFlush) {
             try {
-              await this.peerConnection.addIceCandidate(buffered.candidate);
-              console.log('✅ FASE 3: Buffered ICE candidate applied');
+              await this.peerConnection.addIceCandidate(candidate);
+              console.log('✅ [PARTICIPANT] ICE candidate aplicado do buffer');
             } catch (err) {
-              console.error('❌ FASE 3: Error applying buffered candidate:', err);
+              console.error('❌ [PARTICIPANT] Error flushing candidate:', err);
             }
           }
-          console.log('✅ FASE 3: All buffered ICE candidates processed');
+          console.log('✅ [PARTICIPANT] Buffer de ICE candidates limpo');
         }
-
-        // FASE 3: Now send any new ICE candidates immediately
-        console.log('✅ FASE 3: ICE candidate buffering disabled - future candidates will be sent immediately');
         
         console.log('✅ [PARTICIPANT] Connection established successfully');
       } catch (err) {
@@ -264,33 +261,30 @@ class ParticipantHandshakeManager {
         return;
       }
 
-      // FASE 3: Use ICE buffer for consistent handling
-      const { iceBuffer } = await import('@/utils/webrtc/ICECandidateBuffer');
-      
       if (!this.peerConnection) {
-        console.warn('⚠️ FASE 3: PC doesn\'t exist, candidate will be discarded');
+        console.warn('⚠️ [PARTICIPANT] PC doesn\'t exist, buffering candidate from:', hostId);
+        this.pendingCandidates.push(candidate);
         return;
       }
 
-      // FASE 3: Apply immediately only if we have remote description (answer received)
+      // Apply immediately OR buffer consistently
       if (this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
         try {
           await this.peerConnection.addIceCandidate(candidate);
-          console.log(`✅ FASE 3: ICE candidate applied immediately from ${hostId}`);
+          console.log(`✅ [PARTICIPANT] ICE candidate applied immediately from ${hostId}`);
         } catch (err) {
-          console.warn('⚠️ FASE 3: Error adding candidate from:', hostId, err);
+          console.warn('⚠️ [PARTICIPANT] Error adding candidate from:', hostId, err);
         }
       } else {
-        // FASE 3: Note that we don't buffer incoming candidates anymore
-        // Incoming candidates from host should only arrive after we receive the answer
-        console.warn(`⚠️ FASE 3: Received ICE candidate before answer - this indicates signaling order issue`);
+        this.pendingCandidates.push(candidate);
+        console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId} (total: ${this.pendingCandidates.length})`);
       }
     });
     
     console.log('✅ [PARTICIPANT] Event handlers configurados com sucesso');
   }
 
-async createAndSendOffer(hostId: string): Promise<void> {
+  async createAndSendOffer(hostId: string): Promise<void> {
     if (this.isOfferInProgress) {
       console.log('[PARTICIPANT] createAndSendOffer: Offer already in progress, skipping');
       return;
@@ -298,7 +292,7 @@ async createAndSendOffer(hostId: string): Promise<void> {
 
     const offerStartTime = performance.now();
     this.handshakeStartTime = offerStartTime;
-    console.log(`🚨 FASE 2: Starting CONTROLLED offer creation sequence for ${hostId}`);
+    console.log(`🚨 CRÍTICO [PARTICIPANT] Starting offer creation sequence for ${hostId}`);
 
     if (this.peerConnection && this.peerConnection.connectionState !== 'closed') {
       console.log('[PARTICIPANT] createAndSendOffer: Closing existing peer connection');
@@ -310,11 +304,7 @@ async createAndSendOffer(hostId: string): Promise<void> {
     this.clearConnectionTimeout();
 
     try {
-      // FASE 2: AGUARDAR ESTABILIZAÇÃO DA SALA PRIMEIRO
-      console.log('⏱️ FASE 2: Waiting for room stabilization before WebRTC...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // 3s para sala estar estável
-
-      // FASE 1: VALIDAR FRAMES ANTES DE PROSSEGUIR
+      // STEP 1: Ensure we have local stream FIRST
       const streamStartTime = performance.now();
       const stream = await this.ensureLocalStream();
       const streamDuration = performance.now() - streamStartTime;
@@ -322,47 +312,17 @@ async createAndSendOffer(hostId: string): Promise<void> {
       if (!stream) {
         throw new Error('No local stream available for offer');
       }
-
-      // FASE 1: CRITICAL - Validar se tracks estão produzindo frames REAIS
-      const { FrameValidationUtils } = await import('@/utils/webrtc/FrameValidationUtils');
-      console.log('🔍 FASE 1: Validating frame production before WebRTC...');
-      
-      const frameValidation = await FrameValidationUtils.validateStreamFrameProduction(stream, 5000);
-      
-      if (!frameValidation.allValid || frameValidation.validTracks.length === 0) {
-        console.error('❌ FASE 1: Frame validation failed:', frameValidation.results);
-        
-        // Tentar aplicar constraints e re-validar
-        const videoTracks = stream.getVideoTracks();
-        for (const track of videoTracks) {
-          await FrameValidationUtils.applyMinimumConstraints(track);
-        }
-        
-        // Re-validar após constraints
-        const retryValidation = await FrameValidationUtils.validateStreamFrameProduction(stream, 3000);
-        if (!retryValidation.allValid) {
-          throw new Error('Video tracks not producing valid frames after constraints applied');
-        }
-        
-        console.log('✅ FASE 1: Frame validation passed after applying constraints');
-      } else {
-        console.log('✅ FASE 1: Frame validation passed immediately');
-      }
-
-      console.log(`🚨 FASE 1+2: Stream and room validated:`, {
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Stream validado:`, {
         hasStream: !!stream,
         streamId: stream?.id,
         videoTracks: stream?.getVideoTracks().length || 0,
         audioTracks: stream?.getAudioTracks().length || 0,
-        validVideoTracks: frameValidation.validTracks.length,
+        videoEnabled: stream?.getVideoTracks()[0]?.enabled,
+        audioEnabled: stream?.getAudioTracks()[0]?.enabled,
         duration: `${streamDuration.toFixed(1)}ms`
       });
 
-      // FASE 2: AGUARDAR ADICIONAL PARA GARANTIR READINESS
-      console.log('⏱️ FASE 2: Additional readiness delay...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // STEP 2: Create new peer connection APÓS validações
+      // STEP 2: Create new peer connection BEFORE any operation
       const pcStartTime = performance.now();
       const configuration: RTCConfiguration = {
         iceServers: [
@@ -375,33 +335,33 @@ async createAndSendOffer(hostId: string): Promise<void> {
 
       this.peerConnection = new RTCPeerConnection(configuration);
       const pcDuration = performance.now() - pcStartTime;
-      console.log(`🚨 FASE 2: RTCPeerConnection created: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
+      console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
 
-      // FASE 4: Setup connection state recovery
-      const { ConnectionStateRecovery } = await import('@/utils/webrtc/ConnectionStateRecovery');
-      const recovery = new ConnectionStateRecovery({
-        maxStuckTime: 15000, // 15s stuck threshold
-        maxRecoveryAttempts: 3,
-        onRecoveryAttempt: (attempt, reason) => {
-          console.warn(`🚑 FASE 4: Recovery attempt ${attempt}: ${reason}`);
-        },
-        onRecoverySuccess: () => {
-          console.log('✅ FASE 4: Connection recovery successful');
-        },
-        onRecoveryFailed: (reason) => {
-          console.error(`❌ FASE 4: Connection recovery failed: ${reason}`);
-          this.handleConnectionFailure(hostId);
-        }
-      });
-
-      // STEP 3: ADD ONLY VALIDATED TRACKS
+      // STEP 3: VALIDATE AND ADD tracks to peer connection BEFORE creating offer
       const addTrackStartTime = performance.now();
-      console.log('🚨 FASE 1: Adding ONLY validated tracks to RTCPeerConnection...');
+      console.log('🚨 CRÍTICO [PARTICIPANT] Validating and adding tracks to RTCPeerConnection...');
       
-      // Use only the validated tracks from frame validation
-      frameValidation.validTracks.forEach((track, index) => {
+      const tracks = stream.getTracks();
+      const validTracks = tracks.filter(track => track.readyState === 'live' && track.enabled);
+      
+      console.log(`🔍 [PARTICIPANT] Track validation:`, {
+        totalTracks: tracks.length,
+        validTracks: validTracks.length,
+        trackDetails: tracks.map(t => ({
+          kind: t.kind,
+          readyState: t.readyState,
+          enabled: t.enabled,
+          muted: t.muted
+        }))
+      });
+      
+      if (validTracks.length === 0) {
+        throw new Error('No valid tracks found in stream for WebRTC');
+      }
+      
+      validTracks.forEach((track, index) => {
         if (this.peerConnection && stream) {
-          console.log(`🚨 FASE 1: Adding VALIDATED track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding validated track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
           this.peerConnection.addTrack(track, stream);
           
           // Track health monitoring after adding to peer connection
@@ -416,77 +376,55 @@ async createAndSendOffer(hostId: string): Promise<void> {
       });
       
       const addTrackDuration = performance.now() - addTrackStartTime;
-      console.log(`✅ FASE 1: ${frameValidation.validTracks.length} VALIDATED tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
+      console.log(`✅ [PARTICIPANT] ${validTracks.length} validated tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
 
-      // FASE 3: Setup ICE candidate buffering
-      const { iceBuffer } = await import('@/utils/webrtc/ICECandidateBuffer');
-      
-      // Set up event handlers with ICE buffering
+      // Set up event handlers
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log('🚨 FASE 3: ICE candidate generated');
-          
-          // FASE 3: Buffer ICE until answer received
-          if (iceBuffer.shouldSendParticipantICE()) {
-            console.log('🚀 FASE 3: Sending ICE immediately (answer received)');
-            unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
-          } else {
-            console.log('📦 FASE 3: Buffering ICE candidate (waiting for answer)');
-            iceBuffer.bufferParticipantICE(event.candidate, hostId);
-          }
+          console.log('🚨 CRÍTICO [PARTICIPANT] ICE candidate generated, sending to host');
+          unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
         }
       };
 
-      // FASE 4: Enhanced connection state monitoring with recovery
+      // Enhanced connection state monitoring with detailed logging and recovery logic
       this.peerConnection.onconnectionstatechange = () => {
         const state = this.peerConnection?.connectionState;
         const iceState = this.peerConnection?.iceConnectionState;
-        const signalingState = this.peerConnection?.signalingState;
         const elapsed = performance.now() - this.handshakeStartTime;
-        
-        console.log(`🔍 FASE 4: Connection state change:`, {
-          connection: state,
-          ice: iceState,
-          signaling: signalingState,
-          elapsed: `${elapsed.toFixed(1)}ms`
-        });
-        
-        // Monitor for recovery
-        if (this.peerConnection) {
-          recovery.monitorConnection(this.peerConnection);
-        }
+        console.log(`🔍 CONNECTION: State changed to ${state} for participant (${elapsed.toFixed(1)}ms since start) - ICE: ${iceState}`);
         
         if (state === 'connected') {
           this.clearConnectionTimeout();
           this.reconnectAttempts = 0;
-          console.log(`✅ FASE 4: WebRTC connection established (${elapsed.toFixed(1)}ms total)`);
+          console.log(`✅ CONNECTION: WebRTC connection established (${elapsed.toFixed(1)}ms total)`);
           
           // Notify successful connection
           window.dispatchEvent(new CustomEvent('participant-connected', {
             detail: { participantId: this.participantId, timestamp: Date.now(), method: 'connection-state' }
           }));
         } else if (state === 'failed') {
-          console.warn(`❌ FASE 4: Connection failed definitively (${state})`);
-          // Recovery is handled by ConnectionStateRecovery
+          console.warn(`❌ CONNECTION: Connection failed definitively (${state}) - initiating recovery`);
+          this.handleConnectionFailure(hostId);
         } else if (state === 'disconnected') {
-          console.warn(`📤 FASE 4: Connection disconnected (${state}) - monitoring for recovery`);
+          console.warn(`📤 CONNECTION: Connection disconnected (${state}) - may be temporary`);
+          // Don't immediately trigger recovery for disconnected state - could be temporary
         } else if (state === 'connecting') {
-          console.log(`🔄 FASE 4: Connection attempting to establish (${state})`);
+          console.log(`🔄 CONNECTION: Connection attempting to establish (${state})`);
         }
       };
 
       this.peerConnection.oniceconnectionstatechange = () => {
         const state = this.peerConnection?.iceConnectionState;
-        console.log(`🧊 FASE 4: ICE state changed to ${state}`);
+        console.log(`🧊 ICE: State changed to ${state}`);
         
         if (state === 'connected' || state === 'completed') {
           this.clearConnectionTimeout();
-          console.log(`✅ FASE 4: ICE connection established (${state})`);
+          console.log(`✅ ICE: Connection established (${state})`);
         } else if (state === 'failed') {
-          console.warn(`❌ FASE 4: ICE connection failed`);
-          // Recovery is handled by ConnectionStateRecovery
+          console.warn(`❌ ICE: Connection failed`);
+          this.handleConnectionFailure(hostId);
         } else if (state === 'checking') {
-          console.log(`🔍 FASE 4: ICE checking connectivity...`);
+          console.log(`🔍 ICE: Checking connectivity...`);
         }
       };
 
