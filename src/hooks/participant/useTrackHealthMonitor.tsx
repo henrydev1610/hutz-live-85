@@ -13,7 +13,9 @@ interface TrackHealthStatus {
 export const useTrackHealthMonitor = (
   participantId: string,
   stream: MediaStream | null,
-  onHealthChange?: (status: TrackHealthStatus) => void
+  onHealthChange?: (status: TrackHealthStatus) => void,
+  onTrackMuted?: (track: MediaStreamTrack) => void,
+  onTrackEnded?: (track: MediaStreamTrack) => void
 ) => {
   const healthInterval = useRef<NodeJS.Timeout | null>(null);
   const lastHealthStatus = useRef<TrackHealthStatus>({
@@ -100,12 +102,24 @@ export const useTrackHealthMonitor = (
       const onEnded = () => {
         console.warn(`⚠️ [TRACK-HEALTH] Track ${track.kind} ended unexpectedly`);
         streamLogger.logTrackEvent(participantId, isMobile, deviceType, 'track_ended_unexpected', track);
+        
+        // Call recovery callback for ended tracks
+        if (onTrackEnded) {
+          onTrackEnded(track);
+        }
+        
         checkTrackHealth();
       };
 
       const onMute = () => {
         console.warn(`🔇 [TRACK-HEALTH] Track ${track.kind} muted`);
         streamLogger.logTrackEvent(participantId, isMobile, deviceType, 'track_muted', track);
+        
+        // Call recovery callback for muted tracks
+        if (track.kind === 'video' && onTrackMuted) {
+          onTrackMuted(track);
+        }
+        
         checkTrackHealth();
       };
 

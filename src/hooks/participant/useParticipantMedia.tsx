@@ -9,6 +9,7 @@ import { useMediaState } from './useMediaState';
 import { useMediaControls } from './useMediaControls';
 import { useStreamMutex } from './useStreamMutex';
 import { useTrackHealthMonitor } from './useTrackHealthMonitor';
+import { useVideoTrackRecovery } from './useVideoTrackRecovery';
 
 export const useParticipantMedia = (participantId: string) => {
   const mediaState = useMediaState();
@@ -43,16 +44,52 @@ export const useParticipantMedia = (participantId: string) => {
   // Stream protection and monitoring
   const mutex = useStreamMutex(participantId);
   
-  const trackHealthMonitor = useTrackHealthMonitor(
+  // Enhanced track health monitoring with recovery
+  const trackHealth = useTrackHealthMonitor(
     participantId,
     localStreamRef.current,
     (status) => {
-      if (!status.isHealthy && localStreamRef.current) {
-        console.warn(`⚠️ [MEDIA] Stream health degraded for ${participantId}:`, status);
-        toast.warning('Stream health degraded - may affect video transmission');
-      }
+      console.log('📊 [TRACK-HEALTH] Status update:', status);
+    },
+    // onTrackMuted callback
+    (track) => {
+      console.warn('🚨 [MEDIA] Track muted detected, triggering recovery');
+      trackRecovery.recoverVideoTrack(`track muted: ${track.kind}`);
+    },
+    // onTrackEnded callback  
+    (track) => {
+      console.error('⚰️ [MEDIA] Track ended detected, triggering recovery');
+      trackRecovery.recoverVideoTrack(`track ended: ${track.kind}`);
     }
   );
+
+  // Video track recovery system
+  const trackRecovery = useVideoTrackRecovery({
+    participantId,
+    currentStream: localStreamRef,
+    videoRef: localVideoRef,
+    onStreamUpdate: (newStream) => {
+      // Update the stream reference manually since it's mutable
+      localStreamRef.current = newStream;
+      
+      // Update global shared stream for WebRTC
+      (window as any).__participantSharedStream = newStream;
+      
+      // Update state
+      setHasVideo(newStream.getVideoTracks().length > 0);
+      setHasAudio(newStream.getAudioTracks().length > 0);
+      
+      // Restart track health monitoring for new stream
+      trackHealth.startMonitoring();
+      
+      console.log('🔄 [MEDIA] Stream updated after recovery:', {
+        streamId: newStream.id,
+        videoTracks: newStream.getVideoTracks().length,
+        audioTracks: newStream.getAudioTracks().length
+      });
+    },
+    webrtcSender: (window as any).__participantWebRTCSender
+  });
 
   const initializeMedia = useCallback(async () => {
     // MUTEX PROTECTION: Prevent media operations during WebRTC handshake
@@ -467,7 +504,10 @@ export const useParticipantMedia = (participantId: string) => {
     // Stream protection utilities
     isStreamOperationAllowed: mutex.isOperationAllowed,
     currentStreamOperation: mutex.currentOperation,
-    trackHealthStatus: trackHealthMonitor.lastHealthStatus,
+    trackHealthStatus: trackHealth.lastHealthStatus,
+    // Track recovery utilities
+    recoverVideoTrack: trackRecovery.recoverVideoTrack,
+    isRecoveryInProgress: trackRecovery.isRecoveryInProgress,
     ...mediaControls
   };
 };

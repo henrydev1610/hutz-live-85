@@ -377,7 +377,105 @@ const ParticipantPage = () => {
         if (hostId && stream) {
           console.log(`🎯 [PART] Host detected: ${hostId}, starting handshake`);
           
-          // TRACK HEALTH VALIDATION before WebRTC handshake
+          // PRE-WEBRTC STREAM VALIDATION
+          const validateStreamForWebRTC = async (stream: MediaStream): Promise<boolean> => {
+            const videoTrack = stream.getVideoTracks()[0];
+            if (!videoTrack) {
+              console.error('❌ [VALIDATION] No video track available for WebRTC');
+              return false;
+            }
+
+            // Check track state
+            if (videoTrack.readyState !== 'live') {
+              console.error('❌ [VALIDATION] Video track is not live:', videoTrack.readyState);
+              return false;
+            }
+
+            // Check if track is muted (no frames)
+            if (videoTrack.muted) {
+              console.warn('⚠️ [VALIDATION] Video track is muted - attempting recovery');
+              
+              // Try to recover before WebRTC
+              const recovered = await media.recoverVideoTrack('pre-webrtc validation failed');
+              if (!recovered) {
+                console.error('❌ [VALIDATION] Track recovery failed');
+                return false;
+              }
+              
+              // Validate recovered stream
+              const newStream = (window as any).__participantSharedStream;
+              const newVideoTrack = newStream?.getVideoTracks()[0];
+              if (!newVideoTrack || newVideoTrack.muted) {
+                console.error('❌ [VALIDATION] Recovered track still muted');
+                return false;
+              }
+            }
+
+            // Wait for actual frame production (avoid 2x2 video)
+            console.log('⏳ [VALIDATION] Waiting for frame production validation...');
+            return new Promise((resolve) => {
+              const video = document.createElement('video');
+              video.srcObject = stream;
+              video.muted = true;
+              video.playsInline = true;
+              
+              const timeout = setTimeout(() => {
+                console.warn('⚠️ [VALIDATION] Frame validation timeout');
+                resolve(false);
+              }, 5000);
+
+              video.onloadedmetadata = () => {
+                const hasRealFrames = video.videoWidth > 2 && video.videoHeight > 2;
+                console.log(`📏 [VALIDATION] Video dimensions: ${video.videoWidth}x${video.videoHeight}`);
+                
+                clearTimeout(timeout);
+                video.remove();
+                resolve(hasRealFrames);
+              };
+
+              video.onerror = () => {
+                console.error('❌ [VALIDATION] Video validation error');
+                clearTimeout(timeout);
+                video.remove();
+                resolve(false);
+              };
+            });
+          };
+
+          // Validate stream before WebRTC handshake
+          const isStreamValid = await validateStreamForWebRTC(stream);
+          if (!isStreamValid) {
+            console.error('❌ [PART] Stream validation failed - aborting WebRTC handshake');
+            toast.error('❌ Validação de vídeo falhou - tentando novamente...');
+            
+            // Try media retry and validate again
+            const retryStream = await media.retryMediaInitialization();
+            if (retryStream) {
+              const retryValid = await validateStreamForWebRTC(retryStream);
+              if (!retryValid) {
+                console.error('❌ [PART] Stream validation failed even after retry');
+                return;
+              }
+              // Update global shared stream with validated retry stream
+              (window as any).__participantSharedStream = retryStream;
+              
+              // Use retry stream for WebRTC handshake
+              const finalStream = retryStream;
+              const { webrtc } = await initParticipantWebRTC(sessionId!, participantId, finalStream);
+              if (webrtc) {
+                webrtc.setLocalStream(finalStream);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                await webrtc.connectToHost();
+                console.log(`✅ [PART] Handshake completed with retry stream: ${participantId}`);
+                toast.success('🤝 Handshake WebRTC iniciado com sucesso após retry!');
+              }
+              return;
+            } else {
+              return;
+            }
+          }
+
+          console.log('✅ [VALIDATION] Stream validated successfully for WebRTC');
           const activeTracks = stream.getTracks().filter(t => t.readyState === 'live' && t.enabled);
           const videoTracks = stream.getVideoTracks().filter(t => t.readyState === 'live' && t.enabled);
           

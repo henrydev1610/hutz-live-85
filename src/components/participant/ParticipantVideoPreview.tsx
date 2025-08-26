@@ -29,12 +29,48 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
 }) => {
   const showDiagnostics = !hasVideo && !hasAudio;
   
-  // FASE 5: GARANTIR EXIBIÇÃO NO COMPONENTE DE VÍDEO
+  // GARANTIR PREVIEW ESTÁVEL COM PLAYBACK FORÇADO
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
-      console.log('🎬 Video attached to preview:', localStream);
-    }
+    const setupStablePreview = async () => {
+      if (localVideoRef.current && localStream) {
+        const video = localVideoRef.current;
+        
+        // Configurar atributos críticos para mobile
+        video.playsInline = true;
+        video.autoplay = true;
+        video.muted = true;
+        video.controls = false;
+        
+        // Anexar stream
+        video.srcObject = localStream;
+        
+        try {
+          // Forçar reprodução para evitar throttling
+          await video.play();
+          console.log('✅ [PREVIEW] Video playing successfully');
+        } catch (playError) {
+          console.warn('⚠️ [PREVIEW] Initial play failed, retrying...', playError);
+          
+          // Retry após breve delay
+          setTimeout(async () => {
+            try {
+              await video.play();
+              console.log('✅ [PREVIEW] Video playing on retry');
+            } catch (retryError) {
+              console.error('❌ [PREVIEW] Play retry failed:', retryError);
+            }
+          }, 500);
+        }
+        
+        console.log('🎬 [PREVIEW] Video attached and configured:', {
+          stream: localStream.id,
+          tracks: localStream.getTracks().length,
+          playing: !video.paused
+        });
+      }
+    };
+
+    setupStablePreview();
   }, [localStream, localVideoRef]);
   
   return (
@@ -67,12 +103,18 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
             autoPlay
             muted
             playsInline
+            controls={false}
             className="w-full h-full object-cover"
             style={{ backgroundColor: 'black' }}
-            onLoadedMetadata={() => console.log('📺 VIDEO: Metadata loaded')}
-            onCanPlay={() => console.log('📺 VIDEO: Can play')}
-            onPlaying={() => console.log('📺 VIDEO: Playing')}
-            onError={(e) => console.error('📺 VIDEO: Error', e)}
+            onLoadedMetadata={() => console.log('📺 [VIDEO] Metadata loaded')}
+            onCanPlay={() => console.log('📺 [VIDEO] Can play')}
+            onPlaying={() => console.log('📺 [VIDEO] Playing - frames flowing')}
+            onPause={() => console.warn('⏸️ [VIDEO] Video paused - may cause muting')}
+            onStalled={() => console.warn('🚫 [VIDEO] Video stalled')}
+            onWaiting={() => console.warn('⏳ [VIDEO] Video waiting for data')}
+            onError={(e) => console.error('❌ [VIDEO] Error:', e)}
+            onEmptied={() => console.warn('🗑️ [VIDEO] Video emptied')}
+            onSuspend={() => console.warn('⏹️ [VIDEO] Video suspended')}
           />
           
           {(!hasVideo || !isVideoEnabled) && (
