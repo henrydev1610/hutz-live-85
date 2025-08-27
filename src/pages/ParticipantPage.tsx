@@ -411,9 +411,26 @@ const ParticipantPage = () => {
               }
             }
 
-            // Wait for actual frame production (avoid 2x2 video)
-            console.log('⏳ [VALIDATION] Waiting for frame production validation...');
-            return new Promise((resolve) => {
+            // CRITICAL: Validate track is NOT muted and producing frames
+            console.log('⏳ [VALIDATION] Validating track health and frame production...');
+            return new Promise(async (resolve) => {
+              const videoTrack = stream.getVideoTracks()[0];
+              
+              // FIRST: Check if track is muted (immediate fail)
+              if (videoTrack.muted) {
+                console.error('❌ [VALIDATION] Track is MUTED - cannot proceed with WebRTC');
+                resolve(false);
+                return;
+              }
+              
+              // SECOND: Check readyState
+              if (videoTrack.readyState !== 'live') {
+                console.error('❌ [VALIDATION] Track readyState is not live:', videoTrack.readyState);
+                resolve(false);
+                return;
+              }
+              
+              // THIRD: Try to play video and check dimensions
               const video = document.createElement('video');
               video.srcObject = stream;
               video.muted = true;
@@ -421,16 +438,40 @@ const ParticipantPage = () => {
               
               const timeout = setTimeout(() => {
                 console.warn('⚠️ [VALIDATION] Frame validation timeout');
+                video.remove();
                 resolve(false);
               }, 5000);
 
-              video.onloadedmetadata = () => {
-                const hasRealFrames = video.videoWidth > 2 && video.videoHeight > 2;
-                console.log(`📏 [VALIDATION] Video dimensions: ${video.videoWidth}x${video.videoHeight}`);
-                
-                clearTimeout(timeout);
-                video.remove();
-                resolve(hasRealFrames);
+              video.onloadedmetadata = async () => {
+                try {
+                  // Force play to ensure frames are flowing
+                  await video.play();
+                  
+                  const hasRealFrames = video.videoWidth > 2 && video.videoHeight > 2;
+                  const isPlaying = !video.paused && !video.ended && video.readyState > 2;
+                  
+                  console.log(`📏 [VALIDATION] Video validation:`, {
+                    dimensions: `${video.videoWidth}x${video.videoHeight}`,
+                    hasRealFrames,
+                    isPlaying,
+                    trackMuted: videoTrack.muted,
+                    trackEnabled: videoTrack.enabled,
+                    trackReady: videoTrack.readyState
+                  });
+                  
+                  clearTimeout(timeout);
+                  video.remove();
+                  
+                  // Only pass if we have real frames AND track is not muted
+                  const isValid = hasRealFrames && isPlaying && !videoTrack.muted && videoTrack.enabled;
+                  resolve(isValid);
+                  
+                } catch (playError) {
+                  console.error('❌ [VALIDATION] Failed to play video:', playError);
+                  clearTimeout(timeout);
+                  video.remove();
+                  resolve(false);
+                }
               };
 
               video.onerror = () => {

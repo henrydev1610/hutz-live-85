@@ -342,26 +342,56 @@ class ParticipantHandshakeManager {
       console.log('🚨 CRÍTICO [PARTICIPANT] Validating and adding tracks to RTCPeerConnection...');
       
       const tracks = stream.getTracks();
-      const validTracks = tracks.filter(track => track.readyState === 'live' && track.enabled);
+      // ENHANCED TRACK VALIDATION: Reject muted tracks
+      const validTracks = tracks.filter(track => {
+        const isValid = track.readyState === 'live' && track.enabled && !track.muted;
+        if (!isValid) {
+          console.warn(`🚫 [PARTICIPANT] Rejecting track ${track.kind}:`, {
+            readyState: track.readyState,
+            enabled: track.enabled,
+            muted: track.muted,
+            label: track.label
+          });
+        }
+        return isValid;
+      });
       
-      console.log(`🔍 [PARTICIPANT] Track validation:`, {
+      console.log(`🔍 [PARTICIPANT] Enhanced track validation:`, {
         totalTracks: tracks.length,
         validTracks: validTracks.length,
         trackDetails: tracks.map(t => ({
           kind: t.kind,
           readyState: t.readyState,
           enabled: t.enabled,
-          muted: t.muted
+          muted: t.muted,
+          isValid: t.readyState === 'live' && t.enabled && !t.muted
         }))
       });
       
       if (validTracks.length === 0) {
-        throw new Error('No valid tracks found in stream for WebRTC');
+        const mutedTracks = tracks.filter(t => t.muted);
+        if (mutedTracks.length > 0) {
+          throw new Error(`All tracks are MUTED (${mutedTracks.length}/${tracks.length}) - cannot proceed with WebRTC`);
+        } else {
+          throw new Error('No valid tracks found in stream for WebRTC');
+        }
       }
       
       validTracks.forEach((track, index) => {
         if (this.peerConnection && stream) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding validated track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
+          // CRITICAL: Final muted check before adding to WebRTC
+          if (track.muted) {
+            console.error(`❌ [PARTICIPANT] REJECTING MUTED TRACK ${track.kind} - will not add to WebRTC`);
+            throw new Error(`Cannot add muted ${track.kind} track to WebRTC connection`);
+          }
+          
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding validated NON-MUTED track ${index + 1}: ${track.kind}`, {
+            enabled: track.enabled,
+            readyState: track.readyState,
+            muted: track.muted,
+            settings: track.kind === 'video' ? track.getSettings() : null
+          });
+          
           this.peerConnection.addTrack(track, stream);
           
           // Track health monitoring after adding to peer connection
@@ -370,7 +400,7 @@ class ParticipantHandshakeManager {
           });
           
           track.addEventListener('mute', () => {
-            console.warn(`⚠️ [PARTICIPANT] Track ${track.kind} muted after being added to PC`);
+            console.error(`❌ [PARTICIPANT] Track ${track.kind} BECAME MUTED after being added to PC - CRITICAL ISSUE`);
           });
         }
       });
