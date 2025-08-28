@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Participant } from './ParticipantGrid';
 import { detectMobileAggressively } from '@/utils/media/deviceDetection';
+import { videoPlaybackEnforcer } from '@/utils/webrtc/VideoPlaybackEnforcer';
 
 interface UnifiedVideoContainerProps {
   participant: Participant;
@@ -36,13 +37,16 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
     el.appendChild(v);
     videoRef.current = v;
     
+    // FASE 4: REGISTRAR NO VIDEO ENFORCER
+    videoPlaybackEnforcer.registerVideo(v);
+    
     console.log(`📦 VIDEO CREATED: Element created for ${participant.id}`, {
       videoId: v.id,
       container: el.id
     });
   }, [participant.id]);
 
-  // 2. Aplicar srcObject sempre que stream mudar
+  // 2. Aplicar srcObject e GARANTIR PLAYBACK
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !stream) {
@@ -54,16 +58,84 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
     }
     
     if (v.srcObject !== stream) {
+      // FASE 3: VALIDAÇÃO DE STREAM ANTES DE APLICAR
+      const videoTracks = stream.getVideoTracks();
+      const hasActiveVideoTrack = videoTracks.some(track => 
+        track.enabled && 
+        track.readyState === 'live' && 
+        !track.muted
+      );
+      
+      if (!hasActiveVideoTrack) {
+        console.warn(`⚠️ STREAM VALIDATION: No active video tracks for ${participant.id}`, {
+          totalTracks: videoTracks.length,
+          trackStates: videoTracks.map(t => ({
+            id: t.id,
+            enabled: t.enabled,
+            readyState: t.readyState,
+            muted: t.muted
+          }))
+        });
+        setError('Stream sem vídeo ativo');
+        return;
+      }
+
       v.srcObject = stream;
       setError(null);
       
-      const handleLoadedMetadata = () => {
-        setIsVideoReady(true);
-        console.log(`✅ VIDEO READY: Video playing for ${participant.id}`, {
-          videoWidth: v.videoWidth,
-          videoHeight: v.videoHeight,
-          streamId: stream.id
-        });
+      const handleLoadedMetadata = async () => {
+        try {
+          // FASE 1: GARANTIR PLAY AUTOMÁTICO APÓS METADATA
+          console.log(`📊 METADATA LOADED: Starting playback for ${participant.id}`, {
+            videoWidth: v.videoWidth,
+            videoHeight: v.videoHeight,
+            paused: v.paused,
+            streamId: stream.id
+          });
+
+          if (v.paused) {
+            console.log(`▶️ FORCING PLAY: Video was paused, attempting play for ${participant.id}`);
+            
+            // FASE 1: RETRY PLAY COM TIMEOUT
+            let playRetries = 0;
+            const maxRetries = 3;
+            
+            const attemptPlay = async () => {
+              try {
+                await v.play();
+                console.log(`✅ PLAY SUCCESS: Video playing for ${participant.id} (retry ${playRetries})`);
+                setIsVideoReady(true);
+                
+                // FASE 4: VERIFICAR SE REALMENTE ESTÁ TOCANDO
+                setTimeout(() => {
+                  if (v.paused) {
+                    console.warn(`⚠️ STILL PAUSED: Video paused again for ${participant.id}, forcing play`);
+                    v.play().catch(console.error);
+                  }
+                }, 1000);
+                
+              } catch (playError) {
+                playRetries++;
+                console.warn(`⚠️ PLAY FAILED: Retry ${playRetries}/${maxRetries} for ${participant.id}:`, playError);
+                
+                if (playRetries < maxRetries) {
+                  setTimeout(attemptPlay, 500 * playRetries); // Exponential backoff
+                } else {
+                  console.error(`❌ PLAY FAILED: All retries failed for ${participant.id}`);
+                  setError('Falha ao reproduzir vídeo');
+                }
+              }
+            };
+            
+            await attemptPlay();
+          } else {
+            setIsVideoReady(true);
+            console.log(`✅ ALREADY PLAYING: Video already playing for ${participant.id}`);
+          }
+        } catch (error) {
+          console.error(`❌ METADATA ERROR: Failed to handle loadedmetadata for ${participant.id}:`, error);
+          setError('Erro ao carregar vídeo');
+        }
       };
       
       const handleError = (e: Event) => {
@@ -71,14 +143,41 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
         setIsVideoReady(false);
         console.error(`❌ VIDEO ERROR: Error playing video for ${participant.id}:`, e);
       };
+
+      // FASE 4: MONITORAMENTO DE PLAYBACK
+      const handlePlay = () => {
+        console.log(`▶️ PLAY EVENT: Video started playing for ${participant.id}`);
+        setIsVideoReady(true);
+      };
+
+      const handlePause = () => {
+        console.warn(`⏸️ PAUSE EVENT: Video paused for ${participant.id}, attempting resume`);
+        // Auto-resume se pausar inesperadamente
+        setTimeout(() => {
+          if (v.paused && v.srcObject) {
+            console.log(`🔄 AUTO-RESUME: Attempting to resume video for ${participant.id}`);
+            v.play().catch(console.error);
+          }
+        }, 100);
+      };
       
       v.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
       v.addEventListener('error', handleError, { once: true });
+      v.addEventListener('play', handlePlay);
+      v.addEventListener('pause', handlePause);
       
       console.log(`🎥 STREAM APPLIED: srcObject set for ${participant.id}`, {
         streamId: stream.id,
-        streamActive: stream.active
+        streamActive: stream.active,
+        videoTracks: videoTracks.length,
+        hasActiveTrack: hasActiveVideoTrack
       });
+
+      // Cleanup listeners
+      return () => {
+        v.removeEventListener('play', handlePlay);
+        v.removeEventListener('pause', handlePause);
+      };
     }
   }, [stream, participant.id]);
 

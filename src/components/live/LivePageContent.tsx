@@ -35,9 +35,10 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
   onGenerateQRCode,
   onQRCodeToTransmission
 }) => {
-  // FASE 1 & 2: Initialize enhanced stream pipeline and display manager
+  // FASE 1 & 2: Initialize enhanced stream pipeline (DISABLE legacy manager to avoid conflicts)
   useEnhancedStreamPipeline();
-  useEnhancedStreamDisplayManager();
+  // FASE 2: DISABLE useStreamDisplayManager to eliminate conflicts - UnifiedVideoContainer handles video creation
+  // useEnhancedStreamDisplayManager();
 
   // Calculate real participants and active streams
   const realParticipants = state.participantList.filter((p: Participant) => !p.id.startsWith('placeholder-'));
