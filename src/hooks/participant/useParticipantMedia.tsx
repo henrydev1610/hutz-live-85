@@ -154,30 +154,47 @@ export const useParticipantMedia = (participantId: string) => {
         return null;
       }
 
-      localStreamRef.current = stream;
+     localStreamRef.current = stream;
 
-    
-        (window as any).__participantSharedStream = stream;
-        try {
-          const pcMap = (window as any).__webrtcPeerConnections as Map<string, RTCPeerConnection> | undefined;
-          if (pcMap && pcMap.size > 0) {
-            pcMap.forEach((pc, pid) => {
-              console.log(`🎥 [PATCH] Vinculando tracks ao PeerConnection de ${pid}`);
-              stream.getTracks().forEach(track => {
-                if (track.readyState === "live") {
-                  pc.addTrack(track, stream);
-                  console.log(`✅ [PATCH] Track ${track.kind} (${track.id}) adicionada ao PC de ${pid}`);
-                } else {
-                  console.warn(`⚠️ [PATCH] Track ${track.kind} não está ativa: ${track.readyState}`);
-                }
-              });
+// 🚨 PATCH: Garantir que há pelo menos 1 track de vídeo válido
+const validVideoTracks = stream.getVideoTracks().filter(
+  t => t.readyState === "live" && t.enabled
+);
+if (validVideoTracks.length === 0) {
+  console.error("❌ [P-MEDIA] Nenhum track de vídeo válido encontrado. Reinicializando captura...");
+  toast.error("Não foi possível acessar a câmera. Tentando novamente...");
+
+  // Retry após 1s
+  setTimeout(() => {
+    initializeMedia();
+  }, 1000);
+
+  return null;
+}
+
+// Se passou na validação → prossegue
+      (window as any).__participantSharedStream = stream;
+      try {
+        const pcMap = (window as any).__webrtcPeerConnections as Map<string, RTCPeerConnection> | undefined;
+        if (pcMap && pcMap.size > 0) {
+          pcMap.forEach((pc, pid) => {
+            console.log(`🎥 [PATCH] Vinculando tracks ao PeerConnection de ${pid}`);
+            stream.getTracks().forEach(track => {
+              if (track.readyState === "live") {
+                pc.addTrack(track, stream);
+                console.log(`✅ [PATCH] Track ${track.kind} (${track.id}) adicionada ao PC de ${pid}`);
+              } else {
+                console.warn(`⚠️ [PATCH] Track ${track.kind} não está ativa: ${track.readyState}`);
+              }
             });
-          } else {
-            console.warn("⚠️ [PATCH] Nenhum PeerConnection encontrado no window.__webrtcPeerConnections");
-          }
-        } catch (err) {
-          console.error("❌ [PATCH] Falha ao anexar tracks ao PeerConnection:", err);
+          });
+        } else {
+          console.warn("⚠️ [PATCH] Nenhum PeerConnection encontrado no window.__webrtcPeerConnections");
         }
+      } catch (err) {
+        console.error("❌ [PATCH] Falha ao anexar tracks ao PeerConnection:", err);
+      }
+
           
       
       const videoTracks = stream.getVideoTracks();
