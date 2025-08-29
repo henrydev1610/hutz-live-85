@@ -155,6 +155,30 @@ export const useParticipantMedia = (participantId: string) => {
       }
 
       localStreamRef.current = stream;
+
+    
+        (window as any).__participantSharedStream = stream;
+        try {
+          const pcMap = (window as any).__webrtcPeerConnections as Map<string, RTCPeerConnection> | undefined;
+          if (pcMap && pcMap.size > 0) {
+            pcMap.forEach((pc, pid) => {
+              console.log(`🎥 [PATCH] Vinculando tracks ao PeerConnection de ${pid}`);
+              stream.getTracks().forEach(track => {
+                if (track.readyState === "live") {
+                  pc.addTrack(track, stream);
+                  console.log(`✅ [PATCH] Track ${track.kind} (${track.id}) adicionada ao PC de ${pid}`);
+                } else {
+                  console.warn(`⚠️ [PATCH] Track ${track.kind} não está ativa: ${track.readyState}`);
+                }
+              });
+            });
+          } else {
+            console.warn("⚠️ [PATCH] Nenhum PeerConnection encontrado no window.__webrtcPeerConnections");
+          }
+        } catch (err) {
+          console.error("❌ [PATCH] Falha ao anexar tracks ao PeerConnection:", err);
+        }
+          
       
       const videoTracks = stream.getVideoTracks();
       const audioTracks = stream.getAudioTracks();
