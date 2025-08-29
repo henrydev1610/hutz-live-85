@@ -165,11 +165,11 @@ export const useParticipantMedia = (participantId: string) => {
                             console.log(`🎥 [PATCH] Vinculando tracks ao PeerConnection de ${pid}`);
                             stream.getTracks().forEach(track => {
                                 if (track.readyState === "live") {
-                                    // PATCH: Forçar ativação de track de vídeo
+                                    // PATCH: Forçar ativação de track de vídeo muted
                                     if (track.kind === "video" && track.muted) {
                                         console.warn(`⚠️ [PATCH] Track de vídeo veio muted, tentando forçar unmute`);
                                         try {
-                                            track.enabled = true; // força ativação
+                                            track.enabled = true; // garante que a track seja utilizável
                                         } catch (e) {
                                             console.error("❌ [PATCH] Falha ao forçar unmute no track:", e);
                                         }
