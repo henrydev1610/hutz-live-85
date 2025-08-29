@@ -16,6 +16,10 @@ class ParticipantHandshakeManager {
   private lastConnectionTime: number = 0;
   private handshakeStartTime: number = 0;
   
+  // CRÍTICO: Propriedades para sequenciamento de ICE candidates
+  private isRemoteDescriptionSet = false;
+  private isProcessingAnswer = false;
+  
   constructor() {
     this.setupParticipantHandlers();
   }
@@ -212,32 +216,49 @@ class ParticipantHandshakeManager {
       }
 
       try {
-        console.log('🚨 CRÍTICO [PARTICIPANT] Setting remote description from answer...');
+        console.log('🚨 CRÍTICO [PARTICIPANT] Setting remote description from answer...', {
+          answerType: answer.type,
+          bufferedCandidates: this.pendingCandidates.length,
+          connectionState: this.peerConnection.connectionState
+        });
+        
+        this.isProcessingAnswer = true;
         await this.peerConnection.setRemoteDescription(answer);
+        this.isRemoteDescriptionSet = true;
+        this.isProcessingAnswer = false;
+        
         console.log('✅ [PARTICIPANT] Remote description set successfully');
         console.log(`🚨 CRÍTICO [PARTICIPANT] Connection state após setRemoteDescription: ${this.peerConnection.connectionState}`);
 
-        // Flush all pending candidates immediately
+        // CRÍTICO: Flush buffered ICE candidates APÓS setRemoteDescription estar completo
         if (this.pendingCandidates.length > 0) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Applying ${this.pendingCandidates.length} buffered candidates`);
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Flushing ${this.pendingCandidates.length} buffered candidates sequentially...`);
           
           const candidatesToFlush = [...this.pendingCandidates];
           this.pendingCandidates = [];
           
-          for (const candidate of candidatesToFlush) {
+          // Process sequentially with small delays
+          for (let i = 0; i < candidatesToFlush.length; i++) {
+            const candidate = candidatesToFlush[i];
             try {
               await this.peerConnection.addIceCandidate(candidate);
-              console.log('✅ [PARTICIPANT] ICE candidate aplicado do buffer');
+              console.log(`✅ [PARTICIPANT] ICE candidate ${i+1}/${candidatesToFlush.length} aplicado do buffer`);
+              
+              // Small delay to prevent overwhelming the connection
+              if (i < candidatesToFlush.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 10));
+              }
             } catch (err) {
-              console.error('❌ [PARTICIPANT] Error flushing candidate:', err);
+              console.error(`❌ [PARTICIPANT] Error flushing candidate ${i+1}:`, err);
             }
           }
-          console.log('✅ [PARTICIPANT] Buffer de ICE candidates limpo');
+          console.log('✅ [PARTICIPANT] Buffer de ICE candidates limpo completamente');
         }
         
-        console.log('✅ [PARTICIPANT] Connection established successfully');
+        console.log('🎯 [PARTICIPANT] Answer processing complete, ready for new ICE candidates');
       } catch (err) {
         console.error('❌ CRÍTICO [PARTICIPANT] Error applying answer:', err);
+        this.isProcessingAnswer = false;
         this.handleConnectionFailure(hostId);
       }
     });
@@ -267,17 +288,26 @@ class ParticipantHandshakeManager {
         return;
       }
 
-      // Apply immediately OR buffer consistently
-      if (this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
+      // CRÍTICO: Buffer candidates if remote description not set OR still processing answer
+      if (!this.isRemoteDescriptionSet || this.isProcessingAnswer) {
+        this.pendingCandidates.push(candidate);
+        console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId}`, {
+          remoteDescSet: this.isRemoteDescriptionSet,
+          processingAnswer: this.isProcessingAnswer,
+          bufferSize: this.pendingCandidates.length,
+          candidate: candidate.candidate
+        });
+      } else {
         try {
+          console.log(`🧊 [PARTICIPANT] Adding ICE candidate immediately from ${hostId}`, {
+            candidate: candidate.candidate,
+            connectionState: this.peerConnection.connectionState
+          });
           await this.peerConnection.addIceCandidate(candidate);
           console.log(`✅ [PARTICIPANT] ICE candidate applied immediately from ${hostId}`);
         } catch (err) {
-          console.warn('⚠️ [PARTICIPANT] Error adding candidate from:', hostId, err);
+          console.error('❌ [PARTICIPANT] Error adding candidate from:', hostId, err);
         }
-      } else {
-        this.pendingCandidates.push(candidate);
-        console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId} (total: ${this.pendingCandidates.length})`);
       }
     });
     

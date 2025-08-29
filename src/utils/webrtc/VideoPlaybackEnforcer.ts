@@ -45,22 +45,40 @@ export class VideoPlaybackEnforcer {
   private checkAndEnforcePlayback() {
     const videosToCheck = Array.from(document.querySelectorAll('video[data-unified-video="true"]')) as HTMLVideoElement[];
     
+    let playingCount = 0;
+    let pausedWithStreamCount = 0;
+    let totalWithStreamCount = 0;
+    
     videosToCheck.forEach(video => {
       const participantId = video.getAttribute('data-participant-id');
+      const hasStream = !!video.srcObject;
       
-      if (video.srcObject && video.paused) {
-        console.warn(`⚠️ VIDEO-ENFORCER: Found paused video for ${participantId}, forcing play`);
+      if (hasStream) {
+        totalWithStreamCount++;
         
-        video.play().then(() => {
-          console.log(`✅ VIDEO-ENFORCER: Successfully resumed video for ${participantId}`);
-        }).catch(error => {
-          console.error(`❌ VIDEO-ENFORCER: Failed to resume video for ${participantId}:`, error);
-        });
+        if (video.paused) {
+          pausedWithStreamCount++;
+          console.warn(`⚠️ VIDEO-ENFORCER: Found paused video for ${participantId}, forcing play`);
+          
+          video.play().then(() => {
+            console.log(`✅ VIDEO-ENFORCER: Successfully resumed video for ${participantId}`);
+          }).catch(error => {
+            console.error(`❌ VIDEO-ENFORCER: Failed to resume video for ${participantId}:`, error);
+          });
+        } else {
+          playingCount++;
+        }
       }
     });
 
-    // Log monitoring status
-    console.log(`💓 VIDEO-ENFORCER: Monitoring ${videosToCheck.length} videos`);
+    // Enhanced monitoring status
+    console.log(`💓 VIDEO-ENFORCER: Status`, {
+      totalVideos: videosToCheck.length,
+      videosWithStream: totalWithStreamCount,
+      playing: playingCount,
+      pausedWithStream: pausedWithStreamCount,
+      timestamp: new Date().toISOString()
+    });
   }
 
   // Force play for specific participant
