@@ -89,8 +89,46 @@ const ParticipantPage = () => {
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
   console.log('🎯 PARTICIPANT PAGE: Enhanced mobile guard:', { isMobile, isValidated, isBlocked });
   
-  // ÚNICA FONTE: participantId gerado apenas aqui
-  const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+  // FASE 1: ESTABILIZAR participantId - usar sessionStorage para persistir entre re-renderizações
+  const [participantId] = useState(() => {
+    const storageKey = `participantId-${sessionId}`;
+    const existingId = sessionStorage.getItem(storageKey);
+    
+    if (existingId) {
+      console.log(`✅ FASE 1: Reusing existing participantId: ${existingId}`);
+      return existingId;
+    }
+    
+    const newId = `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    sessionStorage.setItem(storageKey, newId);
+    console.log(`🆕 FASE 1: Created new stable participantId: ${newId}`);
+    return newId;
+  });
+  
+  // FASE 1: Monitoramento de estabilidade com useEffect
+  useEffect(() => {
+    // Detectar mudança de participantId para a mesma sessão
+    const storageKey = `participantId-${sessionId}`;
+    const storedId = sessionStorage.getItem(storageKey);
+    
+    if (storedId && storedId !== participantId) {
+      console.error(`🚨 FASE 1: participantId INSTABILITY DETECTED!`);
+      console.error(`Stored: ${storedId}`);
+      console.error(`Current: ${participantId}`);
+      console.error(`SessionId: ${sessionId}`);
+      
+      toast.error('⚠️ Detectada instabilidade no ID do participante');
+      
+      // Emit event para componentes se ajustarem
+      window.dispatchEvent(new CustomEvent('participant-id-stability-breach', {
+        detail: {
+          oldId: participantId,
+          stableId: storedId,
+          sessionId
+        }
+      }));
+    }
+  }, [participantId, sessionId]);
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
 
   // PROPAGAÇÃO: participantId único passado para todos os hooks

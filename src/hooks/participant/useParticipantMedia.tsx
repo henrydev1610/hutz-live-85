@@ -154,10 +154,18 @@ export const useParticipantMedia = (participantId: string) => {
                     return null;
                 }
 
-                localStreamRef.current = stream;
-
-
-                (window as any).__participantSharedStream = stream;
+                // FASE 3: PROTEGER localStreamRef de ser limpo durante reconexões
+                const protectStream = (stream: MediaStream) => {
+                  localStreamRef.current = stream;
+                  (window as any).__participantSharedStream = stream;
+                  
+                  // Marcar stream como protegido contra cleanup
+                  (stream as any).__isProtected = true;
+                  
+                  console.log(`✅ FASE 3: Stream protected - ${stream.id} marked as protected`);
+                };
+                
+                protectStream(stream);
                 try {
                     const pcMap = (window as any).__webrtcPeerConnections as Map<string, RTCPeerConnection> | undefined;
                     if (pcMap && pcMap.size > 0) {
@@ -496,7 +504,15 @@ export const useParticipantMedia = (participantId: string) => {
             'Media cleanup initiated'
         );
 
+        // FASE 3: NÃO limpar stream se estiver protegido
         if (localStreamRef.current) {
+            const isProtected = (localStreamRef.current as any).__isProtected;
+            
+            if (isProtected) {
+                console.log(`🛡️ FASE 3: Stream ${localStreamRef.current.id} is protected - skipping cleanup`);
+                return;
+            }
+            
             localStreamRef.current.getTracks().forEach(track => {
                 streamLogger.logTrackEvent(participantId, isMobile, deviceType, 'track_stopped_cleanup', track);
                 track.stop();
@@ -510,6 +526,12 @@ export const useParticipantMedia = (participantId: string) => {
                 track.stop();
             });
             screenStreamRef.current = null;
+        }
+
+        // FASE 3: Só limpar global se não estiver protegido
+        const globalStream = (window as any).__participantSharedStream;
+        if (globalStream && !(globalStream as any).__isProtected) {
+            (window as any).__participantSharedStream = null;
         }
 
         if (localVideoRef.current) {

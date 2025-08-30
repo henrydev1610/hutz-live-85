@@ -275,18 +275,32 @@ class HostHandshakeManager {
   }
 
   cleanupHostHandshake(participantId: string): void {
+    console.log(`🧹 FASE 4: Cleaning up handshake for ${participantId}`);
+    
     const pc = hostPeerConnections.get(participantId);
     if (pc) {
-      try {
-        pc.ontrack = null;
-        pc.onicecandidate = null;
-        pc.onconnectionstatechange = null;
-        pc.oniceconnectionstatechange = null;
-        pc.close();
-      } catch (err) {
-        console.warn(`[HOST] Error closing PC for ${participantId}:`, err);
+      const connectionState = pc.connectionState;
+      const iceState = pc.iceConnectionState;
+      
+      // FASE 4: Só cleanup se conexão realmente morreu
+      if (connectionState === 'failed' || connectionState === 'closed' || 
+          iceState === 'failed' || iceState === 'closed') {
+        console.log(`✅ FASE 4: Connection truly dead (${connectionState}/${iceState}) - cleaning up`);
+        
+        try {
+          pc.ontrack = null;
+          pc.onicecandidate = null;
+          pc.onconnectionstatechange = null;
+          pc.oniceconnectionstatechange = null;
+          pc.close();
+        } catch (err) {
+          console.warn(`[HOST] Error closing PC for ${participantId}:`, err);
+        }
+        hostPeerConnections.delete(participantId);
+      } else {
+        console.log(`⚠️ FASE 4: Connection still alive (${connectionState}/${iceState}) - preserving`);
+        return; // Não cleanup se conexão ainda válida
       }
-      hostPeerConnections.delete(participantId);
     }
 
     // Clear pending candidates
@@ -299,7 +313,7 @@ class HostHandshakeManager {
       handshakeTimeouts.delete(participantId);
     }
 
-    console.log(`[HOST] Cleaned up handshake for ${participantId}`);
+    console.log(`✅ FASE 4: Intelligent cleanup completed for ${participantId}`);
   }
 
   cleanupAllStuckConnections(): void {
