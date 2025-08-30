@@ -40,10 +40,8 @@ export const useParticipantMedia = (participantId: string) => {
         setHasScreenShare
     });
 
-    // Stream protection and monitoring
     const mutex = useStreamMutex(participantId);
 
-    // Enhanced track health monitoring with recovery
     const trackHealth = useTrackHealthMonitor(
         participantId,
         localStreamRef.current,
@@ -70,12 +68,6 @@ export const useParticipantMedia = (participantId: string) => {
             setHasVideo(newStream.getVideoTracks().length > 0);
             setHasAudio(newStream.getAudioTracks().length > 0);
             trackHealth.startMonitoring();
-
-            console.log('🔄 [MEDIA] Stream updated after recovery:', {
-                streamId: newStream.id,
-                videoTracks: newStream.getVideoTracks().length,
-                audioTracks: newStream.getAudioTracks().length
-            });
         },
         webrtcSender: (window as any).__participantWebRTCSender
     });
@@ -93,59 +85,30 @@ export const useParticipantMedia = (participantId: string) => {
 
             try {
                 console.log(`🎬 MEDIA: Starting ${isMobile ? 'MOBILE' : 'DESKTOP'} camera initialization`);
-                console.log(`🔒 HTTPS Check: ${window.location.protocol}`);
-                console.log(`📱 User Agent: ${navigator.userAgent}`);
-
-                console.log('[P-MEDIA] request getUserMedia');
-
-                streamLogger.log(
-                    'STREAM_START' as any,
-                    participantId,
-                    isMobile,
-                    deviceType,
-                    { timestamp: Date.now(), duration: 0 },
-                    undefined,
-                    'MEDIA_INIT',
-                    'Media initialization started',
-                    { userAgent: navigator.userAgent, protocol: window.location.protocol }
-                );
 
                 if (!checkMediaDevicesSupport()) {
-                    const error = new Error('getUserMedia not supported');
-                    streamLogger.logStreamError(participantId, isMobile, deviceType, error, 0);
-                    throw error;
+                    throw new Error('getUserMedia not supported');
                 }
 
                 const stream = await getUserMediaWithFallback(participantId);
 
                 if (!stream) {
-                    console.log(`⚠️ MEDIA: No stream obtained, entering degraded mode`);
-                    streamLogger.log(
-                        'STREAM_ERROR' as any,
-                        participantId,
-                        isMobile,
-                        deviceType,
-                        { timestamp: Date.now(), duration: 0, errorType: 'NO_STREAM_DEGRADED_MODE' },
-                        undefined,
-                        'MEDIA_INIT',
-                        'No stream obtained, entering degraded mode'
-                    );
                     setHasVideo(false);
                     setHasAudio(false);
                     toast.warning('Connected in degraded mode (no camera/microphone)');
                     return null;
                 }
 
-                // 🔒 FASE 3: Proteger stream contra cleanup
+                // 🔒 Proteger stream contra cleanup
                 const protectStream = (stream: MediaStream) => {
                   localStreamRef.current = stream;
                   (window as any).__participantSharedStream = stream;
                   (stream as any).__isProtected = true;
-                  console.log(`✅ FASE 3: Stream protected - ${stream.id} marked as protected`);
+                  console.log(`✅ Stream protected - ${stream.id} marked as protected`);
                 };
                 protectStream(stream);
 
-                // 🎥 PATCH: Vincular tracks ao PeerConnection
+                // 🎥 Patch: vincular tracks ao PeerConnection
                 try {
                   const pcMap = (window as any).__webrtcPeerConnections as Map<string, RTCPeerConnection> | undefined;
                   if (pcMap && pcMap.size > 0) {
@@ -154,19 +117,15 @@ export const useParticipantMedia = (participantId: string) => {
                           stream.getTracks().forEach(track => {
                               if (track.readyState === "live") {
                                   if (track.kind === "video" && track.muted) {
-                                      console.warn(`⚠️ [PATCH] Track de vídeo veio muted, tentando forçar unmute`);
-                                      try { track.enabled = true; } 
-                                      catch (e) { console.error("❌ [PATCH] Falha ao forçar unmute no track:", e); }
+                                      try { track.enabled = true; } catch {}
                                   }
                                   pc.addTrack(track, stream);
-                                  console.log(`✅ [PATCH] Track ${track.kind} (${track.id}) adicionada ao PC de ${pid}`);
+                                  console.log(`✅ [PATCH] Track ${track.kind} adicionada ao PC de ${pid}`);
                               } else {
                                   console.warn(`⚠️ [PATCH] Track ${track.kind} não está ativa: ${track.readyState}`);
                               }
                           });
                       });
-                  } else {
-                      console.warn("⚠️ [PATCH] Nenhum PeerConnection encontrado no window.__webrtcPeerConnections");
                   }
                 } catch (err) {
                   console.error("❌ [PATCH] Falha ao anexar tracks ao PeerConnection:", err);
@@ -175,31 +134,8 @@ export const useParticipantMedia = (participantId: string) => {
                 const videoTracks = stream.getVideoTracks();
                 const audioTracks = stream.getAudioTracks();
 
-                console.log(`[P-MEDIA] success tracks={video:${videoTracks.length}, audio:${audioTracks.length}} streamId=${stream.id}`);
-
                 (window as any).__participantSharedStream = stream;
                 (window as any).__participantLocalStream = stream;
-                console.log('✅ MEDIA: Stream shared globally for handshake reuse');
-
-                const activeVideoTracks = stream.getVideoTracks().filter(t => t.readyState === 'live' && t.enabled);
-                const activeAudioTracks = stream.getAudioTracks().filter(t => t.readyState === 'live' && t.enabled);
-
-                console.log('🔍 [MEDIA] WebRTC compatibility check:', {
-                    streamActive: stream.active,
-                    streamId: stream.id,
-                    totalTracks: stream.getTracks().length,
-                    activeVideoTracks: activeVideoTracks.length,
-                    activeAudioTracks: activeAudioTracks.length,
-                    readyForWebRTC: stream.active && activeVideoTracks.length > 0
-                });
-
-                if (!stream.active || activeVideoTracks.length === 0) {
-                    console.warn('⚠️ [MEDIA] Stream may not be suitable for WebRTC transmission');
-                    toast.warning('⚠️ Stream criado mas pode ter problemas na transmissão');
-                }
-
-                streamLogger.logStreamSuccess(participantId, isMobile, deviceType, stream, 0);
-                streamLogger.logWebRTCSend(participantId, isMobile, deviceType, stream);
 
                 setHasVideo(videoTracks.length > 0);
                 setHasAudio(audioTracks.length > 0);
@@ -208,19 +144,14 @@ export const useParticipantMedia = (participantId: string) => {
 
                 if (localVideoRef.current && videoTracks.length > 0) {
                     await setupVideoElement(localVideoRef.current, stream);
-                    streamLogger.logDOMUpdate(participantId, isMobile, deviceType, localVideoRef.current);
                 }
 
-                const displayType = isMobile ? '📱 Mobile' : '🖥️ Desktop';
-                toast.success(`${displayType} camera connected! Video: ${videoTracks.length > 0 ? '✅' : '❌'}, Audio: ${audioTracks.length > 0 ? '✅' : '❌'}`);
+                toast.success(`${isMobile ? '📱 Mobile' : '🖥️ Desktop'} camera connected!`);
 
                 return stream;
 
             } catch (error) {
                 console.error(`❌ MEDIA: Failed to initialize ${isMobile ? 'mobile' : 'desktop'} camera:`, error);
-                const err = error as Error;
-                streamLogger.logStreamError(participantId, isMobile, deviceType, err, 0);
-                toast.error(`Camera initialization failed: ${error.message}`);
                 setHasVideo(false);
                 setHasAudio(false);
                 return null;
@@ -228,4 +159,128 @@ export const useParticipantMedia = (participantId: string) => {
         });
     }, [participantId, localVideoRef, localStreamRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, mutex]);
 
-    // (restante do arquivo igual ao seu, retryMediaInitialization, switchCamera, cleanup, return {...})
+    const retryMediaInitialization = useCallback(async () => {
+        if (!mutex.isOperationAllowed('retry-media')) {
+            console.warn(`🚫 [MEDIA] Cannot retry - blocked by ${mutex.currentOperation}`);
+            return null;
+        }
+
+        return await mutex.withMutexLock('retry-media', async () => {
+            if (localStreamRef.current) {
+                const isStreamInUse = (window as any).__participantSharedStream === localStreamRef.current;
+                if (!isStreamInUse) {
+                    localStreamRef.current.getTracks().forEach(track => track.stop());
+                }
+                localStreamRef.current = null;
+            }
+            setHasVideo(false);
+            setHasAudio(false);
+
+            try {
+                const stream = await initializeMedia();
+                return stream;
+            } catch (error) {
+                console.error('❌ MEDIA: Retry failed:', error);
+                toast.error('Failed to retry media connection');
+                throw error;
+            }
+        });
+    }, [initializeMedia, localStreamRef, setHasVideo, setHasAudio, mutex]);
+
+    const switchCamera = useCallback(async (facing: 'user' | 'environment') => {
+        if (!mutex.isOperationAllowed('switch-camera')) {
+            console.warn(`🚫 [MEDIA] Cannot switch camera - blocked by ${mutex.currentOperation}`);
+            return null;
+        }
+
+        return await mutex.withMutexLock('switch-camera', async () => {
+            const isMobile = detectMobileAggressively();
+            if (!isMobile) {
+                toast.warning('Camera switching only available on mobile devices');
+                return;
+            }
+
+            try {
+                if (localStreamRef.current) {
+                    const isStreamInUse = (window as any).__participantSharedStream === localStreamRef.current;
+                    if (!isStreamInUse) {
+                        localStreamRef.current.getTracks().forEach(track => track.stop());
+                    }
+                    localStreamRef.current = null;
+                }
+
+                if (localVideoRef.current) {
+                    localVideoRef.current.srcObject = null;
+                }
+
+                setCameraPreference(facing);
+                const newStream = await getUserMediaWithFallback(participantId);
+
+                if (!newStream) throw new Error(`Cannot access ${facing} camera`);
+
+                localStreamRef.current = newStream;
+                const videoTracks = newStream.getVideoTracks();
+                const audioTracks = newStream.getAudioTracks();
+
+                setHasVideo(videoTracks.length > 0);
+                setHasAudio(audioTracks.length > 0);
+                setIsVideoEnabled(videoTracks.length > 0);
+                setIsAudioEnabled(audioTracks.length > 0);
+
+                if (localVideoRef.current && videoTracks.length > 0) {
+                    await setupVideoElement(localVideoRef.current, newStream);
+                }
+
+                toast.success(`📱 ${facing === 'user' ? 'Front' : 'Back'} camera activated!`);
+                return newStream;
+
+            } catch (error) {
+                console.error(`❌ CAMERA SWITCH: Failed to switch to ${facing}:`, error);
+                await retryMediaInitialization();
+                throw error;
+            }
+        });
+    }, [participantId, localStreamRef, localVideoRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, retryMediaInitialization, mutex]);
+
+    const cleanup = useCallback(() => {
+        if (localStreamRef.current) {
+            const isProtected = (localStreamRef.current as any).__isProtected;
+            if (!isProtected) {
+                localStreamRef.current.getTracks().forEach(track => track.stop());
+                localStreamRef.current = null;
+            }
+        }
+        if (screenStreamRef.current) {
+            screenStreamRef.current.getTracks().forEach(track => track.stop());
+            screenStreamRef.current = null;
+        }
+        if (localVideoRef.current) {
+            localVideoRef.current.srcObject = null;
+        }
+        setHasVideo(false);
+        setHasAudio(false);
+        setHasScreenShare(false);
+        setIsVideoEnabled(false);
+        setIsAudioEnabled(false);
+    }, [localStreamRef, screenStreamRef, localVideoRef, setHasVideo, setHasAudio, setHasScreenShare, setIsVideoEnabled, setIsAudioEnabled]);
+
+    return {
+        hasVideo,
+        hasAudio,
+        hasScreenShare,
+        isVideoEnabled,
+        isAudioEnabled,
+        localVideoRef,
+        localStreamRef,
+        initializeMedia,
+        retryMediaInitialization,
+        switchCamera,
+        cleanup,
+        isStreamOperationAllowed: mutex.isOperationAllowed,
+        currentStreamOperation: mutex.currentOperation,
+        trackHealthStatus: trackHealth.lastHealthStatus,
+        recoverVideoTrack: trackRecovery.recoverVideoTrack,
+        isRecoveryInProgress: trackRecovery.isRecoveryInProgress,
+        ...mediaControls
+    };
+};
