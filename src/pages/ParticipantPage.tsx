@@ -528,7 +528,8 @@ const ParticipantPage = () => {
             toast.error('❌ Validação de vídeo falhou - tentando novamente...');
             
             // Try media retry and validate again
-            const retryStream = await media.retryMediaInitialization();
+            await media.retryMediaInitialization();
+            const retryStream = media.localStreamRef.current;
             if (retryStream) {
               const retryValid = await validateStreamForWebRTC(retryStream);
               if (!retryValid) {
@@ -705,7 +706,8 @@ const ParticipantPage = () => {
       
       toast.info('🔄 Tentando novamente câmera móvel...');
       
-      const stream = await media.retryMediaInitialization();
+      await media.retryMediaInitialization();
+      const stream = media.localStreamRef.current;
       if (stream && connection.isConnected) {
         await connection.disconnectFromSession();
         await connection.connectToSession(stream);
