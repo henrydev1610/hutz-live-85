@@ -38,7 +38,7 @@ export const useEnhancedParticipantMedia = (participantId: string) => {
     setHasScreenShare: mediaState.setHasScreenShare
   });
 
-  const mutex = useStreamMutex();
+    const mutex = useStreamMutex(participantId);
   
   // FASE 1-4: Enhanced refs
   const mutedTrackHandlerRef = useRef<MutedTrackHandler | null>(null);
