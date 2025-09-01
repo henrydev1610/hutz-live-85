@@ -416,7 +416,7 @@ const ParticipantPage = () => {
           console.log(`🎯 [PART] Host detected: ${hostId}, starting handshake`);
           
           // PRE-WEBRTC STREAM VALIDATION
-          const validateStreamForWebRTC = async (stream: MediaStream): Promise<boolean> => {
+          const validateStreamForWebRTCLocal = async (stream: MediaStream): Promise<boolean> => {
             const videoTrack = stream.getVideoTracks()[0];
             if (!videoTrack) {
               console.error('❌ [VALIDATION] No video track available for WebRTC');
@@ -434,7 +434,7 @@ const ParticipantPage = () => {
               console.warn('⚠️ [VALIDATION] Video track is muted - attempting recovery');
               
               // Try to recover before WebRTC
-              const recovered = await media.recoverVideoTrack('pre-webrtc validation failed');
+              const recovered = await media.recoverVideoTrack?.('pre-webrtc validation failed');
               if (!recovered) {
                 console.error('❌ [VALIDATION] Track recovery failed');
                 return false;
@@ -521,23 +521,38 @@ const ParticipantPage = () => {
             });
           };
 
-          // Validate stream before WebRTC handshake
-          const isStreamValid = await validateStreamForWebRTC(stream);
+          // FASE 1-4: Enhanced validation and mobile compatibility
+          const { validateStreamForWebRTC } = await import('@/utils/media/streamValidation');
+          const { MobileBrowserCompatibility } = await import('@/utils/media/MobileBrowserCompatibility');
+          
+          console.log('🔍 FASE 1-4: Starting enhanced stream validation and compatibility checks');
+          
+          // FASE 3: Apply mobile browser compatibility
+          const browserInfo = MobileBrowserCompatibility.detectBrowser();
+          await MobileBrowserCompatibility.applyPreStreamWorkarounds(browserInfo, participantId);
+          
+          // FASE 3: Apply post-stream workarounds
+          const compatibleStream = await MobileBrowserCompatibility.applyPostStreamWorkarounds(stream, browserInfo, participantId);
+          
+          // FASE 2: Enhanced validation with muted track support
+          const isStreamValid = validateStreamForWebRTC(compatibleStream);
           if (!isStreamValid) {
-            console.error('❌ [PART] Stream validation failed - aborting WebRTC handshake');
-            toast.error('❌ Validação de vídeo falhou - tentando novamente...');
+            console.error('❌ [PART] Enhanced stream validation failed - attempting recovery');
+            toast.error('❌ Validação de vídeo falhou - tentando recuperação...');
             
             // Try media retry and validate again
             await media.retryMediaInitialization();
             const retryStream = media.localStreamRef.current;
             if (retryStream) {
-              const retryValid = await validateStreamForWebRTC(retryStream);
+              const retryCompatibleStream = await MobileBrowserCompatibility.applyPostStreamWorkarounds(retryStream, browserInfo, participantId);
+              const retryValid = validateStreamForWebRTC(retryCompatibleStream);
               if (!retryValid) {
-                console.error('❌ [PART] Stream validation failed even after retry');
+                console.error('❌ [PART] Enhanced validation failed even after retry');
+                toast.error('❌ Falha na recuperação do vídeo');
                 return;
               }
               // Update global shared stream with validated retry stream
-              (window as any).__participantSharedStream = retryStream;
+              (window as any).__participantSharedStream = retryCompatibleStream;
               
               // Use retry stream for WebRTC handshake
               const finalStream = retryStream;

@@ -153,15 +153,19 @@ export class UnifiedWebRTCManager {
         throw new Error('Stream required for participant initialization');
       }
 
-      // FASE 1: REGISTRAR CALLBACKS ANTES DE QUALQUER HANDSHAKE
-      console.log(`🎯 CALLBACK-CRÍTICO: Registrando stream callback ANTES do handshake`);
-      this.connectionHandler.setStreamCallback((participantId, stream) => {
-        console.log(`🎥 CALLBACK-CRÍTICO: Stream callback disparado para ${participantId}`, {
+      // FASE 1-4: ENHANCED CALLBACK REGISTRATION WITH INTELLIGENT TRACK MANAGEMENT
+      console.log(`🎯 FASE 1-4: Registrando enhanced stream callback com intelligent track management`);
+      const { IntelligentTrackManager } = await import('./IntelligentTrackManager');
+      const trackManager = new IntelligentTrackManager();
+      
+      this.connectionHandler.setStreamCallback(async (participantId, stream) => {
+        console.log(`🎥 FASE 1-4: Enhanced stream callback para ${participantId}`, {
           streamId: stream.id,
           tracks: stream.getTracks().length,
           videoTracks: stream.getVideoTracks().length,
           audioTracks: stream.getAudioTracks().length,
-          active: stream.active
+          active: stream.active,
+          hasMutedTracks: stream.getTracks().some(t => t.muted)
         });
         
         // VISUAL LOG: Toast crítico quando stream é recebido
