@@ -45,23 +45,24 @@ export const useEnhancedParticipantMedia = (participantId: string) => {
   const trackManagerRef = useRef<IntelligentTrackManager | null>(null);
   const browserCompatibilityRef = useRef<any>(null);
 
-  const healthMonitor = useTrackHealthMonitor({
-    participantId,
-    stream: mediaState.localStreamRef.current,
-    onHealthChange: (status) => {
-      console.log(`📊 FASE 1-4: Track health changed for ${participantId}:`, status);
-    },
-    onTrackMuted: async (track) => {
-      console.warn(`🔇 FASE 1-4: Track muted detected: ${track.id}`);
-      if (mutedTrackHandlerRef.current) {
-        await mutedTrackHandlerRef.current.handleMutedTrack(track, participantId);
-      }
-    },
-    onTrackEnded: (track) => {
-      console.error(`🔚 FASE 1-4: Track ended: ${track.id}`);
-      toast.error(`📹 ${track.kind === 'video' ? 'Vídeo' : 'Áudio'} foi interrompido`);
+  const healthMonitor = useTrackHealthMonitor(
+  participantId,
+  mediaState.localStreamRef.current,
+  (status) => {
+    console.log(`📊 FASE 1-4: Track health changed for ${participantId}:`, status);
+  },
+  async (track) => {
+    console.warn(`🔇 FASE 1-4: Track muted detected: ${track.id}`);
+    if (mutedTrackHandlerRef.current) {
+      await mutedTrackHandlerRef.current.handleMutedTrack(track, participantId);
     }
-  });
+  },
+  (track) => {
+    console.error(`🔚 FASE 1-4: Track ended: ${track.id}`);
+    toast.error(`📹 ${track.kind === 'video' ? 'Vídeo' : 'Áudio'} foi interrompido`);
+  }
+);
+
 
   // FASE 1-4: Enhanced media initialization
   const initializeEnhancedMedia = useCallback(async (): Promise<EnhancedMediaInitializationResult> => {
@@ -197,7 +198,7 @@ export const useEnhancedParticipantMedia = (participantId: string) => {
         }
 
         // Start health monitoring
-        healthMonitor.startMonitoring();
+        healthMonitor.startMonitoring(3000);
 
         // Make stream globally available
         (window as any).__participantSharedStream = finalStream;
