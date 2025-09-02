@@ -126,6 +126,39 @@ export const useParticipantMedia = (participantId: string) => {
           return null;
         }
 
+        // 🎯 FORÇA HABILITAÇÃO DE TRACKS DE VÍDEO MUTED
+        const videoTracks = stream.getVideoTracks();
+        for (const track of videoTracks) {
+          if (track.readyState === 'live' && track.muted) {
+            console.warn(`🔧 FORCE ENABLE: Video track ${track.id} is muted but live - attempting force enable`);
+            
+            try {
+              // Estratégia de force enable: disable/enable toggle
+              track.enabled = false;
+              await new Promise(resolve => setTimeout(resolve, 50));
+              track.enabled = true;
+              
+              // Aguardar evento unmute com timeout
+              const unmutedPromise = new Promise<boolean>((resolve) => {
+                const timeout = setTimeout(() => resolve(false), 2000);
+                track.addEventListener('unmute', () => {
+                  clearTimeout(timeout);
+                  resolve(true);
+                }, { once: true });
+              });
+              
+              const wasUnmuted = await unmutedPromise;
+              if (wasUnmuted) {
+                console.log(`✅ FORCE ENABLE: Track ${track.id} successfully unmuted`);
+              } else {
+                console.warn(`⚠️ FORCE ENABLE: Track ${track.id} remained muted after force enable attempt`);
+              }
+            } catch (enableError) {
+              console.error(`❌ FORCE ENABLE: Failed to force enable track ${track.id}:`, enableError);
+            }
+          }
+        }
+
         // 🔒 Proteger stream contra cleanup
         const protectStream = (stream: MediaStream) => {
           localStreamRef.current = stream;
@@ -172,10 +205,54 @@ export const useParticipantMedia = (participantId: string) => {
           console.error("❌ [PATCH] Falha ao anexar tracks ao PeerConnection:", err);
         }
 
-        const videoTracks = stream.getVideoTracks();
-        const audioTracks = stream.getAudioTracks();
+        // 📊 LOGS DETALHADOS DE ESTADO DAS TRACKS
+        const logDetailedTrackState = (stream: MediaStream) => {
+          console.log('🔍 DETAILED TRACK STATE: Starting comprehensive track analysis');
+          console.log('🌐 Browser Info:', {
+            userAgent: navigator.userAgent,
+            isMobile: detectMobileAggressively(),
+            protocol: window.location.protocol,
+            timestamp: new Date().toISOString()
+          });
+          
+          const allTracks = stream.getTracks();
+          console.log(`📹 STREAM OVERVIEW: ${allTracks.length} total tracks in stream ${stream.id}`, {
+            streamActive: stream.active,
+            streamId: stream.id
+          });
+          
+          allTracks.forEach((track, index) => {
+            console.log(`📋 TRACK ${index + 1}/${allTracks.length}:`, {
+              id: track.id,
+              kind: track.kind,
+              label: track.label,
+              readyState: track.readyState,
+              muted: track.muted,
+              enabled: track.enabled,
+              constraints: track.getConstraints(),
+              settings: track.getSettings(),
+              capabilities: track.getCapabilities ? track.getCapabilities() : 'Not supported'
+            });
+            
+            if (track.muted && track.readyState === 'live') {
+              console.warn(`⚠️ TRACK WARNING: ${track.kind} track is muted but live - may affect transmission`);
+            }
+            
+            if (!track.enabled) {
+              console.warn(`⚠️ TRACK WARNING: ${track.kind} track is disabled`);
+            }
+          });
+          
+          console.log('✅ DETAILED TRACK STATE: Analysis complete');
+        };
 
-        console.log(`[P-MEDIA] success tracks={video:${videoTracks.length}, audio:${audioTracks.length}} streamId=${stream.id}`);
+        const finalVideoTracks = stream.getVideoTracks();
+        const finalAudioTracks = stream.getAudioTracks();
+
+        console.log(`[P-MEDIA] success tracks={video:${finalVideoTracks.length}, audio:${finalAudioTracks.length}} streamId=${stream.id}`);
+
+        // Executar log detalhado antes de compartilhar globalmente
+        logDetailedTrackState(stream);
 
         (window as any).__participantSharedStream = stream;
         (window as any).__participantLocalStream = stream;
@@ -189,12 +266,12 @@ export const useParticipantMedia = (participantId: string) => {
           toast.warning('⚠️ Stream criado mas pode ter problemas na transmissão');
         }
 
-        setHasVideo(videoTracks.length > 0);
-        setHasAudio(audioTracks.length > 0);
-        setIsVideoEnabled(videoTracks.length > 0);
-        setIsAudioEnabled(audioTracks.length > 0);
+        setHasVideo(finalVideoTracks.length > 0);
+        setHasAudio(finalAudioTracks.length > 0);
+        setIsVideoEnabled(finalVideoTracks.length > 0);
+        setIsAudioEnabled(finalAudioTracks.length > 0);
 
-        if (localVideoRef.current && videoTracks.length > 0) {
+        if (localVideoRef.current && finalVideoTracks.length > 0) {
           await setupVideoElement(localVideoRef.current, stream);
           streamLogger.logDOMUpdate(participantId, isMobile, deviceType, localVideoRef.current);
         }
