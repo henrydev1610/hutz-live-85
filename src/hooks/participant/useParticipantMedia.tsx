@@ -80,7 +80,7 @@ export const useParticipantMedia = (participantId: string) => {
     webrtcSender: (window as any).__participantWebRTCSender
   });
 
-  const attemptMediaInitialization = useCallback(async (attempt: number = 1): Promise<MediaStream | null> => {
+  const initializeMedia = useCallback(async () => {
     if (!mutex.isOperationAllowed('initialize-media')) {
       console.warn(`🚫 [MEDIA] Cannot initialize - blocked by ${mutex.currentOperation}`);
       toast.warning('Media initialization blocked - operation in progress');
@@ -299,7 +299,7 @@ export const useParticipantMedia = (participantId: string) => {
     isAudioEnabled,
     localVideoRef,
     localStreamRef,
-    initializeMedia: attemptMediaInitialization,
+    initializeMedia,
     retryMediaInitialization: () => {}, // mantive stub, você já tinha implementado acima
     switchCamera: () => {},             // idem
     cleanup: () => {},                  // idem
