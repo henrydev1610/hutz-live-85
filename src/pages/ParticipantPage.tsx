@@ -43,7 +43,7 @@ const ParticipantPage = () => {
     return liveVideoTracks.length > 0; // Pelo menos um track de vídeo ativo
   };
   
-  // Função para monitorar transmissão do stream
+  // Função para monitorar transmissão do stream 
   const setupStreamTransmissionMonitoring = (stream: MediaStream, pId: string) => {
     console.log(`PART-TRANSMISSION-MONITOR-START {participantId=${pId}, streamId=${stream.id}}`);
     
