@@ -44,6 +44,10 @@ export class UnifiedWebRTCManager {
   private isHost: boolean = false;
   private isMobile: boolean = false;
 
+  // MOBILE VIDEO-ONLY: Add polite peer manager and sendonly transceiver
+  private politePeerManager: any = null;
+  private sendOnlyTransceiver: any = null;
+
   // ICE candidate buffering for consistent handling
   private iceCandidateBuffer: Map<string, RTCIceCandidate[]> = new Map();
 
@@ -128,12 +132,20 @@ export class UnifiedWebRTCManager {
   }
 
   async initializeAsParticipant(sessionId: string, participantId: string, stream?: MediaStream): Promise<void> {
-    console.log(`👤 [PART] Initializing ${participantId}`);
+    console.log(`👤 [PARTICIPANT] Initializing video-only participant ${participantId}`);
     this.cleanup();
 
     this.roomId = sessionId;
     this.participantId = participantId;
     this.isHost = false;
+
+    // Initialize polite peer manager (participant is polite)
+    const { PolitePeerManager } = await import('./PolitePeerManager');
+    this.politePeerManager = new PolitePeerManager(true);
+
+    // Initialize sendonly transceiver manager
+    const { SendOnlyTransceiver } = await import('./SendOnlyTransceiver');
+    this.sendOnlyTransceiver = new SendOnlyTransceiver();
 
     // Connect to WebSocket
     await unifiedWebSocketService.connect();
@@ -141,16 +153,30 @@ export class UnifiedWebRTCManager {
 
     try {
       if (stream) {
-        this.localStream = stream;
-        const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
-        if (DEBUG) {
-          const inactiveTracks = stream.getTracks().filter(track => track.readyState !== 'live');
-          if (inactiveTracks.length > 0) {
-            console.warn(`⚠️ [PART] Inactive tracks found:`, inactiveTracks.length);
-          }
+        // Validate this is video-only stream
+        const videoTracks = stream.getVideoTracks();
+        const audioTracks = stream.getAudioTracks();
+        
+        if (audioTracks.length > 0) {
+          console.warn('⚠️ [PARTICIPANT] Removing unexpected audio tracks from video-only stream');
+          audioTracks.forEach(track => {
+            stream.removeTrack(track);
+            track.stop();
+          });
         }
+        
+        if (videoTracks.length === 0) {
+          throw new Error('Video-only stream must contain video tracks');
+        }
+        
+        this.localStream = stream;
+        console.log('✅ [PARTICIPANT] Video-only stream validated:', {
+          videoTracks: videoTracks.length,
+          audioTracks: audioTracks.length,
+          active: stream.active
+        });
       } else {
-        throw new Error('Stream required for participant initialization');
+        throw new Error('Video-only stream required for participant initialization');
       }
 
       // FASE 1-4: ENHANCED CALLBACK REGISTRATION WITH INTELLIGENT TRACK MANAGEMENT
@@ -300,22 +326,29 @@ export class UnifiedWebRTCManager {
   }
 
   async connectToHost(): Promise<void> {
-    console.log(`🔗 [PART] Connecting to host`);
+    console.log(`🔗 [PARTICIPANT] Connecting to host with polite peer pattern`);
     
     if (!this.localStream) {
-      throw new Error('No local stream available for host connection');
+      throw new Error('No video-only stream available for host connection');
     }
 
     try {
       const hostId = 'host';
-      console.log(`🎯 [PART] Starting handshake with: ${hostId}`);
       
+      // Initialize polite peer state for host connection
+      if (this.politePeerManager) {
+        this.politePeerManager.initializePeerState(hostId);
+      }
+      
+      console.log(`🎯 [PARTICIPANT] Starting polite handshake with: ${hostId}`);
+      
+      // Use existing handshake method with enhanced parameters
       await this.connectionHandler.initiateHandshake(hostId);
       this.updateConnectionState('webrtc', 'connecting');
       
-      console.log(`✅ [PART] Handshake initiated successfully`);
+      console.log(`✅ [PARTICIPANT] Polite handshake initiated successfully`);
     } catch (error) {
-      console.error(`❌ [PART] Failed to connect to host:`, error);
+      console.error(`❌ [PARTICIPANT] Failed to connect to host:`, error);
       this.updateConnectionState('webrtc', 'failed');
       throw error;
     }
