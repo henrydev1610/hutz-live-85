@@ -297,50 +297,35 @@ class ParticipantHandshakeManager {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
 
-        // Wait for track to be ready or recapture
         if (videoTrack.readyState !== 'live') {
-          console.log(`⏳ [PARTICIPANT] Waiting 2s for video track to be ready...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          if (videoTrack.readyState === 'ended') {
-            console.warn(`⚠️ [PARTICIPANT] Video track still not ready, attempting recapture`);
-            try {
-              const recaptureStream = await navigator.mediaDevices.getUserMedia({ video: true });
-              const newVideoTrack = recaptureStream.getVideoTracks()[0];
-              if (newVideoTrack && newVideoTrack.readyState === 'live') {
-                console.log(`✅ [PARTICIPANT] Video track recaptured successfully`);
-                stream.removeTrack(videoTrack);
-                stream.addTrack(newVideoTrack);
-                videoTrack.stop();
-                // Use the new track
-                await preAllocatedTransceivers.replaceVideoTrack(this.participantId!, newVideoTrack);
-              } else {
-                throw new Error('Recaptured video track is not ready');
-              }
-            } catch (recaptureError) {
-              console.error(`❌ [PARTICIPANT] Video recapture failed:`, recaptureError);
-              throw recaptureError;
-            }
-          } else {
-            // Original track is now ready, use it
-            await preAllocatedTransceivers.replaceVideoTrack(this.participantId!, videoTrack);
+          console.warn(`⚠️ [PARTICIPANT] Video track not ready, but continuing:`, {
+            readyState: videoTrack.readyState,
+            enabled: videoTrack.enabled,
+            muted: videoTrack.muted
+          });
+
+          // Force enable track if disabled
+          if (!videoTrack.enabled) {
+            videoTrack.enabled = true;
           }
-        } else {
-          // Track is live, use it
-          await preAllocatedTransceivers.replaceVideoTrack(this.participantId!, videoTrack);
         }
-      } else {
-        // Track is ready, use it directly
-        await preAllocatedTransceivers.replaceVideoTrack(this.participantId!, videoTrack);
       }
+
+      // CRÍTICO: Sempre usar o track atual, mesmo se não completamente ready
+      await preAllocatedTransceivers.replaceVideoTrack(this.participantId!, videoTrack);
 
       console.log(`✅ [PARTICIPANT] Video track assigned to pre-allocated transceiver`);
 
       // Set up negotiation handler AFTER track replacement
       this.peerConnection.onnegotiationneeded = async () => {
-        // POLITE PEER: Só criar offer se connection está stable
-        if (!politePeerManager.canCreateOffer(this.participantId!, this.peerConnection!)) {
-          console.log('🚨 CRÍTICO [PARTICIPANT] Cannot create offer - signaling not stable or already making offer');
+        // POLITE PEER: Só criar offer se connection está stable e não está fazendo offer
+        if (this.peerConnection?.signalingState !== 'stable') {
+          console.log('🚨 CRÍTICO [PARTICIPANT] Signaling state not stable:', this.peerConnection?.signalingState);
+          return;
+        }
+
+        if (politePeerManager.shouldIgnoreOffer(this.participantId!, this.peerConnection!)) {
+          console.log('🚨 CRÍTICO [PARTICIPANT] Should ignore offer due to polite peer rules');
           return;
         }
 
@@ -352,6 +337,7 @@ class ParticipantHandshakeManager {
         console.log('🚨 CRÍTICO [PARTICIPANT] onnegotiationneeded disparado - criando offer via polite peer');
         
         try {
+          this.isOfferInProgress = true;
           politePeerManager.setMakingOffer(this.participantId!, true);
           
           const offerStartTime = performance.now();
@@ -384,6 +370,7 @@ class ParticipantHandshakeManager {
           console.error('❌ CRÍTICO [PARTICIPANT] Error in negotiation:', error);
           this.handleConnectionFailure('host');
         } finally {
+          this.isOfferInProgress = false;
           politePeerManager.setMakingOffer(this.participantId!, false);
         }
       };
@@ -398,7 +385,7 @@ class ParticipantHandshakeManager {
           console.log(`✅ [PARTICIPANT] WebRTC connected successfully (${duration.toFixed(0)}ms total)`);
           this.retryAttempts = 0; // Reset on success
         } else if (state === 'failed') {
-          console.log(`❌ [PARTICIPANT] Connection failed for ${hostId}`);
+          console.log(`❌ [PARTICIPANT] Connection failed`);
           this.handleConnectionFailure(hostId);
         }
       };
@@ -432,8 +419,6 @@ class ParticipantHandshakeManager {
       console.error('❌ CRÍTICO [PARTICIPANT] Error in createAndSendOffer:', error);
       this.isOfferInProgress = false;
       this.handleConnectionFailure(hostId);
-    } finally {
-      // Don't reset isOfferInProgress here - let negotiation complete
     }
   }
 
