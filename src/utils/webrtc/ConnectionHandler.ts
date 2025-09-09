@@ -457,6 +457,8 @@ export class ConnectionHandler {
                     console.error('❌ FASE 2: Track inválido ou não live');
                 }
             }
+        };
+
         // CRÍTICO: Usar transceivers pré-alocados - NUNCA mais addTrack
         console.log(`📹 [CONNECTION] Using pre-allocated transceivers for ${participantId} - NO MORE addTrack`);
         

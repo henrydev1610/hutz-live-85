@@ -24,7 +24,7 @@ class ParticipantHandshakeManager {
       this.handshakeStartTime = performance.now();
       
       // Initialize polite peer as polite (participant is polite by default)
-      politePeerManager.setPoliteMode(true);
+      // Note: politePeerManager is initialized as polite by default in constructor
       
       // Get user media for the participant
       const stream = await this.getUserMediaForOffer();
@@ -302,7 +302,7 @@ class ParticipantHandshakeManager {
           console.log(`⏳ [PARTICIPANT] Waiting 2s for video track to be ready...`);
           await new Promise(resolve => setTimeout(resolve, 2000));
           
-          if (videoTrack.readyState !== 'live') {
+          if (videoTrack.readyState === 'ended') {
             console.warn(`⚠️ [PARTICIPANT] Video track still not ready, attempting recapture`);
             try {
               const recaptureStream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -377,7 +377,7 @@ class ParticipantHandshakeManager {
             console.warn(`⚠️ [PARTICIPANT] Offer não contém m=video - possível problema com stream`);
           }
 
-          unifiedWebSocketService.sendWebRTCOffer(this.participantId!, offer);
+          unifiedWebSocketService.sendWebRTCOffer('host', offer.sdp!, offer.type!);
           console.log(`✅ [PARTICIPANT] Offer sent to host com transceivers pré-alocados`);
           
         } catch (error) {
