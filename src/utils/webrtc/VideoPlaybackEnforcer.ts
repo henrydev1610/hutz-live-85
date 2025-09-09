@@ -48,37 +48,113 @@ export class VideoPlaybackEnforcer {
     let playingCount = 0;
     let pausedWithStreamCount = 0;
     let totalWithStreamCount = 0;
+    let unhealthyVideos = 0;
     
     videosToCheck.forEach(video => {
-      const participantId = video.getAttribute('data-participant-id');
+      const participantId = video.getAttribute('data-participant-id') || 'unknown';
       const hasStream = !!video.srcObject;
       
       if (hasStream) {
         totalWithStreamCount++;
         
+        // FASE 4: Validação mais rigorosa de saúde do video
+        const isVideoHealthy = this.validateVideoHealth(video);
+        
+        if (!isVideoHealthy) {
+          unhealthyVideos++;
+          console.warn(`🩺 VIDEO-ENFORCER: Unhealthy video detected for ${participantId}:`, {
+            paused: video.paused,
+            ended: video.ended,
+            readyState: video.readyState,
+            networkState: video.networkState,
+            error: video.error?.message
+          });
+        }
+        
         if (video.paused) {
           pausedWithStreamCount++;
           console.warn(`⚠️ VIDEO-ENFORCER: Found paused video for ${participantId}, forcing play`);
           
-          video.play().then(() => {
-            console.log(`✅ VIDEO-ENFORCER: Successfully resumed video for ${participantId}`);
-          }).catch(error => {
-            console.error(`❌ VIDEO-ENFORCER: Failed to resume video for ${participantId}:`, error);
-          });
+          // FASE 4: Recovery mais robusto
+          this.forceVideoRecovery(video, participantId);
         } else {
           playingCount++;
         }
       }
     });
 
-    // Enhanced monitoring status
-    console.log(`💓 VIDEO-ENFORCER: Status`, {
+    // FASE 4: Enhanced monitoring status com mais detalhes
+    const status = {
       totalVideos: videosToCheck.length,
       videosWithStream: totalWithStreamCount,
       playing: playingCount,
       pausedWithStream: pausedWithStreamCount,
+      unhealthy: unhealthyVideos,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    console.log(`💓 VIDEO-ENFORCER: Status`, status);
+
+    // FASE 4: Dispatch evento para debug se há problemas
+    if (pausedWithStreamCount > 0 || unhealthyVideos > 0) {
+      window.dispatchEvent(new CustomEvent('video-enforcer-issues', {
+        detail: status
+      }));
+    }
+  }
+
+  // FASE 4: Validação detalhada da saúde do vídeo
+  private validateVideoHealth(video: HTMLVideoElement): boolean {
+    if (video.paused || video.ended) return false;
+    if (video.readyState < 2) return false; // HAVE_CURRENT_DATA
+    if (video.error) return false;
+    if (!video.srcObject) return false;
+
+    // Verificar se o stream está ativo
+    const stream = video.srcObject as MediaStream;
+    if (!stream || !stream.active) return false;
+
+    const videoTracks = stream.getVideoTracks();
+    if (videoTracks.length === 0) return false;
+
+    const activeVideoTracks = videoTracks.filter(track => 
+      track.readyState === 'live' && track.enabled && !track.muted
+    );
+
+    return activeVideoTracks.length > 0;
+  }
+
+  // FASE 4: Recovery mais sofisticado
+  private async forceVideoRecovery(video: HTMLVideoElement, participantId: string): Promise<void> {
+    try {
+      // Attempt 1: Simple play
+      await video.play();
+      console.log(`✅ VIDEO-ENFORCER: Successfully resumed video for ${participantId}`);
+    } catch (error) {
+      console.warn(`⚠️ VIDEO-ENFORCER: Simple play failed for ${participantId}, attempting recovery...`);
+      
+      try {
+        // Attempt 2: Reset and play
+        const currentSrc = video.srcObject;
+        video.srcObject = null;
+        await new Promise(resolve => setTimeout(resolve, 50));
+        video.srcObject = currentSrc;
+        await video.play();
+        
+        console.log(`✅ VIDEO-ENFORCER: Recovery successful for ${participantId}`);
+      } catch (recoveryError) {
+        console.error(`❌ VIDEO-ENFORCER: Recovery failed for ${participantId}:`, recoveryError);
+        
+        // FASE 4: Notificar falha crítica
+        window.dispatchEvent(new CustomEvent('video-recovery-failed', {
+          detail: {
+            participantId,
+            error: recoveryError,
+            timestamp: Date.now()
+          }
+        }));
+      }
+    }
   }
 
   // Force play for specific participant

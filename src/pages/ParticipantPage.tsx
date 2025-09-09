@@ -404,11 +404,55 @@ const ParticipantPage = () => {
       // Connect sempre, mesmo em modo degradado
       await connection.connectToSession(stream);
       
+      // FASE 2: Aguardar preview ativo ANTES do WebRTC handshake
+      console.log(`🎬 [PART] Waiting for preview to be active before WebRTC handshake`);
+      
+      const waitForActivePreview = async (): Promise<boolean> => {
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            console.warn('⏰ [PART] Timeout waiting for preview - proceeding anyway');
+            resolve(false);
+          }, 5000); // 5s timeout
+
+          const checkPreviewActive = () => {
+            const previewVideo = document.querySelector('video[data-participant-id="local-preview"]') as HTMLVideoElement;
+            
+            if (previewVideo && previewVideo.srcObject && !previewVideo.paused) {
+              console.log('✅ [PART] Preview is active and playing');
+              clearTimeout(timeout);
+              resolve(true);
+              return;
+            }
+            
+            setTimeout(checkPreviewActive, 200); // Check every 200ms
+          };
+
+          // Listen for preview active event
+          const handlePreviewActive = () => {
+            console.log('✅ [PART] Preview active event received');
+            clearTimeout(timeout);
+            window.removeEventListener('participant-preview-active', handlePreviewActive);
+            resolve(true);
+          };
+
+          window.addEventListener('participant-preview-active', handlePreviewActive);
+          checkPreviewActive(); // Start checking immediately
+        });
+      };
+
+      const previewReady = await waitForActivePreview();
+      
+      if (previewReady) {
+        console.log('✅ [PART] Preview confirmed active - starting WebRTC handshake');
+      } else {
+        console.warn('⚠️ [PART] Preview not confirmed active - proceeding with handshake anyway');
+      }
+
       // HANDSHAKE: Único caminho limpo
       console.log(`🤝 [PART] Initiating WebRTC handshake with participantId: ${participantId}`);
       
       // Aguardar estabilização da conexão WebSocket
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       try {
         const hostId = connection.getHostId();

@@ -229,6 +229,53 @@ class ParticipantHandshakeManager {
       return;
     }
 
+    // FASE 3: Validar preview ativo antes de criar offer
+    const validatePreviewBeforeOffer = (): boolean => {
+      const previewVideo = document.querySelector('video[data-participant-id="local-preview"]') as HTMLVideoElement;
+      
+      if (!previewVideo) {
+        console.warn('⚠️ [PARTICIPANT] No preview video found - continuing anyway');
+        return false;
+      }
+
+      const isActive = previewVideo.srcObject && !previewVideo.paused && previewVideo.readyState > 2;
+      
+      if (isActive) {
+        console.log('✅ [PARTICIPANT] Preview validation passed - video is playing');
+        return true;
+      } else {
+        console.warn('⚠️ [PARTICIPANT] Preview validation failed:', {
+          hasSrcObject: !!previewVideo.srcObject,
+          paused: previewVideo.paused,
+          readyState: previewVideo.readyState
+        });
+        return false;
+      }
+    };
+
+    const previewValid = validatePreviewBeforeOffer();
+    
+    if (!previewValid) {
+      console.warn('⚠️ [PARTICIPANT] Preview not active - attempting recovery before offer');
+      
+      // Tentar forçar preview ativo
+      try {
+        const { videoPlaybackEnforcer } = await import('@/utils/webrtc/VideoPlaybackEnforcer');
+        videoPlaybackEnforcer.forcePlayForParticipant('local-preview');
+        
+        // Aguardar um momento para recovery
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Validar novamente
+        const previewRecovered = validatePreviewBeforeOffer();
+        if (!previewRecovered) {
+          console.warn('⚠️ [PARTICIPANT] Preview recovery failed - proceeding with caution');
+        }
+      } catch (error) {
+        console.warn('⚠️ [PARTICIPANT] Failed to recover preview:', error);
+      }
+    }
+
     const offerStartTime = performance.now();
     this.handshakeStartTime = offerStartTime;
     console.log(`🚨 CRÍTICO [PARTICIPANT] Starting offer creation sequence for ${hostId}`);
