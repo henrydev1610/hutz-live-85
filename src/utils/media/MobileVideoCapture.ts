@@ -97,6 +97,7 @@ export class MobileVideoCapture {
 
   /**
    * Prime camera with invisible offscreen video element and effective frame draining
+   * FASE 1: Remove offscreen element BEFORE returning stream to prevent conflicts
    */
   private async primeCamera(stream: MediaStream): Promise<void> {
     if (this.offscreenVideo) {
@@ -162,9 +163,21 @@ export class MobileVideoCapture {
         }
       });
       
+      // CRITICAL: Remove offscreen element BEFORE returning to prevent conflicts
+      console.log('🧹 [MOBILE-CAPTURE] Removing offscreen element before stream handoff');
+      this.offscreenVideo.srcObject = null;
+      this.offscreenVideo.remove();
+      this.offscreenVideo = null;
+      
       this.state.primedStream = stream;
     } catch (error) {
       console.warn('⚠️ [MOBILE-CAPTURE] Camera priming failed, but continuing:', error);
+      // Still remove offscreen element even on error
+      if (this.offscreenVideo) {
+        this.offscreenVideo.srcObject = null;
+        this.offscreenVideo.remove();
+        this.offscreenVideo = null;
+      }
     }
   }
 

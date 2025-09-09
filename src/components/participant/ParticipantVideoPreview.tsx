@@ -29,43 +29,64 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
 }) => {
   const showDiagnostics = !hasVideo && !hasAudio;
   
-  // GARANTIR PREVIEW ESTÁVEL COM PLAYBACK FORÇADO
+  // FASE 2: GARANTIR PREVIEW ESTÁVEL - Aguardar stream livre antes de usar
   useEffect(() => {
     const setupStablePreview = async () => {
       if (localVideoRef.current && localStream) {
         const video = localVideoRef.current;
         
-        // Configurar atributos críticos para mobile
+        // Aguardar um momento para garantir que stream não está em uso
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Configurar atributos críticos para mobile e VideoPlaybackEnforcer
         video.playsInline = true;
         video.autoplay = true;
         video.muted = true;
         video.controls = false;
+        video.setAttribute('data-unified-video', 'true');
+        video.setAttribute('data-participant-id', 'local-preview');
+        
+        // Verificar se stream ainda está ativo
+        const videoTracks = localStream.getVideoTracks();
+        if (videoTracks.length === 0 || videoTracks[0].readyState !== 'live') {
+          console.warn('⚠️ [PREVIEW] Stream não está ativo, aguardando...');
+          return;
+        }
         
         // Anexar stream
         video.srcObject = localStream;
         
-        try {
-          // Forçar reprodução para evitar throttling
-          await video.play();
-          console.log('✅ [PREVIEW] Video playing successfully');
-        } catch (playError) {
-          console.warn('⚠️ [PREVIEW] Initial play failed, retrying...', playError);
-          
-          // Retry após breve delay
-          setTimeout(async () => {
-            try {
-              await video.play();
-              console.log('✅ [PREVIEW] Video playing on retry');
-            } catch (retryError) {
-              console.error('❌ [PREVIEW] Play retry failed:', retryError);
+        // Implementar retry com backoff exponencial
+        const attemptPlay = async (retryCount = 0): Promise<boolean> => {
+          try {
+            await video.play();
+            console.log('✅ [PREVIEW] Video playing successfully', { 
+              stream: localStream.id,
+              paused: video.paused,
+              attempt: retryCount + 1
+            });
+            return true;
+          } catch (playError) {
+            if (retryCount < 3) {
+              const delay = Math.pow(2, retryCount) * 200; // 200ms, 400ms, 800ms
+              console.warn(`⚠️ [PREVIEW] Play attempt ${retryCount + 1} failed, retrying in ${delay}ms...`, playError);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              return attemptPlay(retryCount + 1);
+            } else {
+              console.error('❌ [PREVIEW] All play attempts failed:', playError);
+              return false;
             }
-          }, 500);
-        }
+          }
+        };
         
-        console.log('🎬 [PREVIEW] Video attached and configured:', {
+        const playSuccess = await attemptPlay();
+        
+        console.log('🎬 [PREVIEW] Video setup complete:', {
           stream: localStream.id,
           tracks: localStream.getTracks().length,
-          playing: !video.paused
+          playing: !video.paused,
+          playSuccess,
+          hasUnifiedAttribute: video.hasAttribute('data-unified-video')
         });
       }
     };

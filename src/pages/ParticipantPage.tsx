@@ -597,6 +597,26 @@ const ParticipantPage = () => {
             console.log(`✅ [PART] Stream validated with ${videoTracks.length} video tracks ready for handshake`);
           }
           
+          // FASE 4: AGUARDAR PREVIEW REPRODUZINDO ANTES DE WebRTC
+          const videoElement = media.localVideoRef.current;
+          if (videoElement) {
+            // Verificar se preview está reproduzindo
+            let previewReady = false;
+            for (let attempt = 0; attempt < 10; attempt++) {
+              if (!videoElement.paused && videoElement.srcObject === stream) {
+                previewReady = true;
+                console.log(`✅ [PART] Preview confirmed playing after ${attempt + 1} checks`);
+                break;
+              }
+              console.log(`⏳ [PART] Waiting for preview to play... attempt ${attempt + 1}/10`);
+              await new Promise(resolve => setTimeout(resolve, 300));
+            }
+            
+            if (!previewReady) {
+              console.warn('⚠️ [PART] Preview not playing, but proceeding with handshake');
+            }
+          }
+          
           // ÚNICO CAMINHO: initParticipantWebRTC → setLocalStream → connectToHost
           const { webrtc } = await initParticipantWebRTC(sessionId!, participantId, stream);
           if (webrtc) {
