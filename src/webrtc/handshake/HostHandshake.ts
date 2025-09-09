@@ -1,6 +1,8 @@
 // ============= Host WebRTC Handshake Logic =============
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { webrtcGlobalDebugger } from '@/utils/webrtc/WebRTCGlobalDebug';
+import { preAllocatedTransceivers } from '@/utils/webrtc/PreAllocatedTransceivers';
+import { politePeerManager } from '@/utils/webrtc/PolitePeerManager';
 
 const hostPeerConnections = new Map<string, RTCPeerConnection>();
 const participantICEBuffers = new Map<string, RTCIceCandidate[]>();
@@ -72,9 +74,13 @@ class HostHandshakeManager {
         }
       };
 
-      // Add receive-only transceiver for video BEFORE setRemoteDescription
-      pc.addTransceiver('video', { direction: 'recvonly' });
-      console.log(`[HOST] addTransceiver('video', recvonly) for ${participantId}`);
+      // CRÍTICO: Pré-alocar transceivers em ordem fixa
+      preAllocatedTransceivers.initializeTransceivers(participantId, pc, 'host');
+      
+      // Initialize polite peer manager (host é impolite por padrão)
+      politePeerManager.initializePeerState(participantId);
+      
+      console.log(`[HOST] Pre-allocated transceivers initialized for ${participantId}`);
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {

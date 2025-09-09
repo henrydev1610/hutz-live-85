@@ -150,3 +150,6 @@ export class PolitePeerManager {
     );
   }
 }
+
+// Global instance
+export const politePeerManager = new PolitePeerManager();
