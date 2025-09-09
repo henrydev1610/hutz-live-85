@@ -261,3 +261,6 @@ export class MobileVideoCapture {
 
 // Singleton instance
 export const mobileVideoCapture = new MobileVideoCapture();
+
+// Also make it globally available for fallback access
+(window as any).__mobileVideoCapture = mobileVideoCapture;

@@ -25,11 +25,27 @@ export const useParticipantMedia = (participantId: string) => {
   
   // MOBILE VIDEO CAPTURE: Import and initialize mobile video capture
   const [mobileCapture, setMobileCapture] = useState<any>(null);
+  const [isCapturReady, setCaptureReady] = useState(false);
   
   useEffect(() => {
+    // Immediately try to get from global if available
+    const globalCapture = (window as any).__mobileVideoCapture;
+    if (globalCapture) {
+      console.log('✅ MOBILE-VIDEO: Using global mobile capture instance');
+      setMobileCapture(globalCapture);
+      setCaptureReady(true);
+      return;
+    }
+    
     // Dynamically import mobile capture to avoid SSR issues
+    console.log('🔄 MOBILE-VIDEO: Loading mobile capture dynamically...');
     import('@/utils/media/MobileVideoCapture').then(({ mobileVideoCapture }) => {
+      console.log('✅ MOBILE-VIDEO: Mobile capture loaded successfully');
       setMobileCapture(mobileVideoCapture);
+      setCaptureReady(true);
+    }).catch(error => {
+      console.error('❌ MOBILE-VIDEO: Failed to load mobile capture:', error);
+      setCaptureReady(false);
     });
   }, []);
   
@@ -93,6 +109,7 @@ export const useParticipantMedia = (participantId: string) => {
 
   const initializeMedia = async (): Promise<MediaStream | null> => {
     console.log('🎯 MOBILE-VIDEO-ONLY: Starting video-only initialization');
+    console.log('🔍 MOBILE-VIDEO: Capture readiness:', { isCapturReady, hasMobileCapture: !!mobileCapture });
     
     // Check if another operation is in progress
     if (!isOperationAllowed('initialize_media')) {
@@ -102,14 +119,36 @@ export const useParticipantMedia = (participantId: string) => {
     
     return withMutexLock('initialize_media', async () => {
       try {
-        // Use mobile video capture for video-only stream
-        if (!mobileCapture) {
-          console.error('❌ MOBILE-VIDEO: Mobile capture not initialized');
+        // Wait for mobile capture to be ready
+        if (!isCapturReady || !mobileCapture) {
+          console.log('⏳ MOBILE-VIDEO: Waiting for mobile capture to be ready...');
+          
+          // Wait up to 5 seconds for mobile capture to load
+          let attempts = 0;
+          const maxAttempts = 50; // 5 seconds with 100ms intervals
+          
+          while ((!isCapturReady || !mobileCapture) && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+          }
+          
+          if (!isCapturReady || !mobileCapture) {
+            console.error('❌ MOBILE-VIDEO: Mobile capture failed to load after waiting');
+            return null;
+          }
+          
+          console.log('✅ MOBILE-VIDEO: Mobile capture is now ready');
+        }
+        
+        // Double check mobile capture is available
+        const currentMobileCapture = mobileCapture || (window as any).__mobileVideoCapture;
+        if (!currentMobileCapture) {
+          console.error('❌ MOBILE-VIDEO: Mobile capture still not available after loading');
           return null;
         }
         
         return new Promise<MediaStream | null>((resolve) => {
-          mobileCapture.startCapture(async (stream: MediaStream) => {
+          currentMobileCapture.startCapture(async (stream: MediaStream) => {
             console.log('✅ MOBILE-VIDEO: Video-only stream obtained:', {
               streamId: stream.id,
               videoTracks: stream.getVideoTracks().length,
