@@ -1,12 +1,13 @@
 // ============= Participant WebRTC Handshake Logic =============
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { streamLogger } from '@/utils/debug/StreamLogger';
+import { PolitePeerManager } from '@/utils/webrtc/PolitePeerManager';
+import { cameraPriming } from '@/utils/media/CameraPriming';
 
 class ParticipantHandshakeManager {
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private pendingCandidates: RTCIceCandidate[] = [];
-  private isOfferInProgress: boolean = false;
   private participantId: string | null = null;
   private connectionTimeout: NodeJS.Timeout | null = null;
   private reconnectAttempts: number = 0;
@@ -15,6 +16,9 @@ class ParticipantHandshakeManager {
   private hasReconnected: boolean = false;
   private lastConnectionTime: number = 0;
   private handshakeStartTime: number = 0;
+  
+  // POLITE PEER: Participant is polite, Host is impolite
+  private politePeer: PolitePeerManager = new PolitePeerManager(true);
   
   // CRÍTICO: Propriedades para sequenciamento de ICE candidates
   private isRemoteDescriptionSet = false;
@@ -172,14 +176,9 @@ class ParticipantHandshakeManager {
         return;
       }
 
-      // Guard against concurrent offers
-      if (this.isOfferInProgress) {
-        console.warn('⚠️ [PARTICIPANT] Already making offer, ignoring request from:', hostId);
-        return;
-      }
-
-      if (this.peerConnection && this.peerConnection.signalingState !== 'stable') {
-        console.warn('⚠️ [PARTICIPANT] PC not stable:', this.peerConnection.signalingState, '- ignoring request');
+      // Guard against concurrent offers using polite peer pattern
+      if (!this.politePeer.canCreateOffer(hostId, this.peerConnection!)) {
+        console.warn('⚠️ [PARTICIPANT] Cannot create offer - peer connection not stable');
         return;
       }
 
@@ -315,10 +314,8 @@ class ParticipantHandshakeManager {
   }
 
   async createAndSendOffer(hostId: string): Promise<void> {
-    if (this.isOfferInProgress) {
-      console.log('[PARTICIPANT] createAndSendOffer: Offer already in progress, skipping');
-      return;
-    }
+    // Initialize polite peer state for this host connection
+    this.politePeer.initializePeerState(hostId);
 
     const offerStartTime = performance.now();
     this.handshakeStartTime = offerStartTime;
@@ -326,11 +323,13 @@ class ParticipantHandshakeManager {
 
     if (this.peerConnection && this.peerConnection.connectionState !== 'closed') {
       console.log('[PARTICIPANT] createAndSendOffer: Closing existing peer connection');
+      this.politePeer.cleanup(hostId);
       this.peerConnection.close();
       this.peerConnection = null;
     }
 
-    this.isOfferInProgress = true;
+    // Mark making offer in polite peer manager
+    this.politePeer.setMakingOffer(hostId, true);
     this.clearConnectionTimeout();
 
     try {
@@ -372,53 +371,51 @@ class ParticipantHandshakeManager {
       console.log('🚨 CRÍTICO [PARTICIPANT] Validating and adding tracks to RTCPeerConnection...');
       
       const tracks = stream.getTracks();
-      // ENHANCED TRACK VALIDATION: Reject muted tracks
+      // NEW TRACK VALIDATION: Allow muted tracks, only check readyState and enabled
       const validTracks = tracks.filter(track => {
-        const isValid = track.readyState === 'live' && track.enabled && !track.muted;
-        if (!isValid) {
-          console.warn(`🚫 [PARTICIPANT] Rejecting track ${track.kind}:`, {
-            readyState: track.readyState,
-            enabled: track.enabled,
-            muted: track.muted,
-            label: track.label
-          });
-        }
-        return isValid;
+        const isReady = track.readyState === 'live' && track.enabled;
+        console.log(`🔍 [PARTICIPANT] Track ${track.kind} readiness:`, {
+          readyState: track.readyState,
+          enabled: track.enabled,
+          muted: track.muted,
+          isReady,
+          label: track.label
+        });
+        return isReady;
       });
       
-      console.log(`🔍 [PARTICIPANT] Enhanced track validation:`, {
+      console.log(`✅ [PARTICIPANT] Track validation (muted allowed):`, {
         totalTracks: tracks.length,
-        validTracks: validTracks.length,
+        readyTracks: validTracks.length,
         trackDetails: tracks.map(t => ({
           kind: t.kind,
           readyState: t.readyState,
           enabled: t.enabled,
-          muted: t.muted,
-          isValid: t.readyState === 'live' && t.enabled && !t.muted
+          muted: t.muted, // muted is OK, camera needs time to warm up
+          isReady: t.readyState === 'live' && t.enabled
         }))
       });
       
       if (validTracks.length === 0) {
-        const mutedTracks = tracks.filter(t => t.muted);
-        if (mutedTracks.length > 0) {
-          throw new Error(`All tracks are MUTED (${mutedTracks.length}/${tracks.length}) - cannot proceed with WebRTC`);
-        } else {
-          throw new Error('No valid tracks found in stream for WebRTC');
+        throw new Error('No ready tracks found (readyState !== live or enabled !== true)');
+      }
+      
+      // CAMERA PRIMING: Wait for track to become unmuted (up to 2s) before adding to WebRTC
+      const videoTrack = validTracks.find(t => t.kind === 'video');
+      if (videoTrack && videoTrack.muted) {
+        console.log('🔥 [PARTICIPANT] Video track is muted, waiting up to 2s for unmute before adding to WebRTC');
+        const unmuted = await cameraPriming.waitForUnmute(videoTrack, 2000);
+        if (!unmuted) {
+          console.warn('⚠️ [PARTICIPANT] Track still muted after 2s, but adding to WebRTC anyway - camera needs more time');
         }
       }
       
       validTracks.forEach((track, index) => {
         if (this.peerConnection && stream) {
-          // CRITICAL: Final muted check before adding to WebRTC
-          if (track.muted) {
-            console.error(`❌ [PARTICIPANT] REJECTING MUTED TRACK ${track.kind} - will not add to WebRTC`);
-            throw new Error(`Cannot add muted ${track.kind} track to WebRTC connection`);
-          }
-          
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding validated NON-MUTED track ${index + 1}: ${track.kind}`, {
+          console.log(`✅ [PARTICIPANT] Adding ready track ${index + 1}: ${track.kind}`, {
             enabled: track.enabled,
             readyState: track.readyState,
-            muted: track.muted,
+            muted: track.muted, // muted is acceptable - camera warming up
             settings: track.kind === 'video' ? track.getSettings() : null
           });
           
@@ -430,7 +427,11 @@ class ParticipantHandshakeManager {
           });
           
           track.addEventListener('mute', () => {
-            console.error(`❌ [PARTICIPANT] Track ${track.kind} BECAME MUTED after being added to PC - CRITICAL ISSUE`);
+            console.log(`🔇 [PARTICIPANT] Track ${track.kind} muted (normal during warmup)`);
+          });
+
+          track.addEventListener('unmute', () => {
+            console.log(`🔊 [PARTICIPANT] Track ${track.kind} unmuted - camera ready`);
           });
         }
       });
@@ -505,6 +506,9 @@ class ParticipantHandshakeManager {
       
       console.log(`✅ [PARTICIPANT] createOffer (${offerCreateDuration.toFixed(1)}ms) -> setLocalDescription (${setLocalDuration.toFixed(1)}ms)`);
 
+      // Mark offer creation complete
+      this.politePeer.setMakingOffer(hostId, false);
+
       // STEP 6: Send offer to host with detailed debugging
       const sendStartTime = performance.now();
       console.log(`🚨 CRÍTICO [PARTICIPANT] Enviando offer para host ${hostId}`, {
@@ -531,10 +535,8 @@ class ParticipantHandshakeManager {
 
     } catch (error) {
       console.error('❌ CRÍTICO [PARTICIPANT] createAndSendOffer: Failed:', error);
-      this.isOfferInProgress = false;
+      this.politePeer.setMakingOffer(hostId, false);
       throw error;
-    } finally {
-      this.isOfferInProgress = false;
     }
   }
 
@@ -610,7 +612,7 @@ class ParticipantHandshakeManager {
       console.log(`⏰ RETRY: Scheduling retry ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS} in ${backoffDelay}ms for: ${hostId}`);
       
       setTimeout(async () => {
-        if (!this.isOfferInProgress) {
+        if (this.politePeer.canCreateOffer(hostId, this.peerConnection!)) {
           try {
             console.log(`🔄 RETRY: Attempt ${this.reconnectAttempts} for: ${hostId}`);
             await this.createAndSendOffer(hostId);

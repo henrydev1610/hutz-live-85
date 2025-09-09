@@ -6,6 +6,8 @@ import { useStreamMutex } from './useStreamMutex';
 import { useTrackHealthMonitor } from './useTrackHealthMonitor';
 import { useVideoTrackRecovery } from './useVideoTrackRecovery';
 
+import { cameraPriming } from '@/utils/media/CameraPriming';
+
 export const useParticipantMedia = (participantId: string) => {
   console.log('🎯 MOBILE-VIDEO-ONLY: Initializing video-only media for participant:', participantId);
   
@@ -66,8 +68,8 @@ export const useParticipantMedia = (participantId: string) => {
     resetRecoveryAttempts
   } = useVideoTrackRecovery({
     participantId,
-    currentStream: mediaState.localStreamRef.current,
-    videoElementRef: mediaState.localVideoRef,
+    currentStream: mediaState.localStreamRef,
+    videoRef: mediaState.localVideoRef,
     onStreamUpdate: (newStream: MediaStream) => {
       console.log('🔄 MOBILE-VIDEO: Stream updated via recovery - using replaceTrack:', {
         newStreamId: newStream.id,
@@ -107,7 +109,7 @@ export const useParticipantMedia = (participantId: string) => {
         }
         
         return new Promise<MediaStream | null>((resolve) => {
-          mobileCapture.startCapture((stream: MediaStream) => {
+          mobileCapture.startCapture(async (stream: MediaStream) => {
             console.log('✅ MOBILE-VIDEO: Video-only stream obtained:', {
               streamId: stream.id,
               videoTracks: stream.getVideoTracks().length,
@@ -135,6 +137,16 @@ export const useParticipantMedia = (participantId: string) => {
             
             // Store stream reference
             mediaState.localStreamRef.current = stream;
+            
+            // CAMERA PRIMING: Wait for track to become unmuted (up to 2s)
+            const videoTrack = videoTracks[0];
+            if (videoTrack && videoTrack.muted) {
+              console.log('🔥 MOBILE-VIDEO: Track is muted, waiting up to 2s for unmute...');
+              const unmuted = await cameraPriming.waitForUnmute(videoTrack, 2000);
+              if (!unmuted) {
+                console.warn('⚠️ MOBILE-VIDEO: Track still muted after 2s, but proceeding anyway');
+              }
+            }
             
             // Set global shared stream for handshake reuse
             (window as any).__participantSharedStream = stream;
@@ -173,6 +185,7 @@ export const useParticipantMedia = (participantId: string) => {
     // State
     hasVideo: mediaState.hasVideo,
     hasAudio: mediaState.hasAudio,
+    hasScreenShare: false, // Video-only mode, no screen share
     isVideoEnabled: mediaState.isVideoEnabled,
     isAudioEnabled: mediaState.isAudioEnabled,
     localVideoRef: mediaState.localVideoRef,
@@ -180,6 +193,7 @@ export const useParticipantMedia = (participantId: string) => {
     
     // Control functions
     initializeMedia,
+    retryMediaInitialization: initializeMedia, // Alias for compatibility
     isStreamOperationAllowed: isOperationAllowed,
     recoverVideoTrack,
     
@@ -197,10 +211,8 @@ export const useParticipantMedia = (participantId: string) => {
       // Stop monitoring
       stopMonitoring();
       
-      // Clean up mobile capture
-      if (mobileCapture) {
-        mobileCapture.cleanup();
-      }
+      // Clean up camera priming
+      cameraPriming.cleanup();
       
       // Stop tracks
       if (mediaState.localStreamRef.current) {

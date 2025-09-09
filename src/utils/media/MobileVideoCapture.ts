@@ -97,40 +97,45 @@ export class MobileVideoCapture {
 
   /**
    * Prime camera with invisible offscreen video element
+   * Uses new CameraPriming utility for invisible frame draining
    */
   private async primeCamera(stream: MediaStream): Promise<void> {
+    console.log('🔥 [MOBILE-VIDEO] Priming camera with invisible element to drain frames');
+    
+    // Clean up any existing offscreen video
     if (this.offscreenVideo) {
       this.offscreenVideo.srcObject = null;
       this.offscreenVideo.remove();
+      this.offscreenVideo = null;
     }
 
-    // Create fully invisible, offscreen video element
-    this.offscreenVideo = document.createElement('video');
-    this.offscreenVideo.style.position = 'absolute';
-    this.offscreenVideo.style.left = '-9999px';
-    this.offscreenVideo.style.top = '-9999px';
-    this.offscreenVideo.style.width = '1px';
-    this.offscreenVideo.style.height = '1px';
-    this.offscreenVideo.style.opacity = '0';
-    this.offscreenVideo.style.pointerEvents = 'none';
-    this.offscreenVideo.muted = true;
-    this.offscreenVideo.playsInline = true;
-    this.offscreenVideo.autoplay = true;
-
-    // Attach stream and start playing to drain frames
-    this.offscreenVideo.srcObject = stream;
-    document.body.appendChild(this.offscreenVideo);
-
     try {
-      await this.offscreenVideo.play();
-      console.log('📱 [MOBILE-CAPTURE] Camera primed with offscreen element');
+      // Create invisible video element to prime the camera
+      this.offscreenVideo = document.createElement('video');
+      this.offscreenVideo.style.position = 'absolute';
+      this.offscreenVideo.style.top = '-9999px';
+      this.offscreenVideo.style.left = '-9999px';
+      this.offscreenVideo.style.width = '1px';
+      this.offscreenVideo.style.height = '1px';
+      this.offscreenVideo.style.opacity = '0';
+      this.offscreenVideo.muted = true;
+      this.offscreenVideo.playsInline = true;
+      this.offscreenVideo.autoplay = true;
+
+      // Attach stream and play to start camera
+      this.offscreenVideo.srcObject = stream;
+      document.body.appendChild(this.offscreenVideo);
       
-      // Wait a bit to ensure frames are flowing
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await this.offscreenVideo.play();
+      console.log('✅ [MOBILE-VIDEO] Camera primed - frames being drained invisibly');
+      
+      // Let it run for 1 second to properly warm up the camera  
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       this.state.primedStream = stream;
+      
     } catch (error) {
-      console.warn('⚠️ [MOBILE-CAPTURE] Camera priming failed, but continuing:', error);
+      console.warn('⚠️ [MOBILE-VIDEO] Camera priming failed:', error);
     }
   }
 
@@ -207,11 +212,11 @@ export class MobileVideoCapture {
 
   /**
    * Check if video track is healthy for transmission
+   * NEW: Allow muted tracks - camera needs time to warm up
    */
   isTrackHealthy(track: MediaStreamTrack): boolean {
-    return track.readyState === 'live' && 
-           track.enabled === true && 
-           track.muted === false;
+    // Only check readyState and enabled - muted is OK during warmup
+    return track.readyState === 'live' && track.enabled === true;
   }
 
   /**
