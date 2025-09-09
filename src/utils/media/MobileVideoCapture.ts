@@ -96,7 +96,7 @@ export class MobileVideoCapture {
   }
 
   /**
-   * Prime camera with invisible offscreen video element
+   * Prime camera with invisible offscreen video element and effective frame draining
    */
   private async primeCamera(stream: MediaStream): Promise<void> {
     if (this.offscreenVideo) {
@@ -125,8 +125,42 @@ export class MobileVideoCapture {
       await this.offscreenVideo.play();
       console.log('📱 [MOBILE-CAPTURE] Camera primed with offscreen element');
       
-      // Wait a bit to ensure frames are flowing
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Enhanced frame drainage - wait for actual frames
+      await new Promise(resolve => {
+        let resolved = false;
+        const timeout = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            console.log('📱 [MOBILE-CAPTURE] Frame drainage timeout reached');
+            resolve(undefined);
+          }
+        }, 2000);
+        
+        // Use requestVideoFrameCallback if available
+        if (this.offscreenVideo && 'requestVideoFrameCallback' in this.offscreenVideo) {
+          (this.offscreenVideo as any).requestVideoFrameCallback(() => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timeout);
+              console.log('📱 [MOBILE-CAPTURE] First frame detected via callback');
+              resolve(undefined);
+            }
+          });
+        } else {
+          // Fallback: wait for loadeddata + additional time
+          const onLoadedData = () => {
+            setTimeout(() => {
+              if (!resolved) {
+                resolved = true;
+                clearTimeout(timeout);
+                console.log('📱 [MOBILE-CAPTURE] Frame drainage complete (loadeddata + 500ms)');
+                resolve(undefined);
+              }
+            }, 500);
+          };
+          this.offscreenVideo?.addEventListener('loadeddata', onLoadedData, { once: true });
+        }
+      });
       
       this.state.primedStream = stream;
     } catch (error) {

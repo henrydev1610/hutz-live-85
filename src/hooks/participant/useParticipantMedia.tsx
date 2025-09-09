@@ -66,8 +66,8 @@ export const useParticipantMedia = (participantId: string) => {
     resetRecoveryAttempts
   } = useVideoTrackRecovery({
     participantId,
-    currentStream: mediaState.localStreamRef.current,
-    videoElementRef: mediaState.localVideoRef,
+    currentStream: mediaState.localStreamRef,
+    videoRef: mediaState.localVideoRef,
     onStreamUpdate: (newStream: MediaStream) => {
       console.log('🔄 MOBILE-VIDEO: Stream updated via recovery - using replaceTrack:', {
         newStreamId: newStream.id,
@@ -173,6 +173,7 @@ export const useParticipantMedia = (participantId: string) => {
     // State
     hasVideo: mediaState.hasVideo,
     hasAudio: mediaState.hasAudio,
+    hasScreenShare: false,
     isVideoEnabled: mediaState.isVideoEnabled,
     isAudioEnabled: mediaState.isAudioEnabled,
     localVideoRef: mediaState.localVideoRef,
@@ -182,6 +183,7 @@ export const useParticipantMedia = (participantId: string) => {
     initializeMedia,
     isStreamOperationAllowed: isOperationAllowed,
     recoverVideoTrack,
+    retryMediaInitialization: initializeMedia,
     
     // Monitoring status
     trackHealthStatus: lastHealthStatus,

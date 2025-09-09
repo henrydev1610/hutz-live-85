@@ -372,9 +372,9 @@ class ParticipantHandshakeManager {
       console.log('🚨 CRÍTICO [PARTICIPANT] Validating and adding tracks to RTCPeerConnection...');
       
       const tracks = stream.getTracks();
-      // ENHANCED TRACK VALIDATION: Reject muted tracks
+      // IMPROVED TRACK VALIDATION: Allow muted tracks with 2s unmute wait
       const validTracks = tracks.filter(track => {
-        const isValid = track.readyState === 'live' && track.enabled && !track.muted;
+        const isValid = track.readyState === 'live' && track.enabled;
         if (!isValid) {
           console.warn(`🚫 [PARTICIPANT] Rejecting track ${track.kind}:`, {
             readyState: track.readyState,
@@ -386,7 +386,7 @@ class ParticipantHandshakeManager {
         return isValid;
       });
       
-      console.log(`🔍 [PARTICIPANT] Enhanced track validation:`, {
+      console.log(`🔍 [PARTICIPANT] Track validation (allowing muted):`, {
         totalTracks: tracks.length,
         validTracks: validTracks.length,
         trackDetails: tracks.map(t => ({
@@ -394,28 +394,52 @@ class ParticipantHandshakeManager {
           readyState: t.readyState,
           enabled: t.enabled,
           muted: t.muted,
-          isValid: t.readyState === 'live' && t.enabled && !t.muted
+          isValid: t.readyState === 'live' && t.enabled
         }))
       });
       
       if (validTracks.length === 0) {
-        const mutedTracks = tracks.filter(t => t.muted);
-        if (mutedTracks.length > 0) {
-          throw new Error(`All tracks are MUTED (${mutedTracks.length}/${tracks.length}) - cannot proceed with WebRTC`);
-        } else {
-          throw new Error('No valid tracks found in stream for WebRTC');
-        }
+        throw new Error('No valid tracks found in stream for WebRTC');
+      }
+      
+      // Check for muted tracks and wait for unmute
+      const mutedTracks = validTracks.filter(t => t.muted);
+      if (mutedTracks.length > 0) {
+        console.log(`⏳ [PARTICIPANT] ${mutedTracks.length} tracks are muted, waiting 2s for unmute...`);
+        
+        await new Promise(resolve => {
+          let resolved = false;
+          const timeout = setTimeout(() => {
+            if (!resolved) {
+              resolved = true;
+              console.log('⚠️ [PARTICIPANT] Unmute timeout reached, proceeding with muted tracks');
+              resolve(undefined);
+            }
+          }, 2000);
+          
+          const checkUnmute = () => {
+            const stillMuted = mutedTracks.filter(t => t.muted);
+            if (stillMuted.length === 0 && !resolved) {
+              resolved = true;
+              clearTimeout(timeout);
+              console.log('✅ [PARTICIPANT] All tracks unmuted successfully');
+              resolve(undefined);
+            }
+          };
+          
+          mutedTracks.forEach(track => {
+            track.addEventListener('unmute', checkUnmute, { once: true });
+          });
+          
+          // Check immediately in case already unmuted
+          setTimeout(checkUnmute, 100);
+        });
       }
       
       validTracks.forEach((track, index) => {
         if (this.peerConnection && stream) {
-          // CRITICAL: Final muted check before adding to WebRTC
-          if (track.muted) {
-            console.error(`❌ [PARTICIPANT] REJECTING MUTED TRACK ${track.kind} - will not add to WebRTC`);
-            throw new Error(`Cannot add muted ${track.kind} track to WebRTC connection`);
-          }
-          
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding validated NON-MUTED track ${index + 1}: ${track.kind}`, {
+          // Log track state but allow muted tracks
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding track ${index + 1}: ${track.kind}`, {
             enabled: track.enabled,
             readyState: track.readyState,
             muted: track.muted,
