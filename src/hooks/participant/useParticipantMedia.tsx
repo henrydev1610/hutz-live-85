@@ -11,7 +11,17 @@ export const useParticipantMedia = (participantId: string) => {
   
   // Initialize basic media state
   const mediaState = useMediaState();
-  const mediaControls = useMediaControls(mediaState);
+  const mediaControls = useMediaControls({
+    localStreamRef: mediaState.localStreamRef,
+    screenStreamRef: mediaState.screenStreamRef,
+    localVideoRef: mediaState.localVideoRef,
+    isVideoEnabled: mediaState.isVideoEnabled,
+    setIsVideoEnabled: mediaState.setIsVideoEnabled,
+    isAudioEnabled: mediaState.isAudioEnabled,
+    setIsAudioEnabled: mediaState.setIsAudioEnabled,
+    hasScreenShare: mediaState.hasScreenShare,
+    setHasScreenShare: mediaState.setHasScreenShare
+  });
   
   // STREAM PROTECTION: Ensure only one operation at a time
   const {
@@ -66,8 +76,8 @@ export const useParticipantMedia = (participantId: string) => {
     resetRecoveryAttempts
   } = useVideoTrackRecovery({
     participantId,
-    currentStream: mediaState.localStreamRef.current,
-    videoElementRef: mediaState.localVideoRef,
+    currentStream: mediaState.localStreamRef,
+    videoRef: mediaState.localVideoRef,
     onStreamUpdate: (newStream: MediaStream) => {
       console.log('🔄 MOBILE-VIDEO: Stream updated via recovery - using replaceTrack:', {
         newStreamId: newStream.id,
@@ -173,6 +183,7 @@ export const useParticipantMedia = (participantId: string) => {
     // State
     hasVideo: mediaState.hasVideo,
     hasAudio: mediaState.hasAudio,
+    hasScreenShare: mediaState.hasScreenShare,
     isVideoEnabled: mediaState.isVideoEnabled,
     isAudioEnabled: mediaState.isAudioEnabled,
     localVideoRef: mediaState.localVideoRef,
@@ -180,6 +191,7 @@ export const useParticipantMedia = (participantId: string) => {
     
     // Control functions
     initializeMedia,
+    retryMediaInitialization: initializeMedia, // Alias for ParticipantPage compatibility
     isStreamOperationAllowed: isOperationAllowed,
     recoverVideoTrack,
     
