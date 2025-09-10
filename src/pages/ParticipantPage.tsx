@@ -4,6 +4,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
 import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
 import { useMobileOnlyGuard } from '@/hooks/useMobileOnlyGuard';
+import { useMeteredIntegration } from '@/hooks/live/useMeteredIntegration';
+import { useMeteredParticipant } from '@/hooks/participant/useMeteredParticipant';
 
 // Importar handshake do participante para registrar listeners
 import '@/webrtc/handshake/ParticipantHandshake';
@@ -134,6 +136,17 @@ const ParticipantPage = () => {
   // PROPAGAÇÃO: participantId único passado para todos os hooks
   const connection = useParticipantConnection(sessionId, participantId);
   const media = useParticipantMedia(participantId);
+  
+  // Integração Metered Rooms
+  const meteredConfig = useMeteredIntegration();
+  const urlParams = new URLSearchParams(window.location.search);
+  const meteredParticipant = useMeteredParticipant({
+    roomName: meteredConfig.useMetered ? `${meteredConfig.roomNamePrefix}${urlParams.get('room') || sessionId || ''}` : '',
+    accountDomain: meteredConfig.accountDomain,
+    onConnectionChange: (connected: boolean) => {
+      console.log('Metered connection status:', connected);
+    }
+  });
 
   // Enhanced URL consistency validation with mobile override detection
   useEffect(() => {
@@ -296,6 +309,7 @@ const ParticipantPage = () => {
     
     try {
       console.log('📱 PARTICIPANT: Starting MOBILE-FORCED auto-connection with camera validation');
+      console.log('🎯 Metered Integration:', meteredConfig);
       
       streamLogger.log(
         'STREAM_START' as any,
@@ -307,8 +321,16 @@ const ParticipantPage = () => {
         'AUTO_CONNECT_MOBILE',
         'Starting mobile auto-connection with validation'
       );
+
+      // Verificar se deve usar Metered
+      if (meteredConfig.useMetered) {
+        console.log('🎯 Usando Metered Rooms para participante...');
+        await meteredParticipant.connectAndPublish();
+        toast.success('📱 Conectado via Metered Rooms');
+        return;
+      }
       
-      // FASE 3: Validate mobile camera capabilities first
+      // FASE 3: Validate mobile camera capabilities first (fluxo tradicional)
       const hasValidCamera = await validateMobileCameraCapabilities();
       if (hasValidCamera) {
         console.log('✅ PARTICIPANT: Mobile camera capabilities validated');
