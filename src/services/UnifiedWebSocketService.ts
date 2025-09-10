@@ -46,18 +46,18 @@ class UnifiedWebSocketService {
     networkQuality: 'unknown'
   };
   
-  // CORREÇÃO: Configuração menos agressiva para evitar loops
-  private maxReconnectAttempts = 3; // Reduzido de 15 para 3
-  private reconnectDelay = 5000; // Aumentado para 5s
-  private maxReconnectDelay = 30000; // Reduzido para 30s
+  // FASE 2: Configuração mais robusta para MOBILE
+  private maxReconnectAttempts = 8; // Aumentado para permitir reconnexões mobile
+  private reconnectDelay = 2000; // Reduzido para resposta mais rápida
+  private maxReconnectDelay = 15000; // Mantém máximo razoável
   private backoffMultiplier = 2;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
-  // CORREÇÃO 3: Circuit breaker TEMPORARIAMENTE desabilitado para reconexão
-  private circuitBreakerThreshold = 20; // Aumentado para 20 tentativas (quase desabilitado)
-  private circuitBreakerTimeout = 10000; // Reduzido para 10s (recovery rápido)
+  // FASE 2: Circuit breaker mais tolerante para MOBILE
+  private circuitBreakerThreshold = 12; // Tolerante mas não infinito
+  private circuitBreakerTimeout = 5000; // Recovery rápido para mobile
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
   private isConnectingFlag = false; // Flag para prevenir conexões simultâneas
@@ -277,14 +277,16 @@ class UnifiedWebSocketService {
       if (this.currentUserId?.includes('host')) {
         console.log(`HOST-SOCKET-DISCONNECTED {reason=${reason}}`);
       } else {
-        console.log(`PARTICIPANT-SOCKET-DISCONNECTED {reason=${reason}}`);
+        console.log(`PARTICIPANT-SOCKET-DISCONNECTED {reason=${reason}, participantId=${this.currentUserId}}`);
       }
       console.log('🔄 CONNECTION: Disconnected:', reason);
       this.metrics.status = 'disconnected';
       this.stopHeartbeat();
       this.callbacks.onDisconnected?.();
 
+      // FASE 2: Reconexão inteligente - preservar participantId
       if (this.shouldReconnect && reason !== 'io client disconnect') {
+        console.log(`🔄 FASE 2: Initiating intelligent reconnection preserving ${this.currentUserId}`);
         this.scheduleReconnect();
       }
     });

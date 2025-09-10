@@ -1,10 +1,5 @@
-
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from "sonner";
-import { detectMobileAggressively, checkMediaDevicesSupport, setCameraPreference } from '@/utils/media/deviceDetection';
-import { getUserMediaWithFallback } from '@/utils/media/getUserMediaFallback';
-import { setupVideoElement } from '@/utils/media/videoPlayback';
-import { streamLogger } from '@/utils/debug/StreamLogger';
 import { useMediaState } from './useMediaState';
 import { useMediaControls } from './useMediaControls';
 import { useStreamMutex } from './useStreamMutex';
@@ -12,502 +7,215 @@ import { useTrackHealthMonitor } from './useTrackHealthMonitor';
 import { useVideoTrackRecovery } from './useVideoTrackRecovery';
 
 export const useParticipantMedia = (participantId: string) => {
-  const mediaState = useMediaState();
-  const {
-    hasVideo,
-    setHasVideo,
-    hasAudio,
-    setHasAudio,
-    hasScreenShare,
-    setHasScreenShare,
-    isVideoEnabled,
-    setIsVideoEnabled,
-    isAudioEnabled,
-    setIsAudioEnabled,
-    localVideoRef,
-    localStreamRef,
-    screenStreamRef
-  } = mediaState;
-
-  const mediaControls = useMediaControls({
-    localStreamRef,
-    screenStreamRef,
-    localVideoRef,
-    isVideoEnabled,
-    setIsVideoEnabled,
-    isAudioEnabled,
-    setIsAudioEnabled,
-    hasScreenShare,
-    setHasScreenShare
-  });
-
-  // Stream protection and monitoring
-  const mutex = useStreamMutex(participantId);
+  console.log('🎯 MOBILE-VIDEO-ONLY: Initializing video-only media for participant:', participantId);
   
-  // Enhanced track health monitoring with recovery
-  const trackHealth = useTrackHealthMonitor(
+  // Initialize basic media state
+  const mediaState = useMediaState();
+  const mediaControls = useMediaControls(mediaState);
+  
+  // STREAM PROTECTION: Ensure only one operation at a time
+  const {
+    acquireLock,
+    releaseLock,
+    isOperationAllowed,
+    withMutexLock
+  } = useStreamMutex(participantId);
+  
+  // MOBILE VIDEO CAPTURE: Import and initialize mobile video capture
+  const [mobileCapture, setMobileCapture] = useState<any>(null);
+  
+  useEffect(() => {
+    // Dynamically import mobile capture to avoid SSR issues
+    import('@/utils/media/MobileVideoCapture').then(({ mobileVideoCapture }) => {
+      setMobileCapture(mobileVideoCapture);
+    });
+  }, []);
+  
+  // TRACK HEALTH MONITORING: Only use track properties (not video element state)
+  const {
+    startMonitoring,
+    stopMonitoring,
+    lastHealthStatus
+  } = useTrackHealthMonitor(
     participantId,
-    localStreamRef.current,
-    (status) => {
-      console.log('📊 [TRACK-HEALTH] Status update:', status);
+    mediaState.localStreamRef.current,
+    (healthStatus) => {
+      console.log('🏥 MOBILE-VIDEO: Track health based on track properties:', healthStatus);
+      
+      // Only trigger recovery based on actual track state
+      if (!healthStatus.isHealthy && healthStatus.trackCount > 0) {
+        console.log('🔄 MOBILE-VIDEO: Unhealthy track detected - triggering recovery');
+        recoverVideoTrack('track health monitoring detected issues');
+      }
     },
-    // onTrackMuted callback
-    (track) => {
-      console.warn('🚨 [MEDIA] Track muted detected, triggering recovery');
-      trackRecovery.recoverVideoTrack(`track muted: ${track.kind}`);
+    (participantId) => {
+      console.log('🔇 MOBILE-VIDEO: Video track muted (from track, not element):', participantId);
     },
-    // onTrackEnded callback  
-    (track) => {
-      console.error('⚰️ [MEDIA] Track ended detected, triggering recovery');
-      trackRecovery.recoverVideoTrack(`track ended: ${track.kind}`);
+    (participantId) => {
+      console.log('⚰️ MOBILE-VIDEO: Video track ended:', participantId);
+      recoverVideoTrack('track ended - likely OS suspension');
     }
   );
-
-  // Video track recovery system
-  const trackRecovery = useVideoTrackRecovery({
+  
+  // VIDEO RECOVERY: Handle track replacement without connection reset
+  const {
+    recoverVideoTrack,
+    setupTrackHealthMonitoring,
+    isRecoveryInProgress,
+    getRecoveryAttempts,
+    resetRecoveryAttempts
+  } = useVideoTrackRecovery({
     participantId,
-    currentStream: localStreamRef,
-    videoRef: localVideoRef,
-    onStreamUpdate: (newStream) => {
-      // Update the stream reference manually since it's mutable
-      localStreamRef.current = newStream;
-      
-      // Update global shared stream for WebRTC
-      (window as any).__participantSharedStream = newStream;
-      
-      // Update state
-      setHasVideo(newStream.getVideoTracks().length > 0);
-      setHasAudio(newStream.getAudioTracks().length > 0);
-      
-      // Restart track health monitoring for new stream
-      trackHealth.startMonitoring();
-      
-      console.log('🔄 [MEDIA] Stream updated after recovery:', {
-        streamId: newStream.id,
-        videoTracks: newStream.getVideoTracks().length,
-        audioTracks: newStream.getAudioTracks().length
+    currentStream: mediaState.localStreamRef,
+    videoRef: mediaState.localVideoRef,
+    onStreamUpdate: (newStream: MediaStream) => {
+      console.log('🔄 MOBILE-VIDEO: Stream updated via recovery - using replaceTrack:', {
+        newStreamId: newStream.id,
+        videoTracks: newStream.getVideoTracks().length
       });
+      
+      // Update stream reference
+      mediaState.localStreamRef.current = newStream;
+      
+      // Restart monitoring
+      stopMonitoring();
+      setTimeout(() => startMonitoring(), 1000);
+      
+      // Update offscreen priming element (not visible UI)
+      if (mediaState.localVideoRef.current) {
+        mediaState.localVideoRef.current.srcObject = newStream;
+      }
     },
-    webrtcSender: (window as any).__participantWebRTCSender
+    webrtcSender: undefined
   });
 
-  const initializeMedia = useCallback(async () => {
-    // MUTEX PROTECTION: Prevent media operations during WebRTC handshake
-    if (!mutex.isOperationAllowed('initialize-media')) {
-      console.warn(`🚫 [MEDIA] Cannot initialize - blocked by ${mutex.currentOperation}`);
-      toast.warning('Media initialization blocked - operation in progress');
+  const initializeMedia = async (): Promise<MediaStream | null> => {
+    console.log('🎯 MOBILE-VIDEO-ONLY: Starting video-only initialization');
+    
+    // Check if another operation is in progress
+    if (!isOperationAllowed('initialize_media')) {
+      console.log('🔒 MOBILE-VIDEO: Initialization blocked by mutex');
       return null;
     }
-
-    return await mutex.withMutexLock('initialize-media', async () => {
-      const isMobile = detectMobileAggressively();
-      const deviceType = isMobile ? 'mobile' : 'desktop';
-      
+    
+    return withMutexLock('initialize_media', async () => {
       try {
-      console.log(`🎬 MEDIA: Starting ${isMobile ? 'MOBILE' : 'DESKTOP'} camera initialization`);
-      console.log(`🔒 HTTPS Check: ${window.location.protocol}`);
-      console.log(`📱 User Agent: ${navigator.userAgent}`);
-      
-      // [P-MEDIA] request getUserMedia (antes de chamar)
-      console.log('[P-MEDIA] request getUserMedia');
-      
-      // Log início via StreamLogger
-      streamLogger.log(
-        'STREAM_START' as any,
-        participantId,
-        isMobile,
-        deviceType,
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'MEDIA_INIT',
-        'Media initialization started',
-        { userAgent: navigator.userAgent, protocol: window.location.protocol }
-      );
-      
-      if (!checkMediaDevicesSupport()) {
-        const error = new Error('getUserMedia not supported');
-        console.log(`[P-MEDIA] error name=${error.name} message=${error.message}`);
-        streamLogger.logStreamError(participantId, isMobile, deviceType, error, 0);
-        throw error;
-      }
-      
-      const stream = await getUserMediaWithFallback(participantId);
-
-      if (!stream) {
-        console.log(`⚠️ MEDIA: No stream obtained, entering degraded mode`);
-        console.log('[P-MEDIA] error name=NO_STREAM message=No stream obtained, entering degraded mode');
+        // Use mobile video capture for video-only stream
+        if (!mobileCapture) {
+          console.error('❌ MOBILE-VIDEO: Mobile capture not initialized');
+          return null;
+        }
         
-        streamLogger.log(
-          'STREAM_ERROR' as any,
-          participantId,
-          isMobile,
-          deviceType,
-          { timestamp: Date.now(), duration: 0, errorType: 'NO_STREAM_DEGRADED_MODE' },
-          undefined,
-          'MEDIA_INIT',
-          'No stream obtained, entering degraded mode'
-        );
-        
-        setHasVideo(false);
-        setHasAudio(false);
-        toast.warning('Connected in degraded mode (no camera/microphone)');
-        return null;
-      }
-
-      localStreamRef.current = stream;
-      
-      const videoTracks = stream.getVideoTracks();
-      const audioTracks = stream.getAudioTracks();
-      
-      // [P-MEDIA] success tracks={video:<n>, audio:<n>} streamId=<id>
-      console.log(`[P-MEDIA] success tracks={video:${videoTracks.length}, audio:${audioTracks.length}} streamId=${stream.id}`);
-      
-      // CRITICAL: Set this stream globally for handshake reuse with validation
-      (window as any).__participantSharedStream = stream;
-      (window as any).__participantLocalStream = stream;
-      console.log('✅ MEDIA: Stream shared globally for handshake reuse');
-      
-      // Enhanced stream validation for WebRTC compatibility
-      const activeVideoTracks = stream.getVideoTracks().filter(t => t.readyState === 'live' && t.enabled);
-      const activeAudioTracks = stream.getAudioTracks().filter(t => t.readyState === 'live' && t.enabled);
-      
-      console.log('🔍 [MEDIA] WebRTC compatibility check:', {
-        streamActive: stream.active,
-        streamId: stream.id,
-        totalTracks: stream.getTracks().length,
-        activeVideoTracks: activeVideoTracks.length,
-        activeAudioTracks: activeAudioTracks.length,
-        readyForWebRTC: stream.active && activeVideoTracks.length > 0
-      });
-      
-      if (!stream.active || activeVideoTracks.length === 0) {
-        console.warn('⚠️ [MEDIA] Stream may not be suitable for WebRTC transmission');
-        toast.warning('⚠️ Stream criado mas pode ter problemas na transmissão');
-      }
-      
-      console.log(`✅ MEDIA: Stream obtained:`, {
-        videoTracks: videoTracks.length,
-        audioTracks: audioTracks.length,
-        deviceType: isMobile ? 'MOBILE' : 'DESKTOP'
-      });
-      
-      // Log sucesso detalhado
-      streamLogger.logStreamSuccess(participantId, isMobile, deviceType, stream, 0);
-      
-      // Log WebRTC send
-      streamLogger.logWebRTCSend(participantId, isMobile, deviceType, stream);
-      
-      setHasVideo(videoTracks.length > 0);
-      setHasAudio(audioTracks.length > 0);
-      setIsVideoEnabled(videoTracks.length > 0);
-      setIsAudioEnabled(audioTracks.length > 0);
-      
-      // Setup video element
-      if (localVideoRef.current && videoTracks.length > 0) {
-        await setupVideoElement(localVideoRef.current, stream);
-        
-        // Log DOM update
-        streamLogger.logDOMUpdate(participantId, isMobile, deviceType, localVideoRef.current);
-      }
-      
-      const displayType = isMobile ? '📱 Mobile' : '🖥️ Desktop';
-      const videoStatus = videoTracks.length > 0 ? '✅' : '❌';
-      const audioStatus = audioTracks.length > 0 ? '✅' : '❌';
-      
-      toast.success(`${displayType} camera connected! Video: ${videoStatus}, Audio: ${audioStatus}`);
-      
-      // REMOÇÃO: Não emitir stream-started aqui - será feito na página
-      
-        return stream;
+        return new Promise<MediaStream | null>((resolve) => {
+          mobileCapture.startCapture((stream: MediaStream) => {
+            console.log('✅ MOBILE-VIDEO: Video-only stream obtained:', {
+              streamId: stream.id,
+              videoTracks: stream.getVideoTracks().length,
+              audioTracks: stream.getAudioTracks().length,
+              active: stream.active
+            });
+            
+            // Validate this is video-only
+            const videoTracks = stream.getVideoTracks();
+            const audioTracks = stream.getAudioTracks();
+            
+            if (audioTracks.length > 0) {
+              console.warn('⚠️ MOBILE-VIDEO: Unexpected audio tracks found, removing them');
+              audioTracks.forEach(track => {
+                stream.removeTrack(track);
+                track.stop();
+              });
+            }
+            
+            if (videoTracks.length === 0) {
+              console.error('❌ MOBILE-VIDEO: No video tracks in stream');
+              resolve(null);
+              return;
+            }
+            
+            // Store stream reference
+            mediaState.localStreamRef.current = stream;
+            
+            // Set global shared stream for handshake reuse
+            (window as any).__participantSharedStream = stream;
+            (window as any).__globalParticipantStream = stream;
+            
+            console.log('🛡️ MOBILE-VIDEO: Stream globally shared for WebRTC');
+            
+            // Update component state - video only, no audio
+            mediaState.setHasVideo(true);
+            mediaState.setHasAudio(false);
+            
+            // Start health monitoring based on track properties only
+            console.log('🏥 MOBILE-VIDEO: Starting track-based health monitoring');
+            startMonitoring();
+            
+            // Setup track monitoring for the video track
+            if (videoTracks[0]) {
+              setupTrackHealthMonitoring(videoTracks[0]);
+            }
+            
+            console.log('✅ MOBILE-VIDEO: Video-only initialization completed');
+            resolve(stream);
+          });
+        });
         
       } catch (error) {
-        console.error(`❌ MEDIA: Failed to initialize ${isMobile ? 'mobile' : 'desktop'} camera:`, error);
-        
-        const err = error as Error;
-        console.log(`[P-MEDIA] error name=${err.name} message=${err.message}`);
-        
-        streamLogger.logStreamError(participantId, isMobile, deviceType, err, 0);
-        
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        toast.error(`Camera initialization failed: ${errorMsg}`);
-        
-        setHasVideo(false);
-        setHasAudio(false);
+        console.error('❌ MOBILE-VIDEO: Initialization failed:', error);
+        mediaState.setHasVideo(false);
+        mediaState.setHasAudio(false);
         return null;
       }
     });
-  }, [participantId, localVideoRef, localStreamRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, mutex]);
+  };
 
-  const retryMediaInitialization = useCallback(async () => {
-    // MUTEX PROTECTION: Prevent retry during WebRTC operations
-    if (!mutex.isOperationAllowed('retry-media')) {
-      console.warn(`🚫 [MEDIA] Cannot retry - blocked by ${mutex.currentOperation}`);
-      return null;
-    }
-
-    return await mutex.withMutexLock('retry-media', async () => {
-      const isMobile = detectMobileAggressively();
-      const deviceType = isMobile ? 'mobile' : 'desktop';
-      
-      console.log('🔄 MEDIA: Retrying media initialization...');
+  return {
+    // State
+    hasVideo: mediaState.hasVideo,
+    hasAudio: mediaState.hasAudio,
+    hasScreenShare: false,
+    isVideoEnabled: mediaState.isVideoEnabled,
+    isAudioEnabled: mediaState.isAudioEnabled,
+    localVideoRef: mediaState.localVideoRef,
+    localStreamRef: mediaState.localStreamRef,
     
-    streamLogger.log(
-      'STREAM_START' as any,
-      participantId,
-      isMobile,
-      deviceType,
-      { timestamp: Date.now(), duration: 0 },
-      undefined,
-      'MEDIA_RETRY',
-      'Media retry initialization started'
-    );
+    // Control functions
+    initializeMedia,
+    isStreamOperationAllowed: isOperationAllowed,
+    recoverVideoTrack,
+    retryMediaInitialization: initializeMedia,
     
-    // PROTECTED CLEANUP: Don't stop tracks if they're being used by WebRTC
-    if (localStreamRef.current) {
-      const isStreamInUse = (window as any).__participantSharedStream === localStreamRef.current;
+    // Monitoring status
+    trackHealthStatus: lastHealthStatus,
+    isRecoveryInProgress: isRecoveryInProgress(),
+    
+    // Spread media controls
+    ...mediaControls,
+    
+    // Cleanup function
+    cleanup: () => {
+      console.log('🧹 MOBILE-VIDEO: Cleaning up media resources');
       
-      if (isStreamInUse) {
-        console.log('🔒 MEDIA: Skipping track cleanup - stream is being used by WebRTC handshake');
-        streamLogger.log(
-          'VALIDATION' as any,
-          participantId,
-          isMobile,
-          deviceType,
-          { timestamp: Date.now(), duration: 0 },
-          undefined,
-          'TRACK_PROTECTION',
-          'Tracks protected from cleanup during WebRTC use'
-        );
-      } else {
-        localStreamRef.current.getTracks().forEach(track => {
-          streamLogger.logTrackEvent(participantId, isMobile, deviceType, 'track_stopped_for_retry', track);
+      // Stop monitoring
+      stopMonitoring();
+      
+      // Clean up mobile capture
+      if (mobileCapture) {
+        mobileCapture.cleanup();
+      }
+      
+      // Stop tracks
+      if (mediaState.localStreamRef.current) {
+        mediaState.localStreamRef.current.getTracks().forEach(track => {
           track.stop();
         });
       }
-      localStreamRef.current = null;
+      
+      // Clear global references
+      (window as any).__participantSharedStream = null;
+      (window as any).__globalParticipantStream = null;
+      
+      console.log('✅ MOBILE-VIDEO: Cleanup completed');
     }
-    
-    // Reset state
-    setHasVideo(false);
-    setHasAudio(false);
-    
-    try {
-      const stream = await initializeMedia();
-      
-      if (stream) {
-        streamLogger.log(
-          'STREAM_SUCCESS' as any,
-          participantId,
-          isMobile,
-          deviceType,
-          { timestamp: Date.now(), duration: 0 },
-          undefined,
-          'MEDIA_RETRY',
-          'Media retry successful'
-        );
-      }
-      
-        return stream;
-      } catch (error) {
-        console.error('❌ MEDIA: Retry failed:', error);
-        streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
-        toast.error('Failed to retry media connection');
-        throw error;
-      }
-    });
-  }, [participantId, initializeMedia, localStreamRef, setHasVideo, setHasAudio, mutex]);
-
-  const switchCamera = useCallback(async (facing: 'user' | 'environment') => {
-    // MUTEX PROTECTION: Prevent camera switch during WebRTC operations
-    if (!mutex.isOperationAllowed('switch-camera')) {
-      console.warn(`🚫 [MEDIA] Cannot switch camera - blocked by ${mutex.currentOperation}`);
-      return null;
-    }
-
-    return await mutex.withMutexLock('switch-camera', async () => {
-      const isMobile = detectMobileAggressively();
-      const deviceType = isMobile ? 'mobile' : 'desktop';
-      
-      if (!isMobile) {
-      streamLogger.log(
-        'STREAM_ERROR' as any,
-        participantId,
-        isMobile,
-        deviceType,
-        { timestamp: Date.now(), duration: 0, errorType: 'CAMERA_SWITCH_NOT_MOBILE' },
-        undefined,
-        'CAMERA_SWITCH',
-        'Camera switch attempted on non-mobile device'
-      );
-      
-      toast.warning('Camera switching only available on mobile devices');
-      return;
-    }
-
-    console.log(`📱 CAMERA SWITCH: Switching to ${facing} camera`);
-    
-    streamLogger.log(
-      'STREAM_START' as any,
-      participantId,
-      isMobile,
-      deviceType,
-      { timestamp: Date.now(), duration: 0 },
-      undefined,
-      'CAMERA_SWITCH',
-      `Camera switch to ${facing} started`
-    );
-    
-    try {
-      // PROTECTED CLEANUP: Don't stop tracks if they're being used by WebRTC
-      if (localStreamRef.current) {
-        const isStreamInUse = (window as any).__participantSharedStream === localStreamRef.current;
-        
-        if (isStreamInUse) {
-          console.log('🔒 CAMERA SWITCH: Stream is in use by WebRTC - creating new stream without stopping current');
-          streamLogger.log(
-            'VALIDATION' as any,
-            participantId,
-            isMobile,
-            deviceType,
-            { timestamp: Date.now(), duration: 0 },
-            undefined,
-            'TRACK_PROTECTION',
-            'Current tracks protected during camera switch'
-          );
-        } else {
-          localStreamRef.current.getTracks().forEach(track => {
-            streamLogger.logTrackEvent(participantId, isMobile, deviceType, 'track_stopped_for_switch', track);
-            track.stop();
-          });
-        }
-        localStreamRef.current = null;
-      }
-
-      // Clear video element
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = null;
-        streamLogger.logDOMUpdate(participantId, isMobile, deviceType, localVideoRef.current);
-      }
-
-      // Set new camera preference
-      setCameraPreference(facing);
-      
-      // Get new stream with new camera
-      const newStream = await getUserMediaWithFallback(participantId);
-      
-      if (!newStream) {
-        const error = new Error(`Cannot access ${facing === 'user' ? 'front' : 'back'} camera`);
-        streamLogger.logStreamError(participantId, isMobile, deviceType, error, 0);
-        throw error;
-      }
-
-      // Update state
-      localStreamRef.current = newStream;
-      const videoTracks = newStream.getVideoTracks();
-      const audioTracks = newStream.getAudioTracks();
-      
-      streamLogger.logStreamSuccess(participantId, isMobile, deviceType, newStream, 0);
-      
-      setHasVideo(videoTracks.length > 0);
-      setHasAudio(audioTracks.length > 0);
-      setIsVideoEnabled(videoTracks.length > 0);
-      setIsAudioEnabled(audioTracks.length > 0);
-      
-      // Setup video element
-      if (localVideoRef.current && videoTracks.length > 0) {
-        await setupVideoElement(localVideoRef.current, newStream);
-        streamLogger.logDOMUpdate(participantId, isMobile, deviceType, localVideoRef.current);
-      }
-      
-      toast.success(`📱 ${facing === 'user' ? 'Front' : 'Back'} camera activated!`);
-      
-        return newStream;
-        
-      } catch (error) {
-        console.error(`❌ CAMERA SWITCH: Failed to switch to ${facing}:`, error);
-        
-        streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
-        
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        toast.error(`Failed to switch camera: ${errorMsg}`);
-        
-        // Try to reinitialize
-        try {
-          await retryMediaInitialization();
-        } catch (recoveryError) {
-          console.error('❌ CAMERA SWITCH: Recovery also failed:', recoveryError);
-          streamLogger.logStreamError(participantId, isMobile, deviceType, recoveryError as Error, 0);
-        }
-        
-        throw error;
-      }
-    });
-  }, [participantId, localStreamRef, localVideoRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, retryMediaInitialization, mutex]);
-
-  const cleanup = useCallback(() => {
-    const isMobile = detectMobileAggressively();
-    const deviceType = isMobile ? 'mobile' : 'desktop';
-    
-    console.log('🧹 MEDIA: Cleaning up media resources...');
-    
-    streamLogger.log(
-      'VALIDATION' as any,
-      participantId,
-      isMobile,
-      deviceType,
-      { timestamp: Date.now(), duration: 0 },
-      undefined,
-      'CLEANUP',
-      'Media cleanup initiated'
-    );
-    
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
-        streamLogger.logTrackEvent(participantId, isMobile, deviceType, 'track_stopped_cleanup', track);
-        track.stop();
-      });
-      localStreamRef.current = null;
-    }
-    
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach(track => {
-        streamLogger.logTrackEvent(participantId, isMobile, deviceType, 'screen_track_stopped_cleanup', track);
-        track.stop();
-      });
-      screenStreamRef.current = null;
-    }
-    
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null;
-      streamLogger.logDOMUpdate(participantId, isMobile, deviceType, localVideoRef.current);
-    }
-    
-    setHasVideo(false);
-    setHasAudio(false);
-    setHasScreenShare(false);
-    setIsVideoEnabled(false);
-    setIsAudioEnabled(false);
-  }, [participantId, localStreamRef, screenStreamRef, localVideoRef, setHasVideo, setHasAudio, setHasScreenShare, setIsVideoEnabled, setIsAudioEnabled]);
-
-  return {
-    hasVideo,
-    hasAudio,
-    hasScreenShare,
-    isVideoEnabled,
-    isAudioEnabled,
-    localVideoRef,
-    localStreamRef,
-    initializeMedia,
-    retryMediaInitialization,
-    switchCamera,
-    cleanup,
-    // Stream protection utilities
-    isStreamOperationAllowed: mutex.isOperationAllowed,
-    currentStreamOperation: mutex.currentOperation,
-    trackHealthStatus: trackHealth.lastHealthStatus,
-    // Track recovery utilities
-    recoverVideoTrack: trackRecovery.recoverVideoTrack,
-    isRecoveryInProgress: trackRecovery.isRecoveryInProgress,
-    ...mediaControls
   };
 };

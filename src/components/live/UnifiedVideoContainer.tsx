@@ -20,7 +20,7 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 1. Criar <video> no primeiro mount
+  // FASE 1: Criar <video> com atributos críticos para detecção do VideoEnforcer
   useEffect(() => {
     const el = containerRef.current;
     if (!el || videoRef.current) return;
@@ -34,6 +34,10 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
     v.style.height = '100%';
     v.style.objectFit = 'cover';
     
+    // CRÍTICO: Atributos necessários para VideoPlaybackEnforcer
+    v.setAttribute('data-unified-video', 'true');
+    v.setAttribute('data-participant-id', participant.id);
+    
     el.appendChild(v);
     videoRef.current = v;
     
@@ -42,7 +46,9 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
     
     console.log(`📦 VIDEO CREATED: Element created for ${participant.id}`, {
       videoId: v.id,
-      container: el.id
+      container: el.id,
+      hasUnifiedAttribute: v.getAttribute('data-unified-video'),
+      hasParticipantAttribute: v.getAttribute('data-participant-id')
     });
   }, [participant.id]);
 

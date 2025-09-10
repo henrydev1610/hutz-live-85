@@ -1,6 +1,8 @@
 // ============= Host WebRTC Handshake Logic =============
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { webrtcGlobalDebugger } from '@/utils/webrtc/WebRTCGlobalDebug';
+import { preAllocatedTransceivers } from '@/utils/webrtc/PreAllocatedTransceivers';
+import { politePeerManager } from '@/utils/webrtc/PolitePeerManager';
 
 const hostPeerConnections = new Map<string, RTCPeerConnection>();
 const participantICEBuffers = new Map<string, RTCIceCandidate[]>();
@@ -72,9 +74,13 @@ class HostHandshakeManager {
         }
       };
 
-      // Add receive-only transceiver for video BEFORE setRemoteDescription
-      pc.addTransceiver('video', { direction: 'recvonly' });
-      console.log(`[HOST] addTransceiver('video', recvonly) for ${participantId}`);
+      // CRÍTICO: Pré-alocar transceivers em ordem fixa
+      preAllocatedTransceivers.initializeTransceivers(participantId, pc, 'host');
+      
+      // Initialize polite peer manager (host é impolite por padrão)
+      politePeerManager.initializePeerState(participantId);
+      
+      console.log(`[HOST] Pre-allocated transceivers initialized for ${participantId}`);
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -187,13 +193,7 @@ class HostHandshakeManager {
 
       // PASSO 6: Enviar answer
       console.log(`🚨 CRÍTICO [HOST] Sending answer to ${data.participantId}`);
-      unifiedWebSocketService.emit('webrtc-answer', {
-        answer,
-        toSocketId: data.fromSocketId,
-        hostId: 'host',
-        participantId: data.participantId,
-        timestamp: Date.now()
-      });
+      unifiedWebSocketService.sendWebRTCAnswer(data.participantId, answer.sdp!, answer.type!);
 
       console.log(`✅ CRÍTICO [HOST] Answer sent to ${data.participantId} - Aguardando ontrack...`);
 
@@ -275,18 +275,32 @@ class HostHandshakeManager {
   }
 
   cleanupHostHandshake(participantId: string): void {
+    console.log(`🧹 FASE 4: Cleaning up handshake for ${participantId}`);
+    
     const pc = hostPeerConnections.get(participantId);
     if (pc) {
-      try {
-        pc.ontrack = null;
-        pc.onicecandidate = null;
-        pc.onconnectionstatechange = null;
-        pc.oniceconnectionstatechange = null;
-        pc.close();
-      } catch (err) {
-        console.warn(`[HOST] Error closing PC for ${participantId}:`, err);
+      const connectionState = pc.connectionState;
+      const iceState = pc.iceConnectionState;
+      
+      // FASE 4: Só cleanup se conexão realmente morreu
+      if (connectionState === 'failed' || connectionState === 'closed' || 
+          iceState === 'failed' || iceState === 'closed') {
+        console.log(`✅ FASE 4: Connection truly dead (${connectionState}/${iceState}) - cleaning up`);
+        
+        try {
+          pc.ontrack = null;
+          pc.onicecandidate = null;
+          pc.onconnectionstatechange = null;
+          pc.oniceconnectionstatechange = null;
+          pc.close();
+        } catch (err) {
+          console.warn(`[HOST] Error closing PC for ${participantId}:`, err);
+        }
+        hostPeerConnections.delete(participantId);
+      } else {
+        console.log(`⚠️ FASE 4: Connection still alive (${connectionState}/${iceState}) - preserving`);
+        return; // Não cleanup se conexão ainda válida
       }
-      hostPeerConnections.delete(participantId);
     }
 
     // Clear pending candidates
@@ -299,7 +313,7 @@ class HostHandshakeManager {
       handshakeTimeouts.delete(participantId);
     }
 
-    console.log(`[HOST] Cleaned up handshake for ${participantId}`);
+    console.log(`✅ FASE 4: Intelligent cleanup completed for ${participantId}`);
   }
 
   cleanupAllStuckConnections(): void {

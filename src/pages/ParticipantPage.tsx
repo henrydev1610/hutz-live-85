@@ -43,7 +43,7 @@ const ParticipantPage = () => {
     return liveVideoTracks.length > 0; // Pelo menos um track de vídeo ativo
   };
   
-  // Função para monitorar transmissão do stream
+  // Função para monitorar transmissão do stream 
   const setupStreamTransmissionMonitoring = (stream: MediaStream, pId: string) => {
     console.log(`PART-TRANSMISSION-MONITOR-START {participantId=${pId}, streamId=${stream.id}}`);
     
@@ -89,8 +89,46 @@ const ParticipantPage = () => {
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
   console.log('🎯 PARTICIPANT PAGE: Enhanced mobile guard:', { isMobile, isValidated, isBlocked });
   
-  // ÚNICA FONTE: participantId gerado apenas aqui
-  const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+  // FASE 1: ESTABILIZAR participantId - usar sessionStorage para persistir entre re-renderizações
+  const [participantId] = useState(() => {
+    const storageKey = `participantId-${sessionId}`;
+    const existingId = sessionStorage.getItem(storageKey);
+    
+    if (existingId) {
+      console.log(`✅ FASE 1: Reusing existing participantId: ${existingId}`);
+      return existingId;
+    }
+    
+    const newId = `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    sessionStorage.setItem(storageKey, newId);
+    console.log(`🆕 FASE 1: Created new stable participantId: ${newId}`);
+    return newId;
+  });
+  
+  // FASE 1: Monitoramento de estabilidade com useEffect
+  useEffect(() => {
+    // Detectar mudança de participantId para a mesma sessão
+    const storageKey = `participantId-${sessionId}`;
+    const storedId = sessionStorage.getItem(storageKey);
+    
+    if (storedId && storedId !== participantId) {
+      console.error(`🚨 FASE 1: participantId INSTABILITY DETECTED!`);
+      console.error(`Stored: ${storedId}`);
+      console.error(`Current: ${participantId}`);
+      console.error(`SessionId: ${sessionId}`);
+      
+      toast.error('⚠️ Detectada instabilidade no ID do participante');
+      
+      // Emit event para componentes se ajustarem
+      window.dispatchEvent(new CustomEvent('participant-id-stability-breach', {
+        detail: {
+          oldId: participantId,
+          stableId: storedId,
+          sessionId
+        }
+      }));
+    }
+  }, [participantId, sessionId]);
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
 
   // PROPAGAÇÃO: participantId único passado para todos os hooks
@@ -366,11 +404,55 @@ const ParticipantPage = () => {
       // Connect sempre, mesmo em modo degradado
       await connection.connectToSession(stream);
       
+      // FASE 2: Aguardar preview ativo ANTES do WebRTC handshake
+      console.log(`🎬 [PART] Waiting for preview to be active before WebRTC handshake`);
+      
+      const waitForActivePreview = async (): Promise<boolean> => {
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            console.warn('⏰ [PART] Timeout waiting for preview - proceeding anyway');
+            resolve(false);
+          }, 5000); // 5s timeout
+
+          const checkPreviewActive = () => {
+            const previewVideo = document.querySelector('video[data-participant-id="local-preview"]') as HTMLVideoElement;
+            
+            if (previewVideo && previewVideo.srcObject && !previewVideo.paused) {
+              console.log('✅ [PART] Preview is active and playing');
+              clearTimeout(timeout);
+              resolve(true);
+              return;
+            }
+            
+            setTimeout(checkPreviewActive, 200); // Check every 200ms
+          };
+
+          // Listen for preview active event
+          const handlePreviewActive = () => {
+            console.log('✅ [PART] Preview active event received');
+            clearTimeout(timeout);
+            window.removeEventListener('participant-preview-active', handlePreviewActive);
+            resolve(true);
+          };
+
+          window.addEventListener('participant-preview-active', handlePreviewActive);
+          checkPreviewActive(); // Start checking immediately
+        });
+      };
+
+      const previewReady = await waitForActivePreview();
+      
+      if (previewReady) {
+        console.log('✅ [PART] Preview confirmed active - starting WebRTC handshake');
+      } else {
+        console.warn('⚠️ [PART] Preview not confirmed active - proceeding with handshake anyway');
+      }
+
       // HANDSHAKE: Único caminho limpo
       console.log(`🤝 [PART] Initiating WebRTC handshake with participantId: ${participantId}`);
       
       // Aguardar estabilização da conexão WebSocket
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       try {
         const hostId = connection.getHostId();
@@ -378,7 +460,7 @@ const ParticipantPage = () => {
           console.log(`🎯 [PART] Host detected: ${hostId}, starting handshake`);
           
           // PRE-WEBRTC STREAM VALIDATION
-          const validateStreamForWebRTC = async (stream: MediaStream): Promise<boolean> => {
+          const validateStreamForWebRTCLocal = async (stream: MediaStream): Promise<boolean> => {
             const videoTrack = stream.getVideoTracks()[0];
             if (!videoTrack) {
               console.error('❌ [VALIDATION] No video track available for WebRTC');
@@ -396,7 +478,7 @@ const ParticipantPage = () => {
               console.warn('⚠️ [VALIDATION] Video track is muted - attempting recovery');
               
               // Try to recover before WebRTC
-              const recovered = await media.recoverVideoTrack('pre-webrtc validation failed');
+              const recovered = await media.recoverVideoTrack?.('pre-webrtc validation failed');
               if (!recovered) {
                 console.error('❌ [VALIDATION] Track recovery failed');
                 return false;
@@ -483,22 +565,38 @@ const ParticipantPage = () => {
             });
           };
 
-          // Validate stream before WebRTC handshake
-          const isStreamValid = await validateStreamForWebRTC(stream);
+          // FASE 1-4: Enhanced validation and mobile compatibility
+          const { validateStreamForWebRTC } = await import('@/utils/media/streamValidation');
+          const { MobileBrowserCompatibility } = await import('@/utils/media/MobileBrowserCompatibility');
+          
+          console.log('🔍 FASE 1-4: Starting enhanced stream validation and compatibility checks');
+          
+          // FASE 3: Apply mobile browser compatibility
+          const browserInfo = MobileBrowserCompatibility.detectBrowser();
+          await MobileBrowserCompatibility.applyPreStreamWorkarounds(browserInfo, participantId);
+          
+          // FASE 3: Apply post-stream workarounds
+          const compatibleStream = await MobileBrowserCompatibility.applyPostStreamWorkarounds(stream, browserInfo, participantId);
+          
+          // FASE 2: Enhanced validation with muted track support
+          const isStreamValid = validateStreamForWebRTC(compatibleStream);
           if (!isStreamValid) {
-            console.error('❌ [PART] Stream validation failed - aborting WebRTC handshake');
-            toast.error('❌ Validação de vídeo falhou - tentando novamente...');
+            console.error('❌ [PART] Enhanced stream validation failed - attempting recovery');
+            toast.error('❌ Validação de vídeo falhou - tentando recuperação...');
             
             // Try media retry and validate again
-            const retryStream = await media.retryMediaInitialization();
+            await media.retryMediaInitialization();
+            const retryStream = media.localStreamRef.current;
             if (retryStream) {
-              const retryValid = await validateStreamForWebRTC(retryStream);
+              const retryCompatibleStream = await MobileBrowserCompatibility.applyPostStreamWorkarounds(retryStream, browserInfo, participantId);
+              const retryValid = validateStreamForWebRTC(retryCompatibleStream);
               if (!retryValid) {
-                console.error('❌ [PART] Stream validation failed even after retry');
+                console.error('❌ [PART] Enhanced validation failed even after retry');
+                toast.error('❌ Falha na recuperação do vídeo');
                 return;
               }
               // Update global shared stream with validated retry stream
-              (window as any).__participantSharedStream = retryStream;
+              (window as any).__participantSharedStream = retryCompatibleStream;
               
               // Use retry stream for WebRTC handshake
               const finalStream = retryStream;
@@ -541,6 +639,26 @@ const ParticipantPage = () => {
           } else {
             setupStreamTransmissionMonitoring(stream, participantId);
             console.log(`✅ [PART] Stream validated with ${videoTracks.length} video tracks ready for handshake`);
+          }
+          
+          // FASE 4: AGUARDAR PREVIEW REPRODUZINDO ANTES DE WebRTC
+          const videoElement = media.localVideoRef.current;
+          if (videoElement) {
+            // Verificar se preview está reproduzindo
+            let previewReady = false;
+            for (let attempt = 0; attempt < 10; attempt++) {
+              if (!videoElement.paused && videoElement.srcObject === stream) {
+                previewReady = true;
+                console.log(`✅ [PART] Preview confirmed playing after ${attempt + 1} checks`);
+                break;
+              }
+              console.log(`⏳ [PART] Waiting for preview to play... attempt ${attempt + 1}/10`);
+              await new Promise(resolve => setTimeout(resolve, 300));
+            }
+            
+            if (!previewReady) {
+              console.warn('⚠️ [PART] Preview not playing, but proceeding with handshake');
+            }
           }
           
           // ÚNICO CAMINHO: initParticipantWebRTC → setLocalStream → connectToHost
@@ -667,7 +785,8 @@ const ParticipantPage = () => {
       
       toast.info('🔄 Tentando novamente câmera móvel...');
       
-      const stream = await media.retryMediaInitialization();
+      await media.retryMediaInitialization();
+      const stream = media.localStreamRef.current;
       if (stream && connection.isConnected) {
         await connection.disconnectFromSession();
         await connection.connectToSession(stream);
