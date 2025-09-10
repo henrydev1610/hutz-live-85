@@ -33,6 +33,9 @@ const LivePage: React.FC = () => {
   const meteredConfig = useMeteredIntegration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
   
+  // State para indicação visual do Metered
+  const [meteredStatus, setMeteredStatus] = useState<'disabled' | 'connecting' | 'connected' | 'error'>('disabled');
+  
   // Auto-geração de QR Code quando sessionId existir
   useAutoQRGeneration({ 
     sessionId: state.sessionId, 
@@ -289,6 +292,11 @@ const LivePage: React.FC = () => {
     accountDomain: meteredConfig.accountDomain,
     onParticipantJoin: (participantId: string, stream: MediaStream) => {
       console.log('🎯 Metered: Participant joined:', participantId);
+      setMeteredStatus('connected');
+      toast({
+        title: "🎯 Participant Connected",
+        description: `Novo participante via Metered Rooms: ${participantId}`,
+      });
       // Usar as funções existentes do participantManagement
       participantManagement.handleParticipantJoin(participantId);
       participantManagement.handleParticipantStream(participantId, stream);
@@ -299,6 +307,38 @@ const LivePage: React.FC = () => {
       participantManagement.handleParticipantRemove(participantId);
     }
   });
+
+  // Gestão automática do Metered
+  useEffect(() => {
+    if (meteredConfig.useMetered && state.sessionId && !meteredHost.isConnected) {
+      console.log('🎯 Auto-conectando ao Metered Rooms...', {
+        roomName: `${meteredConfig.roomNamePrefix}${state.sessionId}`,
+        accountDomain: meteredConfig.accountDomain
+      });
+      
+      setMeteredStatus('connecting');
+      
+      meteredHost.connectToRoom()
+        .then(() => {
+          setMeteredStatus('connected');
+          toast({
+            title: "🎯 Metered Rooms Ativo",
+            description: "Host conectado com sucesso ao Metered Rooms",
+          });
+        })
+        .catch((error) => {
+          console.error('❌ Falha ao conectar Metered:', error);
+          setMeteredStatus('error');
+          toast({
+            title: "❌ Erro Metered",
+            description: `Falha na conexão: ${error.message}`,
+            variant: "destructive"
+          });
+        });
+    } else if (!meteredConfig.useMetered) {
+      setMeteredStatus('disabled');
+    }
+  }, [meteredConfig.useMetered, state.sessionId, meteredHost.isConnected]);
 
   // Use the effects hook
   useLivePageEffects({
@@ -390,6 +430,8 @@ const LivePage: React.FC = () => {
         onFinishTransmission={() => finishTransmission(state, closeFinalAction)}
         onFileSelect={handleFileSelect}
         onRemoveImage={removeBackgroundImage}
+        meteredStatus={meteredStatus}
+        meteredConfig={meteredConfig}
         onGenerateQRCode={() => handleGenerateQRCode(state)}
         onQRCodeToTransmission={() => handleQRCodeToTransmission(state.setQrCodeVisible)}
         closeFinalAction={closeFinalAction}

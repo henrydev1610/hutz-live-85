@@ -57,8 +57,8 @@ export const useMeteredHost = ({
 
       const room = new Metered.Meeting();
       
-      // Configurar o room
-      await room.createRoom({
+      // Inicializar o room
+      await room.join({
         roomURL: `https://${accountDomain}/${roomName}`,
         token: token
       });
@@ -98,7 +98,7 @@ export const useMeteredHost = ({
         onParticipantLeave(participant.id);
       });
 
-      await room.joinRoom();
+      // Room join já foi feito na inicialização
       
       setMeteredRoom(room);
       setState(prev => ({ ...prev, isConnected: true, error: null }));

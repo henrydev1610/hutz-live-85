@@ -77,7 +77,7 @@ export const useMeteredParticipant = ({
 
       const room = new Metered.Meeting();
       
-      // Configurar o room
+      // Inicializar o room
       await room.join({
         roomURL: `https://${accountDomain}/${roomName}`,
         token: token
@@ -103,7 +103,7 @@ export const useMeteredParticipant = ({
         }
       });
 
-      await room.joinRoom();
+      // Room join já foi feito na inicialização
       
       // Publicar vídeo
       const videoTrack = videoStream.getVideoTracks()[0];

@@ -82,12 +82,27 @@ export const useQRCodeGeneration = () => {
     console.log("📍 Frontend URL:", productionUrl);
     console.log("📱 MOBILE PARAMS:", FORCED_MOBILE_PARAMS);
     
+    // Verificar se Metered está ativo
+    const useMetered = import.meta.env.VITE_USE_METERED_ROOMS === "true";
+    
     try {
       // 🚀 CORREÇÃO CRÍTICA: Reutilizar sessionId existente em vez de gerar novo
       const currentSessionId = state.sessionId || generateSessionId();
-      const finalUrl = `${productionUrl}/participant/${currentSessionId}${FORCED_MOBILE_PARAMS}`;
       
-      console.log(`🎯 QR URL GERADA: ${finalUrl}`);
+      let finalUrl: string;
+      
+      if (useMetered) {
+        // Para Metered, usar rota específica com room name
+        const roomName = `${import.meta.env.VITE_ROOM_NAME_PREFIX || 'hutz-room-'}${currentSessionId}`;
+        finalUrl = `${productionUrl}/participant/metered/${roomName}${FORCED_MOBILE_PARAMS}&useMetered=true`;
+        console.log(`🎯 METERED QR URL GERADA: ${finalUrl}`);
+        console.log(`🏢 METERED ROOM NAME: ${roomName}`);
+      } else {
+        // Fluxo tradicional
+        finalUrl = `${productionUrl}/participant/${currentSessionId}${FORCED_MOBILE_PARAMS}`;
+        console.log(`🎯 TRADITIONAL QR URL GERADA: ${finalUrl}`);
+      }
+      
       console.log(`🔑 SESSION ID: ${currentSessionId} (${state.sessionId ? 'existing' : 'new'})`);
       
       // Gerar QR Code usando a biblioteca qrcode

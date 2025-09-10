@@ -137,14 +137,25 @@ const ParticipantPage = () => {
   const connection = useParticipantConnection(sessionId, participantId);
   const media = useParticipantMedia(participantId);
   
-  // Integração Metered Rooms
+  // Integração Metered Rooms - Detectar se é rota Metered
   const meteredConfig = useMeteredIntegration();
   const urlParams = new URLSearchParams(window.location.search);
+  const isMeteredRoute = window.location.pathname.includes('/participant/metered/');
+  const useMeteredForThisSession = meteredConfig.useMetered && (isMeteredRoute || urlParams.get('useMetered') === 'true');
+  
+  // Extrair room name da URL se for rota Metered
+  const roomNameFromPath = isMeteredRoute ? 
+    window.location.pathname.split('/participant/metered/')[1] : 
+    `${meteredConfig.roomNamePrefix}${sessionId || ''}`;
+  
   const meteredParticipant = useMeteredParticipant({
-    roomName: meteredConfig.useMetered ? `${meteredConfig.roomNamePrefix}${urlParams.get('room') || sessionId || ''}` : '',
+    roomName: useMeteredForThisSession ? roomNameFromPath : '',
     accountDomain: meteredConfig.accountDomain,
     onConnectionChange: (connected: boolean) => {
       console.log('Metered connection status:', connected);
+      if (connected) {
+        toast.success('🎯 Conectado via Metered Rooms');
+      }
     }
   });
 
@@ -323,10 +334,11 @@ const ParticipantPage = () => {
       );
 
       // Verificar se deve usar Metered
-      if (meteredConfig.useMetered) {
+      if (useMeteredForThisSession) {
         console.log('🎯 Usando Metered Rooms para participante...');
+        console.log('🏢 Room Name:', roomNameFromPath);
+        console.log('🔗 Account Domain:', meteredConfig.accountDomain);
         await meteredParticipant.connectAndPublish();
-        toast.success('📱 Conectado via Metered Rooms');
         return;
       }
       
