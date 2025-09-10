@@ -37,14 +37,12 @@ export const useMeteredIntegration = (): MeteredConfig => {
 // Função para carregar SDK da Metered dinamicamente
 export const loadMeteredSDK = async (): Promise<any> => {
   try {
-    // Carregar SDK oficial da Metered
-    const { Metered } = await import('@metered/sdk');
-    console.log('Official Metered SDK loaded');
-    return Metered;
-  } catch (error) {
-    console.warn('Official Metered SDK not available, using fallback:', error);
+    // TODO: Instalar SDK oficial da Metered quando disponível
+    // const { Metered } = await import('@metered/sdk');
     
-    // Fallback para SDK simulado caso o oficial não esteja disponível
+    console.log('Using fallback Metered SDK implementation');
+    
+    // Implementação fallback que simula o SDK da Metered
     const MeteredSDK = class {
       constructor(config: any) {
         console.log('Fallback Metered SDK initialized with:', config);
@@ -80,8 +78,19 @@ export const loadMeteredSDK = async (): Promise<any> => {
           if (handler) handler({ kind: 'video' });
         }, 500);
       }
+
+      async startAudio() {
+        console.log('Fallback: Starting audio...');
+        setTimeout(() => {
+          const handler = this.eventHandlers.get('localTrackUpdated');
+          if (handler) handler({ kind: 'audio' });
+        }, 500);
+      }
     };
 
     return MeteredSDK;
+  } catch (error) {
+    console.error('Failed to load Metered SDK:', error);
+    throw error;
   }
 };
