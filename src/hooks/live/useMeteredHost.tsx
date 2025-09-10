@@ -52,10 +52,13 @@ export const useMeteredHost = ({
     try {
       console.log('Host connecting to Metered room:', roomName);
       
-      const MeteredSDK = await loadMeteredSDK();
+      const Metered = await loadMeteredSDK();
       const token = await requestHostToken(roomName);
 
-      const room = new MeteredSDK({
+      const room = new Metered.Meeting();
+      
+      // Configurar o room
+      await room.createRoom({
         roomURL: `https://${accountDomain}/${roomName}`,
         token: token
       });

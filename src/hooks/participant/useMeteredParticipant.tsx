@@ -71,11 +71,14 @@ export const useMeteredParticipant = ({
     try {
       console.log('Participant connecting to Metered room:', roomName);
       
-      const MeteredSDK = await loadMeteredSDK();
+      const Metered = await loadMeteredSDK();
       const token = await requestParticipantToken(roomName);
       const videoStream = await getVideoStream();
 
-      const room = new MeteredSDK({
+      const room = new Metered.Meeting();
+      
+      // Configurar o room
+      await room.join({
         roomURL: `https://${accountDomain}/${roomName}`,
         token: token
       });
