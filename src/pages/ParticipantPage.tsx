@@ -143,6 +143,14 @@ const ParticipantPage = () => {
   const isMeteredRoute = window.location.pathname.includes('/participant/metered/');
   const useMeteredForThisSession = meteredConfig.useMetered && (isMeteredRoute || urlParams.get('useMetered') === 'true');
   
+  console.log('🔧 PARTICIPANT PAGE: Metered detection', {
+    isMeteredRoute,
+    useMeteredForThisSession,
+    pathname: window.location.pathname,
+    sessionId,
+    meteredConfig
+  });
+  
   // Extrair room name da URL se for rota Metered
   const roomNameFromPath = isMeteredRoute ? 
     window.location.pathname.split('/participant/metered/')[1] : 
@@ -900,6 +908,7 @@ const ParticipantPage = () => {
           error={connection.error}
           isConnecting={connection.isConnecting}
           onRetryConnect={handleConnect}
+          onRetryMedia={handleRetryMedia}
         />
 
         {/* Connection Status Details */}

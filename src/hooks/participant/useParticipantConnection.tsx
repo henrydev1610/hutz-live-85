@@ -89,8 +89,8 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
 
    
 
-    // FASE 4: QUEBRA DE RETRY LOOP - Circuit breaker rígido
-    const maxRetries = isMobile ? 3 : 2; // REDUZIDO drasticamente
+    // FASE 4: QUEBRA DE RETRY LOOP - Circuit breaker mais permissivo
+    const maxRetries = isMobile ? 5 : 3; // Aumentado para permitir mais tentativas
     const connectionMetrics = {
       startTime: Date.now(),
       attempts: 0,

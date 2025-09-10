@@ -56,8 +56,8 @@ class UnifiedWebSocketService {
   private shouldReconnect = true;
   
   // FASE 2: Circuit breaker mais tolerante para MOBILE
-  private circuitBreakerThreshold = 12; // Tolerante mas não infinito
-  private circuitBreakerTimeout = 5000; // Recovery rápido para mobile
+  private circuitBreakerThreshold = 5; // Mais permissivo
+  private circuitBreakerTimeout = 10000; // Recovery mais rápido
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
   private isConnectingFlag = false; // Flag para prevenir conexões simultâneas
@@ -240,6 +240,8 @@ class UnifiedWebSocketService {
 
       // FASE 1: Configuração Socket.IO robusta e menos agressiva
       console.log(`🚀 [WS] Creating socket.io connection...`);
+      console.log(`🔧 [WS] Circuit breaker: open=${this.isCircuitOpen}, failures=${this.metrics.consecutiveFailures}`);
+      
       this.socket = io(url, {
         transports: ['websocket', 'polling'], // WebSocket primeiro, polling como fallback
         timeout: 25000, // Aumentado para 25s
@@ -247,7 +249,8 @@ class UnifiedWebSocketService {
         forceNew: true,
         autoConnect: true,
         upgrade: true, // Permite upgrade para WebSocket
-        rememberUpgrade: true // Lembra preferência WebSocket
+        rememberUpgrade: true, // Lembra preferência WebSocket
+        withCredentials: false // Evitar problemas CORS
       });
 
       this.socket.on('connect', () => {
