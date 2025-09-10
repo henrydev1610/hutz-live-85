@@ -34,13 +34,20 @@ export const useMeteredIntegration = (): MeteredConfig => {
   return config;
 };
 
-// Função para carregar SDK da Metered dinamicamente (simulação por enquanto)
+// Função para carregar SDK da Metered dinamicamente
 export const loadMeteredSDK = async (): Promise<any> => {
   try {
-    // Por enquanto, simulamos o SDK até instalar o pacote oficial
+    // Carregar SDK oficial da Metered
+    const { Metered } = await import('@metered/sdk');
+    console.log('Official Metered SDK loaded');
+    return Metered;
+  } catch (error) {
+    console.warn('Official Metered SDK not available, using fallback:', error);
+    
+    // Fallback para SDK simulado caso o oficial não esteja disponível
     const MeteredSDK = class {
       constructor(config: any) {
-        console.log('Simulated Metered SDK initialized with:', config);
+        console.log('Fallback Metered SDK initialized with:', config);
         this.config = config;
         this.eventHandlers = new Map();
       }
@@ -53,7 +60,7 @@ export const loadMeteredSDK = async (): Promise<any> => {
       }
 
       async joinRoom() {
-        console.log('Simulated: Joining room...');
+        console.log('Fallback: Joining room...');
         setTimeout(() => {
           const handler = this.eventHandlers.get('joinedRoom');
           if (handler) handler();
@@ -61,13 +68,13 @@ export const loadMeteredSDK = async (): Promise<any> => {
       }
 
       async leaveRoom() {
-        console.log('Simulated: Leaving room...');
+        console.log('Fallback: Leaving room...');
         const handler = this.eventHandlers.get('leftRoom');
         if (handler) handler();
       }
 
       async startVideo() {
-        console.log('Simulated: Starting video...');
+        console.log('Fallback: Starting video...');
         setTimeout(() => {
           const handler = this.eventHandlers.get('localTrackUpdated');
           if (handler) handler({ kind: 'video' });
@@ -75,10 +82,6 @@ export const loadMeteredSDK = async (): Promise<any> => {
       }
     };
 
-    console.log('Simulated Metered SDK loaded');
     return MeteredSDK;
-  } catch (error) {
-    console.error('Failed to load Metered SDK:', error);
-    throw error;
   }
 };

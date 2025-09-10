@@ -29,7 +29,7 @@ export const useMeteredHost = ({
 
   const requestHostToken = async (roomName: string): Promise<string> => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/room-token?roomName=${roomName}&role=host`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/rooms/room-token?roomName=${roomName}&role=host`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

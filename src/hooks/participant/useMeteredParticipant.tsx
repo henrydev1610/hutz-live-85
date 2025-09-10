@@ -29,7 +29,7 @@ export const useMeteredParticipant = ({
 
   const requestParticipantToken = async (roomName: string): Promise<string> => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/room-token?roomName=${roomName}&role=participant`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/rooms/room-token?roomName=${roomName}&role=participant`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

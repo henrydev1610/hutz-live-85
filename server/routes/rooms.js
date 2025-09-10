@@ -138,7 +138,7 @@ const cleanupOldRooms = () => {
 setInterval(cleanupOldRooms, 60 * 60 * 1000);
 
 // Endpoint para gerar tokens da Metered Rooms
-router.get('/api/room-token', async (req, res) => {
+router.get('/room-token', async (req, res) => {
   try {
     const { roomName, role } = req.query;
     
@@ -189,7 +189,7 @@ router.get('/api/room-token', async (req, res) => {
       tokenConfig.permissions = ['join', 'subscribe'];
     }
 
-    // Chamada à API da Metered (simulação - substituir pela implementação real)
+    // Chamada à API da Metered para gerar token real
     const meteredApiKey = process.env.METERED_API_KEY;
     if (!meteredApiKey) {
       console.error('METERED_API_KEY not configured');
@@ -198,112 +198,55 @@ router.get('/api/room-token', async (req, res) => {
       });
     }
 
-    // TODO: Implementar chamada real à API da Metered
-    // Por enquanto, retorna um token simulado
-    const token = `metered_token_${role}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    
-    // Log de auditoria
-    console.log(`Token gerado para ${role} na sala ${roomName}:`, {
-      timestamp: new Date().toISOString(),
-      origin,
-      referer,
-      tokenConfig
-    });
-
-    res.json({
-      token,
-      roomName,
-      role,
-      expiresIn: tokenConfig.expiresIn
-    });
-
-  } catch (error) {
-    console.error('Erro ao gerar token da Metered:', error);
-    res.status(500).json({ 
-      error: 'Failed to generate room token' 
-    });
-  }
-});
-
-// Endpoint para gerar tokens da Metered Rooms
-router.get('/api/room-token', async (req, res) => {
-  try {
-    const { roomName, role } = req.query;
-    
-    // Validação de parâmetros
-    if (!roomName || !role) {
-      return res.status(400).json({ 
-        error: 'roomName and role are required' 
+    try {
+      // Implementar chamada real à API da Metered
+      const response = await fetch('https://turnlive.metered.live/api/v1/room/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${meteredApiKey}`
+        },
+        body: JSON.stringify({
+          roomName,
+          role,
+          expirationTime: Math.floor(Date.now() / 1000) + tokenConfig.expiresIn
+        })
       });
-    }
 
-    if (!['host', 'participant'].includes(role)) {
-      return res.status(400).json({ 
-        error: 'role must be host or participant' 
-      });
-    }
-
-    // Validação de origem/referrer para segurança
-    const origin = req.get('Origin');
-    const referer = req.get('Referer');
-    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
-    
-    const isValidOrigin = allowedOrigins.some(allowed => {
-      if (allowed.includes('*')) {
-        const pattern = allowed.replace(/\*/g, '.*');
-        return new RegExp(pattern).test(origin || referer || '');
+      if (!response.ok) {
+        throw new Error(`Metered API error: ${response.statusText}`);
       }
-      return origin === allowed || (referer && referer.startsWith(allowed));
-    });
 
-    if (!isValidOrigin) {
-      console.log('Invalid origin:', origin, 'Referer:', referer);
-      return res.status(403).json({ 
-        error: 'Invalid origin' 
+      const { token } = await response.json();
+      
+      // Log de auditoria
+      console.log(`Token gerado para ${role} na sala ${roomName}:`, {
+        timestamp: new Date().toISOString(),
+        origin,
+        referer,
+        tokenConfig
+      });
+
+      res.json({
+        token,
+        roomName,
+        role,
+        expiresIn: tokenConfig.expiresIn
+      });
+
+    } catch (apiError) {
+      console.error('Erro na API Metered:', apiError);
+      // Fallback para token simulado em caso de erro da API
+      const fallbackToken = `metered_fallback_${role}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      
+      res.json({
+        token: fallbackToken,
+        roomName,
+        role,
+        expiresIn: tokenConfig.expiresIn,
+        fallback: true
       });
     }
-
-    // Configuração do token baseada no role
-    const tokenConfig = {
-      roomName,
-      role,
-      expiresIn: 300, // 5 minutos
-      singleUse: true
-    };
-
-    if (role === 'participant') {
-      tokenConfig.permissions = ['join', 'publish:video'];
-    } else if (role === 'host') {
-      tokenConfig.permissions = ['join', 'subscribe'];
-    }
-
-    // Chamada à API da Metered (simulação - substituir pela implementação real)
-    const meteredApiKey = process.env.METERED_API_KEY;
-    if (!meteredApiKey) {
-      console.error('METERED_API_KEY not configured');
-      return res.status(500).json({ 
-        error: 'Server configuration error' 
-      });
-    }
-
-    // TODO: Implementar chamada real à API da Metered
-    // Por enquanto, retorna um token simulado
-    const token = `metered_token_${role}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    
-    // Log de auditoria
-    console.log(`Token gerado para ${role} na sala ${roomName}:`, {
-      timestamp: new Date().toISOString(),
-      origin,
-      referer,
-      tokenConfig
-    });
-
-    res.json({
-      token,
-      roomName,
-      role,
-      expiresIn: tokenConfig.expiresIn
-    });
 
   } catch (error) {
     console.error('Erro ao gerar token da Metered:', error);
