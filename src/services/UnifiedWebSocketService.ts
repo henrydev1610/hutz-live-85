@@ -200,6 +200,7 @@ class UnifiedWebSocketService {
     }
   }
 
+  // CORREÇÃO FASE 6: Melhorar WebSocket Service - tornar mais resiliente
   private async _doConnect(url: string): Promise<void> {
     // DIAGNÓSTICO CRÍTICO: Log detalhado da URL
     console.log(`🔗 [WS] CONNECTION ATTEMPT: ${url}`);
@@ -227,8 +228,8 @@ class UnifiedWebSocketService {
     });
 
     return new Promise((resolve, reject) => {
-      // SIMPLIFICAÇÃO: Timeout fixo mais generoso
-      const connectionTimeout = 20000; // 20s fixo para simplicidade
+      // CORREÇÃO: Timeout mais generoso para mobile
+      const connectionTimeout = this.metrics.networkQuality === 'slow' ? 30000 : 20000;
       
       console.log(`⏱️ [WS] CONNECTION TIMEOUT: ${connectionTimeout}ms`);
 
@@ -238,19 +239,19 @@ class UnifiedWebSocketService {
         reject(new Error(`Connection timeout after ${connectionTimeout}ms`));
       }, connectionTimeout);
 
-      // FASE 1: Configuração Socket.IO robusta e menos agressiva
+      // FASE 1: Configuração Socket.IO mais robusta para mobile
       console.log(`🚀 [WS] Creating socket.io connection...`);
       console.log(`🔧 [WS] Circuit breaker: open=${this.isCircuitOpen}, failures=${this.metrics.consecutiveFailures}`);
       
       this.socket = io(url, {
-        transports: ['websocket', 'polling'], // WebSocket primeiro, polling como fallback
-        timeout: 25000, // Aumentado para 25s
-        reconnection: false, // Controlamos manualmente
+        transports: ['websocket', 'polling'],
+        timeout: connectionTimeout + 5000,
+        reconnection: false,
         forceNew: true,
         autoConnect: true,
-        upgrade: true, // Permite upgrade para WebSocket
-        rememberUpgrade: true, // Lembra preferência WebSocket
-        withCredentials: false // Evitar problemas CORS
+        upgrade: true,
+        rememberUpgrade: true,
+        withCredentials: false
       });
 
       this.socket.on('connect', () => {
@@ -260,6 +261,7 @@ class UnifiedWebSocketService {
         console.log(`🔗 [WS] Connected to: ${url}`);
         console.log(`📊 [WS] Connection attempt ${this.metrics.attemptCount} succeeded`);
         this.setupEventListeners();
+        this.resetCircuitBreaker(); // Reset circuit breaker on success
         resolve();
       });
 
@@ -273,26 +275,35 @@ class UnifiedWebSocketService {
           context: error.context || 'No context',
           type: error.type || 'Unknown type'
         });
+        
+        // CORREÇÃO: Incrementar falhas consecutivas
+        this.metrics.consecutiveFailures++;
+        
+        // CORREÇÃO: Abrir circuit breaker se muitas falhas
+        if (this.metrics.consecutiveFailures >= this.circuitBreakerThreshold) {
+          this.openCircuitBreaker();
+        }
+        
         reject(error);
       });
 
-    this.socket.on('disconnect', (reason) => {
-      if (this.currentUserId?.includes('host')) {
-        console.log(`HOST-SOCKET-DISCONNECTED {reason=${reason}}`);
-      } else {
-        console.log(`PARTICIPANT-SOCKET-DISCONNECTED {reason=${reason}, participantId=${this.currentUserId}}`);
-      }
-      console.log('🔄 CONNECTION: Disconnected:', reason);
-      this.metrics.status = 'disconnected';
-      this.stopHeartbeat();
-      this.callbacks.onDisconnected?.();
+      this.socket.on('disconnect', (reason) => {
+        if (this.currentUserId?.includes('host')) {
+          console.log(`HOST-SOCKET-DISCONNECTED {reason=${reason}}`);
+        } else {
+          console.log(`PARTICIPANT-SOCKET-DISCONNECTED {reason=${reason}, participantId=${this.currentUserId}}`);
+        }
+        console.log('🔄 CONNECTION: Disconnected:', reason);
+        this.metrics.status = 'disconnected';
+        this.stopHeartbeat();
+        this.callbacks.onDisconnected?.();
 
-      // FASE 2: Reconexão inteligente - preservar participantId
-      if (this.shouldReconnect && reason !== 'io client disconnect') {
-        console.log(`🔄 FASE 2: Initiating intelligent reconnection preserving ${this.currentUserId}`);
-        this.scheduleReconnect();
-      }
-    });
+        // FASE 2: Reconexão inteligente - preservar participantId
+        if (this.shouldReconnect && reason !== 'io client disconnect' && !this.isCircuitOpen) {
+          console.log(`🔄 FASE 2: Initiating intelligent reconnection preserving ${this.currentUserId}`);
+          this.scheduleReconnect();
+        }
+      });
 
       this.socket.on('error', (error) => {
         console.error('❌ CONNECTION: Socket error:', error);
