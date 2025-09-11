@@ -32,7 +32,7 @@ const ParticipantPageSimplified = () => {
   const [showDebugPanel, setShowDebugPanel] = useState(false);
 
   // Enhanced media management  
-  const media = useParticipantMedia();
+  const media = useParticipantMedia(participantId);
   
   // Simplified connection management
   const connection = useSimplifiedParticipantConnection({
@@ -86,13 +86,13 @@ const ParticipantPageSimplified = () => {
 
   // FASE 3: Auto-initialization on mount
   useEffect(() => {
-    if (!guardLoading && !isMobileGuardActive && sessionId) {
+    if (sessionId && !isBlocked) {
       console.log('🚀 FASE 3: Auto-initializing media on mount');
       media.initializeMedia().catch(error => {
         console.warn('⚠️ FASE 3: Auto media initialization failed:', error);
       });
     }
-  }, [guardLoading, isMobileGuardActive, sessionId, media]);
+  }, [sessionId, isBlocked, media]);
 
   // FASE 3: Cleanup on unmount
   useEffect(() => {
@@ -121,7 +121,7 @@ const ParticipantPageSimplified = () => {
     );
   }
 
-  if (isMobileGuardActive) {
+  if (!isBlocked && isMobile === false) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center">
         <Card className="w-full max-w-md mx-4 bg-black/30 border-white/10">
