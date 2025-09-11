@@ -605,7 +605,7 @@ const ParticipantPage = () => {
       console.log('📱 PARTICIPANT: Starting WebSocket connection initialization');
       
       // Initialize stream if not already available
-      let stream = media.localStream;
+      let stream = media.localStreamRef.current;
       if (!stream) {
         console.log('🎥 PARTICIPANT: No existing stream - initializing media');
         stream = await media.initializeMedia();
@@ -769,7 +769,9 @@ const ParticipantPage = () => {
       <div className="max-w-md mx-auto space-y-6">
         <ParticipantHeader 
           sessionId={sessionId || ''} 
-          participantId={participantId}
+          connectionStatus={connection.connectionStatus}
+          signalingStatus={signalingStatus}
+          onBack={() => navigate('/')}
         />
         
         <ParticipantErrorDisplay
@@ -780,25 +782,38 @@ const ParticipantPage = () => {
         />
         
         <ParticipantConnectionStatus
-          isConnected={connection.isConnected}
-          isConnecting={connection.isConnecting}
-          connectionStatus={connection.connectionStatus}
           signalingStatus={signalingStatus}
+          connectionStatus={connection.connectionStatus}
+          hasVideo={media.hasVideo}
+          hasAudio={media.hasAudio}
+          onRetryMedia={handleRetryMedia}
         />
         
         <ParticipantVideoPreview
-          stream={media.localStream}
-          participantId={participantId}
-          isLoading={media.isInitializing}
-          error={media.mediaError}
+          localVideoRef={media.localVideoRef}
+          hasVideo={media.hasVideo}
+          hasAudio={media.hasAudio}
+          hasScreenShare={media.hasScreenShare}
+          isVideoEnabled={media.isVideoEnabled}
+          isAudioEnabled={media.isAudioEnabled}
+          localStream={media.localStreamRef.current}
+          onRetryMedia={handleRetryMedia}
         />
         
         <ParticipantControls
+          hasVideo={media.hasVideo}
+          hasAudio={media.hasAudio}
+          hasScreenShare={media.hasScreenShare}
+          isVideoEnabled={media.isVideoEnabled}
+          isAudioEnabled={media.isAudioEnabled}
           isConnected={connection.isConnected}
           isConnecting={connection.isConnecting}
+          connectionStatus={connection.connectionStatus}
+          onToggleVideo={media.toggleVideo}
+          onToggleAudio={media.toggleAudio}
+          onToggleScreenShare={media.toggleScreenShare}
           onConnect={handleConnect}
-          stream={media.localStream}
-          participantId={participantId}
+          onDisconnect={connection.disconnectFromSession}
         />
         
         <ParticipantInstructions />
@@ -815,13 +830,13 @@ const ParticipantPage = () => {
               🎯 ParticipantId: {participantId.substring(0, 20)}...
             </p>
             <p className="text-green-200 text-xs mt-1">
-              📹 Câmera: {media.localStream ? 
-                        `✅ ${media.localStream.getVideoTracks().length} tracks` : 
+              📹 Câmera: {media.localStreamRef.current ? 
+                        `✅ ${media.localStreamRef.current.getVideoTracks().length} tracks` : 
                         '❌ Sem stream'}
             </p>
             <p className="text-green-200 text-xs mt-1">
               🔄 Modo Câmera: {
-                        media.localStream?.getVideoTracks()[0]?.getSettings()?.facingMode || 
+                        media.localStreamRef.current?.getVideoTracks()[0]?.getSettings()?.facingMode || 
                         'Detectando...'}
             </p>
             <p className="text-green-100 text-xs mt-1">
