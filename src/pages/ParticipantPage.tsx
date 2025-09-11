@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
-import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
+import { useSimplifiedParticipantConnection } from '@/hooks/participant/useSimplifiedParticipantConnection';
+import { useEnhancedParticipantMedia } from '@/hooks/participant/useEnhancedParticipantMedia';
 import { useMobileOnlyGuard } from '@/hooks/useMobileOnlyGuard';
-import { useMeteredIntegration } from '@/hooks/live/useMeteredIntegration';
-import { useMeteredParticipant } from '@/hooks/participant/useMeteredParticipant';
+import { Card, CardContent } from '@/components/ui/card';
+import { toast } from 'sonner';
 
 // Importar handshake do participante para registrar listeners
 import '@/webrtc/handshake/ParticipantHandshake';
