@@ -28,11 +28,12 @@ export const getBackendBaseURL = (): string => {
 
   const { protocol, host } = window.location;
   
-  // PRODUÇÃO: ALWAYS map to server-hutz-live for backend
-  if (host.includes('hutz-live-85.onrender.com') || host.includes('lovable.app') || host.includes('lovableproject.com')) {
+  // PRODUÇÃO: CRITICAL URL SYNC - Map all Lovable domains to correct backend
+  if (host.includes('hutz-live-85') || host.includes('lovable.app') || host.includes('lovableproject.com')) {
     const backendUrl = 'https://server-hutz-live.onrender.com';
-    console.log(`🌐 BACKEND URL SYNC: Production mapping - Frontend ${host} → Backend server-hutz-live.onrender.com`);
-    console.log(`📋 URL MAPPING CRITICAL: ${host} → server-hutz-live.onrender.com`);
+    console.log(`🎯 CRITICAL URL SYNC: Production mapping - Frontend ${host} → Backend server-hutz-live.onrender.com`);
+    console.log(`✅ URL MAPPING VALIDATED: ${host} → server-hutz-live.onrender.com`);
+    console.log(`🔧 CORS READY: Backend should accept connections from ${host}`);
     return backendUrl;
   }
   

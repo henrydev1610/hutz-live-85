@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { getEnvironmentInfo, validateURLConsistency, detectSlowNetwork } from '@/utils/connectionUtils';
 import { diagnoseConnection, testBroadcastReception } from '@/utils/connectionDiagnostics';
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
+import { validateCORSConnection, quickCORSCheck } from '@/utils/corsValidator';
 
 interface TestResult {
   name: string;
@@ -27,6 +28,7 @@ export const ConnectivityTestPanel: React.FC<ConnectivityTestPanelProps> = ({
   const [tests, setTests] = useState<TestResult[]>([
     { name: 'Environment Info', status: 'idle', message: 'Não executado' },
     { name: 'URL Consistency', status: 'idle', message: 'Não executado' },
+    { name: 'CORS Validation', status: 'idle', message: 'Não executado' },
     { name: 'Network Detection', status: 'idle', message: 'Não executado' },
     { name: 'WebSocket Connection', status: 'idle', message: 'Não executado' },
     { name: 'Broadcast Channel', status: 'idle', message: 'Não executado' },
@@ -76,6 +78,34 @@ export const ConnectivityTestPanel: React.FC<ConnectivityTestPanelProps> = ({
       updateTest(index, {
         status: 'error',
         message: `Erro: ${error}`
+      });
+    }
+  };
+
+  const runCORSTest = async (index: number) => {
+    updateTest(index, { status: 'running', message: 'Validando configuração CORS...' });
+    
+    try {
+      const envInfo = getEnvironmentInfo();
+      const corsResult = await validateCORSConnection(envInfo.apiBaseUrl);
+      
+      updateTest(index, {
+        status: corsResult.isValid ? 'success' : 'error',
+        message: corsResult.isValid 
+          ? `✅ CORS OK: ${corsResult.currentOrigin} → Backend`
+          : `❌ CORS ERROR: ${corsResult.errors.join(', ')}`,
+        details: {
+          origin: corsResult.currentOrigin,
+          backend: corsResult.backendUrl,
+          errors: corsResult.errors,
+          suggestions: corsResult.suggestions
+        }
+      });
+    } catch (error) {
+      updateTest(index, {
+        status: 'error',
+        message: `Erro CORS: ${error}`,
+        details: error
       });
     }
   };
@@ -208,6 +238,7 @@ export const ConnectivityTestPanel: React.FC<ConnectivityTestPanelProps> = ({
     const testFunctions = [
       runEnvironmentTest,
       runURLConsistencyTest,
+      runCORSTest,
       runNetworkTest,
       runWebSocketTest,
       runBroadcastTest,
