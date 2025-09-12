@@ -19,6 +19,7 @@ import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
+import ConnectivityTestPanel from '@/components/debug/ConnectivityTestPanel';
 // Temporariamente removido para resolver erro 404
 // import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
 // import { ServerConnectivityTest } from '@/utils/debug/ServerConnectivityTest';
@@ -473,6 +474,14 @@ const LivePage: React.FC = () => {
       
       {/* FASE 5: Painel de Debug Lovable */}
       <LovableDebugPanel sessionId={state.sessionId} />
+      
+      {/* Connectivity Test Panel */}
+      <div className="mt-6">
+        <ConnectivityTestPanel 
+          sessionId={state.sessionId} 
+          participantId="host"
+        />
+      </div>
     </div>
   );
 };

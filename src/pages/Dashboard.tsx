@@ -1,9 +1,14 @@
 
+import React from 'react';
 import { Bell, BrainCircuit, Video } from 'lucide-react';
+import { Button } from "@/components/ui/button";
 import WelcomeSection from '@/components/dashboard/WelcomeSection';
 import ModuleCard from '@/components/common/ModuleCard';
+import ConnectivityTestPanel from '@/components/debug/ConnectivityTestPanel';
 
 const Dashboard = () => {
+  const [showDebugPanel, setShowDebugPanel] = React.useState(false);
+
   return (
     <div className="container mx-auto px-6 py-12 max-w-7xl">
       <WelcomeSection />
@@ -30,6 +35,24 @@ const Dashboard = () => {
           path="/quiz" 
         />
       </div>
+
+      {/* Debug Panel Toggle */}
+      <div className="mt-12 text-center">
+        <Button 
+          variant="outline" 
+          size="sm"
+          onClick={() => setShowDebugPanel(!showDebugPanel)}
+        >
+          {showDebugPanel ? 'Ocultar' : 'Mostrar'} Painel de Debug de Conectividade
+        </Button>
+      </div>
+
+      {/* Connectivity Test Panel */}
+      {showDebugPanel && (
+        <div className="mt-8">
+          <ConnectivityTestPanel />
+        </div>
+      )}
     </div>
   );
 };

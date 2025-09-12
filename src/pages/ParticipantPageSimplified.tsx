@@ -12,6 +12,7 @@ import ParticipantConnectionStatus from '@/components/participant/ParticipantCon
 import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
+import ConnectivityTestPanel from '@/components/debug/ConnectivityTestPanel';
 
 const ParticipantPageSimplified = () => {
   console.log('🎯 FASE 3: Starting simplified participant page');
@@ -30,6 +31,7 @@ const ParticipantPageSimplified = () => {
 
   // Debug panel state
   const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [showConnectivityTest, setShowConnectivityTest] = useState(false);
 
   // Enhanced media management  
   const media = useParticipantMedia(participantId);
@@ -226,13 +228,21 @@ const ParticipantPageSimplified = () => {
         <Card className="bg-black/20 border-white/10">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
-              <span className="text-white text-sm">Debug Panel</span>
-              <button
-                onClick={() => setShowDebugPanel(!showDebugPanel)}
-                className="px-3 py-1 bg-white/20 text-white text-xs rounded hover:bg-white/30 transition-colors"
-              >
-                {showDebugPanel ? 'Ocultar' : 'Mostrar'}
-              </button>
+              <span className="text-white text-sm">Debug Panels</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowDebugPanel(!showDebugPanel)}
+                  className="px-3 py-1 bg-white/20 text-white text-xs rounded hover:bg-white/30 transition-colors"
+                >
+                  {showDebugPanel ? 'Ocultar' : 'Mostrar'} Debug
+                </button>
+                <button
+                  onClick={() => setShowConnectivityTest(!showConnectivityTest)}
+                  className="px-3 py-1 bg-white/20 text-white text-xs rounded hover:bg-white/30 transition-colors"
+                >
+                  {showConnectivityTest ? 'Ocultar' : 'Mostrar'} Conectividade
+                </button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -269,6 +279,16 @@ const ParticipantPageSimplified = () => {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Connectivity Test Panel */}
+        {showConnectivityTest && (
+          <div className="mt-6">
+            <ConnectivityTestPanel 
+              sessionId={sessionId || undefined} 
+              participantId={participantId}
+            />
+          </div>
         )}
       </div>
     </div>
