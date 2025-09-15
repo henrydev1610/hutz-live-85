@@ -11,7 +11,7 @@ export interface CORSValidationResult {
 }
 
 /**
- * Validate CORS configuration between frontend and backend
+ * Validate CORS configuration between frontend and backend with retry logic
  */
 export const validateCORSConnection = async (backendUrl: string): Promise<CORSValidationResult> => {
   const currentOrigin = window.location.origin;
@@ -20,19 +20,47 @@ export const validateCORSConnection = async (backendUrl: string): Promise<CORSVa
   
   console.log(`🔍 CORS VALIDATION: Testing connection from ${currentOrigin} to ${backendUrl}`);
   
-  try {
-    // Test basic connectivity
-    const response = await fetch(`${backendUrl}/api/test`, {
-      method: 'GET',
-      mode: 'cors',
-      credentials: 'omit'
-    });
-    
-    if (!response.ok) {
-      errors.push(`Backend not responding: ${response.status} ${response.statusText}`);
-      suggestions.push('Verify backend is running and accessible');
+  // Try multiple endpoints to wake up sleeping server
+  const endpoints = ['/health', '/status', '/api/test'];
+  let lastError: Error | null = null;
+  let response: Response | null = null;
+  
+  for (const endpoint of endpoints) {
+    try {
+      console.log(`🔄 Trying endpoint: ${backendUrl}${endpoint}`);
+      
+      response = await fetch(`${backendUrl}${endpoint}`, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      
+      if (response.ok) {
+        console.log(`✅ Backend awake via ${endpoint}`);
+        break;
+      } else {
+        console.log(`⚠️ ${endpoint} returned ${response.status}`);
+      }
+    } catch (error) {
+      console.log(`❌ ${endpoint} failed:`, error);
+      lastError = error as Error;
+      response = null;
     }
+  }
+  
+  if (!response || !response.ok) {
+    errors.push(`Backend not responding: ${response?.status || 'Connection failed'} ${response?.statusText || ''}`);
+    suggestions.push('Backend may be sleeping - retry in a few seconds');
+    suggestions.push('Verify backend URL is correct');
     
+    if (lastError) {
+      errors.push(`Last error: ${lastError.message}`);
+    }
+  } else {
     // Check CORS headers
     const corsHeaders = {
       'Access-Control-Allow-Origin': response.headers.get('Access-Control-Allow-Origin'),
@@ -43,21 +71,13 @@ export const validateCORSConnection = async (backendUrl: string): Promise<CORSVa
     console.log(`📋 CORS HEADERS:`, corsHeaders);
     
     const allowOrigin = corsHeaders['Access-Control-Allow-Origin'];
-    if (allowOrigin !== '*' && allowOrigin !== currentOrigin) {
+    if (allowOrigin === null) {
+      errors.push(`CORS header missing: Backend did not send Access-Control-Allow-Origin header`);
+      suggestions.push(`Add "${currentOrigin}" to ALLOWED_ORIGINS in server/.env`);
+      suggestions.push('Check server CORS configuration');
+    } else if (allowOrigin !== '*' && allowOrigin !== currentOrigin) {
       errors.push(`CORS origin mismatch: Backend allows "${allowOrigin}", current origin is "${currentOrigin}"`);
       suggestions.push(`Add "${currentOrigin}" to ALLOWED_ORIGINS in server/.env`);
-    }
-    
-  } catch (error) {
-    console.error('🚨 CORS VALIDATION ERROR:', error);
-    errors.push(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    
-    if (error instanceof Error && error.message.includes('CORS')) {
-      suggestions.push('CORS configuration error - check server ALLOWED_ORIGINS');
-    }
-    
-    if (error instanceof Error && error.message.includes('NetworkError')) {
-      suggestions.push('Network error - check if backend URL is correct');
     }
   }
   
