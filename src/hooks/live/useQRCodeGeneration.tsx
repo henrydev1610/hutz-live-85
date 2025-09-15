@@ -19,16 +19,17 @@ const getProductionURL = (): string => {
   console.log(`📍 Current Host: ${currentHost}`);
   console.log(`🔐 Current Protocol: ${currentProtocol}`);
   
+  // CORREÇÃO CRÍTICA: Para Lovable domains, usar o domínio atual em vez de forçar render
+  if (currentHost.includes('lovableproject.com') || currentHost.includes('lovable.app')) {
+    const currentUrl = `${currentProtocol}//${currentHost}`;
+    console.log(`💻 QR URL: Lovable domain detected, using CURRENT URL: ${currentUrl}`);
+    return currentUrl;
+  }
+  
   // Para desenvolvimento local, usar produção
   if (currentHost.includes('localhost') || 
       currentHost.includes('127.0.0.1')) {
     console.log('🏠 QR URL: Development detected, using production URL');
-    return RENDER_PRODUCTION_URL;
-  }
-  
-  // Para Lovable preview, usar produção
-  if (currentHost.includes('lovableproject.com')) {
-    console.log('💻 QR URL: Lovable preview detected, using production URL');
     return RENDER_PRODUCTION_URL;
   }
   
