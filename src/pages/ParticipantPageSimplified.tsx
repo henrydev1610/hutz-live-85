@@ -4,6 +4,7 @@ import { useSimplifiedParticipantConnection } from '@/hooks/participant/useSimpl
 import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
 import { useMobileOnlyGuard } from '@/hooks/useMobileOnlyGuard';
 import { Card, CardContent } from '@/components/ui/card';
+import { extractSessionId, getSessionIdErrorMessage, getSessionIdDebugInfo } from '@/utils/sessionIdParser';
 
 // Components
 import ParticipantHeader from '@/components/participant/ParticipantHeader';
@@ -15,10 +16,16 @@ import ParticipantInstructions from '@/components/participant/ParticipantInstruc
 import ConnectivityTestPanel from '@/components/debug/ConnectivityTestPanel';
 
 const ParticipantPageSimplified = () => {
-  console.log('🎯 FASE 3: Starting simplified participant page');
+  console.log('🎯 PARTICIPANT PAGE: Starting simplified participant page');
   
-  const { sessionId } = useParams<{ sessionId: string }>();
+  const { sessionId: rawSessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  
+  // Validar e extrair sessionId limpo
+  const sessionValidation = extractSessionId(rawSessionId);
+  const sessionId = sessionValidation.sessionId;
+  
+  console.log('🔍 SESSION VALIDATION:', getSessionIdDebugInfo(sessionValidation));
   
   // Mobile guard check
   const { isMobile, isBlocked } = useMobileOnlyGuard();
@@ -147,7 +154,10 @@ const ParticipantPageSimplified = () => {
     );
   }
 
-  if (!sessionId) {
+  if (!sessionValidation.isValid) {
+    const errorMessage = getSessionIdErrorMessage(sessionValidation);
+    const debugInfo = getSessionIdDebugInfo(sessionValidation);
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center">
         <Card className="w-full max-w-md mx-4 bg-red-500/20 border-red-500/50">
@@ -155,15 +165,35 @@ const ParticipantPageSimplified = () => {
             <h1 className="text-xl font-bold text-white mb-4">
               ID da Sessão Inválido
             </h1>
-            <p className="text-white/70 mb-6">
-              Não foi possível encontrar uma sessão válida.
+            <p className="text-white/70 mb-4">
+              {errorMessage}
             </p>
-            <button 
-              onClick={() => navigate('/')}
-              className="px-6 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors"
-            >
-              Voltar ao Início
-            </button>
+            
+            {/* Debug info expandível */}
+            <details className="mb-6 text-left">
+              <summary className="text-white/50 text-sm cursor-pointer hover:text-white/70">
+                Informações Técnicas
+              </summary>
+              <pre className="text-white/50 text-xs mt-2 bg-black/20 p-2 rounded overflow-auto">
+                {debugInfo}
+              </pre>
+            </details>
+            
+            <div className="space-y-3">
+              <button 
+                onClick={() => navigate('/')}
+                className="w-full px-6 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors"
+              >
+                Voltar ao Início
+              </button>
+              
+              <button 
+                onClick={() => window.location.reload()}
+                className="w-full px-6 py-2 bg-red-500/20 text-white rounded-lg hover:bg-red-500/30 transition-colors text-sm"
+              >
+                Tentar Novamente
+              </button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -174,7 +204,7 @@ const ParticipantPageSimplified = () => {
     <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 p-4">
       <div className="max-w-md mx-auto space-y-6">
         <ParticipantHeader 
-          sessionId={sessionId || ''} 
+          sessionId={sessionId} 
           connectionStatus={connection.connectionStatus}
           signalingStatus={connection.signalingStatus}
           onBack={() => navigate('/')}
@@ -254,7 +284,13 @@ const ParticipantPageSimplified = () => {
               <h3 className="text-green-400 font-semibold mb-3">Debug Information</h3>
               <div className="space-y-2 text-sm font-mono">
                 <p className="text-green-200">
-                  🎯 SessionId: {sessionId?.substring(0, 20)}...
+                  🎯 SessionId: {sessionId.substring(0, 20)}...
+                </p>
+                <p className="text-green-200">
+                  📝 Raw SessionId: {rawSessionId?.substring(0, 20)}...
+                </p>
+                <p className="text-green-200">
+                  ✅ Valid: {sessionValidation.isValid ? 'YES' : 'NO'}
                 </p>
                 <p className="text-green-200">
                   👤 ParticipantId: {participantId.substring(0, 20)}...
@@ -285,7 +321,7 @@ const ParticipantPageSimplified = () => {
         {showConnectivityTest && (
           <div className="mt-6">
             <ConnectivityTestPanel 
-              sessionId={sessionId || undefined} 
+              sessionId={sessionId} 
               participantId={participantId}
             />
           </div>

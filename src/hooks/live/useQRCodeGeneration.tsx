@@ -13,20 +13,29 @@ const FORCED_MOBILE_PARAMS = '?forceMobile=true&camera=environment&qr=1&mobile=t
 
 const getProductionURL = (): string => {
   const currentHost = window.location.host;
+  const currentProtocol = window.location.protocol;
   
-  // CRÍTICO: Sempre usar Render em produção, mesmo no Lovable
-  if (currentHost.includes('lovableproject.com') || 
-      currentHost.includes('localhost') || 
+  console.log('🌐 QR URL DETECTION: Starting URL resolution');
+  console.log(`📍 Current Host: ${currentHost}`);
+  console.log(`🔐 Current Protocol: ${currentProtocol}`);
+  
+  // Para desenvolvimento local, usar produção
+  if (currentHost.includes('localhost') || 
       currentHost.includes('127.0.0.1')) {
-    console.log('🌐 QR URL OVERRIDE: Development detected, forcing production URL with MOBILE params');
-    console.log(`📍 Override: ${currentHost} → ${RENDER_PRODUCTION_URL}`);
+    console.log('🏠 QR URL: Development detected, using production URL');
     return RENDER_PRODUCTION_URL;
   }
   
-  // Se já está no Render, usar a URL atual
-  if (currentHost.includes('hutz-live-85.onrender.com')) {
+  // Para Lovable preview, usar produção
+  if (currentHost.includes('lovableproject.com')) {
+    console.log('💻 QR URL: Lovable preview detected, using production URL');
+    return RENDER_PRODUCTION_URL;
+  }
+  
+  // Para qualquer domínio .onrender.com, usar o domínio atual
+  if (currentHost.includes('.onrender.com')) {
     const productionUrl = `https://${currentHost}`;
-    console.log(`✅ QR URL: Using current Render URL: ${productionUrl}`);
+    console.log(`✅ QR URL: Using current Render domain: ${productionUrl}`);
     return productionUrl;
   }
   
