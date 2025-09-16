@@ -97,29 +97,15 @@ export class SignalingHandler {
     const participantId = data.fromUserId || data.fromSocketId;
     const peerConnection = this.peerConnections.get(participantId);
     
-    if (!peerConnection) {
+    if (peerConnection) {
+      try {
+        await peerConnection.addIceCandidate(data.candidate);
+        if (DEBUG) console.log(`✅ [SIG] ICE added: ${participantId}`);
+      } catch (error) {
+        console.error(`❌ [SIG] Failed to add ICE: ${error}`);
+      }
+    } else {
       console.warn(`⚠️ [SIG] No peer connection for ICE: ${participantId}`);
-      return;
-    }
-
-    // CRÍTICO: Check if remote description is set before adding candidate
-    if (!peerConnection.remoteDescription) {
-      console.warn(`⚠️ [SIG] Remote description not set, cannot add ICE candidate from: ${participantId}`);
-      return;
-    }
-
-    try {
-      console.log(`🧊 [SIG] Adding ICE candidate from: ${participantId}`, {
-        connectionState: peerConnection.connectionState,
-        iceConnectionState: peerConnection.iceConnectionState,
-        candidate: data.candidate.candidate
-      });
-      
-      await peerConnection.addIceCandidate(data.candidate);
-      console.log(`✅ [SIG] ICE candidate added successfully for: ${participantId}`);
-      if (DEBUG) console.log(`✅ [SIG] ICE added: ${participantId}`);
-    } catch (error) {
-      console.error(`❌ [SIG] Failed to add ICE candidate for: ${participantId}`, error);
     }
   }
 

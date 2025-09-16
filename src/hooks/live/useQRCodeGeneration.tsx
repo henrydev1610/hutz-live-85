@@ -13,30 +13,20 @@ const FORCED_MOBILE_PARAMS = '?forceMobile=true&camera=environment&qr=1&mobile=t
 
 const getProductionURL = (): string => {
   const currentHost = window.location.host;
-  const currentProtocol = window.location.protocol;
   
-  console.log('🌐 QR URL DETECTION: Starting URL resolution');
-  console.log(`📍 Current Host: ${currentHost}`);
-  console.log(`🔐 Current Protocol: ${currentProtocol}`);
-  
-  // CORREÇÃO CRÍTICA: Para Lovable domains, usar o domínio atual em vez de forçar render
-  if (currentHost.includes('lovableproject.com') || currentHost.includes('lovable.app')) {
-    const currentUrl = `${currentProtocol}//${currentHost}`;
-    console.log(`💻 QR URL: Lovable domain detected, using CURRENT URL: ${currentUrl}`);
-    return currentUrl;
-  }
-  
-  // Para desenvolvimento local, usar produção
-  if (currentHost.includes('localhost') || 
+  // CRÍTICO: Sempre usar Render em produção, mesmo no Lovable
+  if (currentHost.includes('lovableproject.com') || 
+      currentHost.includes('localhost') || 
       currentHost.includes('127.0.0.1')) {
-    console.log('🏠 QR URL: Development detected, using production URL');
+    console.log('🌐 QR URL OVERRIDE: Development detected, forcing production URL with MOBILE params');
+    console.log(`📍 Override: ${currentHost} → ${RENDER_PRODUCTION_URL}`);
     return RENDER_PRODUCTION_URL;
   }
   
-  // Para qualquer domínio .onrender.com, usar o domínio atual
-  if (currentHost.includes('.onrender.com')) {
+  // Se já está no Render, usar a URL atual
+  if (currentHost.includes('hutz-live-85.onrender.com')) {
     const productionUrl = `https://${currentHost}`;
-    console.log(`✅ QR URL: Using current Render domain: ${productionUrl}`);
+    console.log(`✅ QR URL: Using current Render URL: ${productionUrl}`);
     return productionUrl;
   }
   
@@ -92,27 +82,12 @@ export const useQRCodeGeneration = () => {
     console.log("📍 Frontend URL:", productionUrl);
     console.log("📱 MOBILE PARAMS:", FORCED_MOBILE_PARAMS);
     
-    // Verificar se Metered está ativo
-    const useMetered = import.meta.env.VITE_USE_METERED_ROOMS === "true";
-    
     try {
       // 🚀 CORREÇÃO CRÍTICA: Reutilizar sessionId existente em vez de gerar novo
       const currentSessionId = state.sessionId || generateSessionId();
+      const finalUrl = `${productionUrl}/participant/${currentSessionId}${FORCED_MOBILE_PARAMS}`;
       
-      let finalUrl: string;
-      
-      if (useMetered) {
-        // Para Metered, usar rota específica com room name
-        const roomName = `${import.meta.env.VITE_ROOM_NAME_PREFIX || 'hutz-room-'}${currentSessionId}`;
-        finalUrl = `${productionUrl}/participant/metered/${roomName}${FORCED_MOBILE_PARAMS}&useMetered=true`;
-        console.log(`🎯 METERED QR URL GERADA: ${finalUrl}`);
-        console.log(`🏢 METERED ROOM NAME: ${roomName}`);
-      } else {
-        // Fluxo tradicional
-        finalUrl = `${productionUrl}/participant/${currentSessionId}${FORCED_MOBILE_PARAMS}`;
-        console.log(`🎯 TRADITIONAL QR URL GERADA: ${finalUrl}`);
-      }
-      
+      console.log(`🎯 QR URL GERADA: ${finalUrl}`);
       console.log(`🔑 SESSION ID: ${currentSessionId} (${state.sessionId ? 'existing' : 'new'})`);
       
       // Gerar QR Code usando a biblioteca qrcode

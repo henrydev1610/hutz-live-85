@@ -29,124 +29,48 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
 }) => {
   const showDiagnostics = !hasVideo && !hasAudio;
   
-  // FASE 1: CORRIGIR PREVIEW - Garantir elemento <video> correto com stream
+  // GARANTIR PREVIEW ESTÁVEL COM PLAYBACK FORÇADO
   useEffect(() => {
-    const setupCorrectVideoElement = async () => {
-      if (!localVideoRef.current || !localStream) {
-        console.log('🔍 [PREVIEW] Missing video ref or stream, skipping setup');
-        return;
-      }
-
-      const video = localVideoRef.current;
-      
-      // CRITICAL: Verificar se stream está realmente ativo
-      const videoTracks = localStream.getVideoTracks();
-      const activeVideoTracks = videoTracks.filter(track => 
-        track.readyState === 'live' && track.enabled && !track.muted
-      );
-
-      if (activeVideoTracks.length === 0) {
-        console.warn('⚠️ [PREVIEW] No active video tracks, cannot setup preview');
-        return;
-      }
-
-      console.log('🎬 [PREVIEW] Setting up video element with active stream', {
-        streamId: localStream.id,
-        activeVideoTracks: activeVideoTracks.length,
-        totalTracks: videoTracks.length
-      });
-
-      // FASE 1: Configurar atributos OBRIGATÓRIOS antes de srcObject
-      video.playsInline = true;
-      video.autoplay = true;
-      video.muted = true;
-      video.controls = false;
-      video.setAttribute('data-unified-video', 'true');
-      video.setAttribute('data-participant-id', 'local-preview');
-
-      // CRITICAL: Limpar srcObject anterior se existir
-      if (video.srcObject && video.srcObject !== localStream) {
-        console.log('🧹 [PREVIEW] Clearing old srcObject before setting new stream');
-        video.srcObject = null;
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-
-      // FASE 1: Anexar stream IMEDIATAMENTE
-      video.srcObject = localStream;
-
-      // FASE 1: Forçar registro no VideoPlaybackEnforcer
-      try {
-        const { videoPlaybackEnforcer } = await import('@/utils/webrtc/VideoPlaybackEnforcer');
-        videoPlaybackEnforcer.registerVideo(video);
-        console.log('✅ [PREVIEW] Video manually registered with VideoPlaybackEnforcer');
-      } catch (error) {
-        console.warn('⚠️ [PREVIEW] Failed to register with VideoPlaybackEnforcer:', error);
-      }
-
-      // FASE 1: Retry robusto com logs detalhados
-      const attemptPlay = async (retryCount = 0): Promise<boolean> => {
-        try {
-          console.log(`🎬 [PREVIEW] Play attempt ${retryCount + 1}...`);
-          await video.play();
-          
-          // Verificar se realmente está reproduzindo
-          const isActuallyPlaying = !video.paused && !video.ended && video.readyState > 2;
-          
-          if (isActuallyPlaying) {
-            console.log('✅ [PREVIEW] Video playing successfully', { 
-              streamId: localStream.id,
-              paused: video.paused,
-              ended: video.ended,
-              readyState: video.readyState,
-              attempt: retryCount + 1
-            });
-
-            // FASE 2: Notificar que preview está ativo via evento global
-            window.dispatchEvent(new CustomEvent('participant-preview-active', {
-              detail: {
-                participantId: 'local-preview',
-                streamId: localStream.id,
-                videoElement: video,
-                playing: true
-              }
-            }));
-
-            return true;
-          } else {
-            throw new Error(`Video not actually playing: paused=${video.paused}, ended=${video.ended}, readyState=${video.readyState}`);
-          }
-        } catch (playError) {
-          console.warn(`⚠️ [PREVIEW] Play attempt ${retryCount + 1} failed:`, playError);
-          
-          if (retryCount < 4) {
-            const delay = Math.pow(2, retryCount) * 100; // 100ms, 200ms, 400ms, 800ms
-            console.log(`🔄 [PREVIEW] Retrying in ${delay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            return attemptPlay(retryCount + 1);
-          } else {
-            console.error('❌ [PREVIEW] All play attempts failed after 5 tries');
-            return false;
-          }
-        }
-      };
-
-      const playSuccess = await attemptPlay();
-      
-      if (!playSuccess) {
-        console.error('💀 [PREVIEW] Failed to start video preview - WebRTC may not work');
+    const setupStablePreview = async () => {
+      if (localVideoRef.current && localStream) {
+        const video = localVideoRef.current;
         
-        // FASE 4: Notificar falha para sistema de recuperação
-        window.dispatchEvent(new CustomEvent('participant-preview-failed', {
-          detail: {
-            participantId: 'local-preview',
-            streamId: localStream.id,
-            error: 'Failed to play video after retries'
-          }
-        }));
+        // Configurar atributos críticos para mobile
+        video.playsInline = true;
+        video.autoplay = true;
+        video.muted = true;
+        video.controls = false;
+        
+        // Anexar stream
+        video.srcObject = localStream;
+        
+        try {
+          // Forçar reprodução para evitar throttling
+          await video.play();
+          console.log('✅ [PREVIEW] Video playing successfully');
+        } catch (playError) {
+          console.warn('⚠️ [PREVIEW] Initial play failed, retrying...', playError);
+          
+          // Retry após breve delay
+          setTimeout(async () => {
+            try {
+              await video.play();
+              console.log('✅ [PREVIEW] Video playing on retry');
+            } catch (retryError) {
+              console.error('❌ [PREVIEW] Play retry failed:', retryError);
+            }
+          }, 500);
+        }
+        
+        console.log('🎬 [PREVIEW] Video attached and configured:', {
+          stream: localStream.id,
+          tracks: localStream.getTracks().length,
+          playing: !video.paused
+        });
       }
     };
 
-    setupCorrectVideoElement();
+    setupStablePreview();
   }, [localStream, localVideoRef]);
   
   return (

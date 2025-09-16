@@ -46,18 +46,18 @@ class UnifiedWebSocketService {
     networkQuality: 'unknown'
   };
   
-  // FASE 2: Configuração mais robusta para MOBILE
-  private maxReconnectAttempts = 8; // Aumentado para permitir reconnexões mobile
-  private reconnectDelay = 2000; // Reduzido para resposta mais rápida
-  private maxReconnectDelay = 15000; // Mantém máximo razoável
+  // CORREÇÃO: Configuração menos agressiva para evitar loops
+  private maxReconnectAttempts = 3; // Reduzido de 15 para 3
+  private reconnectDelay = 5000; // Aumentado para 5s
+  private maxReconnectDelay = 30000; // Reduzido para 30s
   private backoffMultiplier = 2;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
-  // FASE 2: Circuit breaker mais tolerante para MOBILE
-  private circuitBreakerThreshold = 5; // Mais permissivo
-  private circuitBreakerTimeout = 10000; // Recovery mais rápido
+  // CORREÇÃO 3: Circuit breaker TEMPORARIAMENTE desabilitado para reconexão
+  private circuitBreakerThreshold = 20; // Aumentado para 20 tentativas (quase desabilitado)
+  private circuitBreakerTimeout = 10000; // Reduzido para 10s (recovery rápido)
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
   private isConnectingFlag = false; // Flag para prevenir conexões simultâneas
@@ -200,7 +200,6 @@ class UnifiedWebSocketService {
     }
   }
 
-  // CORREÇÃO FASE 6: Melhorar WebSocket Service - tornar mais resiliente
   private async _doConnect(url: string): Promise<void> {
     // DIAGNÓSTICO CRÍTICO: Log detalhado da URL
     console.log(`🔗 [WS] CONNECTION ATTEMPT: ${url}`);
@@ -228,8 +227,8 @@ class UnifiedWebSocketService {
     });
 
     return new Promise((resolve, reject) => {
-      // CORREÇÃO: Timeout mais generoso para mobile
-      const connectionTimeout = this.metrics.networkQuality === 'slow' ? 30000 : 20000;
+      // SIMPLIFICAÇÃO: Timeout fixo mais generoso
+      const connectionTimeout = 20000; // 20s fixo para simplicidade
       
       console.log(`⏱️ [WS] CONNECTION TIMEOUT: ${connectionTimeout}ms`);
 
@@ -239,19 +238,16 @@ class UnifiedWebSocketService {
         reject(new Error(`Connection timeout after ${connectionTimeout}ms`));
       }, connectionTimeout);
 
-      // FASE 1: Configuração Socket.IO mais robusta para mobile
+      // FASE 1: Configuração Socket.IO robusta e menos agressiva
       console.log(`🚀 [WS] Creating socket.io connection...`);
-      console.log(`🔧 [WS] Circuit breaker: open=${this.isCircuitOpen}, failures=${this.metrics.consecutiveFailures}`);
-      
       this.socket = io(url, {
-        transports: ['websocket', 'polling'],
-        timeout: connectionTimeout + 5000,
-        reconnection: false,
+        transports: ['websocket', 'polling'], // WebSocket primeiro, polling como fallback
+        timeout: 25000, // Aumentado para 25s
+        reconnection: false, // Controlamos manualmente
         forceNew: true,
         autoConnect: true,
-        upgrade: true,
-        rememberUpgrade: true,
-        withCredentials: false
+        upgrade: true, // Permite upgrade para WebSocket
+        rememberUpgrade: true // Lembra preferência WebSocket
       });
 
       this.socket.on('connect', () => {
@@ -261,7 +257,6 @@ class UnifiedWebSocketService {
         console.log(`🔗 [WS] Connected to: ${url}`);
         console.log(`📊 [WS] Connection attempt ${this.metrics.attemptCount} succeeded`);
         this.setupEventListeners();
-        this.resetCircuitBreaker(); // Reset circuit breaker on success
         resolve();
       });
 
@@ -275,35 +270,24 @@ class UnifiedWebSocketService {
           context: error.context || 'No context',
           type: error.type || 'Unknown type'
         });
-        
-        // CORREÇÃO: Incrementar falhas consecutivas
-        this.metrics.consecutiveFailures++;
-        
-        // CORREÇÃO: Abrir circuit breaker se muitas falhas
-        if (this.metrics.consecutiveFailures >= this.circuitBreakerThreshold) {
-          this.openCircuitBreaker();
-        }
-        
         reject(error);
       });
 
-      this.socket.on('disconnect', (reason) => {
-        if (this.currentUserId?.includes('host')) {
-          console.log(`HOST-SOCKET-DISCONNECTED {reason=${reason}}`);
-        } else {
-          console.log(`PARTICIPANT-SOCKET-DISCONNECTED {reason=${reason}, participantId=${this.currentUserId}}`);
-        }
-        console.log('🔄 CONNECTION: Disconnected:', reason);
-        this.metrics.status = 'disconnected';
-        this.stopHeartbeat();
-        this.callbacks.onDisconnected?.();
+    this.socket.on('disconnect', (reason) => {
+      if (this.currentUserId?.includes('host')) {
+        console.log(`HOST-SOCKET-DISCONNECTED {reason=${reason}}`);
+      } else {
+        console.log(`PARTICIPANT-SOCKET-DISCONNECTED {reason=${reason}}`);
+      }
+      console.log('🔄 CONNECTION: Disconnected:', reason);
+      this.metrics.status = 'disconnected';
+      this.stopHeartbeat();
+      this.callbacks.onDisconnected?.();
 
-        // FASE 2: Reconexão inteligente - preservar participantId
-        if (this.shouldReconnect && reason !== 'io client disconnect' && !this.isCircuitOpen) {
-          console.log(`🔄 FASE 2: Initiating intelligent reconnection preserving ${this.currentUserId}`);
-          this.scheduleReconnect();
-        }
-      });
+      if (this.shouldReconnect && reason !== 'io client disconnect') {
+        this.scheduleReconnect();
+      }
+    });
 
       this.socket.on('error', (error) => {
         console.error('❌ CONNECTION: Socket error:', error);
@@ -788,7 +772,7 @@ this.socket.on('ice-servers', (data) => {
     
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null
+      this.reconnectTimer = null;
     }
     
     if (this.circuitBreakerTimer) {

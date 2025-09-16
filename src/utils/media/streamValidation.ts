@@ -2,9 +2,6 @@
 // Stream validation and verification
 import { streamLogger } from '../debug/StreamLogger';
 
-// FASE 2: Enhanced stream validation with muted track support
-import { EnhancedStreamValidation } from './EnhancedStreamValidation';
-
 export const validateStream = (stream: MediaStream | null, participantId: string = 'unknown'): MediaStream => {
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   const deviceType = isMobile ? 'mobile' : 'desktop';
@@ -36,24 +33,6 @@ export const validateStream = (stream: MediaStream | null, participantId: string
   });
   
   return stream;
-};
-
-// FASE 2: Enhanced WebRTC-specific validation
-export const validateStreamForWebRTC = (stream: MediaStream | null, participantId: string = 'unknown'): boolean => {
-  console.log(`🔍 FASE 2: Enhanced WebRTC validation for ${participantId}`);
-  
-  const validationResult = EnhancedStreamValidation.validateStreamForWebRTC(stream, participantId);
-  
-  // Accept stream if it can proceed to WebRTC (includes muted but valid tracks)
-  const canProceed = EnhancedStreamValidation.canProceedWithWebRTC(validationResult);
-  
-  if (canProceed) {
-    console.log(`✅ FASE 2: Stream validation passed - ready: ${validationResult.summary.ready}, muted but valid: ${validationResult.summary.mutedButValid}`);
-  } else {
-    console.error(`❌ FASE 2: Stream validation failed - invalid tracks: ${validationResult.summary.invalid}`);
-  }
-  
-  return canProceed;
 };
 
 export const logStreamDetails = (stream: MediaStream, attempt: number, deviceType: string, participantId: string = 'unknown'): void => {

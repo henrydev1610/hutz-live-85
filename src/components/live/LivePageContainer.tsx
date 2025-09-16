@@ -17,8 +17,6 @@ interface LivePageContainerProps {
   onGenerateQRCode: () => void;
   onQRCodeToTransmission: () => void;
   closeFinalAction: () => void;
-  meteredStatus?: 'disabled' | 'connecting' | 'connected' | 'error';
-  meteredConfig?: any;
 }
 
 const LivePageContainer: React.FC<LivePageContainerProps> = ({
@@ -32,9 +30,7 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
   onRemoveImage,
   onGenerateQRCode,
   onQRCodeToTransmission,
-  closeFinalAction,
-  meteredStatus = 'disabled',
-  meteredConfig
+  closeFinalAction
 }) => {
   // FASE 5: Enhanced cache management with URL sync validation
   useEffect(() => {
@@ -149,20 +145,6 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
         >
           📱 Status
         </button>
-        
-        {/* Metered Status Indicator */}
-        {meteredConfig?.useMetered && (
-          <div className={`px-2 py-1 rounded text-xs font-medium ${
-            meteredStatus === 'connected' ? 'bg-green-500 text-white' :
-            meteredStatus === 'connecting' ? 'bg-yellow-500 text-white' :
-            meteredStatus === 'error' ? 'bg-red-500 text-white' :
-            'bg-gray-500 text-white'
-          }`} title={`Metered Rooms: ${meteredStatus}`}>
-            🎯 {meteredStatus === 'connected' ? 'Connected' :
-                meteredStatus === 'connecting' ? 'Connecting...' :
-                meteredStatus === 'error' ? 'Error' : 'Disabled'}
-          </div>
-        )}
       </div>
     </div>
   );

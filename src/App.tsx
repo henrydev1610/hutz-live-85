@@ -10,7 +10,7 @@ import LivePage from './pages/LivePage';
 import LightShowPage from './pages/LightShowPage';
 import QuizPage from './pages/QuizPage';
 import NotFound from './pages/NotFound';
-import ParticipantPageSimplified from './pages/ParticipantPageSimplified';
+import ParticipantPage from './pages/ParticipantPage';
 
 function App() {
   return (
@@ -21,8 +21,7 @@ function App() {
         <Route path="/live" element={<LivePage />} />
         <Route path="/lightshow" element={<LightShowPage />} />
         <Route path="/quiz" element={<QuizPage />} />
-        <Route path="/participant/:sessionId" element={<ParticipantPageSimplified />} />
-        <Route path="/participant/metered/:roomName" element={<ParticipantPageSimplified />} />
+        <Route path="/participant/:sessionId" element={<ParticipantPage />} />
         <Route path="/404" element={<NotFound />} />
         <Route path="*" element={<Navigate to="/404" replace />} />
       </Routes>

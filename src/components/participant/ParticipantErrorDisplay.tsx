@@ -6,14 +6,12 @@ interface ParticipantErrorDisplayProps {
   error: string | null;
   isConnecting: boolean;
   onRetryConnect: () => void;
-  onRetryMedia?: () => void;
 }
 
 const ParticipantErrorDisplay: React.FC<ParticipantErrorDisplayProps> = ({
   error,
   isConnecting,
-  onRetryConnect,
-  onRetryMedia
+  onRetryConnect
 }) => {
   if (!error) return null;
 
@@ -21,25 +19,13 @@ const ParticipantErrorDisplay: React.FC<ParticipantErrorDisplayProps> = ({
     <Card className="mb-6 border-red-500/50 bg-red-500/10">
       <CardContent className="p-4">
         <p className="text-red-400">{error}</p>
-        <div className="flex gap-2 mt-2">
-          <Button 
-            onClick={onRetryConnect}
-            disabled={isConnecting}
-            size="sm"
-          >
-            Reconectar
-          </Button>
-          {onRetryMedia && (
-            <Button 
-              onClick={onRetryMedia}
-              disabled={isConnecting}
-              variant="outline"
-              size="sm"
-            >
-              Tentar Câmera
-            </Button>
-          )}
-        </div>
+        <Button 
+          onClick={onRetryConnect}
+          className="mt-2"
+          disabled={isConnecting}
+        >
+          Tentar Reconectar
+        </Button>
       </CardContent>
     </Card>
   );

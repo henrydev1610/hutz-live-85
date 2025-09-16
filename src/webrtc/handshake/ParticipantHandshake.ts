@@ -1,8 +1,6 @@
 // ============= Participant WebRTC Handshake Logic =============
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { streamLogger } from '@/utils/debug/StreamLogger';
-import { preAllocatedTransceivers } from '@/utils/webrtc/PreAllocatedTransceivers';
-import { politePeerManager } from '@/utils/webrtc/PolitePeerManager';
 
 class ParticipantHandshakeManager {
   private peerConnection: RTCPeerConnection | null = null;
@@ -10,87 +8,191 @@ class ParticipantHandshakeManager {
   private pendingCandidates: RTCIceCandidate[] = [];
   private isOfferInProgress: boolean = false;
   private participantId: string | null = null;
-  private isRemoteDescriptionSet: boolean = false;
-  private isProcessingAnswer: boolean = false;
+  private connectionTimeout: NodeJS.Timeout | null = null;
+  private reconnectAttempts: number = 0;
+  private readonly MAX_RECONNECT_ATTEMPTS = 3;
+  private readonly CONNECTION_TIMEOUT_MS = 30000;
+  private hasReconnected: boolean = false;
+  private lastConnectionTime: number = 0;
   private handshakeStartTime: number = 0;
-  private retryAttempts: number = 0;
-  private maxRetries: number = 3;
-  private readonly HANDSHAKE_TIMEOUT = 15000; // 15s timeout
+  
+  constructor() {
+    this.setupParticipantHandlers();
+  }
 
+  // GUARANTEED SINGLE STREAM: Always use shared stream from participant page
   async initializeOnRouteLoad(): Promise<MediaStream | null> {
-    console.log('🚨 CRÍTICO [PARTICIPANT] Route loading - initializing participant handshake');
+    console.log('[PART] Route load initialization - checking for shared stream');
     
-    try {
-      this.handshakeStartTime = performance.now();
-      
-      // Initialize polite peer as polite (participant is polite by default)
-      // Note: politePeerManager is initialized as polite by default in constructor
-      
-      // Get user media for the participant
-      const stream = await this.getUserMediaForOffer();
-      console.log(`✅ [PARTICIPANT] Local stream acquired on route load: ${stream.id}`);
-      
-      this.localStream = stream;
-      return stream;
-    } catch (error) {
-      console.error('❌ [PARTICIPANT] Failed to initialize on route load:', error);
-      return null;
+    // PRIORITY 1: Try to get shared stream from participant page
+    const sharedStream = (window as any).__participantSharedStream;
+    if (sharedStream && sharedStream.getTracks().length > 0) {
+      const activeTracks = sharedStream.getTracks().filter(t => t.readyState === 'live' && t.enabled);
+      if (activeTracks.length > 0) {
+        console.log('[PART] Using validated shared stream from participant page');
+        this.localStream = sharedStream;
+        this.setupStreamHealthMonitoring(sharedStream);
+        return sharedStream;
+      } else {
+        console.warn('[PART] Shared stream found but no active tracks - will not fallback to avoid duplication');
+        return null;
+      }
     }
-  }
-
-  setParticipantId(id: string): void {
-    this.participantId = id;
-    console.log(`✅ [PARTICIPANT] ID set: ${id}`);
-  }
-
-  getLocalStream(): MediaStream | null {
-    return this.localStream;
+    
+    console.log('[PART] No shared stream available - this is unexpected');
+    return null;
   }
 
   async getUserMediaForOffer(): Promise<MediaStream> {
+    console.log('[PART] getUserMediaForOffer: Starting media acquisition for offer');
+    
+    const constraints: MediaStreamConstraints = {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280, max: 1920 },
+        height: { ideal: 720, max: 1080 },
+        frameRate: { ideal: 30, max: 60 }
+      },
+      audio: false
+    };
+
     try {
-      console.log('🚨 CRÍTICO [PARTICIPANT] Requesting getUserMedia...');
-      const startTime = performance.now();
+      let stream = await navigator.mediaDevices.getUserMedia(constraints);
       
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          frameRate: { ideal: 30, max: 30 }
-        },
-        audio: false
-      });
+      if (!stream || stream.getTracks().length === 0) {
+        console.log('[PART] getUserMediaForOffer: Front camera fallback');
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'user' } },
+          audio: false
+        });
+      }
 
-      const duration = performance.now() - startTime;
-      console.log(`✅ [PARTICIPANT] getUserMedia successful (${duration.toFixed(1)}ms):`, {
-        streamId: stream.id,
-        videoTracks: stream.getVideoTracks().length,
-        audioTracks: stream.getAudioTracks().length,
-        videoTrackDetails: stream.getVideoTracks().map(t => ({
-          id: t.id,
-          kind: t.kind,
-          enabled: t.enabled,
-          readyState: t.readyState,
-          muted: t.muted
-        }))
-      });
-
-      return stream;
+      if (stream && stream.getTracks().length > 0) {
+        this.localStream = stream;
+        this.setupStreamHealthMonitoring(stream);
+        return stream;
+      } else {
+        throw new Error('Failed to obtain any media stream');
+      }
     } catch (error) {
-      console.error('❌ [PARTICIPANT] getUserMedia failed:', error);
+      console.error('[PART] getUserMediaForOffer: Failed:', error);
       throw error;
     }
   }
 
-  private setupWebSocketHandlers(): void {
-    // Handle answer from host
-    unifiedWebSocketService.on('webrtc-answer', async (data: any) => {
-      const hostId = data?.hostId || data?.fromUserId || data?.fromSocketId;
-      const answer = data?.answer;
+  async ensureLocalStream(): Promise<MediaStream | null> {
+    // GUARANTEED SINGLE SOURCE: Only use shared stream from participant page
+    const sharedStream = (window as any).__participantSharedStream;
+    if (sharedStream && sharedStream.getTracks().length > 0) {
+      const activeTracks = sharedStream.getTracks().filter(track => track.readyState === 'live' && track.enabled);
+      if (activeTracks.length > 0) {
+        console.log('[PART] ensureLocalStream: Using validated shared stream');
+        this.localStream = sharedStream;
+        return sharedStream;
+      } else {
+        console.error('[PART] ensureLocalStream: Shared stream has no active tracks');
+        return null;
+      }
+    }
+    
+    // NO FALLBACK TO PREVENT DUPLICATION - let participant page handle stream creation
+    console.error('[PART] ensureLocalStream: No shared stream available - this should not happen');
+    return null;
+  }
+
+  private setupStreamHealthMonitoring(stream: MediaStream): void {
+    const videoTrack = stream.getVideoTracks()[0];
+    
+    if (videoTrack) {
+      videoTrack.addEventListener('ended', () => {
+        console.log('[PART] Video track ended');
+      });
       
-      console.log('🚨 CRÍTICO [PARTICIPANT] webrtc-answer received:', {
-        fromHost: hostId,
+      videoTrack.addEventListener('mute', () => {
+        console.log('[PART] Video track muted');
+      });
+      
+      videoTrack.addEventListener('unmute', () => {
+        console.log('[PART] Video track unmuted');
+      });
+    }
+    
+    // Health check interval
+    const healthInterval = setInterval(() => {
+      const vt = stream.getVideoTracks()[0];
+      if (vt) {
+        console.log(`[PART] Stream health: readyState=${vt.readyState}, enabled=${vt.enabled}, muted=${vt.muted}`);
+      } else {
+        clearInterval(healthInterval);
+      }
+    }, 5000);
+    
+    stream.addEventListener('removetrack', () => {
+      clearInterval(healthInterval);
+    });
+  }
+
+  private setupParticipantHandlers(): void {
+    if (!unifiedWebSocketService) {
+      console.error('❌ [PARTICIPANT] unifiedWebSocketService not initialized');
+      return;
+    }
+
+    console.log('🚨 CRÍTICO [PARTICIPANT] Setting up event handlers');
+    
+    // Limpar handlers existentes primeiro para evitar duplicação  
+    // Note: UnifiedWebSocketService não tem método off(), então apenas registramos novos handlers
+    
+    // Listen for WebRTC offer request from host
+    unifiedWebSocketService.on('webrtc-request-offer', async (data: any) => {
+      const hostId = data?.fromUserId;
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Offer request received from host: ${hostId}`, {
+        dataKeys: Object.keys(data),
+        hasFromUserId: !!data.fromUserId,
+        hasParticipantId: !!data.participantId,
+        timestamp: Date.now()
+      });
+      
+      if (!hostId) {
+        console.warn('⚠️ [PARTICIPANT] Invalid offer request:', data);
+        return;
+      }
+
+      // Check host readiness
+      const hostReadiness = await this.checkHostReadiness(hostId);
+      if (!hostReadiness.ready) {
+        console.log(`[PART] Host not ready: ${hostId}, reason: ${hostReadiness.reason}`);
+        setTimeout(() => {
+          this.createAndSendOffer(hostId);
+        }, 2000);
+        return;
+      }
+
+      // Guard against concurrent offers
+      if (this.isOfferInProgress) {
+        console.warn('⚠️ [PARTICIPANT] Already making offer, ignoring request from:', hostId);
+        return;
+      }
+
+      if (this.peerConnection && this.peerConnection.signalingState !== 'stable') {
+        console.warn('⚠️ [PARTICIPANT] PC not stable:', this.peerConnection.signalingState, '- ignoring request');
+        return;
+      }
+
+      await this.createAndSendOffer(hostId);
+    });
+
+    // Handler para respostas (answers) do host
+    unifiedWebSocketService.on('webrtc-answer', async (data: any) => {
+      const hostId = data?.fromUserId || data?.fromSocketId || data?.hostId;
+      const answer = data?.answer;
+
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Answer recebido do host`, {
+        hostId,
         hasAnswer: !!answer,
+        dataKeys: Object.keys(data),
+        answerType: answer?.type,
+        answerSdpPreview: answer?.sdp?.substring(0, 100) + '...',
         peerConnectionExists: !!this.peerConnection,
         peerConnectionState: this.peerConnection?.connectionState,
         signalingState: this.peerConnection?.signalingState,
@@ -109,56 +211,33 @@ class ParticipantHandshakeManager {
         return;
       }
 
-      // POLITE PEER: Check if should ignore answer
-      if (politePeerManager.shouldIgnoreAnswer(this.participantId!)) {
-        console.log('🚨 [PARTICIPANT] Ignoring answer due to polite peer logic');
-        return;
-      }
-
       try {
-        console.log('🚨 CRÍTICO [PARTICIPANT] Setting remote description from answer...', {
-          answerType: answer.type,
-          bufferedCandidates: this.pendingCandidates.length,
-          connectionState: this.peerConnection.connectionState
-        });
-        
-        this.isProcessingAnswer = true;
+        console.log('🚨 CRÍTICO [PARTICIPANT] Setting remote description from answer...');
         await this.peerConnection.setRemoteDescription(answer);
-        this.isRemoteDescriptionSet = true;
-        this.isProcessingAnswer = false;
-        
         console.log('✅ [PARTICIPANT] Remote description set successfully');
         console.log(`🚨 CRÍTICO [PARTICIPANT] Connection state após setRemoteDescription: ${this.peerConnection.connectionState}`);
 
-        // CRÍTICO: Flush buffered ICE candidates APÓS setRemoteDescription estar completo
+        // Flush all pending candidates immediately
         if (this.pendingCandidates.length > 0) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Flushing ${this.pendingCandidates.length} buffered candidates sequentially...`);
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Applying ${this.pendingCandidates.length} buffered candidates`);
           
           const candidatesToFlush = [...this.pendingCandidates];
           this.pendingCandidates = [];
           
-          // Process sequentially with small delays
-          for (let i = 0; i < candidatesToFlush.length; i++) {
-            const candidate = candidatesToFlush[i];
+          for (const candidate of candidatesToFlush) {
             try {
               await this.peerConnection.addIceCandidate(candidate);
-              console.log(`✅ [PARTICIPANT] ICE candidate ${i+1}/${candidatesToFlush.length} aplicado do buffer`);
-              
-              // Small delay to prevent overwhelming the connection
-              if (i < candidatesToFlush.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 10));
-              }
+              console.log('✅ [PARTICIPANT] ICE candidate aplicado do buffer');
             } catch (err) {
-              console.error(`❌ [PARTICIPANT] Error flushing candidate ${i+1}:`, err);
+              console.error('❌ [PARTICIPANT] Error flushing candidate:', err);
             }
           }
-          console.log('✅ [PARTICIPANT] Buffer de ICE candidates limpo completamente');
+          console.log('✅ [PARTICIPANT] Buffer de ICE candidates limpo');
         }
         
-        console.log('🎯 [PARTICIPANT] Answer processing complete, ready for new ICE candidates');
+        console.log('✅ [PARTICIPANT] Connection established successfully');
       } catch (err) {
         console.error('❌ CRÍTICO [PARTICIPANT] Error applying answer:', err);
-        this.isProcessingAnswer = false;
         this.handleConnectionFailure(hostId);
       }
     });
@@ -188,92 +267,27 @@ class ParticipantHandshakeManager {
         return;
       }
 
-      // CRÍTICO: Buffer candidates if remote description not set OR still processing answer
-      if (!this.isRemoteDescriptionSet || this.isProcessingAnswer) {
-        this.pendingCandidates.push(candidate);
-        console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId}`, {
-          remoteDescSet: this.isRemoteDescriptionSet,
-          processingAnswer: this.isProcessingAnswer,
-          bufferSize: this.pendingCandidates.length,
-          candidate: candidate.candidate
-        });
-      } else {
-        // Apply candidate immediately
+      // Apply immediately OR buffer consistently
+      if (this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
         try {
           await this.peerConnection.addIceCandidate(candidate);
-          console.log(`✅ [PARTICIPANT] ICE candidate aplicado imediatamente de ${hostId}`);
+          console.log(`✅ [PARTICIPANT] ICE candidate applied immediately from ${hostId}`);
         } catch (err) {
-          console.error(`❌ [PARTICIPANT] Error applying immediate candidate from ${hostId}:`, err);
+          console.warn('⚠️ [PARTICIPANT] Error adding candidate from:', hostId, err);
         }
-      }
-    });
-
-    // Handle offer requests from host
-    unifiedWebSocketService.on('webrtc-request-offer', (data: any) => {
-      const hostId = data?.hostId || data?.fromSocketId;
-      console.log(`🚨 CRÍTICO [PARTICIPANT] Host ${hostId} requesting offer - starting handshake`);
-      
-      if (hostId) {
-        this.createAndSendOffer(hostId);
       } else {
-        console.error('❌ [PARTICIPANT] No hostId in offer request');
+        this.pendingCandidates.push(candidate);
+        console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId} (total: ${this.pendingCandidates.length})`);
       }
     });
-
-    console.log('✅ [PARTICIPANT] WebSocket handlers configured');
+    
+    console.log('✅ [PARTICIPANT] Event handlers configurados com sucesso');
   }
 
   async createAndSendOffer(hostId: string): Promise<void> {
     if (this.isOfferInProgress) {
       console.log('[PARTICIPANT] createAndSendOffer: Offer already in progress, skipping');
       return;
-    }
-
-    // FASE 3: Validar preview ativo antes de criar offer
-    const validatePreviewBeforeOffer = (): boolean => {
-      const previewVideo = document.querySelector('video[data-participant-id="local-preview"]') as HTMLVideoElement;
-      
-      if (!previewVideo) {
-        console.warn('⚠️ [PARTICIPANT] No preview video found - continuing anyway');
-        return false;
-      }
-
-      const isActive = previewVideo.srcObject && !previewVideo.paused && previewVideo.readyState > 2;
-      
-      if (isActive) {
-        console.log('✅ [PARTICIPANT] Preview validation passed - video is playing');
-        return true;
-      } else {
-        console.warn('⚠️ [PARTICIPANT] Preview validation failed:', {
-          hasSrcObject: !!previewVideo.srcObject,
-          paused: previewVideo.paused,
-          readyState: previewVideo.readyState
-        });
-        return false;
-      }
-    };
-
-    const previewValid = validatePreviewBeforeOffer();
-    
-    if (!previewValid) {
-      console.warn('⚠️ [PARTICIPANT] Preview not active - attempting recovery before offer');
-      
-      // Tentar forçar preview ativo
-      try {
-        const { videoPlaybackEnforcer } = await import('@/utils/webrtc/VideoPlaybackEnforcer');
-        videoPlaybackEnforcer.forcePlayForParticipant('local-preview');
-        
-        // Aguardar um momento para recovery
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Validar novamente
-        const previewRecovered = validatePreviewBeforeOffer();
-        if (!previewRecovered) {
-          console.warn('⚠️ [PARTICIPANT] Preview recovery failed - proceeding with caution');
-        }
-      } catch (error) {
-        console.warn('⚠️ [PARTICIPANT] Failed to recover preview:', error);
-      }
     }
 
     const offerStartTime = performance.now();
@@ -286,255 +300,334 @@ class ParticipantHandshakeManager {
       this.peerConnection = null;
     }
 
-    try {
-      this.isOfferInProgress = true;
-      
-      // STEP 1: Get or validate local stream
-      const stream = this.localStream || await this.getUserMediaForOffer();
-      if (!stream || stream.getTracks().length === 0) {
-        throw new Error('No valid stream available for offer creation');
-      }
-      
-      this.localStream = stream;
-      console.log(`✅ [PARTICIPANT] Local stream validated: ${stream.getTracks().length} tracks`);
+    this.isOfferInProgress = true;
+    this.clearConnectionTimeout();
 
-      // STEP 2: Create peer connection with fixed transceivers
-      const pcStartTime = performance.now();
+    try {
+      // STEP 1: Ensure we have local stream FIRST
+      const streamStartTime = performance.now();
+      const stream = await this.ensureLocalStream();
+      const streamDuration = performance.now() - streamStartTime;
       
+      if (!stream) {
+        throw new Error('No local stream available for offer');
+      }
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Stream validado:`, {
+        hasStream: !!stream,
+        streamId: stream?.id,
+        videoTracks: stream?.getVideoTracks().length || 0,
+        audioTracks: stream?.getAudioTracks().length || 0,
+        videoEnabled: stream?.getVideoTracks()[0]?.enabled,
+        audioEnabled: stream?.getAudioTracks()[0]?.enabled,
+        duration: `${streamDuration.toFixed(1)}ms`
+      });
+
+      // STEP 2: Create new peer connection BEFORE any operation
+      const pcStartTime = performance.now();
       const configuration: RTCConfiguration = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' }
         ],
-        iceTransportPolicy: 'all',
         iceCandidatePoolSize: 10
       };
 
       this.peerConnection = new RTCPeerConnection(configuration);
-      
-      // CRÍTICO: Pré-alocar transceivers em ordem fixa ANTES de qualquer negociação
-      preAllocatedTransceivers.initializeTransceivers(this.participantId!, this.peerConnection, 'participant');
-      
-      // Initialize polite peer state
-      politePeerManager.initializePeerState(this.participantId!);
-
       const pcDuration = performance.now() - pcStartTime;
-      console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created with pre-allocated transceivers (${pcDuration.toFixed(1)}ms)`);
+      console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
 
-      // STEP 3: Replace track in pre-allocated transceiver
-      console.log(`🚨 CRÍTICO [PARTICIPANT] Using pre-allocated transceiver for video track`);
+      // STEP 3: VALIDATE AND ADD tracks to peer connection BEFORE creating offer
+      const addTrackStartTime = performance.now();
+      console.log('🚨 CRÍTICO [PARTICIPANT] Validating and adding tracks to RTCPeerConnection...');
       
-      const videoTrack = stream.getVideoTracks()[0];
-      if (!videoTrack) {
-        throw new Error('No video track found in stream');
+      const tracks = stream.getTracks();
+      const validTracks = tracks.filter(track => track.readyState === 'live' && track.enabled);
+      
+      console.log(`🔍 [PARTICIPANT] Track validation:`, {
+        totalTracks: tracks.length,
+        validTracks: validTracks.length,
+        trackDetails: tracks.map(t => ({
+          kind: t.kind,
+          readyState: t.readyState,
+          enabled: t.enabled,
+          muted: t.muted
+        }))
+      });
+      
+      if (validTracks.length === 0) {
+        throw new Error('No valid tracks found in stream for WebRTC');
       }
-
-      // Validate video track before using
-      if (videoTrack.readyState !== 'live' || !videoTrack.enabled) {
-        console.warn(`⚠️ [PARTICIPANT] Video track not ready:`, {
-          readyState: videoTrack.readyState,
-          enabled: videoTrack.enabled,
-          muted: videoTrack.muted
-        });
-
-        // Try to fix track state
-        if (!videoTrack.enabled) {
-          videoTrack.enabled = true;
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-
-        if (videoTrack.readyState !== 'live') {
-          console.warn(`⚠️ [PARTICIPANT] Video track not ready, but continuing:`, {
-            readyState: videoTrack.readyState,
-            enabled: videoTrack.enabled,
-            muted: videoTrack.muted
+      
+      validTracks.forEach((track, index) => {
+        if (this.peerConnection && stream) {
+          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding validated track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
+          this.peerConnection.addTrack(track, stream);
+          
+          // Track health monitoring after adding to peer connection
+          track.addEventListener('ended', () => {
+            console.warn(`⚠️ [PARTICIPANT] Track ${track.kind} ended after being added to PC`);
           });
-
-          // Force enable track if disabled
-          if (!videoTrack.enabled) {
-            videoTrack.enabled = true;
-          }
+          
+          track.addEventListener('mute', () => {
+            console.warn(`⚠️ [PARTICIPANT] Track ${track.kind} muted after being added to PC`);
+          });
         }
-      }
+      });
+      
+      const addTrackDuration = performance.now() - addTrackStartTime;
+      console.log(`✅ [PARTICIPANT] ${validTracks.length} validated tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
 
-      // CRÍTICO: Sempre usar o track atual, mesmo se não completamente ready
-      await preAllocatedTransceivers.replaceVideoTrack(this.participantId!, videoTrack);
-
-      console.log(`✅ [PARTICIPANT] Video track assigned to pre-allocated transceiver`);
-
-      // Set up negotiation handler AFTER track replacement
-      this.peerConnection.onnegotiationneeded = async () => {
-        // POLITE PEER: Só criar offer se connection está stable e não está fazendo offer
-        if (this.peerConnection?.signalingState !== 'stable') {
-          console.log('🚨 CRÍTICO [PARTICIPANT] Signaling state not stable:', this.peerConnection?.signalingState);
-          return;
-        }
-
-        if (politePeerManager.shouldIgnoreOffer(this.participantId!, this.peerConnection!)) {
-          console.log('🚨 CRÍTICO [PARTICIPANT] Should ignore offer due to polite peer rules');
-          return;
-        }
-
-        if (this.isOfferInProgress) {
-          console.log('🚨 CRÍTICO [PARTICIPANT] Offer já em progresso, ignorando negotiation');
-          return;
-        }
-
-        console.log('🚨 CRÍTICO [PARTICIPANT] onnegotiationneeded disparado - criando offer via polite peer');
-        
-        try {
-          this.isOfferInProgress = true;
-          politePeerManager.setMakingOffer(this.participantId!, true);
-          
-          const offerStartTime = performance.now();
-          
-          // CRÍTICO: Sem offerToReceive* flags (Unified Plan)
-          const offer = await this.peerConnection!.createOffer();
-
-          const offerCreateDuration = performance.now() - offerStartTime;
-          
-          const setLocalStartTime = performance.now();
-          await this.peerConnection!.setLocalDescription(offer);
-          const setLocalDuration = performance.now() - setLocalStartTime;
-
-          console.log(`✅ [PARTICIPANT] createOffer (${offerCreateDuration.toFixed(1)}ms) -> setLocalDescription (${setLocalDuration.toFixed(1)}ms)`);
-          
-          // Validate transceiver order
-          preAllocatedTransceivers.validateTransceiverOrder(this.participantId!, this.peerConnection!);
-          
-          // Enhanced SDP validation
-          if (offer.sdp && offer.sdp.includes('m=video')) {
-            console.log(`✅ [PARTICIPANT] Offer contém m=video - stream presente no SDP`);
-          } else {
-            console.warn(`⚠️ [PARTICIPANT] Offer não contém m=video - possível problema com stream`);
-          }
-
-          unifiedWebSocketService.sendWebRTCOffer('host', offer.sdp!, offer.type!);
-          console.log(`✅ [PARTICIPANT] Offer sent to host com transceivers pré-alocados`);
-          
-        } catch (error) {
-          console.error('❌ CRÍTICO [PARTICIPANT] Error in negotiation:', error);
-          this.handleConnectionFailure('host');
-        } finally {
-          this.isOfferInProgress = false;
-          politePeerManager.setMakingOffer(this.participantId!, false);
+      // Set up event handlers
+      this.peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log('🚨 CRÍTICO [PARTICIPANT] ICE candidate generated, sending to host');
+          unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
         }
       };
 
-      // Set up connection event handlers
+      // Enhanced connection state monitoring with detailed logging and recovery logic
       this.peerConnection.onconnectionstatechange = () => {
         const state = this.peerConnection?.connectionState;
-        console.log(`🔗 [PARTICIPANT] Connection state: ${state}`);
+        const iceState = this.peerConnection?.iceConnectionState;
+        const elapsed = performance.now() - this.handshakeStartTime;
+        console.log(`🔍 CONNECTION: State changed to ${state} for participant (${elapsed.toFixed(1)}ms since start) - ICE: ${iceState}`);
         
         if (state === 'connected') {
-          const duration = performance.now() - this.handshakeStartTime;
-          console.log(`✅ [PARTICIPANT] WebRTC connected successfully (${duration.toFixed(0)}ms total)`);
-          this.retryAttempts = 0; // Reset on success
+          this.clearConnectionTimeout();
+          this.reconnectAttempts = 0;
+          console.log(`✅ CONNECTION: WebRTC connection established (${elapsed.toFixed(1)}ms total)`);
+          
+          // Notify successful connection
+          window.dispatchEvent(new CustomEvent('participant-connected', {
+            detail: { participantId: this.participantId, timestamp: Date.now(), method: 'connection-state' }
+          }));
         } else if (state === 'failed') {
-          console.log(`❌ [PARTICIPANT] Connection failed`);
+          console.warn(`❌ CONNECTION: Connection failed definitively (${state}) - initiating recovery`);
           this.handleConnectionFailure(hostId);
+        } else if (state === 'disconnected') {
+          console.warn(`📤 CONNECTION: Connection disconnected (${state}) - may be temporary`);
+          // Don't immediately trigger recovery for disconnected state - could be temporary
+        } else if (state === 'connecting') {
+          console.log(`🔄 CONNECTION: Connection attempting to establish (${state})`);
         }
       };
 
       this.peerConnection.oniceconnectionstatechange = () => {
-        const iceState = this.peerConnection?.iceConnectionState;
-        console.log(`❄️ [PARTICIPANT] ICE connection state: ${iceState}`);
+        const state = this.peerConnection?.iceConnectionState;
+        console.log(`🧊 ICE: State changed to ${state}`);
         
-        if (iceState === 'failed') {
-          console.log(`❌ [PARTICIPANT] ICE connection failed`);
+        if (state === 'connected' || state === 'completed') {
+          this.clearConnectionTimeout();
+          console.log(`✅ ICE: Connection established (${state})`);
+        } else if (state === 'failed') {
+          console.warn(`❌ ICE: Connection failed`);
           this.handleConnectionFailure(hostId);
+        } else if (state === 'checking') {
+          console.log(`🔍 ICE: Checking connectivity...`);
         }
       };
 
-      this.peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          console.log('[PARTICIPANT] Sending ICE candidate to host');
-          unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
-        } else {
-          console.log('[PARTICIPANT] ICE gathering complete');
-        }
-      };
+      // STEP 4: Create offer AFTER stream is added
+      const offerCreateStartTime = performance.now();
+      console.log('🚨 CRÍTICO [PARTICIPANT] Creating offer...');
+      const offer = await this.peerConnection.createOffer({
+        offerToReceiveVideo: false,
+        offerToReceiveAudio: false
+      });
+      const offerCreateDuration = performance.now() - offerCreateStartTime;
 
-      // Set up WebSocket handlers
-      this.setupWebSocketHandlers();
+      // STEP 5: Set local description
+      const setLocalStartTime = performance.now();
+      console.log('🚨 CRÍTICO [PARTICIPANT] Setting local description...');
+      await this.peerConnection.setLocalDescription(offer);
+      const setLocalDuration = performance.now() - setLocalStartTime;
+      
+      console.log(`✅ [PARTICIPANT] createOffer (${offerCreateDuration.toFixed(1)}ms) -> setLocalDescription (${setLocalDuration.toFixed(1)}ms)`);
 
-      // Trigger negotiation (will use pre-allocated transceivers)
-      console.log('🚨 CRÍTICO [PARTICIPANT] Triggering negotiation with pre-allocated transceivers');
+      // STEP 6: Send offer to host with detailed debugging
+      const sendStartTime = performance.now();
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Enviando offer para host ${hostId}`, {
+        sdp: offer.sdp?.substring(0, 100) + '...',
+        type: offer.type,
+        localStreamTracks: stream.getTracks().length,
+        peerConnectionState: this.peerConnection.connectionState,
+        signalingState: this.peerConnection.signalingState,
+        hasLocalDescription: !!this.peerConnection.localDescription
+      });
+      
+      unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type);
+      console.log(`✅ CRÍTICO [PARTICIPANT] Offer enviado via WebSocket para ${hostId} - Aguardando answer...`);
+      
+      const sendDuration = performance.now() - sendStartTime;
+      const totalDuration = performance.now() - offerStartTime;
+      console.log(`✅ [PARTICIPANT] setLocalDescription -> offerSent (${sendDuration.toFixed(1)}ms) -> Total sequence: ${totalDuration.toFixed(1)}ms`);
+
+      // Set connection timeout
+      this.setConnectionTimeout(() => {
+        console.log('[PARTICIPANT] Connection timeout reached (30s)');
+        this.handleConnectionFailure(hostId);
+      });
 
     } catch (error) {
-      console.error('❌ CRÍTICO [PARTICIPANT] Error in createAndSendOffer:', error);
+      console.error('❌ CRÍTICO [PARTICIPANT] createAndSendOffer: Failed:', error);
       this.isOfferInProgress = false;
-      this.handleConnectionFailure(hostId);
+      throw error;
+    } finally {
+      this.isOfferInProgress = false;
+    }
+  }
+
+  private async checkHostReadiness(hostId: string): Promise<{ready: boolean, reason?: string}> {
+    try {
+      console.log(`[PART] Checking host readiness: ${hostId}`);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return { ready: true };
+    } catch (error) {
+      console.log(`[PART] Host check failed: ${hostId}`, error);
+      return { ready: false, reason: 'check-failed' };
     }
   }
 
   private handleConnectionFailure(hostId: string): void {
-    console.log(`❌ [PARTICIPANT] Handling connection failure for ${hostId}, attempt ${this.retryAttempts + 1}/${this.maxRetries}`);
+    console.log(`🔧 RECOVERY: Connection failure recovery initiated for: ${hostId}`);
     
-    this.retryAttempts++;
+    // Enhanced failure logging
+    const connectionState = this.peerConnection?.connectionState;
+    const iceState = this.peerConnection?.iceConnectionState;
+    const signalingState = this.peerConnection?.signalingState;
     
-    if (this.retryAttempts < this.maxRetries) {
-      const retryDelay = Math.min(1000 * Math.pow(2, this.retryAttempts), 5000); // Exponential backoff, max 5s
-      console.log(`⏳ [PARTICIPANT] Retrying connection in ${retryDelay}ms...`);
+    console.log(`🔍 FAILURE: Connection states - Connection: ${connectionState}, ICE: ${iceState}, Signaling: ${signalingState}`);
+    
+    // First try ICE restart if possible before full reset
+    if (this.peerConnection && 
+        this.peerConnection.signalingState === 'stable' && 
+        this.reconnectAttempts === 0) {
       
-      setTimeout(() => {
-        this.cleanupParticipantHandshake();
-        this.createAndSendOffer(hostId);
-      }, retryDelay);
+      console.log(`🧊 RECOVERY: Attempting ICE restart for: ${hostId}`);
+      this.reconnectAttempts++;
+      
+      this.peerConnection.createOffer({ iceRestart: true })
+        .then(offer => {
+          if (this.peerConnection) {
+            return this.peerConnection.setLocalDescription(offer);
+          }
+        })
+        .then(() => {
+          console.log(`✅ RECOVERY: ICE restart initiated for: ${hostId}`);
+          // Reset timeout for ICE restart attempt
+          this.setConnectionTimeout(() => {
+            console.log(`⏰ RECOVERY: ICE restart timeout for: ${hostId}`);
+            this.performFullReset(hostId);
+          });
+        })
+        .catch(error => {
+          console.warn(`⚠️ RECOVERY: ICE restart failed for ${hostId}:`, error);
+          this.performFullReset(hostId);
+        });
     } else {
-      console.error(`💀 [PARTICIPANT] Max retries reached (${this.maxRetries}), giving up`);
-      this.cleanupParticipantHandshake();
+      this.performFullReset(hostId);
+    }
+  }
+
+  private performFullReset(hostId: string): void {
+    console.log(`🔄 RESET: Full connection reset for: ${hostId}`);
+    
+    // Reset PC completely
+    if (this.peerConnection) {
+      this.peerConnection.close();
+      this.peerConnection = null;
+    }
+    
+    // Clear pending candidates
+    this.pendingCandidates = [];
+    
+    // Controlled retry with backoff - only if under retry limit
+    if (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
+      this.reconnectAttempts++;
+      const backoffDelay = Math.min(3000 * Math.pow(2, this.reconnectAttempts - 1), 15000);
       
-      // Dispatch failure event
-      window.dispatchEvent(new CustomEvent('participant-connection-failed', {
-        detail: { participantId: this.participantId, hostId }
+      console.log(`⏰ RETRY: Scheduling retry ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS} in ${backoffDelay}ms for: ${hostId}`);
+      
+      setTimeout(async () => {
+        if (!this.isOfferInProgress) {
+          try {
+            console.log(`🔄 RETRY: Attempt ${this.reconnectAttempts} for: ${hostId}`);
+            await this.createAndSendOffer(hostId);
+          } catch (error) {
+            console.error(`❌ RETRY: Failed attempt ${this.reconnectAttempts} for ${hostId}:`, error);
+          }
+        }
+      }, backoffDelay);
+    } else {
+      console.warn(`⚠️ RETRY: Max attempts reached for: ${hostId} - manual intervention required`);
+      
+      // Dispatch event for manual recovery
+      window.dispatchEvent(new CustomEvent('connection-recovery-needed', {
+        detail: { 
+          participantId: this.participantId, 
+          hostId, 
+          attempts: this.reconnectAttempts,
+          timestamp: Date.now()
+        }
       }));
     }
   }
 
-  cleanupParticipantHandshake(): void {
-    console.log('🧹 [PARTICIPANT] Cleaning up handshake');
-    
-    // Cleanup polite peer state
-    if (this.participantId) {
-      politePeerManager.cleanup(this.participantId);
-      preAllocatedTransceivers.cleanup(this.participantId);
+  private setConnectionTimeout(callback: () => void): void {
+    this.clearConnectionTimeout();
+    this.connectionTimeout = setTimeout(callback, this.CONNECTION_TIMEOUT_MS);
+  }
+
+  private clearConnectionTimeout(): void {
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
+    }
+  }
+
+  private validateActiveStream(stream: MediaStream): boolean {
+    if (!stream || !stream.active) {
+      console.log('[PART] Stream validation failed: inactive stream');
+      return false;
     }
     
-    // Clean up peer connection
+    const videoTracks = stream.getVideoTracks().filter(t => t.readyState === 'live');
+    
+    if (videoTracks.length === 0) {
+      console.log('[PART] Stream validation failed: no live video tracks');
+      return false;
+    }
+    
+    console.log(`[PART] Stream validation passed: ${videoTracks.length} live video tracks`);
+    return true;
+  }
+
+  // Cleanup methods
+  cleanupParticipantHandshake(): void {
     if (this.peerConnection) {
-      try {
-        this.peerConnection.onconnectionstatechange = null;
-        this.peerConnection.oniceconnectionstatechange = null;
-        this.peerConnection.onicecandidate = null;
-        this.peerConnection.onnegotiationneeded = null;
-        this.peerConnection.close();
-      } catch (err) {
-        console.warn('[PARTICIPANT] Error closing peer connection:', err);
-      }
+      this.peerConnection.close();
       this.peerConnection = null;
     }
-
-    // Clean up local stream
+    
     if (this.localStream) {
-      this.localStream.getTracks().forEach(track => {
-        try {
-          track.stop();
-        } catch (err) {
-          console.warn('[PARTICIPANT] Error stopping track:', err);
-        }
-      });
+      this.localStream.getTracks().forEach(track => track.stop());
       this.localStream = null;
     }
-
-    // Reset flags
-    this.isOfferInProgress = false;
-    this.isRemoteDescriptionSet = false;
-    this.isProcessingAnswer = false;
+    
+    this.clearConnectionTimeout();
     this.pendingCandidates = [];
+    this.reconnectAttempts = 0;
+    
+    console.log('🧹 [PARTICIPANT] Handshake cleanup complete');
+  }
 
-    console.log('✅ [PARTICIPANT] Handshake cleanup complete');
+  setParticipantId(id: string): void {
+    this.participantId = id;
+  }
+
+  getLocalStream(): MediaStream | null {
+    return this.localStream;
   }
 }
 
@@ -546,3 +639,9 @@ export const initializeOnRouteLoad = () => participantHandshakeManager.initializ
 export const cleanupParticipantHandshake = () => participantHandshakeManager.cleanupParticipantHandshake();
 export const setParticipantId = (id: string) => participantHandshakeManager.setParticipantId(id);
 export const getLocalStream = () => participantHandshakeManager.getLocalStream();
+
+// Initialize handlers once
+if (typeof window !== 'undefined' && !(window as any).__participantHandlersSetup) {
+  (window as any).__participantHandlersSetup = true;
+  console.log('✅ [PARTICIPANT] Enhanced handshake handlers initialized');
+}

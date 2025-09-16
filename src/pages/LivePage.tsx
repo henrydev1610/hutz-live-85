@@ -8,8 +8,6 @@ import { useLivePageState } from '@/hooks/live/useLivePageState';
 import { useParticipantManagement } from '@/hooks/live/useParticipantManagement';
 import { useQRCodeGeneration } from '@/hooks/live/useQRCodeGeneration';
 import { useAutoQRGeneration } from '@/hooks/live/useAutoQRGeneration';
-import { useMeteredIntegration } from '@/hooks/live/useMeteredIntegration';
-import { useMeteredHost } from '@/hooks/live/useMeteredHost';
 import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
@@ -19,7 +17,6 @@ import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
-import ConnectivityTestPanel from '@/components/debug/ConnectivityTestPanel';
 // Temporariamente removido para resolver erro 404
 // import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
 // import { ServerConnectivityTest } from '@/utils/debug/ServerConnectivityTest';
@@ -29,13 +26,7 @@ const LivePage: React.FC = () => {
   const state = useLivePageState();
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
-  
-  // Integração Metered Rooms
-  const meteredConfig = useMeteredIntegration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
-  
-  // State para indicação visual do Metered
-  const [meteredStatus, setMeteredStatus] = useState<'disabled' | 'connecting' | 'connected' | 'error'>('disabled');
   
   // Auto-geração de QR Code quando sessionId existir
   useAutoQRGeneration({ 
@@ -287,60 +278,6 @@ const LivePage: React.FC = () => {
     isHost: true // CORREÇÃO CRÍTICA: Forçar papel de host na rota /live
   });
 
-  // Metered Host Integration
-  const meteredHost = useMeteredHost({
-    roomName: meteredConfig.useMetered ? `${meteredConfig.roomNamePrefix}${state.sessionId}` : '',
-    accountDomain: meteredConfig.accountDomain,
-    onParticipantJoin: (participantId: string, stream: MediaStream) => {
-      console.log('🎯 Metered: Participant joined:', participantId);
-      setMeteredStatus('connected');
-      toast({
-        title: "🎯 Participant Connected",
-        description: `Novo participante via Metered Rooms: ${participantId}`,
-      });
-      // Usar as funções existentes do participantManagement
-      participantManagement.handleParticipantJoin(participantId);
-      participantManagement.handleParticipantStream(participantId, stream);
-    },
-    onParticipantLeave: (participantId: string) => {
-      console.log('🎯 Metered: Participant left:', participantId);
-      // Usar a função existente do participantManagement
-      participantManagement.handleParticipantRemove(participantId);
-    }
-  });
-
-  // Gestão automática do Metered
-  useEffect(() => {
-    if (meteredConfig.useMetered && state.sessionId && !meteredHost.isConnected) {
-      console.log('🎯 Auto-conectando ao Metered Rooms...', {
-        roomName: `${meteredConfig.roomNamePrefix}${state.sessionId}`,
-        accountDomain: meteredConfig.accountDomain
-      });
-      
-      setMeteredStatus('connecting');
-      
-      meteredHost.connectToRoom()
-        .then(() => {
-          setMeteredStatus('connected');
-          toast({
-            title: "🎯 Metered Rooms Ativo",
-            description: "Host conectado com sucesso ao Metered Rooms",
-          });
-        })
-        .catch((error) => {
-          console.error('❌ Falha ao conectar Metered:', error);
-          setMeteredStatus('error');
-          toast({
-            title: "❌ Erro Metered",
-            description: `Falha na conexão: ${error.message}`,
-            variant: "destructive"
-          });
-        });
-    } else if (!meteredConfig.useMetered) {
-      setMeteredStatus('disabled');
-    }
-  }, [meteredConfig.useMetered, state.sessionId, meteredHost.isConnected]);
-
   // Use the effects hook
   useLivePageEffects({
     sessionId: state.sessionId,
@@ -431,8 +368,6 @@ const LivePage: React.FC = () => {
         onFinishTransmission={() => finishTransmission(state, closeFinalAction)}
         onFileSelect={handleFileSelect}
         onRemoveImage={removeBackgroundImage}
-        meteredStatus={meteredStatus}
-        meteredConfig={meteredConfig}
         onGenerateQRCode={() => handleGenerateQRCode(state)}
         onQRCodeToTransmission={() => handleQRCodeToTransmission(state.setQrCodeVisible)}
         closeFinalAction={closeFinalAction}
@@ -474,14 +409,6 @@ const LivePage: React.FC = () => {
       
       {/* FASE 5: Painel de Debug Lovable */}
       <LovableDebugPanel sessionId={state.sessionId} />
-      
-      {/* Connectivity Test Panel */}
-      <div className="mt-6">
-        <ConnectivityTestPanel 
-          sessionId={state.sessionId} 
-          participantId="host"
-        />
-      </div>
     </div>
   );
 };

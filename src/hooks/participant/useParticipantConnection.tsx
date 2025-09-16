@@ -89,8 +89,8 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
 
    
 
-    // FASE 4: QUEBRA DE RETRY LOOP - Circuit breaker mais permissivo
-    const maxRetries = isMobile ? 5 : 3; // Aumentado para permitir mais tentativas
+    // FASE 4: QUEBRA DE RETRY LOOP - Circuit breaker rígido
+    const maxRetries = isMobile ? 3 : 2; // REDUZIDO drasticamente
     const connectionMetrics = {
       startTime: Date.now(),
       attempts: 0,
@@ -364,14 +364,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     console.log(`🔗 PARTICIPANT CONNECTION: Disconnecting`);
     
     try {
-      // FASE 1: CLEANUP ADEQUADO - não destruir streams válidos
-      const globalStream = (window as any).__participantSharedStream;
-      if (globalStream && (globalStream as any).__isProtected) {
-        console.log(`🛡️ FASE 1: Protected stream detected - preserving during disconnect`);
-      } else {
-        cleanupWebRTC();
-      }
-      
+      cleanupWebRTC();
       unifiedWebSocketService.disconnect();
       setIsConnected(false);
       setConnectionStatus('disconnected');

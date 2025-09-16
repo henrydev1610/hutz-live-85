@@ -120,44 +120,12 @@ const initializeSocketHandlers = (io) => {
       try {
         const { roomId, userId, networkQuality } = data;
 
-        // Validação básica de parâmetros obrigatórios
         if (!roomId || !userId) {
           console.error(`❌ JOIN: Missing required fields - roomId: ${roomId}, userId: ${userId}`);
           socket.emit('error', { message: 'roomId and userId are required' });
-          socket.emit('join-error', { 
-            error: 'Missing roomId or userId',
-            received: { roomId, userId }
-          });
           socket.emit('join-room-response', { success: false, error: 'Missing roomId or userId' });
           return;
         }
-
-        // Validação de formato do roomId (sessionId)
-        if (typeof roomId !== 'string' || roomId.length < 5 || roomId.length > 50) {
-          console.error('❌ JOIN ROOM: Invalid roomId format:', roomId);
-          socket.emit('join-error', { 
-            error: 'Invalid session ID format',
-            roomId: roomId,
-            details: 'Session ID must be between 5-50 characters'
-          });
-          socket.emit('join-room-response', { success: false, error: 'Invalid session ID format' });
-          return;
-        }
-
-        // Validação de caracteres do roomId
-        const validFormat = /^[a-zA-Z0-9\-_]+$/.test(roomId);
-        if (!validFormat) {
-          console.error('❌ JOIN ROOM: Invalid roomId characters:', roomId);
-          socket.emit('join-error', { 
-            error: 'Invalid session ID characters',
-            roomId: roomId,
-            details: 'Session ID can only contain letters, numbers, hyphens and underscores'
-          });
-          socket.emit('join-room-response', { success: false, error: 'Invalid session ID characters' });
-          return;
-        }
-
-        console.log('✅ JOIN ROOM: Session ID validation passed:', roomId);
 
          // adicioando log para controle de servido ICE
     const iceServers = getICEServers();
