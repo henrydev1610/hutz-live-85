@@ -12,7 +12,7 @@ import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
-import { useStreamDisplayManager } from '@/hooks/live/useStreamDisplayManager';
+// REMOVED: useStreamDisplayManager - now using simplified video manager
 // Removed conflicting WebRTC stability systems - now unified in useParticipantManagement
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
@@ -44,8 +44,7 @@ const LivePage: React.FC = () => {
     setFinalActionOpen: state.setFinalActionOpen
   });
 
-  // ✅ DIAGNÓSTICO CRÍTICO: INICIALIZAR STREAM DISPLAY MANAGER 
-  const streamDisplayManager = useStreamDisplayManager();
+  // REMOVED: Stream display manager - now using simplified system
   
   // ✅ DIAGNÓSTICO CRÍTICO: DEBUG COMPLETO + LISTENERS EXTRAS
   useEffect(() => {
@@ -64,7 +63,6 @@ const LivePage: React.FC = () => {
     });
     
     (window as any).__livePageDebug = {
-      ...streamDisplayManager,
       participantCount: state.participantList.length,
       activeStreams: Object.keys(state.participantStreams).length,
       sessionInfo: {
@@ -90,7 +88,7 @@ const LivePage: React.FC = () => {
       });
       delete (window as any).__livePageDebug;
     };
-  }, [streamDisplayManager, state.sessionId, state.participantList, state.participantStreams]);
+  }, [state.sessionId, state.participantList, state.participantStreams]);
 
   // ✅ CORREÇÃO CRÍTICA: Sistema WebRTC unificado via useParticipantManagement
   // Removidos sistemas conflitantes useDesktopWebRTCStability e useMobileWebRTCStability

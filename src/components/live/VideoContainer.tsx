@@ -1,15 +1,16 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Participant } from './ParticipantGrid';
 import { detectMobileAggressively } from '@/utils/media/deviceDetection';
+import { setupVideoElement } from '@/utils/media/videoPlayback';
 
-interface UnifiedVideoContainerProps {
+interface VideoContainerProps {
   participant: Participant;
   index: number;
   stream?: MediaStream | null;
 }
 
-const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
+// COMPONENTE UNIFICADO - ÚNICA FONTE DE VERDADE PARA VÍDEOS
+const VideoContainer: React.FC<VideoContainerProps> = ({
   participant,
   index,
   stream
@@ -18,74 +19,119 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastStreamId, setLastStreamId] = useState<string | null>(null);
 
-  // 1. Criar <video> no primeiro mount
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el || videoRef.current) return;
-    
-    const v = document.createElement('video');
-    v.id = `unified-video-${participant.id}`;
-    v.autoplay = true;
-    v.playsInline = true;
-    v.muted = true;
-    v.style.width = '100%';
-    v.style.height = '100%';
-    v.style.objectFit = 'cover';
-    
-    el.appendChild(v);
-    videoRef.current = v;
-    
-    console.log(`📦 VIDEO CREATED: Element created for ${participant.id}`, {
-      videoId: v.id,
-      container: el.id
-    });
-  }, [participant.id]);
+  // ID ÚNICO PADRONIZADO para todo o sistema
+  const containerId = `unified-video-container-${participant.id}`;
+  const videoId = `unified-video-element-${participant.id}`;
 
-  // 2. Aplicar srcObject sempre que stream mudar
+  console.log(`🎭 VideoContainer render for ${participant.id}`, {
+    containerId,
+    videoId,
+    hasStream: !!stream,
+    streamId: stream?.id,
+    isVideoReady,
+    error
+  });
+
+  // Criar elemento de vídeo uma única vez
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v || !stream) {
-      if (!stream) {
-        setIsVideoReady(false);
-        setError(null);
-      }
+    if (!containerRef.current || videoRef.current) return;
+    
+    console.log(`📺 UNIFIED: Creating video element for ${participant.id}`);
+    
+    const video = document.createElement('video');
+    video.id = videoId;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = true;
+    video.controls = false;
+    video.disablePictureInPicture = true;
+    video.className = 'w-full h-full object-cover';
+    video.style.cssText = `
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      z-index: 10 !important;
+    `;
+    
+    // Mobile-specific attributes
+    video.setAttribute('webkit-playsinline', 'true');
+    video.setAttribute('x-webkit-airplay', 'deny');
+    
+    containerRef.current.appendChild(video);
+    videoRef.current = video;
+    
+    console.log(`✅ UNIFIED: Video element created for ${participant.id}`);
+  }, [participant.id, videoId]);
+
+  // Aplicar stream quando disponível ou mudado
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Reset states when stream changes
+    if (stream?.id !== lastStreamId) {
+      setIsVideoReady(false);
+      setError(null);
+      setLastStreamId(stream?.id || null);
+    }
+
+    if (!stream) {
+      console.log(`🚫 UNIFIED: No stream for ${participant.id}, clearing video`);
+      video.srcObject = null;
+      setIsVideoReady(false);
       return;
     }
-    
-    if (v.srcObject !== stream) {
-      v.srcObject = stream;
-      setError(null);
-      
-      const handleLoadedMetadata = () => {
-        setIsVideoReady(true);
-        console.log(`✅ VIDEO READY: Video playing for ${participant.id}`, {
-          videoWidth: v.videoWidth,
-          videoHeight: v.videoHeight,
-          streamId: stream.id
-        });
-      };
-      
-      const handleError = (e: Event) => {
+
+    if (video.srcObject === stream) {
+      console.log(`🔄 UNIFIED: Stream already assigned for ${participant.id}`);
+      return;
+    }
+
+    console.log(`🎥 UNIFIED: Applying stream to ${participant.id}`, {
+      streamId: stream.id,
+      videoTracks: stream.getVideoTracks().length,
+      audioTracks: stream.getAudioTracks().length
+    });
+
+    // Apply stream using utility function
+    setupVideoElement(video, stream)
+      .then(() => {
+        setIsVideoReady(true);  
+        setError(null);
+        console.log(`✅ UNIFIED: Video ready for ${participant.id}`);
+        
+        // Dispatch global event for synchronization
+        window.dispatchEvent(new CustomEvent('video-ready', {
+          detail: { participantId: participant.id, streamId: stream.id }
+        }));
+      })
+      .catch((err) => {
         setError('Erro ao reproduzir vídeo');
         setIsVideoReady(false);
-        console.error(`❌ VIDEO ERROR: Error playing video for ${participant.id}:`, e);
-      };
-      
-      v.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
-      v.addEventListener('error', handleError, { once: true });
-      
-      console.log(`🎥 STREAM APPLIED: srcObject set for ${participant.id}`, {
-        streamId: stream.id,
-        streamActive: stream.active
+        console.error(`❌ UNIFIED: Video setup failed for ${participant.id}:`, err);
       });
-    }
-  }, [stream, participant.id]);
 
-  // Mobile detection for status display
+  }, [stream, participant.id, lastStreamId]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (videoRef.current) {
+        console.log(`🧹 UNIFIED: Cleanup video for ${participant.id}`);
+        const video = videoRef.current;
+        video.srcObject = null;
+        video.remove();
+      }
+    };
+  }, [participant.id]);
+
   const isMobile = participant.isMobile ?? detectMobileAggressively();
-
-  // Simple status determination
+  
   const getStatus = () => {
     if (!participant.active) return { text: 'Aguardando', color: 'text-gray-400', icon: '⏳' };
     if (error) return { text: 'Erro', color: 'text-red-400', icon: '❌' };
@@ -96,15 +142,14 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
 
   const status = getStatus();
 
-  // 3. Render com container standardizado
   return (
     <div
-      id={`video-container-participant-${participant.id}`}
+      id={containerId}
       ref={containerRef}
-      data-video-container="true"
+      data-video-container="unified"
       data-participant-id={participant.id}
       className="relative w-full h-full overflow-hidden aspect-video bg-gray-800/60 rounded-md"
-      style={{ minWidth: 160, minHeight: 120, backgroundColor: 'transparent' }}
+      style={{ minWidth: 160, minHeight: 120 }}
     >
       {/* Status indicator */}
       <div className="absolute top-1 right-1 bg-black/70 text-white text-xs px-2 py-1 rounded z-30">
@@ -142,7 +187,7 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
         <div className="absolute inset-0 flex items-center justify-center z-20 bg-gray-800/60">
           <div className="text-center text-white/70">
             <svg className="w-8 h-8 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 002 2v8a2 2 0 002 2z" />
             </svg>
             <p className="text-xs font-medium">{participant.name || `P${index + 1}`}</p>
             <p className="text-xs text-green-400 mt-1">● Conectado</p>
@@ -186,4 +231,4 @@ const UnifiedVideoContainer: React.FC<UnifiedVideoContainerProps> = ({
   );
 };
 
-export default UnifiedVideoContainer;
+export default VideoContainer;

@@ -22,23 +22,17 @@ interface QueueMetrics {
 const RETRY_DELAYS = [200, 400, 800, 1600, 3200]; // ms
 const MAX_RETRY_ATTEMPTS = 5;
 
-// TOLERANT CONTAINER RESOLVER
+// UNIFIED CONTAINER RESOLVER - SINGLE SOURCE OF TRUTH
 function getParticipantContainer(participantId: string): HTMLElement | null {
-  const selectors = [
-    `#video-container-participant-${CSS.escape(participantId)}`, // Novo padrão (UnifiedVideoContainer)
-    `#participant-video-participant-${CSS.escape(participantId)}`, // Legado
-    `[data-video-container="true"][data-participant-id="${CSS.escape(participantId)}"]` // Data attributes
-  ];
+  const containerId = `unified-video-container-${CSS.escape(participantId)}`;
+  const element = document.getElementById(containerId);
   
-  for (const selector of selectors) {
-    const element = document.querySelector(selector) as HTMLElement | null;
-    if (element) {
-      console.log(`✅ CONTAINER-RESOLVER: Found container for ${participantId} using ${selector}`);
-      return element;
-    }
+  if (element) {
+    console.log(`✅ UNIFIED-RESOLVER: Found container for ${participantId}`);
+    return element;
   }
   
-  console.warn(`❌ CONTAINER-RESOLVER: No container found for ${participantId} with any pattern`);
+  console.warn(`❌ UNIFIED-RESOLVER: No container found for ${participantId}`);
   return null;
 }
 
@@ -379,71 +373,26 @@ export const useEnhancedStreamDisplayManager = () => {
         isVisible: container.offsetWidth > 0 && container.offsetHeight > 0
       });
 
-      // FASE 2: CLEANUP EXISTING VIDEO ELEMENTS
-      const existingVideo = document.getElementById(unifiedVideoId);
-      if (existingVideo) {
-        console.log(`🗑️ ${logPrefix} ENHANCED-VIDEO: Removing existing video ${unifiedVideoId}`);
-        existingVideo.remove();
+      // UNIFIED SYSTEM: Video is already created by VideoContainer component
+      // Just verify the video element exists and is properly configured
+      const videoElement = container.querySelector('video') as HTMLVideoElement;
+      
+      if (!videoElement) {
+        console.error(`❌ ${logPrefix} UNIFIED-VIDEO: No video element found in container for ${participantId}`);
+        return false;
       }
 
-      // Additional cleanup for any video in this container
-      const allVideosInContainer = container.querySelectorAll('video');
-      allVideosInContainer.forEach((video, index) => {
-        console.log(`🗑️ ${logPrefix} ENHANCED-VIDEO: Removing stray video ${index} from container`);
-        video.remove();
+      console.log(`✅ ${logPrefix} UNIFIED-VIDEO: Using existing video element for ${participantId}`, {
+        videoId: videoElement.id,
+        hasStream: !!videoElement.srcObject,
+        streamMatches: videoElement.srcObject === stream
       });
 
-      // FASE 2: CREATE STANDARDIZED VIDEO ELEMENT
-      const video = document.createElement('video');
-      video.id = unifiedVideoId;
-      video.setAttribute('data-participant-id', participantId);
-      video.setAttribute('data-unified-video', 'true');
-      video.setAttribute('data-created-by', 'StreamDisplayManager');
-      video.className = 'w-full h-full object-cover';
-      
-      // Universal video properties
-      video.autoplay = true;
-      video.playsInline = true;
-      video.muted = true;
-      video.controls = false;
-      video.disablePictureInPicture = true;
-      
-      // Mobile-specific properties
-      video.setAttribute('webkit-playsinline', 'true');
-      video.setAttribute('x-webkit-airplay', 'deny');
-      
-      console.log(`📺 ${logPrefix} ENHANCED-VIDEO: Video element created`, {
-        videoId: video.id,
-        properties: {
-          autoplay: video.autoplay,
-          playsInline: video.playsInline,
-          muted: video.muted
-        }
-      });
-
-      // FASE 2: ASSIGN STREAM WITH VALIDATION
-      video.srcObject = stream;
-      
-      const streamAssignTime = Date.now();
-      console.log(`🔗 ${logPrefix} ENHANCED-VIDEO: Stream assigned to video.srcObject`, {
-        streamId: stream.id,
-        videoTracks: stream.getVideoTracks().length,
-        trackDetails: stream.getVideoTracks().map(t => ({
-          id: t.id,
-          enabled: t.enabled,
-          readyState: t.readyState
-        })),
-        timestamp: streamAssignTime
-      });
-
-      // Append video to container BEFORE attempting play
-      container.appendChild(video);
-      
-      console.log(`📦 ${logPrefix} ENHANCED-VIDEO: Video appended to container`, {
-        containerId: container.id,
-        videoId: video.id,
-        containerChildCount: container.children.length
-      });
+      // If stream is already assigned and playing, no need to do anything
+      if (videoElement.srcObject === stream && !videoElement.paused) {
+        console.log(`✅ ${logPrefix} UNIFIED-VIDEO: Video already playing for ${participantId}`);
+        return true;
+      }
 
       // FASE 2: ENHANCED PLAY ATTEMPT WITH RETRIES
       let playAttempts = 0;
@@ -456,23 +405,22 @@ export const useEnhancedStreamDisplayManager = () => {
           
           console.log(`▶️ ${logPrefix} ENHANCED-VIDEO: Play attempt ${playAttempts}/${maxPlayAttempts}`, {
             participantId,
-            readyState: video.readyState,
-            networkState: video.networkState,
-            currentTime: video.currentTime,
-            timeSinceStreamAssign: playAttemptTime - streamAssignTime
+            readyState: videoElement.readyState,
+            networkState: videoElement.networkState,
+            currentTime: videoElement.currentTime,
+            playAttempt: playAttempts
           });
           
-          await video.play();
+          await videoElement.play();
           
           const playSuccessTime = Date.now();
           console.log(`✅ ${logPrefix} ENHANCED-VIDEO: Video playing successfully`, {
             participantId,
-            currentTime: video.currentTime,
-            readyState: video.readyState,
-            videoWidth: video.videoWidth,
-            videoHeight: video.videoHeight,
-            playDuration: playSuccessTime - playAttemptTime,
-            totalDuration: playSuccessTime - streamAssignTime
+            currentTime: videoElement.currentTime,
+            readyState: videoElement.readyState,
+            videoWidth: videoElement.videoWidth,
+            videoHeight: videoElement.videoHeight,
+            playDuration: playSuccessTime - playAttemptTime
           });
 
           // FASE 1: DISPATCH SUCCESS EVENT WITH CORRELATION
@@ -480,13 +428,13 @@ export const useEnhancedStreamDisplayManager = () => {
             detail: { 
               participantId, 
               success: true,
-              videoElement: video,
+              videoElement: videoElement,
               container: container,
               stream: stream,
               correlationId,
               metrics: {
                 totalAttempts: playAttempts,
-                setupDuration: playSuccessTime - streamAssignTime
+                setupDuration: playSuccessTime - playAttemptTime
               }
             }
           }));
@@ -496,8 +444,8 @@ export const useEnhancedStreamDisplayManager = () => {
           console.warn(`⚠️ ${logPrefix} ENHANCED-VIDEO: Play attempt ${playAttempts} failed:`, {
             participantId,
             error: error.message,
-            readyState: video.readyState,
-            networkState: video.networkState
+            readyState: videoElement.readyState,
+            networkState: videoElement.networkState
           });
           
           if (playAttempts < maxPlayAttempts) {
@@ -509,12 +457,27 @@ export const useEnhancedStreamDisplayManager = () => {
             console.error(`❌ ${logPrefix} ENHANCED-VIDEO: All play attempts exhausted for ${participantId}`);
             
             // FASE 1: DISPATCH FAILURE EVENT WITH CORRELATION
+            window.dispatchEvent(new CustomEvent('video-display-error', {
+              detail: { 
+                participantId, 
+                success: false,
+                error: error.message,
+                videoElement: videoElement,
+                container: container,
+                stream: stream,
+                correlationId,
+                metrics: {
+                  totalAttempts: playAttempts,
+                  finalError: error.message
+                }
+              }
+            }));
             window.dispatchEvent(new CustomEvent('video-display-ready', {
               detail: { 
                 participantId, 
-                success: false, 
-                error: `Play failed after ${maxPlayAttempts} attempts: ${error.message}`,
-                videoElement: video,
+                 success: false, 
+                 error: `Play failed after ${maxPlayAttempts} attempts: ${error.message}`,
+                 videoElement: videoElement,
                 container: container,
                 correlationId,
                 metrics: {

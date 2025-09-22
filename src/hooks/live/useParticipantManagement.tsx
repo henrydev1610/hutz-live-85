@@ -2,7 +2,6 @@
 import { useEffect } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
 import { setStreamCallback, setParticipantJoinCallback } from '@/utils/webrtc';
-import { useVideoElementManagement } from './useVideoElementManagement';
 import { useCleanStreamManagement } from './useCleanStreamManagement';
 import { useParticipantLifecycle } from './useParticipantLifecycle';
 import { useParticipantAutoSelection } from './useParticipantAutoSelection';
@@ -36,8 +35,6 @@ export const useParticipantManagement = ({
   updateTransmissionParticipants,
   isHost = false
 }: UseParticipantManagementProps) => {
-  const { updateVideoElementsImmediately } = useVideoElementManagement();
-  
   // SISTEMA ÚNICO: Apenas useWebRTCConnectionBridge para desktop
   const { debugConnectionBridge } = useWebRTCConnectionBridge({
     participantStreams,
@@ -62,11 +59,11 @@ export const useParticipantManagement = ({
   // DEBUG LOGGER: Monitoramento WebRTC
   const { debugCurrentState } = useWebRTCDebugLogger();
   
-  // Use clean stream management with enhanced error handling
+  // Use simplified stream management
   const { handleParticipantStream } = useCleanStreamManagement({
     setParticipantStreams,
     setParticipantList,
-    updateVideoElementsImmediately,
+    updateVideoElementsImmediately: () => Promise.resolve(),
     transmissionWindowRef
   });
 

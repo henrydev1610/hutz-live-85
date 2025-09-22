@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Participant } from './ParticipantGrid';
-import UnifiedVideoContainer from './UnifiedVideoContainer';
+import VideoContainer from './VideoContainer';
 
 interface ParticipantPreviewGridProps {
   participantList: Participant[];
@@ -109,7 +109,7 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
     <div className="absolute inset-0 p-4">
       <div className={`grid ${getGridClass(participantCount)} gap-2 h-full`}>
         {allParticipants.map((participant, index) => (
-          <UnifiedVideoContainer
+          <VideoContainer
             key={participant.id}
             participant={participant}
             index={index}

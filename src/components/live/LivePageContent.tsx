@@ -1,7 +1,6 @@
 
 import React from 'react';
-import { useEnhancedStreamPipeline } from '@/hooks/live/useEnhancedStreamPipeline';
-import { useEnhancedStreamDisplayManager } from '@/hooks/live/useEnhancedStreamDisplayManager';
+import { useSimplifiedVideoManager } from '@/hooks/live/useSimplifiedVideoManager';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import LivePreview from '@/components/live/LivePreview';
 import TransmissionControls from '@/components/live/TransmissionControls';
@@ -35,9 +34,8 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
   onGenerateQRCode,
   onQRCodeToTransmission
 }) => {
-  // FASE 1 & 2: Initialize enhanced stream pipeline and display manager
-  useEnhancedStreamPipeline();
-  useEnhancedStreamDisplayManager();
+  // FASE 1 & 2: Initialize simplified video manager instead of complex systems
+  useSimplifiedVideoManager();
 
   // Calculate real participants and active streams
   const realParticipants = state.participantList.filter((p: Participant) => !p.id.startsWith('placeholder-'));
