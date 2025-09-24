@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
@@ -15,68 +14,16 @@ import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
 import StreamDebugPanel from '@/utils/debug/StreamDebugPanel';
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
-import { clearConnectionCache, validateURLConsistency } from '@/utils/connectionUtils';
-import { clearDeviceCache, validateMobileCameraCapabilities } from '@/utils/media/deviceDetection';
-import { streamLogger } from '@/utils/debug/StreamLogger';
-import { initParticipantWebRTC } from '@/utils/webrtc';
 import { toast } from 'sonner';
 
 const ParticipantPage = () => {
-  console.log('🎯 PARTICIPANT PAGE: Starting MOBILE-FORCED render with ENHANCED camera validation');
+  console.log('🎯 PARTICIPANT PAGE: Starting with automatic media initialization (Teams/Meet style)');
   
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   
   // Debug panel state
   const [showDebugPanel, setShowDebugPanel] = useState(false);
-  
-  // Função para validar saúde do stream
-  const validateStreamHealth = (stream: MediaStream): boolean => {
-    if (!stream || !stream.active) return false;
-    
-    const videoTracks = stream.getVideoTracks();
-    const audioTracks = stream.getAudioTracks();
-    
-    const liveVideoTracks = videoTracks.filter(t => t.readyState === 'live' && t.enabled);
-    const liveAudioTracks = audioTracks.filter(t => t.readyState === 'live' && t.enabled);
-    
-    return liveVideoTracks.length > 0; // Pelo menos um track de vídeo ativo
-  };
-  
-  // Função para monitorar transmissão do stream
-  const setupStreamTransmissionMonitoring = (stream: MediaStream, pId: string) => {
-    console.log(`PART-TRANSMISSION-MONITOR-START {participantId=${pId}, streamId=${stream.id}}`);
-    
-    // Monitorar tracks individuais
-    stream.getTracks().forEach(track => {
-      track.addEventListener('ended', () => {
-        console.log(`PART-TRACK-ENDED {participantId=${pId}, trackKind=${track.kind}, trackId=${track.id}}`);
-        toast.warning(`Track ${track.kind} finalizado`);
-      });
-      
-      track.addEventListener('mute', () => {
-        console.log(`PART-TRACK-MUTED {participantId=${pId}, trackKind=${track.kind}}`);
-      });
-      
-      track.addEventListener('unmute', () => {
-        console.log(`PART-TRACK-UNMUTED {participantId=${pId}, trackKind=${track.kind}}`);
-      });
-    });
-    
-    // Health check periódico
-    const healthInterval = setInterval(() => {
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) {
-        console.log(`PART-STREAM-HEALTH {participantId=${pId}, videoReady=${videoTrack.readyState}, trackState=${videoTrack.readyState}, muted=${videoTrack.muted}, enabled=${videoTrack.enabled}}`);
-      } else {
-        console.log(`PART-STREAM-HEALTH {participantId=${pId}, videoReady=no-track}`);
-        clearInterval(healthInterval);
-      }
-    }, 3000);
-    
-    // Limpar quando stream for removido
-    setTimeout(() => clearInterval(healthInterval), 60000); // 1 minuto máximo
-  };
   
   // ENHANCED: Mobile-only guard with FORCE OVERRIDE support
   const { isMobile, isValidated, isBlocked } = useMobileOnlyGuard({
@@ -89,119 +36,14 @@ const ParticipantPage = () => {
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
   console.log('🎯 PARTICIPANT PAGE: Enhanced mobile guard:', { isMobile, isValidated, isBlocked });
   
-  // ÚNICA FONTE: participantId gerado apenas aqui
+  // State management
   const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
-
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  
   // PROPAGAÇÃO: participantId único passado para todos os hooks
   const connection = useParticipantConnection(sessionId, participantId);
   const media = useParticipantMedia(participantId);
-
-  // Enhanced URL consistency validation with mobile override detection
-  useEffect(() => {
-    console.log('🔍 PARTICIPANT PAGE: Enhanced URL validation with FORCE OVERRIDE detection');
-    
-    // Log page initialization
-    streamLogger.log(
-      'STREAM_START' as any,
-      participantId,
-      isMobile,
-      isMobile ? 'mobile' : 'desktop',
-      { timestamp: Date.now(), duration: 0 },
-      undefined,
-      'PAGE_INIT',
-      'Participant page initialized',
-      { sessionId, userAgent: navigator.userAgent }
-    );
-    
-    clearConnectionCache();
-    clearDeviceCache();
-    
-    const isConsistent = validateURLConsistency();
-    if (!isConsistent) {
-      console.warn('⚠️ PARTICIPANT PAGE: URL inconsistency detected - could affect camera');
-      streamLogger.log(
-        'VALIDATION' as any,
-        participantId,
-        isMobile,
-        isMobile ? 'mobile' : 'desktop',
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'URL_VALIDATION',
-        'URL inconsistency detected',
-        { currentUrl: window.location.href }
-      );
-    }
-    
-    // FASE 1: Enhanced parameter detection and storage
-    const urlParams = new URLSearchParams(window.location.search);
-    const forceMobile = urlParams.get('forceMobile') === 'true' || urlParams.get('mobile') === 'true';
-    const hasQRParam = urlParams.has('qr') || urlParams.get('qr') === 'true';
-    const hasCameraParam = urlParams.get('camera') === 'environment' || urlParams.get('camera') === 'user';
-    const isParticipantRoute = window.location.pathname.includes('/participant/');
-    
-    // Store all mobile indicators
-    if (forceMobile || hasQRParam || hasCameraParam || isParticipantRoute) {
-      sessionStorage.setItem('accessedViaQR', 'true');
-      sessionStorage.setItem('forcedMobile', 'true');
-      sessionStorage.setItem('mobileValidated', 'true');
-      
-      console.log('✅ PARTICIPANT PAGE: Mobile FORCE OVERRIDE activated and stored');
-      console.log('✅ Override indicators:', {
-        forceMobile,
-        hasQRParam,
-        hasCameraParam,
-        isParticipantRoute,
-        cameraMode: urlParams.get('camera')
-      });
-      
-      streamLogger.log(
-        'VALIDATION' as any,
-        participantId,
-        true, // Force mobile
-        'mobile',
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'MOBILE_OVERRIDE',
-        'Mobile force override activated',
-        { forceMobile, hasQRParam, hasCameraParam, isParticipantRoute }
-      );
-      
-      toast.success('📱 Modo móvel forçado - câmera do celular será ativada');
-    }
-    
-    // Enhanced environment logging
-    console.log('🌐 PARTICIPANT PAGE: Enhanced environment check:', {
-      currentURL: window.location.href,
-      expectedDomain: 'hutz-live-85.onrender.com',
-      isDomainCorrect: window.location.href.includes('hutz-live-85.onrender.com'),
-      forceParameters: {
-        forceMobile,
-        hasQR: hasQRParam,
-        hasCameraParam,
-        cameraMode: urlParams.get('camera'),
-        isParticipantRoute
-      },
-      mobileOverrideActive: forceMobile || hasQRParam || hasCameraParam || isParticipantRoute
-    });
-    
-    // Check for debug mode
-    const debugMode = urlParams.get('debug') === 'true';
-    if (debugMode) {
-      setShowDebugPanel(true);
-      streamLogger.log(
-        'VALIDATION' as any,
-        participantId,
-        isMobile,
-        isMobile ? 'mobile' : 'desktop',
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'DEBUG_MODE',
-        'Debug mode activated'
-      );
-    }
-    
-  }, [participantId, isMobile]);
 
   // Monitor signaling service status
   useEffect(() => {
@@ -216,486 +58,196 @@ const ParticipantPage = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // ROUTE LOAD: Initialize media immediately when route loads
+  // AUTOMATIC MEDIA INITIALIZATION (Teams/Meet style)
+  const initParticipantMedia = async () => {
+    try {
+      // Check permissions proactively
+      if (navigator.permissions) {
+        try {
+          const cameraStatus = await navigator.permissions.query({ name: "camera" as PermissionName });
+          const micStatus = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          console.log("📋 Permissions:", { camera: cameraStatus.state, mic: micStatus.state });
+        } catch (permError) {
+          console.log("⚠️ Could not check permissions:", permError);
+        }
+      }
+
+      // List available devices for diagnostic
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        console.log("🎥 Devices available:", devices.map(d => ({ kind: d.kind, label: d.label.substring(0, 50) })));
+      } catch (devError) {
+        console.log("⚠️ Could not enumerate devices:", devError);
+      }
+
+      // Request media immediately (Teams/Meet style)
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: true, 
+        audio: true 
+      });
+
+      if (!stream) {
+        throw new Error("No stream obtained from getUserMedia");
+      }
+
+      // Connect to local preview
+      if (media.localVideoRef.current) {
+        media.localVideoRef.current.srcObject = stream;
+        media.localVideoRef.current.muted = true;
+        media.localVideoRef.current.playsInline = true;
+        
+        try {
+          await media.localVideoRef.current.play();
+          console.log("📹 Stream connected to local preview");
+        } catch (playError) {
+          console.warn("⚠️ Video play warning:", playError);
+        }
+      }
+
+      // Update media state
+      media.localStreamRef.current = stream;
+      const videoTracks = stream.getVideoTracks();
+      const audioTracks = stream.getAudioTracks();
+      
+      // Share globally for WebRTC
+      (window as any).__participantSharedStream = stream;
+      
+      // Send tracks to WebRTC if connection exists
+      if (stream) {
+        stream.getTracks().forEach(track => {
+          try {
+            console.log(`✅ Track ready for WebRTC: ${track.kind}`);
+          } catch (trackError) {
+            console.warn(`⚠️ Could not prepare track:`, trackError);
+          }
+        });
+      }
+
+      // Connect to session
+      await connection.connectToSession(stream);
+
+      console.log("✅ Camera and microphone connected automatically");
+      toast.success(`📱 Camera connected! Video: ${videoTracks.length > 0 ? '✅' : '❌'}, Audio: ${audioTracks.length > 0 ? '✅' : '❌'}`);
+
+    } catch (err: any) {
+      console.error("❌ Error initializing media:", err.name, err.message);
+
+      if (err.name === "NotAllowedError") {
+        console.log("❌ Permission denied. Camera/microphone access blocked.");
+        toast.error("Permission denied. Please enable camera/microphone in your browser settings.");
+      } else if (err.name === "NotFoundError") {
+        console.log("❌ No camera/microphone devices found.");
+        toast.error("No camera/microphone devices found on this device.");
+      } else {
+        console.log("❌ Error accessing camera/microphone:", err.message);
+        toast.error("Error accessing camera/microphone. Please try again.");
+      }
+      
+      // Set error state to show retry button
+      setMediaError(err.name || 'UnknownError');
+    }
+  };
+
+  // Manual retry function for error cases
+  const handleStartCamera = async () => {
+    setMediaError(null);
+    await initParticipantMedia();
+  };
+
+  const handleRetryCamera = async () => {
+    setMediaError(null);
+    await initParticipantMedia();
+  };
+
+  // AUTO MEDIA INITIALIZATION: Start media immediately on page load (Teams/Meet style)
   useEffect(() => {
-    if (!isValidated || isBlocked || !sessionId) {
-      console.log('🚫 PARTICIPANT PAGE: Skipping auto-connect - mobile validation failed');
+    if (!sessionId || isBlocked) {
+      console.log('🚫 PARTICIPANT: Skipping auto-initialization - blocked or no session');
       return;
     }
     
-    console.log('🚀 PARTICIPANT PAGE: Route load - starting auto-connect for session:', sessionId);
+    console.log('🚀 PARTICIPANT: Auto-initializing media (Teams/Meet style)');
     
-    streamLogger.log(
-      'STREAM_START' as any,
-      participantId,
-      isMobile,
-      isMobile ? 'mobile' : 'desktop',
-      { timestamp: Date.now(), duration: 0 },
-      undefined,
-      'AUTO_CONNECT',
-      'Auto-connecting to mobile session',
-      { sessionId }
-    );
-    
-    autoConnectToMobileSession().catch(error => {
-      console.error('❌ PARTICIPANT: Failed to auto-connect mobile session:', error);
-      streamLogger.logStreamError(participantId, isMobile, isMobile ? 'mobile' : 'desktop', error as Error, 0);
-      toast.error('Falha ao conectar câmera móvel automaticamente');
-    });
+    // Call automatic media initialization
+    initParticipantMedia();
     
     return () => {
       try {
         media.cleanup();
       } catch (error) {
         console.error('❌ PARTICIPANT: Cleanup error:', error);
-        streamLogger.logStreamError(participantId, isMobile, isMobile ? 'mobile' : 'desktop', error as Error, 0);
       }
     };
-  }, [sessionId, isValidated, isBlocked, participantId, isMobile]);
+  }, [sessionId, isBlocked, participantId]);
 
-  const autoConnectToMobileSession = async () => {
-    const deviceType = isMobile ? 'mobile' : 'desktop';
-    
-    try {
-      console.log('📱 PARTICIPANT: Starting MOBILE-FORCED auto-connection with camera validation');
-      
-      streamLogger.log(
-        'STREAM_START' as any,
-        participantId,
-        isMobile,
-        deviceType,
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'AUTO_CONNECT_MOBILE',
-        'Starting mobile auto-connection with validation'
-      );
-      
-      // FASE 3: Validate mobile camera capabilities first
-      const hasValidCamera = await validateMobileCameraCapabilities();
-      if (hasValidCamera) {
-        console.log('✅ PARTICIPANT: Mobile camera capabilities validated');
-        streamLogger.logValidation(participantId, isMobile, deviceType, true, {
-          reason: 'mobile_camera_capabilities_validated'
-        });
-        toast.success('📱 Câmera móvel validada - iniciando conexão');
-      } else {
-        console.log('⚠️ PARTICIPANT: Camera validation inconclusive - proceeding anyway');
-        streamLogger.logValidation(participantId, isMobile, deviceType, false, {
-          reason: 'camera_validation_inconclusive',
-          action: 'proceeding_anyway'
-        });
-        toast.warning('⚠️ Validação de câmera inconclusiva - tentando conectar');
-      }
-      
-      // SINGLE MEDIA INITIALIZATION - Get stream once and reuse
-      console.log('📱 PARTICIPANT: Initializing camera stream...');
-      const stream = await media.initializeMedia();
-      
-      // Validar stream após obtenção
-      if (stream) {
-        const isStreamValid = validateStreamHealth(stream);
-        console.log(`PART-STREAM-VALIDATION {valid=${isStreamValid}, streamId=${stream.id}}`);
-        
-        if (!isStreamValid) {
-          console.warn('⚠️ PARTICIPANT: Stream health validation failed');
-          toast.warning('⚠️ Stream obtido mas com problemas de saúde');
-        }
-        
-        // CRITICAL: Set this stream globally for handshake reuse
-        (window as any).__participantSharedStream = stream;
-        console.log('✅ PARTICIPANT: Stream shared globally for handshake reuse');
-      }
-      
-      // ÚNICO PONTO: notifyStreamStarted será chamado pelo UnifiedWebRTCManager
-      
-      if (stream) {
-        const videoTracks = stream.getVideoTracks();
-        if (videoTracks.length > 0) {
-          const settings = videoTracks[0].getSettings();
-          console.log('📱 PARTICIPANT: Mobile camera stream verified:', {
-            facingMode: settings.facingMode,
-            width: settings.width,
-            height: settings.height,
-            deviceId: settings.deviceId?.substring(0, 20),
-            isMobileCamera: settings.facingMode === 'environment' || settings.facingMode === 'user',
-            isForced: sessionStorage.getItem('forcedMobile') === 'true'
-          });
-          
-          streamLogger.logValidation(participantId, isMobile, deviceType, true, {
-            reason: 'mobile_camera_stream_verified',
-            settings
-          });
-          
-          // Validate we got mobile camera
-          if (settings.facingMode) {
-            console.log('✅ PARTICIPANT: MOBILE CAMERA CONFIRMED with facingMode:', settings.facingMode);
-            toast.success(`📱 Câmera ${settings.facingMode === 'environment' ? 'traseira' : 'frontal'} ativada!`);
-            
-            // Store confirmed mobile camera
-            sessionStorage.setItem('confirmedMobileCamera', settings.facingMode);
-            
-            streamLogger.logValidation(participantId, isMobile, deviceType, true, {
-              reason: 'mobile_camera_confirmed',
-              facingMode: settings.facingMode
-            });
-          } else {
-            console.warn('⚠️ PARTICIPANT: Camera may not be mobile - no facingMode detected');
-            toast.warning('⚠️ Câmera ativada mas tipo não confirmado');
-            
-            streamLogger.logValidation(participantId, isMobile, deviceType, false, {
-              reason: 'no_facing_mode_detected',
-              warning: true
-            });
-          }
-        }
-      } else {
-        console.warn('⚠️ PARTICIPANT: No stream obtained - entering degraded mode');
-        streamLogger.log(
-          'STREAM_ERROR' as any,
-          participantId,
-          isMobile,
-          deviceType,
-          { timestamp: Date.now(), duration: 0, errorType: 'NO_STREAM_DEGRADED' },
-          undefined,
-          'AUTO_CONNECT_MOBILE',
-          'No stream obtained - entering degraded mode'
-        );
-        toast.error('❌ Falha ao obter stream da câmera - modo degradado');
-      }
-      
-      // Connect sempre, mesmo em modo degradado
-      await connection.connectToSession(stream);
-      
-      // HANDSHAKE: Único caminho limpo
-      console.log(`🤝 [PART] Initiating WebRTC handshake with participantId: ${participantId}`);
-      
-      // Aguardar estabilização da conexão WebSocket
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      try {
-        const hostId = connection.getHostId();
-        if (hostId && stream) {
-          console.log(`🎯 [PART] Host detected: ${hostId}, starting handshake`);
-          
-          // PRE-WEBRTC STREAM VALIDATION
-          const validateStreamForWebRTC = async (stream: MediaStream): Promise<boolean> => {
-            const videoTrack = stream.getVideoTracks()[0];
-            if (!videoTrack) {
-              console.error('❌ [VALIDATION] No video track available for WebRTC');
-              return false;
-            }
-
-            // Check track state
-            if (videoTrack.readyState !== 'live') {
-              console.error('❌ [VALIDATION] Video track is not live:', videoTrack.readyState);
-              return false;
-            }
-
-            // Check if track is muted (no frames)
-            if (videoTrack.muted) {
-              console.warn('⚠️ [VALIDATION] Video track is muted - attempting recovery');
-              
-              // Try to recover before WebRTC
-              const recovered = await media.recoverVideoTrack('pre-webrtc validation failed');
-              if (!recovered) {
-                console.error('❌ [VALIDATION] Track recovery failed');
-                return false;
-              }
-              
-              // Validate recovered stream
-              const newStream = (window as any).__participantSharedStream;
-              const newVideoTrack = newStream?.getVideoTracks()[0];
-              if (!newVideoTrack || newVideoTrack.muted) {
-                console.error('❌ [VALIDATION] Recovered track still muted');
-                return false;
-              }
-            }
-
-            // Wait for actual frame production (avoid 2x2 video)
-            console.log('⏳ [VALIDATION] Waiting for frame production validation...');
-            return new Promise((resolve) => {
-              const video = document.createElement('video');
-              video.srcObject = stream;
-              video.muted = true;
-              video.playsInline = true;
-              
-              const timeout = setTimeout(() => {
-                console.warn('⚠️ [VALIDATION] Frame validation timeout');
-                resolve(false);
-              }, 5000);
-
-              video.onloadedmetadata = () => {
-                const hasRealFrames = video.videoWidth > 2 && video.videoHeight > 2;
-                console.log(`📏 [VALIDATION] Video dimensions: ${video.videoWidth}x${video.videoHeight}`);
-                
-                clearTimeout(timeout);
-                video.remove();
-                resolve(hasRealFrames);
-              };
-
-              video.onerror = () => {
-                console.error('❌ [VALIDATION] Video validation error');
-                clearTimeout(timeout);
-                video.remove();
-                resolve(false);
-              };
-            });
-          };
-
-          // Validate stream before WebRTC handshake
-          const isStreamValid = await validateStreamForWebRTC(stream);
-          if (!isStreamValid) {
-            console.error('❌ [PART] Stream validation failed - aborting WebRTC handshake');
-            toast.error('❌ Validação de vídeo falhou - tentando novamente...');
-            
-            // Try media retry and validate again
-            const retryStream = await media.retryMediaInitialization();
-            if (retryStream) {
-              const retryValid = await validateStreamForWebRTC(retryStream);
-              if (!retryValid) {
-                console.error('❌ [PART] Stream validation failed even after retry');
-                return;
-              }
-              // Update global shared stream with validated retry stream
-              (window as any).__participantSharedStream = retryStream;
-              
-              // Use retry stream for WebRTC handshake
-              const finalStream = retryStream;
-              const { webrtc } = await initParticipantWebRTC(sessionId!, participantId, finalStream);
-              if (webrtc) {
-                webrtc.setLocalStream(finalStream);
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                await webrtc.connectToHost();
-                console.log(`✅ [PART] Handshake completed with retry stream: ${participantId}`);
-                toast.success('🤝 Handshake WebRTC iniciado com sucesso após retry!');
-              }
-              return;
-            } else {
-              return;
-            }
-          }
-
-          console.log('✅ [VALIDATION] Stream validated successfully for WebRTC');
-          const activeTracks = stream.getTracks().filter(t => t.readyState === 'live' && t.enabled);
-          const videoTracks = stream.getVideoTracks().filter(t => t.readyState === 'live' && t.enabled);
-          
-          console.log(`🔍 [PART] Track health check:`, {
-            totalTracks: stream.getTracks().length,
-            activeTracks: activeTracks.length,
-            activeVideoTracks: videoTracks.length,
-            trackDetails: stream.getTracks().map(t => ({
-              kind: t.kind,
-              readyState: t.readyState,
-              enabled: t.enabled,
-              muted: t.muted
-            }))
-          });
-          
-          if (activeTracks.length === 0) {
-            console.warn(`⚠️ [PART] No active tracks in stream`);
-            toast.warning('⚠️ Stream sem tracks ativos');
-          } else if (videoTracks.length === 0) {
-            console.warn(`⚠️ [PART] No active video tracks in stream`);
-            toast.warning('⚠️ Stream sem vídeo ativo');
-          } else {
-            setupStreamTransmissionMonitoring(stream, participantId);
-            console.log(`✅ [PART] Stream validated with ${videoTracks.length} video tracks ready for handshake`);
-          }
-          
-          // ÚNICO CAMINHO: initParticipantWebRTC → setLocalStream → connectToHost
-          const { webrtc } = await initParticipantWebRTC(sessionId!, participantId, stream);
-          if (webrtc) {
-            // Ensure the same stream is used consistently
-            webrtc.setLocalStream(stream);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            await webrtc.connectToHost();
-            console.log(`✅ [PART] Handshake completed: ${participantId}`);
-            toast.success('🤝 Handshake WebRTC iniciado com sucesso!');
-          }
-        } else if (!hostId) {
-          console.warn(`⚠️ [PART] Host not detected for: ${participantId}`);
-          toast.info('⏳ Aguardando host ficar disponível...');
-        } else {
-          console.warn(`⚠️ [PART] No stream available for handshake: ${participantId}`);
-          toast.warning('⚠️ Sem stream disponível');
-        }
-      } catch (error) {
-        console.error(`❌ [PART] Handshake failed for ${participantId}:`, error);
-        toast.error(`❌ Falha no handshake: ${error instanceof Error ? error.message : String(error)}`);
-      }
-      
-    } catch (error) {
-      console.error(`❌ [PART] Auto-connection failed for ${participantId}:`, error);
-      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      toast.error(`❌ Falha na conexão móvel: ${errorMsg}`);
-    }
-  };
-
+  // Handler functions
   const handleConnect = async () => {
-    if (isBlocked) {
-      console.log(`🚫 [PART] Connection blocked for: ${participantId}`);
-      streamLogger.log(
-        'STREAM_ERROR' as any,
-        participantId,
-        isMobile,
-        isMobile ? 'mobile' : 'desktop',
-        { timestamp: Date.now(), duration: 0, errorType: 'CONNECTION_BLOCKED' },
-        undefined,
-        'CONNECT_MANUAL',
-        'Connection blocked - mobile validation failed'
-      );
-      toast.error('🚫 Conexão bloqueada - dispositivo não validado como móvel');
-      return;
-    }
-    
-    const deviceType = isMobile ? 'mobile' : 'desktop';
-    
     try {
-      streamLogger.log(
-        'STREAM_START' as any,
-        participantId,
-        isMobile,
-        deviceType,
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'CONNECT_MANUAL',
-        'Manual connection initiated'
-      );
+      console.log('🔌 PARTICIPANT: Manual connect requested');
       
-      let stream = media.localStreamRef.current;
-      if (!stream) {
-        console.log('📱 PARTICIPANT: Initializing mobile camera for manual connection');
-        toast.info('📱 Inicializando câmera móvel...');
-        stream = await media.initializeMedia();
+      // If no media, try to get it first
+      if (!media.hasVideo && !media.hasAudio) {
+        await media.initializeMediaAutomatically();
       }
       
-      await connection.connectToSession(stream);
-      toast.success('✅ Conectado com sucesso!');
-      
-      streamLogger.log(
-        'STREAM_SUCCESS' as any,
-        participantId,
-        isMobile,
-        deviceType,
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'CONNECT_MANUAL',
-        'Manual connection successful'
-      );
-      
+      await connection.connectToSession(media.localStreamRef.current);
     } catch (error) {
-      console.error('❌ PARTICIPANT: Manual mobile connection failed:', error);
-      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      toast.error(`❌ Falha na conexão manual: ${errorMsg}`);
+      console.error('❌ PARTICIPANT: Manual connect failed:', error);
+      toast.error('Connection failed');
     }
   };
 
   const handleRetryMedia = async () => {
-    if (isBlocked) {
-      console.log('🚫 PARTICIPANT: Media retry blocked - mobile validation failed');
-      streamLogger.log(
-        'STREAM_ERROR' as any,
-        participantId,
-        isMobile,
-        isMobile ? 'mobile' : 'desktop',
-        { timestamp: Date.now(), duration: 0, errorType: 'RETRY_BLOCKED' },
-        undefined,
-        'RETRY_MEDIA',
-        'Media retry blocked - mobile validation failed'
-      );
-      toast.error('🚫 Retry bloqueado - dispositivo não validado como móvel');
-      return;
-    }
-    
-    const deviceType = isMobile ? 'mobile' : 'desktop';
-    
     try {
-      console.log('🔄 PARTICIPANT: Retrying MOBILE camera with enhanced detection');
-      streamLogger.log(
-        'STREAM_START' as any,
-        participantId,
-        isMobile,
-        deviceType,
-        { timestamp: Date.now(), duration: 0 },
-        undefined,
-        'RETRY_MEDIA',
-        'Retrying mobile camera with enhanced detection'
-      );
-      
-      toast.info('🔄 Tentando novamente câmera móvel...');
-      
-      const stream = await media.retryMediaInitialization();
-      if (stream && connection.isConnected) {
-        await connection.disconnectFromSession();
-        await connection.connectToSession(stream);
-        toast.success('✅ Câmera reconectada com sucesso!');
-        
-        streamLogger.log(
-          'STREAM_SUCCESS' as any,
-          participantId,
-          isMobile,
-          deviceType,
-          { timestamp: Date.now(), duration: 0 },
-          undefined,
-          'RETRY_MEDIA',
-          'Media retry successful'
-        );
-      }
+      console.log('🔄 PARTICIPANT: Media retry requested');
+      await media.initializeMediaAutomatically();
     } catch (error) {
-      console.error('❌ PARTICIPANT: Mobile media retry failed:', error);
-      streamLogger.logStreamError(participantId, isMobile, deviceType, error as Error, 0);
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      toast.error(`❌ Falha ao tentar novamente: ${errorMsg}`);
+      console.error('❌ PARTICIPANT: Media retry failed:', error);
+      toast.error('Media retry failed');
     }
   };
 
-  // Show loading screen while validating mobile access
-  if (!isValidated) {
+  const handleSwitchCamera = async () => {
+    toast.info('Camera switching not available in automatic mode');
+  };
+
+  // Loading states
+  if (isBlocked) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6 flex items-center justify-center">
         <div className="text-center text-white">
-          <div className="animate-spin w-8 h-8 border-2 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p>🔒 Validando acesso móvel FORÇADO...</p>
-          <p className="text-sm opacity-75 mt-2">Verificando parâmetros de força e câmera</p>
+          <h2 className="text-xl font-bold mb-4">Access Blocked</h2>
+          <p className="text-white/80 mb-4">
+            This page is only accessible from mobile devices via QR code.
+          </p>
+          <button 
+            onClick={() => navigate('/')}
+            className="px-4 py-2 bg-primary rounded-lg hover:bg-primary/80 transition-colors"
+          >
+            Go Home
+          </button>
         </div>
       </div>
     );
   }
 
-  // Show blocked screen for non-mobile users
-  if (isBlocked) {
+  if (!isValidated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-900 via-purple-900 to-indigo-900 p-4 flex items-center justify-center">
-        <div className="text-center text-white max-w-md">
-          <div className="text-6xl mb-4">📱🚫</div>
-          <h1 className="text-2xl font-bold mb-4">Acesso Exclusivo Móvel</h1>
-          <p className="text-lg mb-6">Esta página requer câmera móvel para funcionar corretamente.</p>
-          <p className="text-sm opacity-75 mb-4">
-            Escaneie o QR Code com seu <strong>celular</strong> para acessar a câmera.
-          </p>
-          <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-3 mb-4">
-            <p className="text-yellow-200 text-xs">
-              💡 A câmera do PC não é compatível com esta funcionalidade
-            </p>
-          </div>
-          <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-3">
-            <p className="text-blue-200 text-xs">
-              🔧 Para forçar acesso móvel, adicione ?forceMobile=true na URL
-            </p>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6 flex items-center justify-center">
+        <div className="text-center text-white">
+          <h2 className="text-xl font-bold mb-4">Validating...</h2>
+          <p className="text-white/80">Checking device compatibility...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+      <div className="max-w-md mx-auto space-y-6">
         {/* Header */}
         <ParticipantHeader
-          sessionId={sessionId}
+          sessionId={sessionId || ''}
           connectionStatus={connection.connectionStatus}
           signalingStatus={signalingStatus}
           onBack={() => navigate('/')}
@@ -744,6 +296,9 @@ const ParticipantPage = () => {
           onToggleScreenShare={media.toggleScreenShare}
           onConnect={handleConnect}
           onDisconnect={connection.disconnectFromSession}
+          mediaError={mediaError}
+          onStartCamera={handleStartCamera}
+          onRetryMedia={handleRetryCamera}
         />
 
         {/* Instructions */}
@@ -753,15 +308,12 @@ const ParticipantPage = () => {
         {isMobile && (
           <div className="mt-4 p-3 bg-green-500/20 rounded-lg border border-green-500/30">
             <p className="text-green-300 text-sm">
-              ✅ Dispositivo móvel FORÇADO | Câmera traseira priorizada
+              ✅ Automatic media initialization enabled (Teams/Meet style)
             </p>
             <p className="text-green-200 text-xs mt-1">
-              📱 Modo: {sessionStorage.getItem('confirmedMobileCamera') || 
+              📱 Mode: {sessionStorage.getItem('confirmedMobileCamera') || 
                         media.localStreamRef.current?.getVideoTracks()[0]?.getSettings()?.facingMode || 
-                        'Detectando...'}
-            </p>
-            <p className="text-green-100 text-xs mt-1">
-              🔧 Forçado: {sessionStorage.getItem('forcedMobile') === 'true' ? 'SIM' : 'NÃO'}
+                        'Detecting...'}
             </p>
           </div>
         )}
@@ -769,10 +321,10 @@ const ParticipantPage = () => {
         {/* Enhanced URL Debug Info */}
         <div className="mt-2 p-2 bg-blue-500/10 rounded border border-blue-500/20">
           <p className="text-blue-300 text-xs">
-            🌐 URL: {window.location.href.includes('hutz-live-85.onrender.com') ? '✅ Produção' : '⚠️ Desenvolvimento'}
+            🌐 URL: {window.location.href.includes('hutz-live-85.onrender.com') ? '✅ Production' : '⚠️ Development'}
           </p>
           <p className="text-blue-200 text-xs mt-1">
-            🔧 Parâmetros: {new URLSearchParams(window.location.search).toString() || 'Nenhum'}
+            🔧 Parameters: {new URLSearchParams(window.location.search).toString() || 'None'}
           </p>
           <p className="text-blue-100 text-xs mt-1">
             🐛 Debug: 
@@ -780,7 +332,7 @@ const ParticipantPage = () => {
               onClick={() => setShowDebugPanel(!showDebugPanel)}
               className="ml-1 text-blue-400 hover:text-blue-300 underline"
             >
-              {showDebugPanel ? 'Fechar' : 'Abrir'} Painel
+              {showDebugPanel ? 'Close' : 'Open'} Panel
             </button>
           </p>
         </div>

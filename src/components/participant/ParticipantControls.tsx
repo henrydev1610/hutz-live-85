@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,11 +12,14 @@ interface ParticipantControlsProps {
   isConnected: boolean;
   isConnecting: boolean;
   connectionStatus: string;
+  mediaError?: string | null;
   onToggleVideo: () => void;
   onToggleAudio: () => void;
   onToggleScreenShare: () => void;
   onConnect: () => void;
   onDisconnect: () => void;
+  onStartCamera?: () => void;
+  onRetryMedia?: () => void;
 }
 
 const ParticipantControls: React.FC<ParticipantControlsProps> = ({
@@ -29,12 +31,55 @@ const ParticipantControls: React.FC<ParticipantControlsProps> = ({
   isConnected,
   isConnecting,
   connectionStatus,
+  mediaError,
   onToggleVideo,
   onToggleAudio,
   onToggleScreenShare,
   onConnect,
-  onDisconnect
+  onDisconnect,
+  onStartCamera,
+  onRetryMedia
 }) => {
+  // Show "Enable Camera" button if there's a media error
+  if (mediaError && onStartCamera) {
+    return (
+      <Card className="bg-black/30 border-white/10">
+        <CardContent className="p-6">
+          <div className="text-center space-y-4">
+            <div className="text-white/70">
+              <p className="text-lg font-medium">Camera Permission Required</p>
+              <p className="text-sm mt-2">
+                {mediaError === 'NotAllowedError' && 'Please enable camera/microphone access in your browser settings.'}
+                {mediaError === 'NotFoundError' && 'No camera or microphone found on this device.'}
+                {mediaError && !['NotAllowedError', 'NotFoundError'].includes(mediaError) && 'Error accessing camera/microphone.'}
+              </p>
+            </div>
+            
+            <Button 
+              onClick={onStartCamera}
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+              size="lg"
+            >
+              <Camera className="w-5 h-5 mr-2" />
+              Enable Camera
+            </Button>
+            
+            {onRetryMedia && (
+              <Button 
+                onClick={onRetryMedia}
+                variant="outline"
+                className="w-full"
+                size="lg"
+              >
+                Try Again
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="bg-black/30 border-white/10">
       <CardContent className="p-6">
