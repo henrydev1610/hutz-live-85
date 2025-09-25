@@ -36,7 +36,9 @@ export const getUserMediaWithFallback = async (participantId: string = 'unknown'
   const constraints: MediaStreamConstraints[] = [
     // Priority 1: Basic video + audio (most compatible)
     { video: true, audio: true },
-    // Priority 2: Video only
+    // Priority 2: Lower quality with audio
+    { video: { width: 640, height: 480 }, audio: true },
+    // Priority 3: Video only (fallback)
     { video: true, audio: false },
     // Priority 3: Mobile specific (if mobile device)
     ...(isMobile ? [{

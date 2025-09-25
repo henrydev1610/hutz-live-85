@@ -107,6 +107,17 @@ export const useParticipantMedia = (participantId: string) => {
       setIsVideoEnabled(videoTracks.length > 0);
       setIsAudioEnabled(audioTracks.length > 0);
       
+      // Verificar consistência de estados de mídia
+      console.log(`🔍 Stream validation - Audio: ${audioTracks.length}, Video: ${videoTracks.length}`);
+      console.log(`🔍 Media states - hasAudio: ${hasAudio}, hasVideo: ${hasVideo}`);
+      
+      if (audioTracks.length > 0 && !hasAudio) {
+        console.warn('⚠️ Inconsistency: Stream has audio but hasAudio is false');
+      }
+      if (audioTracks.length === 0 && hasAudio) {
+        console.warn('⚠️ Inconsistency: Stream has no audio but hasAudio is true');
+      }
+
       if (localVideoRef.current && videoTracks.length > 0) {
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;

@@ -433,7 +433,7 @@ class ParticipantHandshakeManager {
       console.log('🚨 CRÍTICO [PARTICIPANT] Creating offer...');
       const offer = await this.peerConnection.createOffer({
         offerToReceiveVideo: false,
-        offerToReceiveAudio: false
+        offerToReceiveAudio: true
       });
       const offerCreateDuration = performance.now() - offerCreateStartTime;
 

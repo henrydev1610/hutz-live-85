@@ -109,6 +109,24 @@ const ParticipantPage = () => {
       const videoTracks = stream.getVideoTracks();
       const audioTracks = stream.getAudioTracks();
       
+      // Adicionar validação de tracks de áudio
+      console.log(`🎤 Audio tracks: ${audioTracks.length}, Video tracks: ${videoTracks.length}`);
+      
+      if (audioTracks.length === 0) {
+        console.warn('⚠️ No audio tracks found in stream');
+      }
+      
+      if (videoTracks.length === 0) {
+        console.warn('⚠️ No video tracks found in stream');
+      }
+
+      // Verificar stream compartilhado globalmente
+      const sharedStream = (window as any).__participantSharedStream;
+      if (sharedStream) {
+        const sharedAudioTracks = sharedStream.getAudioTracks();
+        console.log(`🌐 Shared stream audio tracks: ${sharedAudioTracks.length}`);
+      }
+      
       // Share globally for WebRTC
       (window as any).__participantSharedStream = stream;
       

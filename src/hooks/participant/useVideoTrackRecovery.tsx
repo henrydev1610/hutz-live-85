@@ -43,14 +43,14 @@ export const useVideoTrackRecovery = ({
         await new Promise(resolve => setTimeout(resolve, RECOVERY_BACKOFF * recoveryAttempts.current));
       }
 
-      // Create new stream with same constraints
+      // Create new stream with same constraints (including audio)
       const newStream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: 'environment',
           width: { ideal: 1280 },
           height: { ideal: 720 }
         },
-        audio: false
+        audio: true
       });
 
       const newVideoTrack = newStream.getVideoTracks()[0];
