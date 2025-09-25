@@ -82,18 +82,23 @@ export const useParticipantMedia = (participantId: string) => {
     webrtcSender: (window as any).__participantWebRTCSender
   });
 
-  // Automatic media initialization (Teams/Meet style)
+  // FASE 4: Video-only media initialization with intelligent permissions
   const initializeMediaAutomatically = useCallback(async () => {
     try {
-      console.log('🎬 MEDIA: Starting automatic media initialization');
+      console.log('🎬 MEDIA: Starting video-only media initialization');
       
+      // FASE 4: Direct video-only getUserMedia
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false // FASE 4: Video-only capture
       });
 
       if (!stream) {
-        throw new Error('No stream obtained from getUserMedia');
+        throw new Error('No video stream obtained from getUserMedia');
       }
 
       localStreamRef.current = stream;
@@ -103,28 +108,36 @@ export const useParticipantMedia = (participantId: string) => {
       (window as any).__participantSharedStream = stream;
       
       setHasVideo(videoTracks.length > 0);
-      setHasAudio(audioTracks.length > 0);
+      setHasAudio(audioTracks.length > 0); // Should be 0 for video-only
       setIsVideoEnabled(videoTracks.length > 0);
       setIsAudioEnabled(audioTracks.length > 0);
       
-      // Verificar consistência de estados de mídia
-      console.log(`🔍 Stream validation - Audio: ${audioTracks.length}, Video: ${videoTracks.length}`);
-      console.log(`🔍 Media states - hasAudio: ${hasAudio}, hasVideo: ${hasVideo}`);
-      
-      if (audioTracks.length > 0 && !hasAudio) {
-        console.warn('⚠️ Inconsistency: Stream has audio but hasAudio is false');
-      }
-      if (audioTracks.length === 0 && hasAudio) {
-        console.warn('⚠️ Inconsistency: Stream has no audio but hasAudio is true');
-      }
+      // Enhanced validation logging
+      console.log(`🔍 Video-only stream validation:`, {
+        videoTracks: videoTracks.length,
+        audioTracks: audioTracks.length,
+        streamActive: stream.active,
+        streamId: stream.id
+      });
 
+      // FASE 4: Invisible prime to drain frames
       if (localVideoRef.current && videoTracks.length > 0) {
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
         localVideoRef.current.playsInline = true;
+        localVideoRef.current.style.visibility = 'hidden'; // Invisible prime
         
         try {
+          // FASE 6: Single play() call with promise guard
           await localVideoRef.current.play();
+          console.log('✅ [MEDIA] Video playing (invisible prime)');
+          
+          // Make visible after frames are drained
+          setTimeout(() => {
+            if (localVideoRef.current) {
+              localVideoRef.current.style.visibility = 'visible';
+            }
+          }, 500);
         } catch (playError) {
           console.warn('⚠️ Video play warning:', playError);
         }
@@ -133,7 +146,19 @@ export const useParticipantMedia = (participantId: string) => {
       return stream;
         
     } catch (error) {
-      console.error('❌ MEDIA: Failed to initialize automatically:', error);
+      console.error('❌ MEDIA: Failed to initialize video-only media:', error);
+      
+      // FASE 5: Intelligent permission management
+      if (error.name === 'NotAllowedError') {
+        console.log('🚫 [MEDIA] Permission denied - pausing recovery until user gesture');
+        setHasVideo(false);
+        setIsVideoEnabled(false);
+        throw new Error('Permissão da câmera negada. Clique para tentar novamente.');
+      } else if (error.name === 'AbortError') {
+        console.log('🔄 [MEDIA] Permission dismissed - will retry silently on next gesture');
+        throw new Error('Acesso à câmera foi cancelado');
+      }
+      
       setHasVideo(false);
       setHasAudio(false);
       setIsVideoEnabled(false);

@@ -47,8 +47,11 @@ export const useTrackHealthMonitor = (
     const activeVideoTracks = videoTracks.filter(t => t.readyState === 'live' && t.enabled);
     const activeAudioTracks = audioTracks.filter(t => t.readyState === 'live' && t.enabled);
 
+    // FASE 8: Health based on track properties (not videoEl.muted)
     const status: TrackHealthStatus = {
-      isHealthy: stream.active && activeVideoTracks.length > 0,
+      isHealthy: stream.active && activeVideoTracks.length > 0 && activeVideoTracks.every(t => 
+        t.enabled && t.readyState === 'live' && !t.muted
+      ),
       lastCheck: now,
       trackCount: activeTracks.length,
       activeVideoTracks: activeVideoTracks.length,

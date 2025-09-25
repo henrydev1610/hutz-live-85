@@ -16,6 +16,14 @@ class ParticipantHandshakeManager {
   private lastConnectionTime: number = 0;
   private handshakeStartTime: number = 0;
   
+  // FASE 1: Polite peer implementation
+  private makingOffer: boolean = false;
+  private ignoreOffer: boolean = false;
+  private isPolite: boolean = true; // participant is polite
+  
+  // FASE 2: Room state management
+  private inRoom: boolean = false;
+  
   constructor() {
     this.setupParticipantHandlers();
   }
@@ -150,7 +158,8 @@ class ParticipantHandshakeManager {
         dataKeys: Object.keys(data),
         hasFromUserId: !!data.fromUserId,
         hasParticipantId: !!data.participantId,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        inRoom: this.inRoom
       });
       
       if (!hostId) {
@@ -158,22 +167,24 @@ class ParticipantHandshakeManager {
         return;
       }
 
-      // Check host readiness
-      const hostReadiness = await this.checkHostReadiness(hostId);
-      if (!hostReadiness.ready) {
-        console.log(`[PART] Host not ready: ${hostId}, reason: ${hostReadiness.reason}`);
-        setTimeout(() => {
-          this.createAndSendOffer(hostId);
-        }, 2000);
+      // FASE 2: Only proceed if inRoom=true and WebSocket is open
+      if (!this.inRoom) {
+        console.warn('⚠️ [PARTICIPANT] Not in room yet, deferring offer creation');
         return;
       }
 
-      // Guard against concurrent offers
-      if (this.isOfferInProgress) {
-        console.warn('⚠️ [PARTICIPANT] Already making offer, ignoring request from:', hostId);
+      if (!unifiedWebSocketService.isReady()) {
+        console.warn('⚠️ [PARTICIPANT] WebSocket not ready, cannot proceed with offer');
         return;
       }
 
+      // FASE 1: Polite peer - check if making offer
+      if (this.makingOffer) {
+        console.warn('⚠️ [PARTICIPANT] Already making offer, ignoring glare condition');
+        return;
+      }
+
+      // FASE 1: Only create offer when signaling state is stable
       if (this.peerConnection && this.peerConnection.signalingState !== 'stable') {
         console.warn('⚠️ [PARTICIPANT] PC not stable:', this.peerConnection.signalingState, '- ignoring request');
         return;
@@ -285,8 +296,15 @@ class ParticipantHandshakeManager {
   }
 
   async createAndSendOffer(hostId: string): Promise<void> {
-    if (this.isOfferInProgress) {
-      console.log('[PARTICIPANT] createAndSendOffer: Offer already in progress, skipping');
+    // FASE 1: Polite peer - prevent concurrent offers
+    if (this.makingOffer) {
+      console.log('[PARTICIPANT] createAndSendOffer: Already making offer, skipping');
+      return;
+    }
+
+    // FASE 1: Only proceed if signaling state is stable
+    if (this.peerConnection && this.peerConnection.signalingState !== 'stable') {
+      console.warn('⚠️ [PARTICIPANT] Cannot create offer - signaling state not stable:', this.peerConnection.signalingState);
       return;
     }
 
@@ -300,7 +318,7 @@ class ParticipantHandshakeManager {
       this.peerConnection = null;
     }
 
-    this.isOfferInProgress = true;
+    this.makingOffer = true;
     this.clearConnectionTimeout();
 
     try {
@@ -322,61 +340,59 @@ class ParticipantHandshakeManager {
         duration: `${streamDuration.toFixed(1)}ms`
       });
 
-      // STEP 2: Create new peer connection BEFORE any operation
+      // STEP 2: Create new peer connection with proper config
       const pcStartTime = performance.now();
-      const configuration: RTCConfiguration = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' }
-        ],
-        iceCandidatePoolSize: 10
-      };
+      const { getWebRTCConfig } = await import('@/utils/webrtc/WebRTCConfig');
+      const configuration = getWebRTCConfig();
 
       this.peerConnection = new RTCPeerConnection(configuration);
+      
+      // FASE 3: Pre-allocate transceivers (freeze topology)
+      this.peerConnection.addTransceiver('video', { direction: 'sendonly' });
+      console.log('✅ [PARTICIPANT] Pre-allocated video transceiver as sendonly');
       const pcDuration = performance.now() - pcStartTime;
       console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
 
-      // STEP 3: VALIDATE AND ADD tracks to peer connection BEFORE creating offer
+      // STEP 3: Use replaceTrack instead of addTrack (frozen topology)
       const addTrackStartTime = performance.now();
-      console.log('🚨 CRÍTICO [PARTICIPANT] Validating and adding tracks to RTCPeerConnection...');
+      console.log('🚨 CRÍTICO [PARTICIPANT] Applying track via replaceTrack...');
       
-      const tracks = stream.getTracks();
-      const validTracks = tracks.filter(track => track.readyState === 'live' && track.enabled);
+      const videoTracks = stream.getVideoTracks();
       
-      console.log(`🔍 [PARTICIPANT] Track validation:`, {
-        totalTracks: tracks.length,
-        validTracks: validTracks.length,
-        trackDetails: tracks.map(t => ({
-          kind: t.kind,
-          readyState: t.readyState,
-          enabled: t.enabled,
-          muted: t.muted
-        }))
-      });
-      
-      if (validTracks.length === 0) {
-        throw new Error('No valid tracks found in stream for WebRTC');
+      if (videoTracks.length === 0) {
+        throw new Error('No video tracks found in stream for WebRTC');
       }
       
-      validTracks.forEach((track, index) => {
-        if (this.peerConnection && stream) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding validated track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
-          this.peerConnection.addTrack(track, stream);
-          
-          // Track health monitoring after adding to peer connection
-          track.addEventListener('ended', () => {
-            console.warn(`⚠️ [PARTICIPANT] Track ${track.kind} ended after being added to PC`);
-          });
-          
-          track.addEventListener('mute', () => {
-            console.warn(`⚠️ [PARTICIPANT] Track ${track.kind} muted after being added to PC`);
-          });
-        }
+      const videoTrack = videoTracks[0];
+      console.log(`🔍 [PARTICIPANT] Video track validation:`, {
+        kind: videoTrack.kind,
+        readyState: videoTrack.readyState,
+        enabled: videoTrack.enabled,
+        muted: videoTrack.muted
+      });
+      
+      // FASE 3: Use pre-allocated transceiver and replaceTrack
+      const sender = this.peerConnection.getSenders().find(s => s.track?.kind === 'video');
+      if (sender) {
+        await sender.replaceTrack(videoTrack);
+        console.log(`✅ [PARTICIPANT] Video track replaced via replaceTrack`);
+      } else {
+        // Fallback for safety
+        this.peerConnection.addTrack(videoTrack, stream);
+        console.log(`⚠️ [PARTICIPANT] Fallback: added video track directly`);
+      }
+      
+      // Track health monitoring
+      videoTrack.addEventListener('ended', () => {
+        console.warn(`⚠️ [PARTICIPANT] Video track ended after being added to PC`);
+      });
+      
+      videoTrack.addEventListener('mute', () => {
+        console.warn(`⚠️ [PARTICIPANT] Video track muted after being added to PC`);
       });
       
       const addTrackDuration = performance.now() - addTrackStartTime;
-      console.log(`✅ [PARTICIPANT] ${validTracks.length} validated tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
+      console.log(`✅ [PARTICIPANT] Video track applied to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
 
       // Set up event handlers
       this.peerConnection.onicecandidate = (event) => {
@@ -433,7 +449,7 @@ class ParticipantHandshakeManager {
       console.log('🚨 CRÍTICO [PARTICIPANT] Creating offer...');
       const offer = await this.peerConnection.createOffer({
         offerToReceiveVideo: false,
-        offerToReceiveAudio: true
+        offerToReceiveAudio: false // FASE 4: Video-only capture
       });
       const offerCreateDuration = performance.now() - offerCreateStartTime;
 

@@ -11,6 +11,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
+  const [inRoom, setInRoom] = useState(false); // FASE 2: Room state tracking
   const isMobile = useIsMobile();
   
   // Função para validar stream para transmissão
@@ -131,13 +132,14 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         // Setup enhanced callbacks primeiro
         unifiedWebSocketService.setCallbacks({
           onConnected: () => {
-            console.log('🔗Participante conectado com sucesso!');
+            console.log('🔗 PARTICIPANT CONNECTION: WebSocket conectado!');
             setConnectionStatus('connected');
           },
           onDisconnected: () => {
             console.log('🔗 PARTICIPANT CONNECTION: WebSocket disconnectado');
             setConnectionStatus('disconnected');
             setIsConnected(false);
+            setInRoom(false); // FASE 2: Reset room state
           },
           onConnectionFailed: (error) => {
             console.error('🔗 PARTICIPANT CONNECTION: WebSocket connection failed:', error);
@@ -145,9 +147,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
             setError('Falha na conexão WebSocket');
           },
           onStreamStarted(participantId, streamInfo) {
-            console.log(`🎥 PARTICIPANT CONNECTION: Stream iniciado por:  ${participantId}:`, streamInfo);
-            // Atualizar estado do participante com o stream recebido
-        
+            console.log(`🎥 PARTICIPANT CONNECTION: Stream iniciado por: ${participantId}:`, streamInfo);
           },
         });
 
@@ -177,6 +177,10 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         
         const joinTime = Date.now() - joinStartTime;
         console.log(`✅ PARTICIPANT CONNECTION: Joined room in ${joinTime}ms`);
+        
+        // FASE 2: Set inRoom=true only after join ACK
+        setInRoom(true);
+        console.log(`🏠 PARTICIPANT CONNECTION: inRoom flag set to true`);
 
         // FASE 2: Additional stabilization for mobile
         const webrtcDelay = isMobile ? 3000 : 1500;

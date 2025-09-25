@@ -98,7 +98,11 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
       audioTracks: stream.getAudioTracks().length
     });
 
-    // Apply stream using utility function
+    // FASE 6: Single play() call with promise guard - avoid srcObject reassignment loop
+    if (video.srcObject !== stream) {
+      video.srcObject = stream;
+    }
+    
     setupVideoElement(video, stream)
       .then(() => {
         setIsVideoReady(true);  
