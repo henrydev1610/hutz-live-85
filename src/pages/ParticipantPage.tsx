@@ -79,14 +79,6 @@ const ParticipantPage = () => {
       throw error;
     }
   };
-      
-      // Send tracks to WebRTC if connection exists
-      if (stream) {
-        stream.getTracks().forEach(track => {
-          try {
-            console.log(`✅ Track ready for WebRTC: ${track.kind}`);
-          } catch (trackError) {
-            console.warn(`⚠️ Could not prepare track:`, trackError);
 
   // Manual retry function for error cases
   const handleStartCamera = async () => {
