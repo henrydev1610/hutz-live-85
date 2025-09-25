@@ -82,23 +82,42 @@ export const useParticipantMedia = (participantId: string) => {
     webrtcSender: (window as any).__participantWebRTCSender
   });
 
-  // FASE 4: Video-only media initialization with intelligent permissions
+  // FASE 4: Video+Audio media initialization with intelligent permissions
   const initializeMediaAutomatically = useCallback(async () => {
     try {
-      console.log('🎬 MEDIA: Starting video-only media initialization');
+      console.log('🎬 MEDIA: Starting video+audio media initialization');
       
-      // FASE 4: Direct video-only getUserMedia
+      // Check permissions proactively
+      if (navigator.permissions) {
+        try {
+          const cameraStatus = await navigator.permissions.query({ name: "camera" as PermissionName });
+          const micStatus = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          console.log("📋 Permissions:", { camera: cameraStatus.state, mic: micStatus.state });
+        } catch (permError) {
+          console.log("⚠️ Could not check permissions:", permError);
+        }
+      }
+
+      // List available devices for diagnostic
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        console.log("🎥 Devices available:", devices.map(d => ({ kind: d.kind, label: d.label.substring(0, 50) })));
+      } catch (devError) {
+        console.log("⚠️ Could not enumerate devices:", devError);
+      }
+      
+      // FASE 4: Direct video+audio getUserMedia
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'environment',
           width: { ideal: 1280 },
           height: { ideal: 720 }
         },
-        audio: false // FASE 4: Video-only capture
+        audio: true // Captura áudio também
       });
 
       if (!stream) {
-        throw new Error('No video stream obtained from getUserMedia');
+        throw new Error('No stream obtained from getUserMedia');
       }
 
       localStreamRef.current = stream;
@@ -108,12 +127,12 @@ export const useParticipantMedia = (participantId: string) => {
       (window as any).__participantSharedStream = stream;
       
       setHasVideo(videoTracks.length > 0);
-      setHasAudio(audioTracks.length > 0); // Should be 0 for video-only
+      setHasAudio(audioTracks.length > 0);
       setIsVideoEnabled(videoTracks.length > 0);
       setIsAudioEnabled(audioTracks.length > 0);
       
       // Enhanced validation logging
-      console.log(`🔍 Video-only stream validation:`, {
+      console.log(`🔍 Stream validation:`, {
         videoTracks: videoTracks.length,
         audioTracks: audioTracks.length,
         streamActive: stream.active,
@@ -146,7 +165,7 @@ export const useParticipantMedia = (participantId: string) => {
       return stream;
         
     } catch (error) {
-      console.error('❌ MEDIA: Failed to initialize video-only media:', error);
+      console.error('❌ MEDIA: Failed to initialize media:', error);
       
       // FASE 5: Intelligent permission management
       if (error.name === 'NotAllowedError') {
