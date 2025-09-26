@@ -61,22 +61,108 @@ const ParticipantPage = () => {
   // AUTOMATIC MEDIA INITIALIZATION (Teams/Meet style)
   const initParticipantMedia = async () => {
     try {
-      console.log('🎯 PARTICIPANT: Delegating media initialization to hook');
-      
-      // Use the media hook's initialization method
-      const stream = await media.initializeMediaAutomatically();
-      
-      if (!stream) {
-        throw new Error("No stream obtained from media hook");
+      // Check permissions proactively
+      if (navigator.permissions) {
+        try {
+          const cameraStatus = await navigator.permissions.query({ name: "camera" as PermissionName });
+          const micStatus = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          console.log("📋 Permissions:", { camera: cameraStatus.state, mic: micStatus.state });
+        } catch (permError) {
+          console.log("⚠️ Could not check permissions:", permError);
+        }
       }
 
-      console.log("📹 Stream successfully initialized via hook");
-      return stream;
+      // List available devices for diagnostic
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        console.log("🎥 Devices available:", devices.map(d => ({ kind: d.kind, label: d.label.substring(0, 50) })));
+      } catch (devError) {
+        console.log("⚠️ Could not enumerate devices:", devError);
+      }
+
+      // Request media immediately (Teams/Meet style)
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: true, 
+        audio: true 
+      });
+
+      if (!stream) {
+        throw new Error("No stream obtained from getUserMedia");
+      }
+
+      // Connect to local preview
+      if (media.localVideoRef.current) {
+        media.localVideoRef.current.srcObject = stream;
+        media.localVideoRef.current.muted = true;
+        media.localVideoRef.current.playsInline = true;
+        
+        try {
+          await media.localVideoRef.current.play();
+          console.log("📹 Stream connected to local preview");
+        } catch (playError) {
+          console.warn("⚠️ Video play warning:", playError);
+        }
+      }
+
+      // Update media state
+      media.localStreamRef.current = stream;
+      const videoTracks = stream.getVideoTracks();
+      const audioTracks = stream.getAudioTracks();
       
-    } catch (error) {
-      console.error('❌ PARTICIPANT: Media initialization failed:', error);
-      setMediaError(error instanceof Error ? error.message : 'Erro desconhecido');
-      throw error;
+      // Adicionar validação de tracks de áudio
+      console.log(`🎤 Audio tracks: ${audioTracks.length}, Video tracks: ${videoTracks.length}`);
+      
+      if (audioTracks.length === 0) {
+        console.warn('⚠️ No audio tracks found in stream');
+      }
+      
+      if (videoTracks.length === 0) {
+        console.warn('⚠️ No video tracks found in stream');
+      }
+
+      // Verificar stream compartilhado globalmente
+      const sharedStream = (window as any).__participantSharedStream;
+      if (sharedStream) {
+        const sharedAudioTracks = sharedStream.getAudioTracks();
+        console.log(`🌐 Shared stream audio tracks: ${sharedAudioTracks.length}`);
+      }
+      
+      // Share globally for WebRTC
+      (window as any).__participantSharedStream = stream;
+      
+      // Send tracks to WebRTC if connection exists
+      if (stream) {
+        stream.getTracks().forEach(track => {
+          try {
+            console.log(`✅ Track ready for WebRTC: ${track.kind}`);
+          } catch (trackError) {
+            console.warn(`⚠️ Could not prepare track:`, trackError);
+          }
+        });
+      }
+
+      // Connect to session
+      await connection.connectToSession(stream);
+
+      console.log("✅ Camera and microphone connected automatically");
+      toast.success(`📱 Camera connected! Video: ${videoTracks.length > 0 ? '✅' : '❌'}, Audio: ${audioTracks.length > 0 ? '✅' : '❌'}`);
+
+    } catch (err: any) {
+      console.error("❌ Error initializing media:", err.name, err.message);
+
+      if (err.name === "NotAllowedError") {
+        console.log("❌ Permission denied. Camera/microphone access blocked.");
+        toast.error("Permission denied. Please enable camera/microphone in your browser settings.");
+      } else if (err.name === "NotFoundError") {
+        console.log("❌ No camera/microphone devices found.");
+        toast.error("No camera/microphone devices found on this device.");
+      } else {
+        console.log("❌ Error accessing camera/microphone:", err.message);
+        toast.error("Error accessing camera/microphone. Please try again.");
+      }
+      
+      // Set error state to show retry button
+      setMediaError(err.name || 'UnknownError');
     }
   };
 
