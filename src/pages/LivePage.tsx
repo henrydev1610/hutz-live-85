@@ -12,6 +12,8 @@ import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
+import { useWebRTCStabilityManager } from '@/hooks/live/useWebRTCStabilityManager';
+import { signalingEventManager } from '@/utils/webrtc/SignalingEventManager';
 // REMOVED: useStreamDisplayManager - now using simplified video manager
 // Removed conflicting WebRTC stability systems - now unified in useParticipantManagement
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
