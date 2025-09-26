@@ -270,14 +270,6 @@ class UnifiedWebSocketService {
           context: error.context || 'No context',
           type: error.type || 'Unknown type'
         });
-        
-        // FASE 2: Handle 502/CORS specifically  
-        if (error.message.includes('502') || error.message.includes('CORS') || 
-            error.description?.includes('502') || error.description?.includes('CORS')) {
-          console.warn('🚨 [WS] 502/CORS error detected - server may be temporarily unavailable');
-          error.isTemporary = true;
-        }
-        
         reject(error);
       });
 
