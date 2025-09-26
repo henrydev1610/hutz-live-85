@@ -123,13 +123,24 @@ class SignalingConfigManager {
       signalingURL = envSignalingURL;
       console.log('🔧 [SIGNALING CONFIG] Using environment variable:', envSignalingURL);
     } else if (isProduction || isPreview) {
-      // Production/preview: use the production signaling server
-      signalingURL = 'wss://server-hutz-live.onrender.com';
+      // Production/preview: use the production signaling server with Socket.IO path
+      signalingURL = 'wss://server-hutz-live.onrender.com/socket.io';
       console.log('🌐 [SIGNALING CONFIG] Production/preview auto-config:', signalingURL);
     } else {
-      // Development fallback to localhost
-      signalingURL = `ws://localhost:3001`;
+      // Development fallback to localhost with Socket.IO path
+      signalingURL = `ws://localhost:3001/socket.io`;
       console.log('🏠 [SIGNALING CONFIG] Development fallback:', signalingURL);
+    }
+
+    // CRÍTICO: Garantir que URLs têm o path /socket.io para Socket.IO
+    if (!signalingURL.includes('/socket.io')) {
+      const hasProtocol = signalingURL.includes('://');
+      if (hasProtocol) {
+        signalingURL += '/socket.io';
+      } else {
+        signalingURL = `ws://${signalingURL}/socket.io`;
+      }
+      console.log('🔧 [SIGNALING CONFIG] Auto-appended /socket.io path:', signalingURL);
     }
 
     // Protocol extraction
