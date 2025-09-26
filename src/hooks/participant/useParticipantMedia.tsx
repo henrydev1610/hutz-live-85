@@ -92,42 +92,52 @@ export const useParticipantMedia = (participantId: string) => {
         audio: true
       });
 
-      if (!stream) {
-        throw new Error('No stream obtained from getUserMedia');
+      if (!stream || !stream.active) {
+        throw new Error('No active stream obtained from getUserMedia');
       }
 
-      localStreamRef.current = stream;
       const videoTracks = stream.getVideoTracks();
       const audioTracks = stream.getAudioTracks();
 
-      (window as any).__participantSharedStream = stream;
-      
-      setHasVideo(videoTracks.length > 0);
-      setHasAudio(audioTracks.length > 0);
-      setIsVideoEnabled(videoTracks.length > 0);
-      setIsAudioEnabled(audioTracks.length > 0);
-      
-      // Verificar consistência de estados de mídia
-      console.log(`🔍 Stream validation - Audio: ${audioTracks.length}, Video: ${videoTracks.length}`);
-      console.log(`🔍 Media states - hasAudio: ${hasAudio}, hasVideo: ${hasVideo}`);
-      
-      if (audioTracks.length > 0 && !hasAudio) {
-        console.warn('⚠️ Inconsistency: Stream has audio but hasAudio is false');
-      }
-      if (audioTracks.length === 0 && hasAudio) {
-        console.warn('⚠️ Inconsistency: Stream has no audio but hasAudio is true');
+      const liveVideoTracks = videoTracks.filter(track => track.readyState === 'live' && track.enabled);
+      const liveAudioTracks = audioTracks.filter(track => track.readyState === 'live' && track.enabled);
+
+      if (liveVideoTracks.length === 0 && liveAudioTracks.length === 0) {
+        stream.getTracks().forEach(track => track.stop());
+        throw new Error('Stream obtained but contains no live video or audio tracks.');
       }
 
-      if (localVideoRef.current && videoTracks.length > 0) {
+      localStreamRef.current = stream;
+      (window as any).__participantSharedStream = stream;
+      
+      setHasVideo(liveVideoTracks.length > 0);
+      setHasAudio(liveAudioTracks.length > 0);
+      setIsVideoEnabled(liveVideoTracks.length > 0);
+      setIsAudioEnabled(liveAudioTracks.length > 0);
+      
+      console.log(`🔍 Stream validation - Live Audio: ${liveAudioTracks.length}, Live Video: ${liveVideoTracks.length}`);
+
+      if (localVideoRef.current && liveVideoTracks.length > 0) {
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
         localVideoRef.current.playsInline = true;
+        localVideoRef.current.autoplay = true; // Ensure autoplay is set
         
         try {
           await localVideoRef.current.play();
-        } catch (playError) {
-          console.warn('⚠️ Video play warning:', playError);
+          console.log('✅ MEDIA: Video playing successfully in local preview');
+        } catch (playError: any) {
+          console.warn('⚠️ MEDIA: Video play failed in local preview:', playError.name, playError.message);
+          if (playError.name === 'NotAllowedError' || playError.name === 'AbortError') {
+            toast.info('Video autoplay blocked. Please tap the video to start.');
+          } else {
+            toast.error('Error playing video: ' + playError.message);
+          }
         }
+      } else if (localVideoRef.current) {
+        // If no live video tracks, ensure video element is cleared
+        localVideoRef.current.srcObject = null;
+        console.log('⚠️ MEDIA: No live video tracks, local video preview cleared.');
       }
       
       return stream;
