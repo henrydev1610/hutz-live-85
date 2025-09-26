@@ -5,24 +5,13 @@ import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getEnvironmentInfo, validateURLConsistency } from '@/utils/connectionUtils';
-import { useBackendHealth } from '@/hooks/live/useBackendHealth';
 
 export const useParticipantConnection = (sessionId: string | undefined, participantId: string) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
-  const [connectionStage, setConnectionStage] = useState<'idle' | 'warming' | 'connecting' | 'webrtc' | 'connected'>('idle');
-  const [progressiveTimeout, setProgressiveTimeout] = useState(30000);
   const isMobile = useIsMobile();
-  
-  // INFRASTRUCTURE FIX: Enhanced backend health monitoring
-  const { 
-    isBackendOnline, 
-    backendStatus, 
-    checkHealth: checkBackendHealth,
-    isDegradedMode 
-  } = useBackendHealth(true);
   
   // Função para validar stream para transmissão
   const validateStreamForTransmission = (stream: MediaStream): boolean => {
@@ -52,37 +41,6 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     console.log(`🔗 PARTICIPANT CONNECTION: Starting enhanced connection process for ${participantId}`);
     console.log(`📱 PARTICIPANT CONNECTION: Mobile device: ${isMobile}`);
     console.log(`🎥 PARTICIPANT CONNECTION: Has stream: ${!!stream}`);
-    
-    // FASE 5: Health check não-bloqueante - permite tentativas mesmo com backend instável
-    console.log(`🏥 FASE 5: Non-blocking backend health check...`);
-    
-    let shouldProceedWithWarning = false;
-    
-    if (isDegradedMode) {
-      console.warn('⚠️ FASE 5: Backend em modo degradado, mas permitindo tentativa');
-      toast.warning('⚠️ Conectividade instável - tentando mesmo assim...');
-      shouldProceedWithWarning = true;
-    }
-    
-    if (backendStatus === 'offline') {
-      console.warn('⚠️ FASE 5: Backend offline, mas tentando conexão (pode estar acordando)');
-      toast.warning('🌅 Servidor pode estar acordando - tentando conectar...');
-      shouldProceedWithWarning = true;
-    }
-    
-    if (backendStatus === 'unknown') {
-      console.log('🔍 FASE 5: Backend status unknown, checking asynchronously...');
-      // FASE 5: Check assíncrono - não bloqueia a conexão
-      checkBackendHealth().catch(error => {
-        console.warn('⚠️ FASE 5: Async health check failed, but continuing:', error);
-        toast.warning('⚠️ Status do servidor desconhecido - tentando mesmo assim...');
-      });
-      shouldProceedWithWarning = true;
-    }
-    
-    if (shouldProceedWithWarning) {
-      console.log('🚀 FASE 5: Prosseguindo com conexão apesar dos warnings');
-    }
     
     // Validar stream antes de prosseguir
     if (stream && !validateStreamForTransmission(stream)) {
@@ -131,8 +89,8 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
 
    
 
-    // FASE 1: Retry mais permissivo para Render.com (servidores podem acordar)
-    const maxRetries = isMobile ? 4 : 3; // FASE 1: Aumentado para tolerar server wake up
+    // FASE 4: QUEBRA DE RETRY LOOP - Circuit breaker rígido
+    const maxRetries = isMobile ? 3 : 2; // REDUZIDO drasticamente
     const connectionMetrics = {
       startTime: Date.now(),
       attempts: 0,
@@ -156,9 +114,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       connectionMetrics.lastAttemptTime = Date.now();
       retryCount++;
       
-      // FASE 2: TIMEOUT ABSOLUTO otimizado para Render.com - 90s máximo total
-      if ((Date.now() - connectionMetrics.startTime) > 90000) {
-        throw new Error('TIMEOUT: Connection attempts exceeded 90 seconds total time (Render.com optimized)');
+      // FASE 4: TIMEOUT ABSOLUTO - 30s máximo total
+      if ((Date.now() - connectionMetrics.startTime) > 30000) {
+        throw new Error('TIMEOUT: Connection attempts exceeded 30 seconds total time');
       }
       
       try {
@@ -467,14 +425,11 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     isConnected,
     isConnecting,
     connectionStatus,
-    connectionStage, // INFRASTRUCTURE FIX: Add connection stage
     error,
     connectToSession,
     disconnectFromSession,
     isMobile,
     getHostId,
-    initiateCallWithRetry,
-    progressiveTimeout, // INFRASTRUCTURE FIX: Add progressive timeout info
-    backendStatus // INFRASTRUCTURE FIX: Add backend status
+    initiateCallWithRetry
   };
 };

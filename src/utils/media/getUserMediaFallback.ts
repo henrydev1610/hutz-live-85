@@ -32,26 +32,13 @@ export const getUserMediaWithFallback = async (participantId: string = 'unknown'
     console.warn(`⚠️ Could not check permissions:`, permError);
   }
 
-  // FASE 3: CORREÇÃO - Sempre priorizar video + audio primeiro
+  // SIMPLE AUTOMATIC CONSTRAINTS (Teams/Meet style)
   const constraints: MediaStreamConstraints[] = [
-    // Priority 1: HIGH QUALITY video + audio (FASE 3 CORREÇÃO)
-    { 
-      video: { 
-        width: { ideal: 1280, min: 640 }, 
-        height: { ideal: 720, min: 480 },
-        frameRate: { ideal: 30, min: 15 }
-      }, 
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
-    },
-    // Priority 2: Basic video + audio (SEMPRE COM AUDIO - FASE 3)
+    // Priority 1: Basic video + audio (most compatible)
     { video: true, audio: true },
-    // Priority 3: Lower quality with audio (MANTER AUDIO - FASE 3)
+    // Priority 2: Lower quality with audio
     { video: { width: 640, height: 480 }, audio: true },
-    // Priority 4: Video only (último recurso apenas se audio falhar)
+    // Priority 3: Video only (fallback)
     { video: true, audio: false },
     // Priority 3: Mobile specific (if mobile device)
     ...(isMobile ? [{

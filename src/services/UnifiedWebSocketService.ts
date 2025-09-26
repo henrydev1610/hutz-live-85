@@ -1,5 +1,4 @@
 import { io, Socket } from 'socket.io-client';
-import { toast } from 'sonner';
 import { getWebSocketURL, detectSlowNetwork } from '@/utils/connectionUtils';
 import { setDynamicIceServers } from '@/utils/webrtc/WebRTCConfig';
 import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
@@ -47,30 +46,21 @@ class UnifiedWebSocketService {
     networkQuality: 'unknown'
   };
   
-  // FINAL FIX: Extended timeout strategy for Render.com dormancy
-  private connectionTimeouts = [45000, 75000, 120000]; // 45s → 75s → 120s progression 
-  private currentTimeoutIndex = 0;
-  private maxReconnectAttempts = 15; // Extended for server wake-up tolerance
-  private reconnectDelay = 3000;
-  private maxReconnectDelay = 30000;
-  private backoffMultiplier = 1.5;
+  // CORREÇÃO: Configuração menos agressiva para evitar loops
+  private maxReconnectAttempts = 3; // Reduzido de 15 para 3
+  private reconnectDelay = 5000; // Aumentado para 5s
+  private maxReconnectDelay = 30000; // Reduzido para 30s
+  private backoffMultiplier = 2;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
-  // INFRASTRUCTURE FIX: Enhanced circuit breaker for Render.com
-  private circuitBreakerThreshold = 12; // Increased for server dormancy tolerance
-  private circuitBreakerTimeout = 180000; // 3 minutes for full recovery
+  // CORREÇÃO 3: Circuit breaker TEMPORARIAMENTE desabilitado para reconexão
+  private circuitBreakerThreshold = 20; // Aumentado para 20 tentativas (quase desabilitado)
+  private circuitBreakerTimeout = 10000; // Reduzido para 10s (recovery rápido)
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
-  private isConnectingFlag = false;
-  
-  // FINAL FIX: Enhanced server keep-alive and warming
-  private keepAliveInterval: NodeJS.Timeout | null = null;
-  private serverWarmCache = new Map<string, { warmedAt: number; isWarm: boolean }>();
-  private readonly CACHE_WARM_DURATION = 15 * 60 * 1000; // 15 minutes - extended cache
-  private lastWarmupAttempt = 0;
-  private warmupCooldown = 30000; // 30s between warmup attempts
+  private isConnectingFlag = false; // Flag para prevenir conexões simultâneas
 
   constructor() {
     const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
@@ -101,71 +91,12 @@ class UnifiedWebSocketService {
     this.callbacks = callbacks;
   }
 
-  // INFRASTRUCTURE FIX: Server warming utilities
-  private getServerWarmStatus(url: string): { isWarm: boolean; warmedAt?: number } {
-    const cached = this.serverWarmCache.get(url);
-    if (!cached) return { isWarm: false };
-    
-    const warmDuration = this.CACHE_WARM_DURATION;
-    const isStillWarm = Date.now() - cached.warmedAt < warmDuration;
-    
-    if (!isStillWarm) {
-      this.serverWarmCache.delete(url);
-      return { isWarm: false };
-    }
-    
-    return { isWarm: cached.isWarm, warmedAt: cached.warmedAt };
-  }
-
-  private async warmUpServer(url: string): Promise<boolean> {
-    try {
-      console.log(`🔥 [WS] Warming up server: ${url}`);
-      
-      // Attempt to ping server to wake it up
-      const warmResponse = await fetch(`${url}/health`, {
-        method: 'GET',
-        headers: {
-          'Cache-Control': 'no-cache',
-          'X-Render-Wake': 'true'
-        },
-        signal: AbortSignal.timeout(30000)
-      });
-      
-      if (warmResponse.ok || warmResponse.status < 500) {
-        // Mark as warm
-        this.serverWarmCache.set(url, {
-          warmedAt: Date.now(),
-          isWarm: true
-        });
-        console.log('✅ [WS] Server warmed successfully');
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      console.warn('⚠️ [WS] Server warming failed:', error);
-      return false;
-    }
-  }
-
-  // INFRASTRUCTURE FIX: Enhanced fallback with server warming
+  // FASE 2: Sistema de fallback com múltiplas URLs
   private async connectWithRetry(serverUrl?: string): Promise<{ success: boolean; url?: string; error?: string }> {
     const urls = serverUrl ? [serverUrl] : this.getAlternativeURLs();
     
     for (const url of urls) {
       console.log(`🔄 [WS] Trying URL: ${url}`);
-      
-      // Check if server is warm or needs warming
-      const serverStatus = this.getServerWarmStatus(url);
-      if (!serverStatus.isWarm) {
-        console.log('🔥 [WS] Server may be cold, attempting to warm up...');
-        this.callbacks.onConnectionFailed?.({ 
-          message: 'Server waking up...', 
-          type: 'server-warming',
-          progress: 'warming'
-        });
-        await this.warmUpServer(url);
-      }
       
       // Diagnóstico específico para esta URL
       try {
@@ -296,8 +227,8 @@ class UnifiedWebSocketService {
     });
 
     return new Promise((resolve, reject) => {
-      // FASE 2: Timeout otimizado para Render.com (servidores podem estar "dormindo")
-      const connectionTimeout = 45000; // FASE 2: 45s para permitir "server wake up"
+      // SIMPLIFICAÇÃO: Timeout fixo mais generoso
+      const connectionTimeout = 20000; // 20s fixo para simplicidade
       
       console.log(`⏱️ [WS] CONNECTION TIMEOUT: ${connectionTimeout}ms`);
 
@@ -307,21 +238,16 @@ class UnifiedWebSocketService {
         reject(new Error(`Connection timeout after ${connectionTimeout}ms`));
       }, connectionTimeout);
 
-      // FASE 2: Configuração Socket.IO otimizada para Render.com
-      console.log(`🚀 [WS] Creating socket.io connection with Render.com optimizations...`);
+      // FASE 1: Configuração Socket.IO robusta e menos agressiva
+      console.log(`🚀 [WS] Creating socket.io connection...`);
       this.socket = io(url, {
         transports: ['websocket', 'polling'], // WebSocket primeiro, polling como fallback
-        timeout: 50000, // FASE 2: 50s para Render.com server wake up
+        timeout: 25000, // Aumentado para 25s
         reconnection: false, // Controlamos manualmente
         forceNew: true,
         autoConnect: true,
         upgrade: true, // Permite upgrade para WebSocket
-        rememberUpgrade: true, // Lembra preferência WebSocket
-        // FASE 3: Headers específicos para Render.com
-        extraHeaders: {
-          'User-Agent': 'LovableApp/1.0',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
+        rememberUpgrade: true // Lembra preferência WebSocket
       });
 
       this.socket.on('connect', () => {
@@ -344,19 +270,6 @@ class UnifiedWebSocketService {
           context: error.context || 'No context',
           type: error.type || 'Unknown type'
         });
-        
-        // FASE 4: Enhanced debugging para identificar problemas específicos do Render.com
-        if (error.message?.includes('502') || error.description?.includes('502')) {
-          console.log('🌅 RENDER.COM: Servidor provavelmente "acordando" - erro 502 detectado');
-          toast.warning('🌅 Servidor acordando... aguarde...');
-        } else if (error.message?.includes('timeout')) {
-          console.log('⏰ RENDER.COM: Timeout - servidor pode estar sobrecarregado');
-          toast.warning('⏰ Servidor ocupado - tentando novamente...');
-        } else if (error.message?.includes('ENOTFOUND') || error.message?.includes('getaddrinfo')) {
-          console.log('🌐 NETWORK: Problema de DNS/conectividade');
-          toast.error('🌐 Problema de conectividade de rede');
-        }
-        
         reject(error);
       });
 

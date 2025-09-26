@@ -51,19 +51,6 @@ export const getBackendBaseURL = (): string => {
 };
 
 export const getWebSocketURL = (): string => {
-  // FASE 1: Use VITE_SIGNALING_URL exclusively if available
-  const envSignalingUrl = import.meta.env.VITE_SIGNALING_URL;
-  
-  if (envSignalingUrl) {
-    const signalingUrl = new URL(envSignalingUrl);
-    const wsProtocol = signalingUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${signalingUrl.host}`;
-    
-    console.log(`🎯 SIGNALING: Using VITE_SIGNALING_URL: ${wsUrl}`);
-    cacheConnectionURL(wsUrl);
-    return wsUrl;
-  }
-
   // Check for cached URL first (with version check)
   const cachedData = localStorage.getItem('connectionCache');
   if (cachedData) {
@@ -84,7 +71,7 @@ export const getWebSocketURL = (): string => {
     }
   }
 
-  // Fallback to backend URL mapping (should not be used in production)
+  // FASE 1: CRITICAL - Use the EXACT same backend URL mapping
   const backendBaseUrl = getBackendBaseURL();
   const baseUrl = new URL(backendBaseUrl);
   
@@ -92,7 +79,7 @@ export const getWebSocketURL = (): string => {
   const wsProtocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${wsProtocol}//${baseUrl.host}`;
   
-  console.log(`🔗 CONNECTION: WebSocket URL Fallback: ${wsUrl}`);
+  console.log(`🔗 CONNECTION: WebSocket URL Sincronizado com backend: ${wsUrl}`);
   console.log(`📋 CONNECTION: Backend base: ${backendBaseUrl} → WebSocket: ${wsUrl}`);
   console.log(`🎯 URL VERIFICATION: Backend host: ${baseUrl.host}, Protocol: ${wsProtocol}`);
   

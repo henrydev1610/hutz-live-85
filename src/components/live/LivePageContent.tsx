@@ -34,8 +34,8 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
   onGenerateQRCode,
   onQRCodeToTransmission
 }) => {
-  // FASE 2&5: Initialize WebRTC stability manager for robust connections
-  // Remove old useSimplifiedVideoManager in favor of new system
+  // FASE 1 & 2: Initialize simplified video manager instead of complex systems
+  useSimplifiedVideoManager();
 
   // Calculate real participants and active streams
   const realParticipants = state.participantList.filter((p: Participant) => !p.id.startsWith('placeholder-'));

@@ -104,8 +104,10 @@ export const useVideoPlayback = ({ getVideoState, updateVideoState }: UseVideoPl
       }
     }
     
-    // FASE 3: Não pausar programaticamente - apenas limpar
-    // Removido video.pause() conforme plano de correção
+    // Pausar e limpar
+    if (!video.paused) {
+      video.pause();
+    }
     
     video.srcObject = null;
     video.removeAttribute('src');
