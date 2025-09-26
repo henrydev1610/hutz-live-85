@@ -29,24 +29,24 @@ export const EnhancedConnectionStatus = ({
       case 'warming':
         return {
           icon: <Zap className="h-4 w-4 text-yellow-500 animate-bounce" />,
-          title: 'Server Warming Up',
-          message: 'Backend server is starting up...',
+          title: 'Acordando Servidor',
+          message: '🔥 Servidor dormindo no Render.com - aguarde...',
           variant: 'outline' as const,
           progress: 25
         };
       case 'connecting':
         return {
           icon: <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />,
-          title: 'Connecting...',
-          message: 'Establishing WebSocket connection...',
+          title: 'Conectando...',
+          message: '⚡ Estabelecendo conexão WebSocket...',
           variant: 'secondary' as const,
           progress: 50
         };
       case 'webrtc':
         return {
           icon: <Wifi className="h-4 w-4 text-blue-600 animate-pulse" />,
-          title: 'WebRTC Setup',
-          message: 'Setting up peer-to-peer connection...',
+          title: 'Configurando WebRTC',
+          message: '🎯 Estabelecendo conexão peer-to-peer...',
           variant: 'secondary' as const,
           progress: 75
         };
@@ -129,7 +129,13 @@ export const EnhancedConnectionStatus = ({
           
           {stage === 'warming' && (
             <div className="text-xs text-muted-foreground">
-              💡 Render.com servers may take up to 60 seconds to wake up
+              💡 Servidores Render.com podem levar até 2 minutos para acordar
+            </div>
+          )}
+          
+          {(elapsedTime > 60 && isConnecting) && (
+            <div className="text-xs text-yellow-600">
+              🔥 Servidor estava dormindo - processo normal no Render.com
             </div>
           )}
         </div>

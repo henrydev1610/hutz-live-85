@@ -47,10 +47,10 @@ class UnifiedWebSocketService {
     networkQuality: 'unknown'
   };
   
-  // INFRASTRUCTURE FIX: Progressive timeout strategy
-  private connectionTimeouts = [30000, 60000, 90000]; // 30s → 60s → 90s progression
+  // FINAL FIX: Extended timeout strategy for Render.com dormancy
+  private connectionTimeouts = [45000, 75000, 120000]; // 45s → 75s → 120s progression 
   private currentTimeoutIndex = 0;
-  private maxReconnectAttempts = 12; // Increased for server wake-up tolerance
+  private maxReconnectAttempts = 15; // Extended for server wake-up tolerance
   private reconnectDelay = 3000;
   private maxReconnectDelay = 30000;
   private backoffMultiplier = 1.5;
@@ -65,10 +65,12 @@ class UnifiedWebSocketService {
   private isCircuitOpen = false;
   private isConnectingFlag = false;
   
-  // INFRASTRUCTURE FIX: Server keep-alive and warming
+  // FINAL FIX: Enhanced server keep-alive and warming
   private keepAliveInterval: NodeJS.Timeout | null = null;
   private serverWarmCache = new Map<string, { warmedAt: number; isWarm: boolean }>();
-  private readonly CACHE_WARM_DURATION = 10 * 60 * 1000; // 10 minutes
+  private readonly CACHE_WARM_DURATION = 15 * 60 * 1000; // 15 minutes - extended cache
+  private lastWarmupAttempt = 0;
+  private warmupCooldown = 30000; // 30s between warmup attempts
 
   constructor() {
     const DEBUG = sessionStorage.getItem('DEBUG') === 'true';

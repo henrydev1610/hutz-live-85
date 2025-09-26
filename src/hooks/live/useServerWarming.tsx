@@ -22,7 +22,7 @@ export const useServerWarming = () => {
     const cached = serverWarmCache.current.get(url);
     if (!cached) return false;
     
-    const warmDuration = 10 * 60 * 1000; // 10 minutes
+    const warmDuration = 15 * 60 * 1000; // 15 minutes - enhanced for production
     const isStillWarm = Date.now() - cached.warmedAt < warmDuration;
     
     if (!isStillWarm) {
@@ -60,10 +60,21 @@ export const useServerWarming = () => {
       console.log('🔥 WARMING: Stage 1 - Ping server');
       setWarmingState(prev => ({ ...prev, progress: 10, stage: 'ping' }));
       
-      await fetch(`${serverUrl}/ping`, { 
+      const pingResponse = await fetch(`${serverUrl}/ping`, { 
         method: 'GET',
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(20000),
+        headers: {
+          'X-Render-Wake': 'true',
+          'Cache-Control': 'no-cache'
+        }
       });
+
+      // Enhanced 502/504 detection for server warming
+      if (pingResponse.status === 502 || pingResponse.status === 504) {
+        console.log('🔥 WARMING: Server dormant, extending warm-up time...');
+        setWarmingState(prev => ({ ...prev, progress: 15, stage: 'ping' }));
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Extra time for Render.com
+      }
       
       setWarmingState(prev => ({ ...prev, progress: 25 }));
       
@@ -73,10 +84,27 @@ export const useServerWarming = () => {
       
       const healthResponse = await fetch(`${serverUrl}/health`, {
         method: 'GET',
-        signal: AbortSignal.timeout(20000)
+        signal: AbortSignal.timeout(25000),
+        headers: {
+          'X-Render-Wake': 'true',
+          'Cache-Control': 'no-cache'
+        }
       });
       
-      if (!healthResponse.ok) {
+      // Enhanced server warming detection
+      if (healthResponse.status === 502 || healthResponse.status === 504) {
+        console.log('🔥 WARMING: Health endpoint warming up...');
+        setWarmingState(prev => ({ ...prev, progress: 40, stage: 'health' }));
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Extended for Render.com
+        // Retry health check after warming
+        const retryHealth = await fetch(`${serverUrl}/health`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(25000)
+        });
+        if (!retryHealth.ok && retryHealth.status !== 502 && retryHealth.status !== 504) {
+          throw new Error(`Health check failed: ${retryHealth.status}`);
+        }
+      } else if (!healthResponse.ok) {
         throw new Error(`Health check failed: ${healthResponse.status}`);
       }
       
