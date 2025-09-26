@@ -2,20 +2,27 @@
 let dynamicIceServers: RTCIceServer[] | null = null;
 let relayOnly = false;
 
-// Configuração de fallback APENAS com STUN (TURN vem do backend)
+// FASE 4: Configuração robusta com STUN + TURN obrigatório da Metered
 const FALLBACK_CONFIG: RTCConfiguration = {
   iceServers: [
-    // Google STUN servers apenas (TURN removido - vem do backend)
+    // STUN servers para descoberta de IP público
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
     
-    // Cloudflare STUN (backup)
-    { urls: 'stun:stun.cloudflare.com:3478' }
+    // TURN servers da Metered - incluindo TURNS:443 para redes corporativas
+    { 
+      urls: [
+        'turn:global.relay.metered.ca:80',
+        'turn:global.relay.metered.ca:80?transport=tcp',
+        'turn:global.relay.metered.ca:443',
+        'turns:global.relay.metered.ca:443?transport=tcp'
+      ],
+      username: 'efbe93b26df40b1695c64eb3',
+      credential: 'xTYCNBdjZqQDcjDz'
+    }
   ],
-  iceCandidatePoolSize: 5
+  iceCandidatePoolSize: 10 // Aumentado para melhor conectividade
 };
 
 // Chame isso ao receber `ice-servers` do backend
