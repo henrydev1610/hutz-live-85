@@ -12,6 +12,7 @@ import ParticipantConnectionStatus from '@/components/participant/ParticipantCon
 import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
+import { EnhancedConnectionStatus } from '@/components/participant/EnhancedConnectionStatus';
 import StreamDebugPanel from '@/utils/debug/StreamDebugPanel';
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { toast } from 'sonner';
@@ -278,7 +279,17 @@ const ParticipantPage = () => {
           onRetryConnect={handleConnect}
         />
 
-        {/* Connection Status Details */}
+        {/* Enhanced Connection Status with Infrastructure Monitoring */}
+        <EnhancedConnectionStatus
+          stage={connection.connectionStage || 'idle'}
+          isConnecting={connection.isConnecting}
+          error={connection.error}
+          onRetry={handleConnect}
+          backendStatus={connection.backendStatus as 'online' | 'offline' | 'unstable' | 'unknown'}
+          elapsedTime={0}
+        />
+
+        {/* Legacy Connection Status for Fallback */}
         <ParticipantConnectionStatus
           signalingStatus={signalingStatus}
           connectionStatus={connection.connectionStatus}

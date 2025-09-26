@@ -36,7 +36,7 @@ class BackendHealthChecker {
   private listeners: Array<(status: BackendHealthStatus) => void> = [];
 
   /**
-   * Executa um health check único no backend
+   * INFRASTRUCTURE FIX: Enhanced health check with server warming detection
    */
   async checkBackendHealth(): Promise<BackendHealthResult> {
     const backendUrl = getBackendBaseURL();
@@ -49,10 +49,11 @@ class BackendHealthChecker {
       const response = await fetch(healthEndpoint, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
-          'Cache-Control': 'no-cache'
+          'Cache-Control': 'no-cache',
+          'X-Render-Wake': 'true', // Hint for Render.com to wake up
+          'Accept': 'application/json'
         },
-        signal: AbortSignal.timeout(30000) // FASE 2: 30s timeout para Render.com server wake up
+        signal: AbortSignal.timeout(30000) // 30s timeout for server wake up
       });
 
       const responseTime = Date.now() - startTime;

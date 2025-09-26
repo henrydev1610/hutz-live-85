@@ -12,15 +12,17 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
+  const [connectionStage, setConnectionStage] = useState<'idle' | 'warming' | 'connecting' | 'webrtc' | 'connected'>('idle');
+  const [progressiveTimeout, setProgressiveTimeout] = useState(30000);
   const isMobile = useIsMobile();
   
-  // FASE 1: Integração com health check do backend
+  // INFRASTRUCTURE FIX: Enhanced backend health monitoring
   const { 
     isBackendOnline, 
     backendStatus, 
     checkHealth: checkBackendHealth,
     isDegradedMode 
-  } = useBackendHealth(true); // Auto-start monitoring
+  } = useBackendHealth(true);
   
   // Função para validar stream para transmissão
   const validateStreamForTransmission = (stream: MediaStream): boolean => {
@@ -465,11 +467,14 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     isConnected,
     isConnecting,
     connectionStatus,
+    connectionStage, // INFRASTRUCTURE FIX: Add connection stage
     error,
     connectToSession,
     disconnectFromSession,
     isMobile,
     getHostId,
-    initiateCallWithRetry
+    initiateCallWithRetry,
+    progressiveTimeout, // INFRASTRUCTURE FIX: Add progressive timeout info
+    backendStatus // INFRASTRUCTURE FIX: Add backend status
   };
 };

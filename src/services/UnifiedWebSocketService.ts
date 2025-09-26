@@ -47,21 +47,28 @@ class UnifiedWebSocketService {
     networkQuality: 'unknown'
   };
   
-  // FASE 4: Configuração otimizada de retry e circuit breaker
-  private maxReconnectAttempts = 2; // FASE 4: Reduzido drasticamente para evitar loops
-  private reconnectDelay = 3000; // FASE 4: 3s base delay 
-  private maxReconnectDelay = 15000; // FASE 4: Max 15s delay
-  private backoffMultiplier = 1.5; // FASE 4: Backoff mais suave
+  // INFRASTRUCTURE FIX: Progressive timeout strategy
+  private connectionTimeouts = [30000, 60000, 90000]; // 30s → 60s → 90s progression
+  private currentTimeoutIndex = 0;
+  private maxReconnectAttempts = 12; // Increased for server wake-up tolerance
+  private reconnectDelay = 3000;
+  private maxReconnectDelay = 30000;
+  private backoffMultiplier = 1.5;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
-  // FASE 1: Circuit breaker relaxado para Render.com
-  private circuitBreakerThreshold = 8; // FASE 1: 8 falhas para tolerar "server waking up"
-  private circuitBreakerTimeout = 60000; // FASE 1: 60s para recovery (servidores podem demorar para acordar)
+  // INFRASTRUCTURE FIX: Enhanced circuit breaker for Render.com
+  private circuitBreakerThreshold = 12; // Increased for server dormancy tolerance
+  private circuitBreakerTimeout = 180000; // 3 minutes for full recovery
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
-  private isConnectingFlag = false; // Flag para prevenir conexões simultâneas
+  private isConnectingFlag = false;
+  
+  // INFRASTRUCTURE FIX: Server keep-alive and warming
+  private keepAliveInterval: NodeJS.Timeout | null = null;
+  private serverWarmCache = new Map<string, { warmedAt: number; isWarm: boolean }>();
+  private readonly CACHE_WARM_DURATION = 10 * 60 * 1000; // 10 minutes
 
   constructor() {
     const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
@@ -92,12 +99,71 @@ class UnifiedWebSocketService {
     this.callbacks = callbacks;
   }
 
-  // FASE 2: Sistema de fallback com múltiplas URLs
+  // INFRASTRUCTURE FIX: Server warming utilities
+  private getServerWarmStatus(url: string): { isWarm: boolean; warmedAt?: number } {
+    const cached = this.serverWarmCache.get(url);
+    if (!cached) return { isWarm: false };
+    
+    const warmDuration = this.CACHE_WARM_DURATION;
+    const isStillWarm = Date.now() - cached.warmedAt < warmDuration;
+    
+    if (!isStillWarm) {
+      this.serverWarmCache.delete(url);
+      return { isWarm: false };
+    }
+    
+    return { isWarm: cached.isWarm, warmedAt: cached.warmedAt };
+  }
+
+  private async warmUpServer(url: string): Promise<boolean> {
+    try {
+      console.log(`🔥 [WS] Warming up server: ${url}`);
+      
+      // Attempt to ping server to wake it up
+      const warmResponse = await fetch(`${url}/health`, {
+        method: 'GET',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'X-Render-Wake': 'true'
+        },
+        signal: AbortSignal.timeout(30000)
+      });
+      
+      if (warmResponse.ok || warmResponse.status < 500) {
+        // Mark as warm
+        this.serverWarmCache.set(url, {
+          warmedAt: Date.now(),
+          isWarm: true
+        });
+        console.log('✅ [WS] Server warmed successfully');
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.warn('⚠️ [WS] Server warming failed:', error);
+      return false;
+    }
+  }
+
+  // INFRASTRUCTURE FIX: Enhanced fallback with server warming
   private async connectWithRetry(serverUrl?: string): Promise<{ success: boolean; url?: string; error?: string }> {
     const urls = serverUrl ? [serverUrl] : this.getAlternativeURLs();
     
     for (const url of urls) {
       console.log(`🔄 [WS] Trying URL: ${url}`);
+      
+      // Check if server is warm or needs warming
+      const serverStatus = this.getServerWarmStatus(url);
+      if (!serverStatus.isWarm) {
+        console.log('🔥 [WS] Server may be cold, attempting to warm up...');
+        this.callbacks.onConnectionFailed?.({ 
+          message: 'Server waking up...', 
+          type: 'server-warming',
+          progress: 'warming'
+        });
+        await this.warmUpServer(url);
+      }
       
       // Diagnóstico específico para esta URL
       try {
