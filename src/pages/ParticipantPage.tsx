@@ -80,72 +80,18 @@ const ParticipantPage = () => {
         console.log("⚠️ Could not enumerate devices:", devError);
       }
 
-      // Request media immediately (Teams/Meet style)
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true, 
-        audio: true 
-      });
+      // Use the enhanced media initialization from the hook
+      const stream = await media.initializeMediaAutomatically();
 
       if (!stream) {
-        throw new Error("No stream obtained from getUserMedia");
+        throw new Error("Failed to obtain an active media stream.");
       }
 
-      // Connect to local preview
-      if (media.localVideoRef.current) {
-        media.localVideoRef.current.srcObject = stream;
-        media.localVideoRef.current.muted = true;
-        media.localVideoRef.current.playsInline = true;
-        
-        try {
-          await media.localVideoRef.current.play();
-          console.log("📹 Stream connected to local preview");
-        } catch (playError) {
-          console.warn("⚠️ Video play warning:", playError);
-        }
-      }
-
-      // Update media state
-      media.localStreamRef.current = stream;
-      const videoTracks = stream.getVideoTracks();
-      const audioTracks = stream.getAudioTracks();
-      
-      // Adicionar validação de tracks de áudio
-      console.log(`🎤 Audio tracks: ${audioTracks.length}, Video tracks: ${videoTracks.length}`);
-      
-      if (audioTracks.length === 0) {
-        console.warn('⚠️ No audio tracks found in stream');
-      }
-      
-      if (videoTracks.length === 0) {
-        console.warn('⚠️ No video tracks found in stream');
-      }
-
-      // Verificar stream compartilhado globalmente
-      const sharedStream = (window as any).__participantSharedStream;
-      if (sharedStream) {
-        const sharedAudioTracks = sharedStream.getAudioTracks();
-        console.log(`🌐 Shared stream audio tracks: ${sharedAudioTracks.length}`);
-      }
-      
-      // Share globally for WebRTC
-      (window as any).__participantSharedStream = stream;
-      
-      // Send tracks to WebRTC if connection exists
-      if (stream) {
-        stream.getTracks().forEach(track => {
-          try {
-            console.log(`✅ Track ready for WebRTC: ${track.kind}`);
-          } catch (trackError) {
-            console.warn(`⚠️ Could not prepare track:`, trackError);
-          }
-        });
-      }
-
-      // Connect to session
+      // Connect to session using the validated stream
       await connection.connectToSession(stream);
 
       console.log("✅ Camera and microphone connected automatically");
-      toast.success(`📱 Camera connected! Video: ${videoTracks.length > 0 ? '✅' : '❌'}, Audio: ${audioTracks.length > 0 ? '✅' : '❌'}`);
+      toast.success(`📱 Camera connected! Video: ${media.hasVideo ? '✅' : '❌'}, Audio: ${media.hasAudio ? '✅' : '❌'}`);
 
     } catch (err: any) {
       console.error("❌ Error initializing media:", err.name, err.message);
@@ -156,6 +102,9 @@ const ParticipantPage = () => {
       } else if (err.name === "NotFoundError") {
         console.log("❌ No camera/microphone devices found.");
         toast.error("No camera/microphone devices found on this device.");
+      } else if (err.message.includes("no live video or audio tracks")) {
+        console.log("❌ Media stream invalid:", err.message);
+        toast.error("Media stream invalid: " + err.message);
       } else {
         console.log("❌ Error accessing camera/microphone:", err.message);
         toast.error("Error accessing camera/microphone. Please try again.");
