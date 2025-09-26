@@ -71,6 +71,7 @@ class SignalingConfigManager {
     console.log('🔧 [SIGNALING CONFIG] Configuration loaded:', {
       url: config.url,
       protocol: config.protocol,
+      currentHost: window.location.host,
       environment: {
         isDevelopment: config.isDevelopment,
         isProduction: config.isProduction,
@@ -81,8 +82,10 @@ class SignalingConfigManager {
         errors: validation.errors
       },
       envVars: {
-        VITE_SIGNALING_SERVER_URL: import.meta.env.VITE_SIGNALING_SERVER_URL || 'not-set',
-        NODE_ENV: import.meta.env.MODE
+        VITE_SIGNALING_SERVER_URL: import.meta.env.VITE_SIGNALING_SERVER_URL || 'NOT_SET',
+        NODE_ENV: import.meta.env.MODE,
+        DEV: import.meta.env.DEV,
+        PROD: import.meta.env.PROD
       }
     });
 
@@ -101,7 +104,7 @@ class SignalingConfigManager {
     const currentHost = window.location.host;
     const currentProtocol = window.location.protocol;
     
-    // Environment detection
+    // Environment detection - mais específico para Render
     const isDevelopment = currentHost.includes('localhost') || 
                          currentHost.startsWith('127.0.0.1') || 
                          currentHost.startsWith('192.168.') ||
@@ -110,25 +113,31 @@ class SignalingConfigManager {
     const isPreview = currentHost.includes('lovable.app') || 
                      currentHost.includes('lovableproject.com');
     
+    // Render domains seguem padrão específico
     const isProduction = currentHost.includes('onrender.com') || 
+                        currentHost.includes('.app') ||
                         (!isDevelopment && !isPreview);
 
-    // URL resolution priority: env var > production mapping > localhost fallback
+    // URL resolution com prioridade para variável de ambiente
     let signalingURL: string;
     
     const envSignalingURL = import.meta.env.VITE_SIGNALING_SERVER_URL;
     
     if (envSignalingURL) {
-      // Use explicit environment variable
+      // Use explicit environment variable - SEMPRE tem prioridade
       signalingURL = envSignalingURL;
       console.log('🔧 [SIGNALING CONFIG] Using environment variable:', envSignalingURL);
-    } else if (isProduction || isPreview) {
-      // Production/preview: use the production signaling server with Socket.IO path
+    } else if (isProduction) {
+      // Production: use the production signaling server 
       signalingURL = 'wss://server-hutz-live.onrender.com/socket.io';
-      console.log('🌐 [SIGNALING CONFIG] Production/preview auto-config:', signalingURL);
+      console.log('🌐 [SIGNALING CONFIG] Production auto-config:', signalingURL);
+    } else if (isPreview) {
+      // Preview: usar servidor de produção também
+      signalingURL = 'wss://server-hutz-live.onrender.com/socket.io';
+      console.log('📱 [SIGNALING CONFIG] Preview using production server:', signalingURL);
     } else {
-      // Development fallback to localhost with Socket.IO path
-      signalingURL = `ws://localhost:3001/socket.io`;
+      // Development fallback to localhost
+      signalingURL = 'ws://localhost:3001/socket.io';
       console.log('🏠 [SIGNALING CONFIG] Development fallback:', signalingURL);
     }
 
@@ -156,11 +165,22 @@ class SignalingConfigManager {
   }
 
   /**
-   * Force refresh configuration (for testing/debugging)
+   * Force refresh configuration and retry connection (para debugging no Render)
    */
   refreshConfig(): void {
     this.config = null;
     this.logConfig();
+  }
+
+  /**
+   * Força reinicialização completa da configuração (para Render deploy)
+   */
+  forceInitialize(): SignalingConfig {
+    console.log('🔄 [SIGNALING CONFIG] Force initializing configuration...');
+    this.config = null;
+    const config = this.getConfig();
+    this.logConfig();
+    return config;
   }
 }
 
@@ -172,6 +192,14 @@ export type { SignalingConfig };
 
 // Initialize and log configuration on module load
 signalingConfig.logConfig();
+
+// Força inicialização em produção após 1 segundo para garantir que env vars foram carregadas
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    console.log('🔄 [SIGNALING CONFIG] Re-validating configuration after environment load...');
+    signalingConfig.forceInitialize();
+  }, 1000);
+}
 
 // Make available for debugging
 (window as any).signalingConfig = signalingConfig;
