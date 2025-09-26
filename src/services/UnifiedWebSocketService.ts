@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
-import { getWebSocketURL, detectSlowNetwork } from '@/utils/connectionUtils';
+import { detectSlowNetwork } from '@/utils/connectionUtils';
+import { signalingConfig } from '@/config/signalingConfig';
 import { setDynamicIceServers } from '@/utils/webrtc/WebRTCConfig';
 import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
 import { OfflineFallback } from '@/utils/fallback/OfflineFallback';
@@ -125,22 +126,34 @@ class UnifiedWebSocketService {
   }
 
   private getAlternativeURLs(): string[] {
-    const primary = getWebSocketURL();
-    const alternatives = [
-      primary,
-      // Adicionar URLs alternativas baseadas na URL primária
-      primary.replace('wss://', 'ws://'),
-      primary.replace('ws://', 'wss://'),
-    ];
+    const primary = signalingConfig.getSignalingURL();
+    const alternatives = [primary];
     
-    // Remover duplicatas
+    // Only add fallback alternatives in development
+    if (signalingConfig.getConfig().isDevelopment) {
+      alternatives.push(
+        primary.replace('wss://', 'ws://'),
+        primary.replace('ws://', 'wss://'),
+        'ws://localhost:3001' // Explicit localhost fallback
+      );
+    }
+    
+    // Remove duplicates
     return [...new Set(alternatives)];
   }
 
   async connect(serverUrl?: string): Promise<void> {
-    // Log do ambiente antes de conectar
+    // Log do ambiente e configuração antes de conectar
     if (this.metrics.attemptCount === 0) {
       WebSocketDiagnostics.logEnvironmentInfo();
+      signalingConfig.logConfig();
+      
+      // Validate configuration
+      const validation = signalingConfig.validateConfig();
+      if (!validation.isValid) {
+        console.error('❌ [WS] Invalid signaling configuration:', validation.errors);
+        throw new Error(`Invalid signaling configuration: ${validation.errors.join(', ')}`);
+      }
     }
 
     // Prevenir múltiplas tentativas simultâneas
