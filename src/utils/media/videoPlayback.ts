@@ -1,12 +1,6 @@
 import { detectMobileAggressively } from './deviceDetection';
-import { getVideoElementConfig, applyVideoElementConfig } from './videoElementConfig';
-import { validateAndFixMediaTracks, logStreamDetails } from './trackValidation';
 
-export const setupVideoElement = async (
-  videoElement: HTMLVideoElement, 
-  stream: MediaStream, 
-  context: 'local-preview' | 'remote-stream' = 'remote-stream'
-): Promise<void> => {
+export const setupVideoElement = async (videoElement: HTMLVideoElement, stream: MediaStream): Promise<void> => {
   const isMobile = detectMobileAggressively();
   
   console.log('📺 SETUP VIDEO: Starting video element setup', {
@@ -15,10 +9,6 @@ export const setupVideoElement = async (
     streamActive: stream.active,
     videoTracks: stream.getVideoTracks().length
   });
-  
-  // CRÍTICO: Validar e corrigir tracks antes de aplicar ao elemento
-  validateAndFixMediaTracks(stream);
-  logStreamDetails(stream, context);
   
   // Clear any existing stream first
   if (videoElement.srcObject) {
@@ -29,30 +19,10 @@ export const setupVideoElement = async (
   // Set new stream
   videoElement.srcObject = stream;
   
-  // Aplicar configuração baseada no contexto
-  const config = getVideoElementConfig(context);
-  applyVideoElementConfig(videoElement, config, context);
-  
-  // CRÍTICO: Verificar se tracks de vídeo estão habilitados
-  const videoTracks = stream.getVideoTracks();
-  console.log(`📺 SETUP VIDEO: Verificando tracks de vídeo:`, {
-    totalTracks: videoTracks.length,
-    trackStates: videoTracks.map(track => ({
-      id: track.id,
-      kind: track.kind,
-      enabled: track.enabled,
-      muted: track.muted,
-      readyState: track.readyState
-    }))
-  });
-  
-  // Garantir que os tracks de vídeo estão habilitados
-  videoTracks.forEach(track => {
-    if (!track.enabled) {
-      console.warn(`⚠️ SETUP VIDEO: Habilitando track de vídeo desabilitado: ${track.id}`);
-      track.enabled = true;
-    }
-  });
+  // Ensure all necessary properties are set
+  videoElement.playsInline = true;
+  videoElement.muted = true;
+  videoElement.autoplay = true;
   
   try {
     console.log('📺 SETUP VIDEO: Attempting to play video...');

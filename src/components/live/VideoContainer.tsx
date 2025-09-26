@@ -44,7 +44,7 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
     video.id = videoId;
     video.autoplay = true;
     video.playsInline = true;
-    video.muted = false; // CORREÇÃO: Vídeos remotos NÃO devem estar mutados
+    video.muted = true;
     video.controls = false;
     video.disablePictureInPicture = true;
     video.className = 'w-full h-full object-cover';
@@ -98,8 +98,8 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
       audioTracks: stream.getAudioTracks().length
     });
 
-    // Apply stream using utility function - CONTEXTO REMOTO (muted = false)
-    setupVideoElement(video, stream, 'remote-stream')
+    // Apply stream using utility function
+    setupVideoElement(video, stream)
       .then(() => {
         setIsVideoReady(true);  
         setError(null);

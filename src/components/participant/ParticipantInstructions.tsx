@@ -7,7 +7,7 @@ const ParticipantInstructions: React.FC = () => {
       <CardContent className="p-4">
         <h3 className="text-white font-semibold mb-2">Instruções:</h3>
         <ul className="text-white/70 text-sm space-y-1">
-          <li>• O servidor de sinalização conecta automaticamente ao ambiente apropriado</li>
+          <li>• Verifique se o servidor de sinalização está rodando em localhost:3001</li>
           <li>• A câmera e microfone são inicializados automaticamente com fallback</li>
           <li>• Use os controles para ajustar vídeo, áudio e compartilhamento de tela</li>
           <li>• Se houver problemas de conexão, use o botão de reconexão</li>

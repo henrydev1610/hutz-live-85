@@ -1,6 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { detectSlowNetwork } from '@/utils/connectionUtils';
-import { signalingConfig } from '@/config/signalingConfig';
+import { getWebSocketURL, detectSlowNetwork } from '@/utils/connectionUtils';
 import { setDynamicIceServers } from '@/utils/webrtc/WebRTCConfig';
 import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
 import { OfflineFallback } from '@/utils/fallback/OfflineFallback';
@@ -126,47 +125,22 @@ class UnifiedWebSocketService {
   }
 
   private getAlternativeURLs(): string[] {
-    const primary = signalingConfig.getSignalingURL();
-    const alternatives = [primary];
+    const primary = getWebSocketURL();
+    const alternatives = [
+      primary,
+      // Adicionar URLs alternativas baseadas na URL primária
+      primary.replace('wss://', 'ws://'),
+      primary.replace('ws://', 'wss://'),
+    ];
     
-    // CRÍTICO: Adicionar fallbacks com e sem /socket.io para robustez
-    const baseURL = primary.replace('/socket.io', '');
-    if (primary.includes('/socket.io')) {
-      // Se já tem socket.io, tentar sem também
-      alternatives.push(baseURL);
-    } else {
-      // Se não tem socket.io, tentar com
-      alternatives.push(baseURL + '/socket.io');
-    }
-    
-    // Only add fallback alternatives in development
-    if (signalingConfig.getConfig().isDevelopment) {
-      alternatives.push(
-        primary.replace('wss://', 'ws://'),
-        primary.replace('ws://', 'wss://'),
-        'ws://localhost:3001/socket.io', // Explicit localhost with Socket.IO path
-        'ws://localhost:3001' // Fallback without path
-      );
-    }
-    
-    // Remove duplicates and log alternatives
-    const uniqueAlternatives = [...new Set(alternatives)];
-    console.log('🔄 [WS] Alternative URLs:', uniqueAlternatives);
-    return uniqueAlternatives;
+    // Remover duplicatas
+    return [...new Set(alternatives)];
   }
 
   async connect(serverUrl?: string): Promise<void> {
-    // Log do ambiente e configuração antes de conectar
+    // Log do ambiente antes de conectar
     if (this.metrics.attemptCount === 0) {
       WebSocketDiagnostics.logEnvironmentInfo();
-      signalingConfig.logConfig();
-      
-      // Validate configuration
-      const validation = signalingConfig.validateConfig();
-      if (!validation.isValid) {
-        console.error('❌ [WS] Invalid signaling configuration:', validation.errors);
-        throw new Error(`Invalid signaling configuration: ${validation.errors.join(', ')}`);
-      }
     }
 
     // Prevenir múltiplas tentativas simultâneas
@@ -227,24 +201,6 @@ class UnifiedWebSocketService {
   }
 
   private async _doConnect(url: string): Promise<void> {
-    // CRÍTICO: Executar diagnósticos Socket.IO antes da conexão
-    console.log('🔍 [WS] Executando diagnósticos pré-conexão...');
-    try {
-      const { SocketIODiagnostics } = await import('../utils/webrtc/SocketIODiagnostics');
-      const diagnostics = await SocketIODiagnostics.runDiagnostics();
-      
-      if (!diagnostics.success) {
-        console.error('❌ [WS] Diagnósticos falharam:', diagnostics.error);
-        if (!diagnostics.details.pathCorrect) {
-          console.error('🔧 [WS] URL SEM /socket.io - isso pode causar falha na conexão');
-        }
-      } else {
-        console.log('✅ [WS] Diagnósticos OK - prosseguindo com conexão');
-      }
-    } catch (diagError) {
-      console.warn('⚠️ [WS] Erro nos diagnósticos, prosseguindo mesmo assim:', diagError);
-    }
-
     // DIAGNÓSTICO CRÍTICO: Log detalhado da URL
     console.log(`🔗 [WS] CONNECTION ATTEMPT: ${url}`);
     console.log(`🔍 [WS] URL BREAKDOWN:`, {
@@ -252,8 +208,7 @@ class UnifiedWebSocketService {
       protocol: new URL(url).protocol,
       host: new URL(url).host,
       port: new URL(url).port,
-      origin: new URL(url).origin,
-      hasSocketIOPath: url.includes('/socket.io')
+      origin: new URL(url).origin
     });
     
     // Validar se a URL está bem formada
