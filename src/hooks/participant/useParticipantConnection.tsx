@@ -5,6 +5,7 @@ import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getEnvironmentInfo, validateURLConsistency } from '@/utils/connectionUtils';
+import { useBackendHealth } from '@/hooks/live/useBackendHealth';
 
 export const useParticipantConnection = (sessionId: string | undefined, participantId: string) => {
   const [isConnected, setIsConnected] = useState(false);
@@ -12,6 +13,14 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
   const isMobile = useIsMobile();
+  
+  // FASE 1: Integração com health check do backend
+  const { 
+    isBackendOnline, 
+    backendStatus, 
+    checkHealth: checkBackendHealth,
+    isDegradedMode 
+  } = useBackendHealth(true); // Auto-start monitoring
   
   // Função para validar stream para transmissão
   const validateStreamForTransmission = (stream: MediaStream): boolean => {
@@ -41,6 +50,42 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     console.log(`🔗 PARTICIPANT CONNECTION: Starting enhanced connection process for ${participantId}`);
     console.log(`📱 PARTICIPANT CONNECTION: Mobile device: ${isMobile}`);
     console.log(`🎥 PARTICIPANT CONNECTION: Has stream: ${!!stream}`);
+    
+    // FASE 1: Verificação crítica do backend ANTES de tentar conectar
+    console.log(`🏥 FASE 1: Checking backend health before connection...`);
+    if (isDegradedMode) {
+      toast.error('🚨 Servidor offline - Verifique sua conexão');
+      setError('Backend está offline');
+      setConnectionStatus('failed');
+      return;
+    }
+    
+    if (backendStatus === 'offline') {
+      console.error('❌ FASE 1: Backend is offline, cannot connect');
+      toast.error('🚨 Servidor não está respondendo');
+      setError('Servidor offline');
+      setConnectionStatus('failed');
+      return;
+    }
+    
+    if (backendStatus === 'unknown') {
+      console.log('🔍 FASE 1: Backend status unknown, checking now...');
+      try {
+        const healthResult = await checkBackendHealth();
+        if (!healthResult.isOnline) {
+          toast.error('🚨 Servidor não acessível');
+          setError('Não foi possível conectar ao servidor');
+          setConnectionStatus('failed');
+          return;
+        }
+      } catch (error) {
+        console.error('❌ FASE 1: Backend health check failed:', error);
+        toast.error('🚨 Erro ao verificar servidor');
+        setError('Erro de conectividade');
+        setConnectionStatus('failed');
+        return;
+      }
+    }
     
     // Validar stream antes de prosseguir
     if (stream && !validateStreamForTransmission(stream)) {
@@ -90,7 +135,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
    
 
     // FASE 4: QUEBRA DE RETRY LOOP - Circuit breaker rígido
-    const maxRetries = isMobile ? 3 : 2; // REDUZIDO drasticamente
+    const maxRetries = isMobile ? 2 : 1; // FASE 4: Reduzido drasticamente
     const connectionMetrics = {
       startTime: Date.now(),
       attempts: 0,

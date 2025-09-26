@@ -46,18 +46,18 @@ class UnifiedWebSocketService {
     networkQuality: 'unknown'
   };
   
-  // CORREÇÃO: Configuração menos agressiva para evitar loops
-  private maxReconnectAttempts = 3; // Reduzido de 15 para 3
-  private reconnectDelay = 5000; // Aumentado para 5s
-  private maxReconnectDelay = 30000; // Reduzido para 30s
-  private backoffMultiplier = 2;
+  // FASE 4: Configuração otimizada de retry e circuit breaker
+  private maxReconnectAttempts = 2; // FASE 4: Reduzido drasticamente para evitar loops
+  private reconnectDelay = 3000; // FASE 4: 3s base delay 
+  private maxReconnectDelay = 15000; // FASE 4: Max 15s delay
+  private backoffMultiplier = 1.5; // FASE 4: Backoff mais suave
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
-  // CORREÇÃO 3: Circuit breaker TEMPORARIAMENTE desabilitado para reconexão
-  private circuitBreakerThreshold = 20; // Aumentado para 20 tentativas (quase desabilitado)
-  private circuitBreakerTimeout = 10000; // Reduzido para 10s (recovery rápido)
+  // FASE 4: Circuit breaker otimizado - mais conservador  
+  private circuitBreakerThreshold = 3; // FASE 4: Apenas 3 falhas consecutivas
+  private circuitBreakerTimeout = 20000; // FASE 4: 20s para recovery
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
   private isConnectingFlag = false; // Flag para prevenir conexões simultâneas

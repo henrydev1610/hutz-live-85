@@ -5,6 +5,7 @@ import { ParticipantManager } from './ParticipantManager';
 import { WebRTCCallbacks } from './WebRTCCallbacks';
 import { MEDIA_CONSTRAINTS } from './WebRTCConfig';
 import { assessDesktopConnections } from './assessDesktopConnections';
+import { waitForRoomConfirmation } from './RoomConfirmationWaiter';
 
 interface ConnectionState {
   websocket: 'disconnected' | 'connecting' | 'connected' | 'failed';
@@ -60,8 +61,9 @@ export class UnifiedWebRTCManager {
     overall: 'disconnected'
   };
 
-  // CORREÇÃO: Estado para aguardar confirmação de entrada na sala
+  // FASE 2: Estados para timing correto de WebRTC
   private webrtcReady: boolean = false;
+  private inRoom: boolean = false; // FASE 2: Flag crítica para timing de negociação
 
   // Retry management
   private retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG;
@@ -82,6 +84,14 @@ export class UnifiedWebRTCManager {
     this.detectMobile();
     this.initializeComponents();
     this.setupHealthMonitoring();
+    
+    // FASE 2: Adicionar método waitForRoomConfirmation
+    this.waitForRoomConfirmation = waitForRoomConfirmation;
+  }
+  
+  // FASE 2: Método para aguardar confirmação de entrada na sala
+  async waitForRoomConfirmation(roomId: string, participantId: string): Promise<any> {
+    return waitForRoomConfirmation(roomId, participantId);
   }
 
   private detectMobile() {
@@ -207,11 +217,16 @@ export class UnifiedWebRTCManager {
       }
 
       await unifiedWebSocketService.connect();
-      console.log(`🚪 CALLBACK-CRÍTICO: Aguardando confirmação de entrada na sala: ${sessionId}`);
+      console.log(`🚪 FASE 2 TIMING: Aguardando confirmação de entrada na sala: ${sessionId}`);
       await unifiedWebSocketService.joinRoom(sessionId, participantId);
       
+      // FASE 2: CRÍTICO - Aguardar ACK explícito do servidor antes de marcar como pronto
+      console.log(`⏳ FASE 2 TIMING: Aguardando ACK do servidor para confirmação inRoom...`);
+      await this.waitForRoomConfirmation(sessionId, participantId);
+      
+      this.inRoom = true; // FASE 2: Marca explicitamente que está na sala
       this.webrtcReady = true;
-      console.log(`✅ CALLBACK-CRÍTICO: Confirmação de entrada recebida, WebRTC pronto`);
+      console.log(`✅ FASE 2 TIMING: Confirmação de entrada recebida, WebRTC pronto (inRoom=true)`);
 
       // CORREÇÃO: Anúncio único sem delay
       if (unifiedWebSocketService.isConnected()) {
@@ -244,11 +259,12 @@ export class UnifiedWebRTCManager {
           throw new Error('Stream inválido - todas as tracks foram perdidas');
         }
         
-        if (this.webrtcReady) {
-          console.log(`🤝 PARTICIPANT: WebRTC pronto, aguardando connectToHost() ser chamado`);
+        // FASE 2: VERIFICAÇÃO DUPLA antes do handshake
+        if (this.webrtcReady && this.inRoom) {
+          console.log(`🤝 FASE 2 TIMING: WebRTC e inRoom prontos, aguardando connectToHost() ser chamado`);
           // Não iniciar handshake automaticamente aqui - será feito via connectToHost()
         } else {
-          console.warn(`⚠️ PARTICIPANT: WebRTC não pode ser iniciado - não confirmado na sala`);
+          console.warn(`⚠️ FASE 2 TIMING: WebRTC não pode ser iniciado - webrtcReady=${this.webrtcReady}, inRoom=${this.inRoom}`);
         }
       } else {
         throw new Error('Stream foi perdido durante inicialização WebRTC');
@@ -282,8 +298,13 @@ export class UnifiedWebRTCManager {
       await unifiedWebSocketService.connect();
       await unifiedWebSocketService.joinRoom(sessionId, 'host');
       
+      // FASE 2: Host também precisa de confirmação inRoom
+      console.log(`⏳ FASE 2 TIMING: Host aguardando confirmação inRoom...`);
+      await this.waitForRoomConfirmation(sessionId, 'host');
+      
+      this.inRoom = true; // FASE 2: Host também marca inRoom
       this.webrtcReady = true;
-      console.log(`✅ [HOST] WebRTC ready for session: ${sessionId}`);
+      console.log(`✅ [HOST] WebRTC ready for session: ${sessionId} (inRoom=true)`);
       this.updateConnectionState('websocket', 'connected');
 
       console.log(`✅ [HOST] Initialized: ${sessionId}`);
@@ -296,22 +317,36 @@ export class UnifiedWebRTCManager {
   }
 
   async connectToHost(): Promise<void> {
-    console.log(`🔗 [PART] Connecting to host`);
+    console.log(`🔗 FASE 2 TIMING: Connecting to host`);
+    
+    // FASE 2: VERIFICAÇÃO CRÍTICA - só conectar se inRoom = true
+    if (!this.inRoom) {
+      throw new Error('FASE 2 TIMING: Cannot connect to host - not confirmed in room (inRoom=false)');
+    }
+    
+    if (!this.webrtcReady) {
+      throw new Error('FASE 2 TIMING: Cannot connect to host - WebRTC not ready');
+    }
     
     if (!this.localStream) {
       throw new Error('No local stream available for host connection');
     }
 
+    // FASE 2: Verificação adicional - WebSocket deve estar conectado E inRoom deve ser true
+    if (!unifiedWebSocketService.isConnected()) {
+      throw new Error('FASE 2 TIMING: WebSocket must be connected before WebRTC handshake');
+    }
+
     try {
       const hostId = 'host';
-      console.log(`🎯 [PART] Starting handshake with: ${hostId}`);
+      console.log(`🎯 FASE 2 TIMING: Starting handshake with ${hostId} (inRoom=true, webrtcReady=true)`);
       
       await this.connectionHandler.initiateHandshake(hostId);
       this.updateConnectionState('webrtc', 'connecting');
       
-      console.log(`✅ [PART] Handshake initiated successfully`);
+      console.log(`✅ FASE 2 TIMING: Handshake initiated successfully`);
     } catch (error) {
-      console.error(`❌ [PART] Failed to connect to host:`, error);
+      console.error(`❌ FASE 2 TIMING: Failed to connect to host:`, error);
       this.updateConnectionState('webrtc', 'failed');
       throw error;
     }

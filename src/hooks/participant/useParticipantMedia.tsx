@@ -82,16 +82,27 @@ export const useParticipantMedia = (participantId: string) => {
     webrtcSender: (window as any).__participantWebRTCSender
   });
 
-  // Automatic media initialization (Teams/Meet style)
+  // FASE 3: CRITICAL FIX - Always request video + audio first
   const initializeMediaAutomatically = useCallback(async () => {
     try {
-      console.log('🎬 MEDIA: Starting automatic media initialization');
+      console.log('🎬 FASE 3 FIX: Starting automatic media initialization - ALWAYS video + audio first');
       
+      // FASE 3: SEMPRE tentar video + audio primeiro
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
+        video: {
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
+          frameRate: { ideal: 30, min: 15 }
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
 
+      console.log('✅ FASE 3 FIX: HIGH QUALITY video + audio acquired successfully');
+      
       if (!stream) {
         throw new Error('No stream obtained from getUserMedia');
       }

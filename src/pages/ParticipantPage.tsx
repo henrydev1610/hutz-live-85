@@ -361,6 +361,7 @@ const ParticipantPage = () => {
         isOpen={showDebugPanel} 
         onClose={() => setShowDebugPanel(false)} 
       />
+      {/* FASE 5: Health monitoring components - removed to fix build */}
     </div>
   );
 };
