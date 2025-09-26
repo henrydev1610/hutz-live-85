@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import { toast } from 'sonner';
 import { getWebSocketURL, detectSlowNetwork } from '@/utils/connectionUtils';
 import { setDynamicIceServers } from '@/utils/webrtc/WebRTCConfig';
 import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
@@ -55,9 +56,9 @@ class UnifiedWebSocketService {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
-  // FASE 4: Circuit breaker otimizado - mais conservador  
-  private circuitBreakerThreshold = 3; // FASE 4: Apenas 3 falhas consecutivas
-  private circuitBreakerTimeout = 20000; // FASE 4: 20s para recovery
+  // FASE 1: Circuit breaker relaxado para Render.com
+  private circuitBreakerThreshold = 8; // FASE 1: 8 falhas para tolerar "server waking up"
+  private circuitBreakerTimeout = 60000; // FASE 1: 60s para recovery (servidores podem demorar para acordar)
   private circuitBreakerTimer: NodeJS.Timeout | null = null;
   private isCircuitOpen = false;
   private isConnectingFlag = false; // Flag para prevenir conexões simultâneas
@@ -227,8 +228,8 @@ class UnifiedWebSocketService {
     });
 
     return new Promise((resolve, reject) => {
-      // SIMPLIFICAÇÃO: Timeout fixo mais generoso
-      const connectionTimeout = 20000; // 20s fixo para simplicidade
+      // FASE 2: Timeout otimizado para Render.com (servidores podem estar "dormindo")
+      const connectionTimeout = 45000; // FASE 2: 45s para permitir "server wake up"
       
       console.log(`⏱️ [WS] CONNECTION TIMEOUT: ${connectionTimeout}ms`);
 
@@ -238,16 +239,21 @@ class UnifiedWebSocketService {
         reject(new Error(`Connection timeout after ${connectionTimeout}ms`));
       }, connectionTimeout);
 
-      // FASE 1: Configuração Socket.IO robusta e menos agressiva
-      console.log(`🚀 [WS] Creating socket.io connection...`);
+      // FASE 2: Configuração Socket.IO otimizada para Render.com
+      console.log(`🚀 [WS] Creating socket.io connection with Render.com optimizations...`);
       this.socket = io(url, {
         transports: ['websocket', 'polling'], // WebSocket primeiro, polling como fallback
-        timeout: 25000, // Aumentado para 25s
+        timeout: 50000, // FASE 2: 50s para Render.com server wake up
         reconnection: false, // Controlamos manualmente
         forceNew: true,
         autoConnect: true,
         upgrade: true, // Permite upgrade para WebSocket
-        rememberUpgrade: true // Lembra preferência WebSocket
+        rememberUpgrade: true, // Lembra preferência WebSocket
+        // FASE 3: Headers específicos para Render.com
+        extraHeaders: {
+          'User-Agent': 'LovableApp/1.0',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
       });
 
       this.socket.on('connect', () => {
@@ -270,6 +276,19 @@ class UnifiedWebSocketService {
           context: error.context || 'No context',
           type: error.type || 'Unknown type'
         });
+        
+        // FASE 4: Enhanced debugging para identificar problemas específicos do Render.com
+        if (error.message?.includes('502') || error.description?.includes('502')) {
+          console.log('🌅 RENDER.COM: Servidor provavelmente "acordando" - erro 502 detectado');
+          toast.warning('🌅 Servidor acordando... aguarde...');
+        } else if (error.message?.includes('timeout')) {
+          console.log('⏰ RENDER.COM: Timeout - servidor pode estar sobrecarregado');
+          toast.warning('⏰ Servidor ocupado - tentando novamente...');
+        } else if (error.message?.includes('ENOTFOUND') || error.message?.includes('getaddrinfo')) {
+          console.log('🌐 NETWORK: Problema de DNS/conectividade');
+          toast.error('🌐 Problema de conectividade de rede');
+        }
+        
         reject(error);
       });
 

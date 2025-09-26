@@ -51,40 +51,35 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     console.log(`📱 PARTICIPANT CONNECTION: Mobile device: ${isMobile}`);
     console.log(`🎥 PARTICIPANT CONNECTION: Has stream: ${!!stream}`);
     
-    // FASE 1: Verificação crítica do backend ANTES de tentar conectar
-    console.log(`🏥 FASE 1: Checking backend health before connection...`);
+    // FASE 5: Health check não-bloqueante - permite tentativas mesmo com backend instável
+    console.log(`🏥 FASE 5: Non-blocking backend health check...`);
+    
+    let shouldProceedWithWarning = false;
+    
     if (isDegradedMode) {
-      toast.error('🚨 Servidor offline - Verifique sua conexão');
-      setError('Backend está offline');
-      setConnectionStatus('failed');
-      return;
+      console.warn('⚠️ FASE 5: Backend em modo degradado, mas permitindo tentativa');
+      toast.warning('⚠️ Conectividade instável - tentando mesmo assim...');
+      shouldProceedWithWarning = true;
     }
     
     if (backendStatus === 'offline') {
-      console.error('❌ FASE 1: Backend is offline, cannot connect');
-      toast.error('🚨 Servidor não está respondendo');
-      setError('Servidor offline');
-      setConnectionStatus('failed');
-      return;
+      console.warn('⚠️ FASE 5: Backend offline, mas tentando conexão (pode estar acordando)');
+      toast.warning('🌅 Servidor pode estar acordando - tentando conectar...');
+      shouldProceedWithWarning = true;
     }
     
     if (backendStatus === 'unknown') {
-      console.log('🔍 FASE 1: Backend status unknown, checking now...');
-      try {
-        const healthResult = await checkBackendHealth();
-        if (!healthResult.isOnline) {
-          toast.error('🚨 Servidor não acessível');
-          setError('Não foi possível conectar ao servidor');
-          setConnectionStatus('failed');
-          return;
-        }
-      } catch (error) {
-        console.error('❌ FASE 1: Backend health check failed:', error);
-        toast.error('🚨 Erro ao verificar servidor');
-        setError('Erro de conectividade');
-        setConnectionStatus('failed');
-        return;
-      }
+      console.log('🔍 FASE 5: Backend status unknown, checking asynchronously...');
+      // FASE 5: Check assíncrono - não bloqueia a conexão
+      checkBackendHealth().catch(error => {
+        console.warn('⚠️ FASE 5: Async health check failed, but continuing:', error);
+        toast.warning('⚠️ Status do servidor desconhecido - tentando mesmo assim...');
+      });
+      shouldProceedWithWarning = true;
+    }
+    
+    if (shouldProceedWithWarning) {
+      console.log('🚀 FASE 5: Prosseguindo com conexão apesar dos warnings');
     }
     
     // Validar stream antes de prosseguir
@@ -134,8 +129,8 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
 
    
 
-    // FASE 4: QUEBRA DE RETRY LOOP - Circuit breaker rígido
-    const maxRetries = isMobile ? 2 : 1; // FASE 4: Reduzido drasticamente
+    // FASE 1: Retry mais permissivo para Render.com (servidores podem acordar)
+    const maxRetries = isMobile ? 4 : 3; // FASE 1: Aumentado para tolerar server wake up
     const connectionMetrics = {
       startTime: Date.now(),
       attempts: 0,
@@ -159,9 +154,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       connectionMetrics.lastAttemptTime = Date.now();
       retryCount++;
       
-      // FASE 4: TIMEOUT ABSOLUTO - 30s máximo total
-      if ((Date.now() - connectionMetrics.startTime) > 30000) {
-        throw new Error('TIMEOUT: Connection attempts exceeded 30 seconds total time');
+      // FASE 2: TIMEOUT ABSOLUTO otimizado para Render.com - 90s máximo total
+      if ((Date.now() - connectionMetrics.startTime) > 90000) {
+        throw new Error('TIMEOUT: Connection attempts exceeded 90 seconds total time (Render.com optimized)');
       }
       
       try {

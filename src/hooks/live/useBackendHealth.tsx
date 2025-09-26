@@ -15,15 +15,18 @@ export const useBackendHealth = (autoStart: boolean = true) => {
   const handleHealthUpdate = useCallback((status: BackendHealthStatus) => {
     setHealthStatus(status);
     
-    // Mostrar alertas baseados no status
-    if (status.consecutiveFailures === 3) {
-      toast.error('🚨 Backend offline - Verifique sua conexão com a internet');
+    // FASE 1: Alertas relaxados para Render.com
+    if (status.consecutiveFailures === 8) {
+      toast.error('🚨 Servidor persistentemente offline - Verifique sua conexão');
+    } else if (status.consecutiveFailures === 3 && !status.isHealthy) {
+      toast.warning('⚠️ Servidor instável - pode estar acordando...');
     } else if (status.consecutiveFailures === 1 && !status.isHealthy) {
-      toast.warning('⚠️ Problemas de conectividade detectados');
+      // FASE 4: Log apenas, sem toast para evitar spam
+      console.log('⚠️ Primeira falha detectada - monitorando...');
     } else if (status.isHealthy && status.consecutiveFailures === 0) {
       // Backend voltou online
       if (healthStatus && !healthStatus.isHealthy) {
-        toast.success('✅ Conexão com o servidor restabelecida');
+        toast.success('✅ Servidor online - Conexão restabelecida');
       }
     }
   }, [healthStatus]);
@@ -86,10 +89,12 @@ export const useBackendHealth = (autoStart: boolean = true) => {
   const consecutiveFailures = healthStatus?.consecutiveFailures ?? 0;
   
   // Status geral do backend
+  // FASE 1: Thresholds relaxados para Render.com
   const backendStatus = healthStatus ? (
     healthStatus.isHealthy ? 'online' : 
-    consecutiveFailures >= 3 ? 'offline' : 
-    'unstable'
+    consecutiveFailures >= 8 ? 'offline' : 
+    consecutiveFailures >= 3 ? 'unstable' :
+    'degraded'  // Novo estado intermediário
   ) : 'unknown';
 
   return {

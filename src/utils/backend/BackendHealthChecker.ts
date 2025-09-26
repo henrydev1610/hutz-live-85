@@ -52,7 +52,7 @@ class BackendHealthChecker {
           'Accept': 'application/json',
           'Cache-Control': 'no-cache'
         },
-        signal: AbortSignal.timeout(15000) // 15s timeout
+        signal: AbortSignal.timeout(30000) // FASE 2: 30s timeout para Render.com server wake up
       });
 
       const responseTime = Date.now() - startTime;
