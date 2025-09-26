@@ -120,10 +120,8 @@ export const useVideoTrackRecovery = ({
     track.onended = null;
     track.onunmute = null;
 
-    track.onmute = () => {
-      console.warn('🔇 [TRACK-HEALTH] Video track muted - triggering recovery');
-      recoverVideoTrack('track muted');
-    };
+    // CORREÇÃO: NÃO reagir a track.muted - é transitório e normal
+    // track.onmute = ... // REMOVIDO para evitar loops desnecessários
 
     track.onended = () => {
       console.warn('⏹️ [TRACK-HEALTH] Video track ended - triggering recovery');
@@ -136,7 +134,7 @@ export const useVideoTrackRecovery = ({
       recoveryAttempts.current = 0;
     };
 
-    console.log('👂 [RECOVERY] Track health monitoring established');
+    console.log('👂 [RECOVERY] Track health monitoring established (sem mute listener)');
   }, [recoverVideoTrack]);
 
   // Visibility change monitoring

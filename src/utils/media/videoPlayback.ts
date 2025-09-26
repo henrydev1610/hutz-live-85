@@ -1,6 +1,11 @@
 import { detectMobileAggressively } from './deviceDetection';
+import { getVideoElementConfig, applyVideoElementConfig } from './videoElementConfig';
 
-export const setupVideoElement = async (videoElement: HTMLVideoElement, stream: MediaStream): Promise<void> => {
+export const setupVideoElement = async (
+  videoElement: HTMLVideoElement, 
+  stream: MediaStream, 
+  context: 'local-preview' | 'remote-stream' = 'remote-stream'
+): Promise<void> => {
   const isMobile = detectMobileAggressively();
   
   console.log('📺 SETUP VIDEO: Starting video element setup', {
@@ -19,10 +24,9 @@ export const setupVideoElement = async (videoElement: HTMLVideoElement, stream: 
   // Set new stream
   videoElement.srcObject = stream;
   
-  // Ensure all necessary properties are set
-  videoElement.playsInline = true;
-  videoElement.muted = true;
-  videoElement.autoplay = true;
+  // Aplicar configuração baseada no contexto
+  const config = getVideoElementConfig(context);
+  applyVideoElementConfig(videoElement, config, context);
   
   try {
     console.log('📺 SETUP VIDEO: Attempting to play video...');

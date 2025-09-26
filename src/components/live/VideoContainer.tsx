@@ -98,8 +98,8 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
       audioTracks: stream.getAudioTracks().length
     });
 
-    // Apply stream using utility function
-    setupVideoElement(video, stream)
+    // Apply stream using utility function - CONTEXTO REMOTO (muted = false)
+    setupVideoElement(video, stream, 'remote-stream')
       .then(() => {
         setIsVideoReady(true);  
         setError(null);

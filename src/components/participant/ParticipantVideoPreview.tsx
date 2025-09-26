@@ -35,11 +35,8 @@ const ParticipantVideoPreview: React.FC<ParticipantVideoPreviewProps> = ({
       if (localVideoRef.current && localStream) {
         const video = localVideoRef.current;
         
-        // Configurar atributos críticos para mobile
-        video.playsInline = true;
-        video.autoplay = true;
+        // CONTEXTO LOCAL: sempre muted para evitar feedback
         video.muted = true;
-        video.controls = false;
         
         // Anexar stream
         video.srcObject = localStream;

@@ -104,10 +104,8 @@ export const useVideoPlayback = ({ getVideoState, updateVideoState }: UseVideoPl
       }
     }
     
-    // Pausar e limpar
-    if (!video.paused) {
-      video.pause();
-    }
+    // NÃO pausar elementos remotos - apenas limpar srcObject
+    // video.pause(); // REMOVIDO para evitar pausas desnecessárias
     
     video.srcObject = null;
     video.removeAttribute('src');
