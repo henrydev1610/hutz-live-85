@@ -13,7 +13,7 @@ import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPr
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
 import StreamDebugPanel from '@/utils/debug/StreamDebugPanel';
-import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
+import { supabaseRealtimeService } from '@/services/SupabaseRealtimeService';
 import { toast } from 'sonner';
 
 const ParticipantPage = () => {
@@ -48,7 +48,7 @@ const ParticipantPage = () => {
   // Monitor signaling service status
   useEffect(() => {
     const checkSignalingStatus = () => {
-      const status = unifiedWebSocketService.getConnectionStatus();
+      const status = supabaseRealtimeService.getConnectionStatus();
       setSignalingStatus(status);
     };
 

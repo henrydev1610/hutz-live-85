@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react';
 import { toast } from "sonner";
 import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
-import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
+import { supabaseRealtimeService } from '@/services/SupabaseRealtimeService';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getEnvironmentInfo, validateURLConsistency } from '@/utils/connectionUtils';
 
@@ -71,7 +71,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       try {
         // Emitir stream-started após conectar ao WebSocket
         setTimeout(() => {
-          unifiedWebSocketService.emit('stream-started', {
+          supabaseRealtimeService.emit('stream-started', {
             participantId,
             roomId: sessionId,
             streamInfo: {
@@ -80,7 +80,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
               hasAudio: stream.getAudioTracks().length > 0
             }
           });
-        }, 3000); // Aguardar 3s para WebSocket estar estável
+        }, 3000); // Aguardar 3s para conexão estar estável
       } catch (error) {
         console.warn('⚠️ Erro ao configurar emit stream-started:', error);
       }
@@ -129,39 +129,37 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         });
         
         // Setup enhanced callbacks primeiro
-        unifiedWebSocketService.setCallbacks({
+        supabaseRealtimeService.setCallbacks({
           onConnected: () => {
             console.log('🔗Participante conectado com sucesso!');
             setConnectionStatus('connected');
           },
           onDisconnected: () => {
-            console.log('🔗 PARTICIPANT CONNECTION: WebSocket disconnectado');
+            console.log('🔗 PARTICIPANT CONNECTION: Supabase Realtime disconnectado');
             setConnectionStatus('disconnected');
             setIsConnected(false);
           },
           onConnectionFailed: (error) => {
-            console.error('🔗 PARTICIPANT CONNECTION: WebSocket connection failed:', error);
+            console.error('🔗 PARTICIPANT CONNECTION: Supabase connection failed:', error);
             setConnectionStatus('failed');
-            setError('Falha na conexão WebSocket');
+            setError('Falha na conexão');
           },
           onStreamStarted(participantId, streamInfo) {
             console.log(`🎥 PARTICIPANT CONNECTION: Stream iniciado por:  ${participantId}:`, streamInfo);
-            // Atualizar estado do participante com o stream recebido
-        
           },
         });
 
-        // Etapa 1: Conectar WebSocket com timeouts otimizados
-        console.log(`🔗 PARTICIPANT CONNECTION: Connecting WebSocket (attempt ${retryCount})`);
-        const wsStartTime = Date.now();
+        // Etapa 1: Conectar ao Supabase Realtime
+        console.log(`🔗 PARTICIPANT CONNECTION: Connecting to Supabase Realtime (attempt ${retryCount})`);
+        const connectStartTime = Date.now();
         
-        await unifiedWebSocketService.connect();
+        await supabaseRealtimeService.connect();
         
-        const wsConnectTime = Date.now() - wsStartTime;
-        console.log(`✅ PARTICIPANT CONNECTION: WebSocket connected in ${wsConnectTime}ms`);
+        const connectTime = Date.now() - connectStartTime;
+        console.log(`✅ PARTICIPANT CONNECTION: Connected in ${connectTime}ms`);
         
-        if (!unifiedWebSocketService.isReady()) {
-          throw new Error('WebSocket connection failed - not ready');
+        if (!supabaseRealtimeService.isReady()) {
+          throw new Error('Supabase connection failed - not ready');
         }
 
         // FASE 2: Progressive stabilization delays
@@ -169,11 +167,11 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
         console.log(`⏱️ STABILIZATION: Waiting ${stabilizationDelay}ms for connection to stabilize`);
         await new Promise(resolve => setTimeout(resolve, stabilizationDelay));
 
-        // Etapa 2: Join room com retry e health check
+        // Etapa 2: Join room
         console.log(`🔗 PARTICIPANT CONNECTION: Joining room (attempt ${retryCount})`);
         const joinStartTime = Date.now();
         
-        await unifiedWebSocketService.joinRoom(sessionId, participantId);
+        await supabaseRealtimeService.joinRoom(sessionId, participantId);
         
         const joinTime = Date.now() - joinStartTime;
         console.log(`✅ PARTICIPANT CONNECTION: Joined room in ${joinTime}ms`);
@@ -291,7 +289,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
           // FASE 3: Enhanced cleanup and retry logic
           try {
             console.log(`🧹 CLEANUP: Cleaning up before retry attempt ${retryCount + 1}`);
-            unifiedWebSocketService.disconnect();
+            supabaseRealtimeService.disconnect();
             
             // Additional cleanup for mobile
             if (isMobile) {
@@ -365,7 +363,7 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     
     try {
       cleanupWebRTC();
-      unifiedWebSocketService.disconnect();
+      supabaseRealtimeService.disconnect();
       setIsConnected(false);
       setConnectionStatus('disconnected');
       toast.success('Desconectado da sessão');

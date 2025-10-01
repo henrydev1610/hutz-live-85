@@ -4,3 +4,6 @@ project_id = "vikhirqxfhmpgbkycwra"
 
 [functions.signaling]
 verify_jwt = false
+
+[functions.webrtc-coordinator]
+verify_jwt = false
