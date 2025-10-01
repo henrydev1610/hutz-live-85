@@ -4,6 +4,9 @@ import { setDynamicIceServers } from '@/utils/webrtc/WebRTCConfig';
 import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
 import { OfflineFallback } from '@/utils/fallback/OfflineFallback';
 import { turnServerDiagnostics } from '@/utils/webrtc/TurnServerDiagnostics';
+import { signalingConfig } from '@/config/signalingConfig';
+import { SocketIODiagnostics } from '@/utils/webrtc/SocketIODiagnostics';
+import { ConnectionTester } from '@/utils/webrtc/ConnectionTester';
 
 export interface UnifiedSignalingCallbacks {
   onConnected?: () => void;
@@ -91,57 +94,57 @@ class UnifiedWebSocketService {
     this.callbacks = callbacks;
   }
 
-  // FASE 2: Sistema de fallback com múltiplas URLs
+  // FASE 2: Sistema de fallback com múltiplas URLs usando Socket.IO Diagnostics
   private async connectWithRetry(serverUrl?: string): Promise<{ success: boolean; url?: string; error?: string }> {
     const urls = serverUrl ? [serverUrl] : this.getAlternativeURLs();
     
-    for (const url of urls) {
-      console.log(`🔄 [WS] Trying URL: ${url}`);
-      
-      // Diagnóstico específico para esta URL
-      try {
-        const diagnostics = await WebSocketDiagnostics.runDiagnostics();
-        console.log(`📊 [WS] Diagnostics for ${url}:`, diagnostics);
-        
-        if (diagnostics.success || diagnostics.details.hostReachable) {
-          console.log(`✅ [WS] URL ${url} passed diagnostics`);
-          return { success: true, url };
-        } else {
-          console.warn(`⚠️ [WS] URL ${url} failed diagnostics: ${diagnostics.error}`);
-        }
-      } catch (error) {
-        console.warn(`⚠️ [WS] Diagnostics failed for ${url}:`, error);
-      }
+    console.log(`🔄 [WS] Testando ${urls.length} URLs de sinalização...`);
+    
+    // Usar SocketIODiagnostics para encontrar URL funcionando
+    const result = await SocketIODiagnostics.findWorkingURL(urls, 5000);
+    
+    if (result && result.success) {
+      console.log(`✅ [WS] URL funcionando encontrada: ${result.url}`);
+      return { success: true, url: result.url };
     }
     
-    // Se nenhuma URL passou nos diagnósticos, alertar usuário
+    // Se nenhuma URL funcionou, executar diagnóstico completo
+    console.error(`❌ [WS] Nenhuma URL de sinalização funcionando`);
+    
+    const fullReport = await ConnectionTester.runFullTest();
+    
+    if (!fullReport.overall.healthy) {
+      console.error('❌ [WS] Sistema não está saudável:', fullReport.overall.criticalIssues);
+    }
+    
+    // Alertar usuário
     OfflineFallback.createOfflineAlert();
     OfflineFallback.checkServerAfterDelay(30000);
     
     return { 
       success: false, 
-      error: `All ${urls.length} server URLs failed diagnostics` 
+      error: `Todas as ${urls.length} URLs de sinalização falharam` 
     };
   }
 
   private getAlternativeURLs(): string[] {
-    const primary = getWebSocketURL();
-    const alternatives = [
-      primary,
-      // Adicionar URLs alternativas baseadas na URL primária
-      primary.replace('wss://', 'ws://'),
-      primary.replace('ws://', 'wss://'),
-    ];
-    
-    // Remover duplicatas
-    return [...new Set(alternatives)];
+    // Usar signalingConfig para obter URLs alternativas
+    return signalingConfig.getAlternativeURLs();
   }
 
   async connect(serverUrl?: string): Promise<void> {
     // Log do ambiente antes de conectar
     if (this.metrics.attemptCount === 0) {
       WebSocketDiagnostics.logEnvironmentInfo();
+      
+      // Log da configuração de sinalização
+      console.log('🔧 [WS] Signaling Config:', signalingConfig.getDebugInfo());
     }
+
+    // Usar signalingConfig como URL padrão se não fornecida
+    const targetUrl = serverUrl || signalingConfig.getURL();
+    
+    console.log(`🎯 [WS] Target URL: ${targetUrl}`);
 
     // Prevenir múltiplas tentativas simultâneas
     if (this.isConnectingFlag || this.isConnecting || this.isConnected()) {
@@ -159,7 +162,7 @@ class UnifiedWebSocketService {
 
     try {
       // FASE 2: Tentar conectar com múltiplas URLs se necessário
-      const connectionResult = await this.connectWithRetry(serverUrl);
+      const connectionResult = await this.connectWithRetry(targetUrl);
       if (!connectionResult.success) {
         throw new Error(`All connection attempts failed: ${connectionResult.error}`);
       }
