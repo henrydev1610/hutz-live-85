@@ -1,7 +1,6 @@
-project_id = "fuhvpzprzqdfcojueswo"
+
+# This file was created by lovable.ai and is meant to be checked into version control.
+project_id = "vikhirqxfhmpgbkycwra"
 
 [functions.signaling]
-verify_jwt = false
-
-[functions.webrtc-coordinator]
 verify_jwt = false

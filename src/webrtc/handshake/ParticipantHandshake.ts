@@ -83,29 +83,21 @@ class ParticipantHandshakeManager {
   async ensureLocalStream(): Promise<MediaStream | null> {
     // GUARANTEED SINGLE SOURCE: Only use shared stream from participant page
     const sharedStream = (window as any).__participantSharedStream;
-    if (!sharedStream || !sharedStream.active) {
-      console.error('[PART] ensureLocalStream: No shared stream available or stream is inactive.');
-      return null;
+    if (sharedStream && sharedStream.getTracks().length > 0) {
+      const activeTracks = sharedStream.getTracks().filter(track => track.readyState === 'live' && track.enabled);
+      if (activeTracks.length > 0) {
+        console.log('[PART] ensureLocalStream: Using validated shared stream');
+        this.localStream = sharedStream;
+        return sharedStream;
+      } else {
+        console.error('[PART] ensureLocalStream: Shared stream has no active tracks');
+        return null;
+      }
     }
-
-    const videoTracks = sharedStream.getVideoTracks();
-    const audioTracks = sharedStream.getAudioTracks();
-
-    const liveVideoTracks = videoTracks.filter(track => track.readyState === 'live' && track.enabled);
-    const liveAudioTracks = audioTracks.filter(track => track.readyState === 'live' && track.enabled);
-
-    if (liveVideoTracks.length === 0 && liveAudioTracks.length === 0) {
-      console.error('[PART] ensureLocalStream: Shared stream found but contains no live video or audio tracks.');
-      return null;
-    }
-
-    console.log('[PART] ensureLocalStream: Using validated shared stream', {
-      streamId: sharedStream.id,
-      liveVideoTracks: liveVideoTracks.length,
-      liveAudioTracks: liveAudioTracks.length
-    });
-    this.localStream = sharedStream;
-    return sharedStream;
+    
+    // NO FALLBACK TO PREVENT DUPLICATION - let participant page handle stream creation
+    console.error('[PART] ensureLocalStream: No shared stream available - this should not happen');
+    return null;
   }
 
   private setupStreamHealthMonitoring(stream: MediaStream): void {

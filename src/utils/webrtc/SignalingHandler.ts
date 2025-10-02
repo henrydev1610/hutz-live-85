@@ -1,5 +1,5 @@
 
-import { supabaseRealtimeService } from '@/services/SupabaseRealtimeService';
+import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { ConnectionHandler } from './ConnectionHandler';
 
 export class SignalingHandler {
@@ -63,7 +63,7 @@ export class SignalingHandler {
         });
       }
       
-      supabaseRealtimeService.sendAnswer(participantId, answer);
+      unifiedWebSocketService.sendAnswer(participantId, answer);
     } catch (error) {
       console.error('❌ [SIG] Failed to handle offer:', error);
     }
