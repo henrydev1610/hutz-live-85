@@ -63,22 +63,16 @@ class UnifiedWebSocketService {
   private isConnectingFlag = false; // Flag para prevenir conexões simultâneas
 
   constructor() {
-    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
-    if (DEBUG) console.log('🔧 [WS] Service initialized');
+    console.log('🔧 [WS] Service initialized');
     this.detectNetworkQuality();
-    
-    // ✅ CORREÇÃO: Ativar debug logging automaticamente
     this.enableDebugLogging();
   }
 
-  // FASE 5: Network quality detection
   private detectNetworkQuality(): void {
     const isSlowNetwork = detectSlowNetwork();
     this.metrics.networkQuality = isSlowNetwork ? 'slow' : 'fast';
-    const DEBUG = sessionStorage.getItem('DEBUG') === 'true';
-    if (DEBUG) console.log(`📶 [WS] Network: ${this.metrics.networkQuality}`);
+    console.log(`📶 [WS] Network Quality: ${this.metrics.networkQuality}`);
     
-    // Adjust settings based on network quality
     if (isSlowNetwork) {
       this.maxReconnectAttempts = 20;
       this.reconnectDelay = 3000;
@@ -126,15 +120,17 @@ class UnifiedWebSocketService {
 
   private getAlternativeURLs(): string[] {
     const primary = getWebSocketURL();
+    console.log(`🔗 [WS] Primary URL: ${primary}`);
+    
     const alternatives = [
       primary,
-      // Adicionar URLs alternativas baseadas na URL primária
-      primary.replace('wss://', 'ws://'),
-      primary.replace('ws://', 'wss://'),
+      // Tentar com protocolo alternativo
+      primary.includes('wss://') ? primary.replace('wss://', 'ws://') : primary.replace('ws://', 'wss://'),
     ];
     
-    // Remover duplicatas
-    return [...new Set(alternatives)];
+    const unique = [...new Set(alternatives)];
+    console.log(`🔗 [WS] Alternative URLs:`, unique);
+    return unique;
   }
 
   async connect(serverUrl?: string): Promise<void> {
@@ -297,13 +293,15 @@ class UnifiedWebSocketService {
     });
   }
 
-  // FASE 3: Circuit breaker implementation
   private openCircuitBreaker(): void {
-    console.log(`🚫 CIRCUIT BREAKER: Opening circuit after ${this.metrics.consecutiveFailures} consecutive failures`);
+    console.warn(`🚫 [WS] CIRCUIT BREAKER OPENED: ${this.metrics.consecutiveFailures} falhas consecutivas`);
+    console.warn(`⏰ [WS] Circuit breaker vai fechar em ${this.circuitBreakerTimeout}ms`);
+    console.warn(`💡 [WS] Sugestão: Verifique se o servidor está online e configurado corretamente`);
+    
     this.isCircuitOpen = true;
     
     this.circuitBreakerTimer = setTimeout(() => {
-      console.log('🔄 CIRCUIT BREAKER: Attempting to close circuit');
+      console.log('🔄 [WS] CIRCUIT BREAKER: Tentando fechar circuito');
       this.isCircuitOpen = false;
       this.metrics.consecutiveFailures = 0;
     }, this.circuitBreakerTimeout);
@@ -887,6 +885,10 @@ this.socket.on('ice-servers', (data) => {
 
   getConnectionStatus(): string {
     return this.metrics.status;
+  }
+
+  getMetrics(): ConnectionMetrics {
+    return { ...this.metrics };
   }
 }
 
