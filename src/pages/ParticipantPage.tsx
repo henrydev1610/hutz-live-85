@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
 import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
 import { useMobileOnlyGuard } from '@/hooks/useMobileOnlyGuard';
+import { isSyntheticStream } from '@/utils/media/syntheticStream';
 
 // Importar handshake do participante para registrar listeners
 import '@/webrtc/handshake/ParticipantHandshake';
@@ -40,6 +41,7 @@ const ParticipantPage = () => {
   const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [usingSyntheticStream, setUsingSyntheticStream] = useState(false);
   
   // PROPAGAÇÃO: participantId único passado para todos os hooks
   const connection = useParticipantConnection(sessionId, participantId);
@@ -127,6 +129,15 @@ const ParticipantPage = () => {
         console.log(`🌐 Shared stream audio tracks: ${sharedAudioTracks.length}`);
       }
       
+      // Check if using synthetic stream
+      const isSynthetic = isSyntheticStream(stream);
+      setUsingSyntheticStream(isSynthetic);
+      
+      if (isSynthetic) {
+        console.log('🎨 Using SYNTHETIC STREAM - development mode active');
+        toast.info('🎨 Development Mode: Using synthetic video stream');
+      }
+      
       // Share globally for WebRTC
       (window as any).__participantSharedStream = stream;
       
@@ -134,7 +145,7 @@ const ParticipantPage = () => {
       if (stream) {
         stream.getTracks().forEach(track => {
           try {
-            console.log(`✅ Track ready for WebRTC: ${track.kind}`);
+            console.log(`✅ Track ready for WebRTC: ${track.kind} (synthetic: ${isSynthetic})`);
           } catch (trackError) {
             console.warn(`⚠️ Could not prepare track:`, trackError);
           }
@@ -145,7 +156,12 @@ const ParticipantPage = () => {
       await connection.connectToSession(stream);
 
       console.log("✅ Camera and microphone connected automatically");
-      toast.success(`📱 Camera connected! Video: ${videoTracks.length > 0 ? '✅' : '❌'}, Audio: ${audioTracks.length > 0 ? '✅' : '❌'}`);
+      
+      if (isSynthetic) {
+        toast.success(`🎨 Synthetic stream connected! Video: ✅, Audio: ${audioTracks.length > 0 ? '✅' : '❌'}`);
+      } else {
+        toast.success(`📱 Camera connected! Video: ${videoTracks.length > 0 ? '✅' : '❌'}, Audio: ${audioTracks.length > 0 ? '✅' : '❌'}`);
+      }
 
     } catch (err: any) {
       console.error("❌ Error initializing media:", err.name, err.message);
@@ -322,8 +338,23 @@ const ParticipantPage = () => {
         {/* Instructions */}
         <ParticipantInstructions />
         
+        {/* Synthetic Stream Indicator */}
+        {usingSyntheticStream && (
+          <div className="mt-4 p-3 bg-purple-500/20 rounded-lg border border-purple-500/30">
+            <p className="text-purple-300 text-sm font-bold">
+              🎨 Development Mode - Synthetic Stream Active
+            </p>
+            <p className="text-purple-200 text-xs mt-1">
+              No real camera detected. Using animated test stream for WebRTC pipeline testing.
+            </p>
+            <p className="text-purple-100 text-xs mt-1">
+              Participant: {participantId.substring(0, 25)}...
+            </p>
+          </div>
+        )}
+        
         {/* Enhanced Mobile Debug Info */}
-        {isMobile && (
+        {isMobile && !usingSyntheticStream && (
           <div className="mt-4 p-3 bg-green-500/20 rounded-lg border border-green-500/30">
             <p className="text-green-300 text-sm">
               ✅ Automatic media initialization enabled (Teams/Meet style)

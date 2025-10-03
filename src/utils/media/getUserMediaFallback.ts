@@ -1,5 +1,6 @@
 import { detectMobileAggressively, getCameraPreference, validateMobileCameraCapabilities } from './deviceDetection';
 import { streamLogger } from '../debug/StreamLogger';
+import { createSyntheticStream } from './syntheticStream';
 
 // Simplified getUserMedia for automatic initialization (Teams/Meet style)
 export const getUserMediaWithFallback = async (participantId: string = 'unknown'): Promise<MediaStream | null> => {
@@ -87,11 +88,62 @@ export const getUserMediaWithFallback = async (participantId: string = 'unknown'
         console.error('❌ Permission denied - cannot continue');
         break;
       }
+      
+      // If NotFoundError (no devices), try synthetic stream as fallback
+      if (error instanceof Error && error.name === 'NotFoundError') {
+        console.warn('⚠️ No media devices found - switching to SYNTHETIC STREAM');
+        
+        try {
+          const syntheticStream = createSyntheticStream({
+            participantId,
+            width: 640,
+            height: 480,
+            frameRate: 30,
+            includeAudio: true
+          });
+          
+          console.log('✅ SYNTHETIC STREAM created successfully:', {
+            streamId: syntheticStream.id,
+            videoTracks: syntheticStream.getVideoTracks().length,
+            audioTracks: syntheticStream.getAudioTracks().length
+          });
+          
+          streamLogger.log('STREAM_SUCCESS' as any, participantId, isMobile, deviceType, 
+            { timestamp: Date.now(), duration: Date.now() - startTime },
+            syntheticStream, 'SYNTHETIC', 'Using synthetic stream fallback');
+          
+          return syntheticStream;
+        } catch (syntheticError) {
+          console.error('❌ Failed to create synthetic stream:', syntheticError);
+        }
+      }
     }
   }
   
   console.error('❌ All automatic attempts failed');
-  return null;
+  
+  // Final fallback: Try synthetic stream one more time
+  console.warn('🎨 Attempting FINAL FALLBACK to synthetic stream');
+  try {
+    const syntheticStream = createSyntheticStream({
+      participantId,
+      width: 640,
+      height: 480,
+      frameRate: 30,
+      includeAudio: true
+    });
+    
+    console.log('✅ FINAL FALLBACK successful - synthetic stream created');
+    
+    streamLogger.log('STREAM_SUCCESS' as any, participantId, isMobile, deviceType, 
+      { timestamp: Date.now(), duration: 0 },
+      syntheticStream, 'SYNTHETIC_FALLBACK', 'Final fallback to synthetic stream');
+    
+    return syntheticStream;
+  } catch (syntheticError) {
+    console.error('❌ Final synthetic stream fallback failed:', syntheticError);
+    return null;
+  }
 };
 
 // Keep existing complex implementation for fallback
@@ -209,9 +261,60 @@ export const getUserMediaWithComplexFallback = async (participantId: string = 'u
         console.error('❌ Permission denied - cannot continue');
         break;
       }
+      
+      // If NotFoundError (no devices), try synthetic stream
+      if (error instanceof Error && error.name === 'NotFoundError') {
+        console.warn('⚠️ No media devices found - switching to SYNTHETIC STREAM (complex)');
+        
+        try {
+          const syntheticStream = createSyntheticStream({
+            participantId,
+            width: 1280,
+            height: 720,
+            frameRate: 30,
+            includeAudio: true
+          });
+          
+          console.log('✅ SYNTHETIC STREAM created successfully (complex):', {
+            streamId: syntheticStream.id,
+            videoTracks: syntheticStream.getVideoTracks().length,
+            audioTracks: syntheticStream.getAudioTracks().length
+          });
+          
+          streamLogger.log('STREAM_SUCCESS' as any, participantId, isMobile, deviceType, 
+            { timestamp: Date.now(), duration: Date.now() - startTime },
+            syntheticStream, 'SYNTHETIC', 'Using synthetic stream fallback (complex)');
+          
+          return syntheticStream;
+        } catch (syntheticError) {
+          console.error('❌ Failed to create synthetic stream:', syntheticError);
+        }
+      }
     }
   }
   
   console.error('❌ All complex attempts failed');
-  return null;
+  
+  // Final fallback: Try synthetic stream
+  console.warn('🎨 Attempting FINAL FALLBACK to synthetic stream (complex)');
+  try {
+    const syntheticStream = createSyntheticStream({
+      participantId,
+      width: 1280,
+      height: 720,
+      frameRate: 30,
+      includeAudio: true
+    });
+    
+    console.log('✅ FINAL FALLBACK successful - synthetic stream created (complex)');
+    
+    streamLogger.log('STREAM_SUCCESS' as any, participantId, isMobile, deviceType, 
+      { timestamp: Date.now(), duration: 0 },
+      syntheticStream, 'SYNTHETIC_FALLBACK', 'Final fallback to synthetic stream (complex)');
+    
+    return syntheticStream;
+  } catch (syntheticError) {
+    console.error('❌ Final synthetic stream fallback failed:', syntheticError);
+    return null;
+  }
 };
