@@ -82,11 +82,9 @@ const ParticipantPage = () => {
         console.log("⚠️ Could not enumerate devices:", devError);
       }
 
-      // Request media immediately (Teams/Meet style)
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true, 
-        audio: true 
-      });
+      // Request media immediately (Teams/Meet style) with synthetic fallback
+      const { getUserMediaWithFallback } = await import('@/utils/media/getUserMediaFallback');
+      const stream = await getUserMediaWithFallback(participantId);
 
       if (!stream) {
         throw new Error("No stream obtained from getUserMedia");

@@ -87,10 +87,7 @@ export const useParticipantMedia = (participantId: string) => {
     try {
       console.log('🎬 MEDIA: Starting automatic media initialization');
       
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      });
+      const stream = await getUserMediaWithFallback(participantId);
 
       if (!stream) {
         throw new Error('No stream obtained from getUserMedia');
