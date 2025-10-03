@@ -90,6 +90,20 @@ const LivePage: React.FC = () => {
     };
   }, [state.sessionId, state.participantList, state.participantStreams]);
 
+  // OPÇÃO 1: Log do estado atual
+  useEffect(() => {
+    console.log('📊 OPÇÃO1 [LivePage]: Estado atual', {
+      totalParticipants: state.participantList.length,
+      totalStreams: Object.keys(state.participantStreams).length,
+      participants: state.participantList.map(p => ({
+        id: p.id,
+        hasStream: !!state.participantStreams[p.id],
+        active: p.active,
+        selected: p.selected
+      }))
+    });
+  }, [state.participantList, state.participantStreams]);
+
   // ✅ CORREÇÃO CRÍTICA: Sistema WebRTC unificado via useParticipantManagement
   // Removidos sistemas conflitantes useDesktopWebRTCStability e useMobileWebRTCStability
   console.log('🚀 LIVE PAGE: Using unified WebRTC system via useParticipantManagement');
@@ -222,7 +236,7 @@ const LivePage: React.FC = () => {
   }, [toast]);
 
   // ENHANCED: Transmission participants update with debugging and cache management
-  const updateTransmissionParticipants = () => {
+  const updateTransmissionParticipants = React.useCallback(() => {
     console.log('🔄 HOST: Updating transmission participants with cache awareness');
     
     if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
@@ -263,7 +277,71 @@ const LivePage: React.FC = () => {
     } else {
       console.warn('⚠️ HOST: Transmission window not available for update');
     }
-  };
+  }, [state.participantList, state.participantStreams, transmissionWindowRef]);
+
+  // OPÇÃO 1: CRÍTICO - Listener para participant-stream-connected
+  useEffect(() => {
+    const handleStreamConnected = (event: CustomEvent) => {
+      const { participantId, stream } = event.detail;
+      
+      console.log('🎯 OPÇÃO1 [LivePage]: participant-stream-connected recebido', {
+        participantId,
+        streamId: stream?.id,
+        tracks: stream?.getTracks().map((t: MediaStreamTrack) => ({
+          kind: t.kind,
+          id: t.id,
+          enabled: t.enabled,
+          muted: t.muted
+        }))
+      });
+      
+      // Atualizar estado central com o stream
+      state.setParticipantStreams(prev => {
+        const updated = {
+          ...prev,
+          [participantId]: stream
+        };
+        
+        console.log('✅ OPÇÃO1 [LivePage]: participantStreams atualizado', {
+          participantId,
+          totalStreams: Object.keys(updated).length,
+          streamIds: Object.values(updated).map((s: MediaStream) => s?.id || 'unknown')
+        });
+        
+        return updated;
+      });
+      
+      // Atualizar participantList para marcar como ativo
+      state.setParticipantList(prev => {
+        return prev.map(p => {
+          if (p.id === participantId) {
+            return {
+              ...p,
+              active: true,
+              hasVideo: true,
+              selected: true,
+              lastActive: Date.now()
+            };
+          }
+          return p;
+        });
+      });
+      
+      // Notificar transmissionWindow se estiver aberta
+      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+        updateTransmissionParticipants();
+      }
+    };
+    
+    window.addEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+    
+    console.log('🎧 OPÇÃO1 [LivePage]: Listener para participant-stream-connected ativado');
+    
+    return () => {
+      window.removeEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+      console.log('🔇 OPÇÃO1 [LivePage]: Listener removido');
+    };
+  }, [state.setParticipantStreams, state.setParticipantList, transmissionWindowRef, updateTransmissionParticipants]);
 
   const participantManagement = useParticipantManagement({
     participantList: state.participantList,

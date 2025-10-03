@@ -51,6 +51,13 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   onToggleGrantAdminVisibility,
   showAdminControls = false,
 }) => {
+  // OPÇÃO 1: Log no render
+  console.log('🎬 OPÇÃO1 [ParticipantGrid]: Rendering', {
+    totalParticipants: participants.length,
+    streamsReceived: Object.keys(participantStreams).length,
+    participantsWithStreams: participants.filter(p => participantStreams[p.id]).length
+  });
+  
   const { toast } = useToast();
   const [hasVideoMap, setHasVideoMap] = useState<{[key: string]: boolean}>({});
   const [streamConnectionCount, setStreamConnectionCount] = useState<{[key: string]: number}>({});

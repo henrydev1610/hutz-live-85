@@ -70,6 +70,14 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
 
   // Aplicar stream quando disponível ou mudado
   useEffect(() => {
+    // OPÇÃO 1: Log quando stream muda
+    console.log('🎥 OPÇÃO1 [VideoContainer]: Stream prop changed', {
+      participantId: participant.id,
+      hasStream: !!stream,
+      streamId: stream?.id,
+      lastStreamId
+    });
+    
     const video = videoRef.current;
     if (!video) return;
 
