@@ -33,35 +33,6 @@ class HostHandshakeManager {
           timestamp: Date.now(),
           correlationId
         });
-
-        // 🚨 FASE 1: FORCE UNMUTE VIDEO TRACKS IMMEDIATELY
-        if (event.track.kind === 'video') {
-          const wasDisabled = !event.track.enabled;
-          const wasMuted = event.track.muted;
-          
-          // Force enable track
-          event.track.enabled = true;
-          
-          console.log(`🔧 FASE1 [${correlationId}] Force unmute track:`, {
-            trackId: event.track.id,
-            wasDisabled,
-            wasMuted,
-            nowEnabled: event.track.enabled,
-            nowMuted: event.track.muted,
-            readyState: event.track.readyState
-          });
-          
-          // Add unmute listener
-          event.track.onunmute = () => {
-            console.log(`✅ FASE1 [${correlationId}] Track ${event.track.id} unmuted successfully`);
-          };
-          
-          // Add protective mute listener - re-enable if muted again
-          event.track.onmute = () => {
-            console.warn(`⚠️ FASE1 [${correlationId}] Track ${event.track.id} muted again! Re-enabling...`);
-            event.track.enabled = true;
-          };
-        }
         
         if (event.streams.length > 0) {
           const stream = event.streams[0];
@@ -80,21 +51,10 @@ class HostHandshakeManager {
           });
           
           // FASE 2: DISPATCH TO CENTRALIZED STREAM DISPLAY MANAGER
-          // FASE 2: LOG DETALHADO ANTES DE DISPARAR O EVENTO
-          console.log(`🚨 ID-SYNC [HOST] Preparando dispatch de participant-stream-connected:`, {
-            participantId: participantId,
-            participantIdType: typeof participantId,
-            participantIdLength: participantId?.length,
-            streamId: stream.id,
-            correlationId,
-            source: 'host-handshake',
-            timestamp: Date.now()
-          });
-          
           console.log(`🚨 CRÍTICO [${correlationId}] [HOST] Dispatching participant-stream-connected event para ${participantId}`);
           window.dispatchEvent(new CustomEvent('participant-stream-connected', {
             detail: { 
-              participantId: participantId, // 🎯 GARANTIR QUE É O ID CORRETO
+              participantId, 
               stream, 
               correlationId,
               source: 'host-handshake',
@@ -102,7 +62,7 @@ class HostHandshakeManager {
             }
           }));
           
-          console.log(`✅ ID-SYNC [HOST] Event dispatched com participantId: "${participantId}"`);
+          console.log(`✅ CRÍTICO [${correlationId}] [HOST] Event participant-stream-connected dispatched para ${participantId}`);
           
           // FASE 2: REMOVE VIDEO CREATION FROM HERE - NOW HANDLED BY CENTRALIZED MANAGER
           // Video creation is now handled by useStreamDisplayManager
@@ -174,11 +134,8 @@ class HostHandshakeManager {
 
   async handleOfferFromParticipant(data: any): Promise<void> {
     try {
-      // FASE 2: VALIDAÇÃO E LOG DETALHADO DO participantId
-      console.log('🚨 ID-SYNC [HOST] Offer recebido de participante', {
+      console.log('🚨 CRÍTICO [HOST] Offer recebido de participante', {
         participantId: data.participantId,
-        participantIdType: typeof data.participantId,
-        participantIdLength: data.participantId?.length,
         hasOffer: !!data.offer,
         dataKeys: Object.keys(data),
         offerType: data.offer?.type,
@@ -190,17 +147,6 @@ class HostHandshakeManager {
         console.error('❌ CRÍTICO [HOST] Invalid offer data:', data);
         return;
       }
-      
-      // FASE 2: VALIDAÇÃO RIGOROSA DO participantId
-      if (typeof data.participantId !== 'string' || data.participantId.trim() === '') {
-        console.error('❌ ID-SYNC [HOST] participantId inválido:', {
-          participantId: data.participantId,
-          type: typeof data.participantId
-        });
-        return;
-      }
-      
-      console.log('✅ ID-SYNC [HOST] participantId validado:', data.participantId);
 
       console.log(`✅ [HOST] Processing offer from ${data.participantId}`);
 

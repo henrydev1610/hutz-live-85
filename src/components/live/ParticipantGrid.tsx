@@ -51,20 +51,6 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   onToggleGrantAdminVisibility,
   showAdminControls = false,
 }) => {
-  // FASE 4: LOG DETALHADO DE PROPAGAÇÃO
-  console.log('🎬 ID-SYNC [ParticipantGrid]: Rendering com:', {
-    totalParticipants: participants.length,
-    participantIds: participants.map(p => p.id),
-    totalStreamsReceived: Object.keys(participantStreams).length,
-    streamParticipantIds: Object.keys(participantStreams),
-    participantsWithStreams: participants.filter(p => participantStreams[p.id]).map(p => ({
-      id: p.id,
-      hasStream: !!participantStreams[p.id],
-      streamId: participantStreams[p.id]?.id
-    })),
-    participantsWithoutStreams: participants.filter(p => !participantStreams[p.id]).map(p => p.id)
-  });
-  
   const { toast } = useToast();
   const [hasVideoMap, setHasVideoMap] = useState<{[key: string]: boolean}>({});
   const [streamConnectionCount, setStreamConnectionCount] = useState<{[key: string]: number}>({});
