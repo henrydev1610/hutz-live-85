@@ -13,6 +13,7 @@ export const WebSocketDebugPanel = () => {
     consecutiveFailures: 0,
     lastAttempt: 0,
     lastSuccess: 0,
+    status: 'disconnected' as 'disconnected' | 'connecting' | 'connected' | 'failed',
   });
   const [wsUrl, setWsUrl] = useState('');
 
@@ -37,11 +38,19 @@ export const WebSocketDebugPanel = () => {
 
   const getStatusColor = () => {
     switch (status) {
-      case 'connected': return 'bg-green-500';
-      case 'connecting': return 'bg-yellow-500';
-      case 'failed': return 'bg-red-500';
-      default: return 'bg-gray-500';
+      case 'connected': return 'bg-green-500 text-white';
+      case 'connecting': return 'bg-yellow-500 text-white';
+      case 'failed': return 'bg-red-500 text-white';
+      default: return 'bg-gray-500 text-white';
     }
+  };
+
+  const getStatusText = () => {
+    if (status === 'connected' && metrics.lastSuccess > 0) {
+      const uptime = Math.floor((Date.now() - metrics.lastSuccess) / 1000);
+      return `CONECTADO (${uptime}s)`;
+    }
+    return status.toUpperCase();
   };
 
   return (
@@ -50,7 +59,7 @@ export const WebSocketDebugPanel = () => {
         <CardTitle className="flex items-center justify-between text-sm">
           <span>WebSocket Debug</span>
           <Badge className={getStatusColor()}>
-            {status.toUpperCase()}
+            {getStatusText()}
           </Badge>
         </CardTitle>
       </CardHeader>

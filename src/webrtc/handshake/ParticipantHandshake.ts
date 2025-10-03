@@ -310,17 +310,28 @@ class ParticipantHandshakeManager {
       const streamDuration = performance.now() - streamStartTime;
       
       if (!stream) {
-        throw new Error('No local stream available for offer');
+        const error = 'No local stream available for offer - CRITICAL';
+        console.error(`❌ CRÍTICO [PARTICIPANT] ${error}`);
+        throw new Error(error);
       }
-      console.log(`🚨 CRÍTICO [PARTICIPANT] Stream validado:`, {
+      console.log(`🚨 CRÍTICO [PARTICIPANT] Stream validado para offer:`, {
         hasStream: !!stream,
         streamId: stream?.id,
         videoTracks: stream?.getVideoTracks().length || 0,
         audioTracks: stream?.getAudioTracks().length || 0,
         videoEnabled: stream?.getVideoTracks()[0]?.enabled,
         audioEnabled: stream?.getAudioTracks()[0]?.enabled,
-        duration: `${streamDuration.toFixed(1)}ms`
+        duration: `${streamDuration.toFixed(1)}ms`,
+        timestamp: Date.now()
       });
+
+      // FASE 3: Verificar se WebSocket está conectado ANTES de prosseguir
+      if (!unifiedWebSocketService.isReady()) {
+        const wsError = 'WebSocket não conectado - impossível criar offer';
+        console.error(`❌ CRÍTICO [PARTICIPANT] ${wsError}`);
+        throw new Error(wsError);
+      }
+      console.log(`✅ [PARTICIPANT] WebSocket verificado: CONECTADO`);
 
       // STEP 2: Create new peer connection BEFORE any operation
       const pcStartTime = performance.now();

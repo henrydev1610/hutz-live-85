@@ -5,6 +5,7 @@ import { initParticipantWebRTC, cleanupWebRTC } from '@/utils/webrtc';
 import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getEnvironmentInfo, validateURLConsistency } from '@/utils/connectionUtils';
+import { useEnsureWebSocketConnection } from '@/hooks/useEnsureWebSocketConnection';
 
 export const useParticipantConnection = (sessionId: string | undefined, participantId: string) => {
   const [isConnected, setIsConnected] = useState(false);
@@ -12,6 +13,18 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [error, setError] = useState<string | null>(null);
   const isMobile = useIsMobile();
+  
+  // FASE 2: Hook para garantir conexão WebSocket
+  const { ensureConnection } = useEnsureWebSocketConnection({
+    onConnected: () => {
+      console.log('✅ PARTICIPANT: WebSocket conectado via hook');
+    },
+    onFailed: (err) => {
+      console.error('❌ PARTICIPANT: WebSocket falhou:', err);
+      setError(err);
+      setConnectionStatus('failed');
+    }
+  });
   
   // Função para validar stream para transmissão
   const validateStreamForTransmission = (stream: MediaStream): boolean => {
@@ -128,7 +141,17 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
           mobile: isMobile
         });
         
-        // Setup enhanced callbacks primeiro
+        // FASE 2: GARANTIR CONEXÃO WEBSOCKET PRIMEIRO
+        console.log(`🔗 [FASE 2] GARANTINDO conexão WebSocket antes de tudo...`);
+        const wsConnected = await ensureConnection();
+        
+        if (!wsConnected) {
+          throw new Error('FASE 2: Falha ao conectar WebSocket após todas as tentativas');
+        }
+        
+        console.log(`✅ [FASE 2] WebSocket GARANTIDO - prosseguindo com setup`);
+
+        // Setup enhanced callbacks
         unifiedWebSocketService.setCallbacks({
           onConnected: () => {
             console.log('🔗Participante conectado com sucesso!');
@@ -146,23 +169,8 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
           },
           onStreamStarted(participantId, streamInfo) {
             console.log(`🎥 PARTICIPANT CONNECTION: Stream iniciado por:  ${participantId}:`, streamInfo);
-            // Atualizar estado do participante com o stream recebido
-        
           },
         });
-
-        // Etapa 1: Conectar WebSocket com timeouts otimizados
-        console.log(`🔗 PARTICIPANT CONNECTION: Connecting WebSocket (attempt ${retryCount})`);
-        const wsStartTime = Date.now();
-        
-        await unifiedWebSocketService.connect();
-        
-        const wsConnectTime = Date.now() - wsStartTime;
-        console.log(`✅ PARTICIPANT CONNECTION: WebSocket connected in ${wsConnectTime}ms`);
-        
-        if (!unifiedWebSocketService.isReady()) {
-          throw new Error('WebSocket connection failed - not ready');
-        }
 
         // FASE 2: Progressive stabilization delays
         const stabilizationDelay = isMobile ? 2000 : 1000;

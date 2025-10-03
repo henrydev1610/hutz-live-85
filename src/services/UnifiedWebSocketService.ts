@@ -248,34 +248,58 @@ class UnifiedWebSocketService {
 
       this.socket.on('connect', () => {
         clearTimeout(timeout);
-        console.log('✅ [WS] CONNECTION SUCCESS: WebSocket connected');
+        const connectionTime = Date.now() - this.metrics.lastAttempt;
+        console.log(`✅ [WS] CONNECTION SUCCESS: WebSocket CONECTADO em ${connectionTime}ms!`);
         console.log(`📈 [WS] Socket ID: ${this.socket?.id}`);
         console.log(`🔗 [WS] Connected to: ${url}`);
-        console.log(`📊 [WS] Connection attempt ${this.metrics.attemptCount} succeeded`);
+        console.log(`📊 [WS] Tentativa #${this.metrics.attemptCount} SUCESSO`);
+        
+        this.metrics.status = 'connected';
+        this.metrics.lastSuccess = Date.now();
+        this.metrics.consecutiveFailures = 0;
+        this.resetCircuitBreaker();
+        
         this.setupEventListeners();
+        this.setupHealthCheck();
+        
         resolve();
       });
 
       this.socket.on('connect_error', (error: any) => {
         clearTimeout(timeout);
-        console.error('❌ [WS] CONNECTION ERROR:', error);
-        console.error(`📉 [WS] Failed on attempt ${this.metrics.attemptCount}`);
-        console.error(`🔍 [WS] Error details:`, {
+        this.metrics.errorCount++;
+        this.metrics.consecutiveFailures++;
+        this.metrics.status = 'failed';
+        
+        console.error(`❌ [WS] CONNECTION ERROR (tentativa ${this.metrics.attemptCount}, falha ${this.metrics.consecutiveFailures}):`, error);
+        console.error(`🔍 [WS] URL: ${url}`);
+        console.error(`📉 [WS] Error details:`, {
           message: error.message,
           description: error.description || 'No description',
           context: error.context || 'No context',
           type: error.type || 'Unknown type'
         });
+        
+        // CIRCUIT BREAKER
+        if (this.metrics.consecutiveFailures >= 5) {
+          console.error(`🚨 [WS] CIRCUIT BREAKER: OPEN após ${this.metrics.consecutiveFailures} falhas`);
+          this.openCircuitBreaker();
+        }
+        
         reject(error);
       });
 
     this.socket.on('disconnect', (reason) => {
+      const uptimeSeconds = this.metrics.lastSuccess > 0 
+        ? Math.round((Date.now() - this.metrics.lastSuccess) / 1000) 
+        : 0;
+      
       if (this.currentUserId?.includes('host')) {
-        console.log(`HOST-SOCKET-DISCONNECTED {reason=${reason}}`);
+        console.log(`HOST-SOCKET-DISCONNECTED {reason=${reason}, uptime=${uptimeSeconds}s}`);
       } else {
-        console.log(`PARTICIPANT-SOCKET-DISCONNECTED {reason=${reason}}`);
+        console.log(`PARTICIPANT-SOCKET-DISCONNECTED {reason=${reason}, uptime=${uptimeSeconds}s}`);
       }
-      console.log('🔄 CONNECTION: Disconnected:', reason);
+      console.log(`🔄 CONNECTION: DESCONECTADO após ${uptimeSeconds}s: ${reason}`);
       this.metrics.status = 'disconnected';
       this.stopHeartbeat();
       this.callbacks.onDisconnected?.();
@@ -887,8 +911,35 @@ this.socket.on('ice-servers', (data) => {
     return this.metrics.status;
   }
 
-  getMetrics(): ConnectionMetrics {
-    return { ...this.metrics };
+  getMetrics(): ConnectionMetrics & { status: 'disconnected' | 'connecting' | 'connected' | 'failed' } {
+    return { 
+      ...this.metrics,
+      status: this.metrics.status || 'disconnected'
+    };
+  }
+
+  // FASE 1: Health check com ping/pong
+  setupHealthCheck(): void {
+    if (!this.socket) return;
+
+    this.socket.on('ping', (data: { timestamp: number }) => {
+      console.log('🏓 [UnifiedWebSocket] Ping recebido, respondendo...');
+      this.socket?.emit('pong', { timestamp: data.timestamp });
+    });
+
+    this.socket.on('pong', (data: { timestamp: number }) => {
+      const latency = Date.now() - data.timestamp;
+      console.log(`✅ [UnifiedWebSocket] Pong recebido - latência ${latency}ms`);
+    });
+  }
+
+  // FASE 2: Reconexão forçada
+  reconnect(): void {
+    console.log('🔄 [UnifiedWebSocket] Forçando reconexão...');
+    this.disconnect();
+    setTimeout(() => {
+      this.connect();
+    }, 1000);
   }
 }
 

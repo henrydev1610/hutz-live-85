@@ -261,7 +261,23 @@ class HostHandshakeManager {
       this.handleRemoteCandidate(payload);
     });
 
-    console.log('✅ [HOST] Enhanced handshake handlers registered');
+    // FASE 3: Listener para participant-ready - FORÇAR REQUEST DE OFFER
+    unifiedWebSocketService.on('participant-ready', (payload: any) => {
+      console.log('🚀 CRÍTICO [HOST] Received participant-ready:', {
+        participantId: payload.participantId,
+        hasStream: payload.hasStream,
+        streamInfo: payload.streamInfo,
+        timestamp: Date.now()
+      });
+
+      // Forçar request de offer após 1 segundo
+      setTimeout(() => {
+        console.log(`📞 [HOST] Solicitando offer de ${payload.participantId}`);
+        this.requestOfferFromParticipant(payload.participantId);
+      }, 1000);
+    });
+
+    console.log('✅ [HOST] Enhanced handshake handlers registered (com participant-ready)');
   }
 
   requestOfferFromParticipant(participantId: string): void {
