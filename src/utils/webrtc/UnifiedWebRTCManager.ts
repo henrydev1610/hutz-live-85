@@ -46,6 +46,9 @@ export class UnifiedWebRTCManager {
 
   // ICE candidate buffering for consistent handling
   private iceCandidateBuffer: Map<string, RTCIceCandidate[]> = new Map();
+  
+  // FASE 2: Rastreamento de estado individual das PeerConnections
+  private peerConnectionStates: Map<string, RTCPeerConnectionState> = new Map();
 
   // Components
   private connectionHandler: ConnectionHandler;
@@ -82,6 +85,7 @@ export class UnifiedWebRTCManager {
     this.detectMobile();
     this.initializeComponents();
     this.setupHealthMonitoring();
+    this.setupPeerConnectionListeners();
   }
 
   private detectMobile() {
@@ -346,6 +350,35 @@ export class UnifiedWebRTCManager {
     this.callbacksManager.setOnParticipantJoinCallback(callback);
   }
 
+  // FASE 2: Listener para eventos de conexão de peers
+  private setupPeerConnectionListeners(): void {
+    window.addEventListener('webrtc-peer-connected', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { participantId } = customEvent.detail;
+      console.log(`✅ MANAGER: Peer ${participantId} connected`);
+      this.peerConnectionStates.set(participantId, 'connected');
+      this.updateConnectionState('webrtc', 'connected');
+    });
+    
+    window.addEventListener('webrtc-peer-failed', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { participantId } = customEvent.detail;
+      console.log(`❌ MANAGER: Peer ${participantId} failed`);
+      this.peerConnectionStates.set(participantId, 'failed');
+      this.checkIfAllPeersFailed();
+    });
+  }
+  
+  private checkIfAllPeersFailed(): void {
+    const allFailed = Array.from(this.peerConnectionStates.values())
+      .every(state => state === 'failed' || state === 'closed');
+    
+    if (allFailed && this.peerConnectionStates.size > 0) {
+      console.warn('⚠️ MANAGER: All peers failed');
+      this.updateConnectionState('webrtc', 'failed');
+    }
+  }
+
   getConnectionState(): ConnectionState {
     // FASE 2: Sincronizar com estado do WebSocket
     try {
@@ -358,19 +391,32 @@ export class UnifiedWebRTCManager {
         this.connectionState.websocket = 'disconnected';
       }
       
-      // FASE 3: Lógica híbrida para hosts
+      // FASE 2: Lógica corrigida para hosts baseada em estados reais
       if (this.isHost) {
-        // Para host: conectado se WebSocket conectado (mesmo sem WebRTC P2P)
+        // Para host: conectado se pelo menos 1 peer está 'connected'
         if (wsConnected) {
-          this.connectionState.webrtc = this.peerConnections.size > 0 ? 'connected' : 'connecting';
-          this.connectionState.overall = 'connected';
+          const hasConnectedPeers = Array.from(this.peerConnectionStates.values())
+            .some(state => state === 'connected');
+          const hasConnectingPeers = Array.from(this.peerConnectionStates.values())
+            .some(state => state === 'connecting');
+          
+          if (hasConnectedPeers) {
+            this.connectionState.webrtc = 'connected';
+            this.connectionState.overall = 'connected';
+          } else if (hasConnectingPeers || this.peerConnections.size > 0) {
+            this.connectionState.webrtc = 'connecting';
+            this.connectionState.overall = 'connecting';
+          } else {
+            this.connectionState.webrtc = 'disconnected';
+            this.connectionState.overall = 'connected'; // Host ainda conectado via WS
+          }
         }
       } else {
         // Para participante: precisa WebSocket + WebRTC
         this.updateOverallState();
       }
       
-      console.log('🔍 FASE 2: Connection state sync:', this.connectionState);
+      console.log('🔍 FASE 2: Connection state sync:', this.connectionState, 'peer states:', Array.from(this.peerConnectionStates.entries()));
       return this.connectionState;
     } catch (error) {
       console.error('❌ FASE 2: Error getting connection state:', error);
@@ -418,6 +464,9 @@ export class UnifiedWebRTCManager {
     // Close peer connections
     this.peerConnections.forEach(pc => pc.close());
     this.peerConnections.clear();
+    
+    // FASE 2: Clear peer connection states
+    this.peerConnectionStates.clear();
 
     // Reset state
     this.connectionState = {

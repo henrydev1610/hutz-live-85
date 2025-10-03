@@ -6,7 +6,15 @@ const hostPeerConnections = new Map<string, RTCPeerConnection>();
 const participantICEBuffers = new Map<string, RTCIceCandidate[]>();
 const handshakeTimeouts = new Map<string, NodeJS.Timeout>();
 
+// FASE 3: ICE Candidate Diagnostics
+interface ICEStats {
+  candidatesSent: number;
+  candidatesReceived: number;
+  lastActivity: number;
+}
+
 class HostHandshakeManager {
+  private iceStats = new Map<string, ICEStats>();
   private getOrCreatePC(participantId: string): RTCPeerConnection {
     let pc = hostPeerConnections.get(participantId);
     
@@ -78,7 +86,17 @@ class HostHandshakeManager {
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log(`[ICE] candidate generated for ${participantId}, sending`);
+          // FASE 3: Rastrear ICE enviado
+          const stats = this.iceStats.get(participantId) || { 
+            candidatesSent: 0, 
+            candidatesReceived: 0, 
+            lastActivity: Date.now() 
+          };
+          stats.candidatesSent++;
+          stats.lastActivity = Date.now();
+          this.iceStats.set(participantId, stats);
+          
+          console.log(`[ICE] candidate ${stats.candidatesSent} generated for ${participantId}, sending`);
           unifiedWebSocketService.sendWebRTCCandidate(participantId, event.candidate);
         }
       };
@@ -88,15 +106,37 @@ class HostHandshakeManager {
         console.log(`[HOST] Connection state for ${participantId}: ${state}`);
         
         if (state === 'connected') {
+          // FASE 1: Notificar manager de conexão bem-sucedida
+          console.log(`✅ [HOST] WebRTC peer ${participantId} CONECTADO`);
+          window.dispatchEvent(new CustomEvent('webrtc-peer-connected', {
+            detail: { participantId, timestamp: Date.now() }
+          }));
+          
           // Clear timeout on successful connection
           const timeout = handshakeTimeouts.get(participantId);
           if (timeout) {
             clearTimeout(timeout);
             handshakeTimeouts.delete(participantId);
           }
+          
+          // FASE 4: Clear handshake monitor
+          const monitorTimeout = handshakeTimeouts.get(participantId + '-monitor');
+          if (monitorTimeout) {
+            clearTimeout(monitorTimeout);
+            handshakeTimeouts.delete(participantId + '-monitor');
+          }
         } else if (state === 'failed' || state === 'closed') {
           console.log(`[HOST] Connection failed/closed for ${participantId}, cleaning up`);
+          
+          // FASE 1: Notificar manager de falha
+          window.dispatchEvent(new CustomEvent('webrtc-peer-failed', {
+            detail: { participantId, state, timestamp: Date.now() }
+          }));
+          
           this.cleanupHostHandshake(participantId);
+        } else if (state === 'connecting') {
+          // FASE 1: Log explícito de tentativa de conexão
+          console.log(`🔄 [HOST] WebRTC peer ${participantId} está CONNECTING`);
         }
       };
 
@@ -127,6 +167,35 @@ class HostHandshakeManager {
       }, 10000); // Desktop: 10 seconds timeout
       
       handshakeTimeouts.set(participantId, timeout);
+      
+      // FASE 4: Adicionar timeout para detecção de handshake travado
+      const handshakeMonitor = setTimeout(() => {
+        const pc = hostPeerConnections.get(participantId);
+        if (pc && pc.connectionState !== 'connected') {
+          console.warn(`⚠️ [HOST] Handshake travado para ${participantId}:`, {
+            connectionState: pc.connectionState,
+            iceState: pc.iceConnectionState,
+            signalingState: pc.signalingState,
+            iceStats: this.iceStats.get(participantId)
+          });
+          
+          // Disparar evento de diagnóstico
+          window.dispatchEvent(new CustomEvent('webrtc-handshake-stuck', {
+            detail: { 
+              participantId, 
+              connectionState: pc.connectionState,
+              iceState: pc.iceConnectionState,
+              iceStats: this.iceStats.get(participantId)
+            }
+          }));
+          
+          // Tentar forçar renegociação
+          console.log(`🔄 [HOST] Tentando renegociar com ${participantId}...`);
+          this.requestOfferFromParticipant(participantId);
+        }
+      }, 8000); // 8 segundos para detectar travamento
+      
+      handshakeTimeouts.set(participantId + '-monitor', handshakeMonitor);
     }
 
     return pc;
@@ -206,11 +275,22 @@ class HostHandshakeManager {
     const participantId = data.participantId || data.fromUserId;
     const candidate = data.candidate;
 
-    console.log('🚨 CRÍTICO [HOST] Received webrtc-candidate:', {
+    // FASE 3: Rastrear ICE recebido
+    const stats = this.iceStats.get(participantId) || { 
+      candidatesSent: 0, 
+      candidatesReceived: 0, 
+      lastActivity: Date.now() 
+    };
+    stats.candidatesReceived++;
+    stats.lastActivity = Date.now();
+    this.iceStats.set(participantId, stats);
+
+    console.log(`🚨 CRÍTICO [HOST] Received webrtc-candidate ${stats.candidatesReceived}:`, {
       participantId,
       hasCandidate: !!candidate,
       candidateType: candidate?.candidate?.includes('host') ? 'host' : 
-                    candidate?.candidate?.includes('srflx') ? 'srflx' : 'relay'
+                    candidate?.candidate?.includes('srflx') ? 'srflx' : 'relay',
+      iceStats: stats
     });
 
     if (!candidate || !participantId) {
@@ -224,7 +304,7 @@ class HostHandshakeManager {
       // PC pronto, aplicar candidate imediatamente
       try {
         pc.addIceCandidate(new RTCIceCandidate(candidate));
-        console.log(`✅ [HOST] ICE candidate aplicado imediatamente para ${participantId}`);
+        console.log(`✅ [HOST] ICE candidate ${stats.candidatesReceived} aplicado imediatamente para ${participantId}`);
       } catch (error) {
         console.error(`❌ [HOST] Error applying ICE candidate for ${participantId}:`, error);
       }
@@ -307,12 +387,22 @@ class HostHandshakeManager {
 
     // Clear pending candidates
     participantICEBuffers.delete(participantId);
+    
+    // FASE 3: Clear ICE stats
+    this.iceStats.delete(participantId);
 
     // Clear timeout
     const timeout = handshakeTimeouts.get(participantId);
     if (timeout) {
       clearTimeout(timeout);
       handshakeTimeouts.delete(participantId);
+    }
+    
+    // FASE 4: Clear handshake monitor timeout
+    const monitorTimeout = handshakeTimeouts.get(participantId + '-monitor');
+    if (monitorTimeout) {
+      clearTimeout(monitorTimeout);
+      handshakeTimeouts.delete(participantId + '-monitor');
     }
 
     console.log(`[HOST] Cleaned up handshake for ${participantId}`);
