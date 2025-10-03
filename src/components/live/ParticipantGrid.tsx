@@ -52,6 +52,21 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   showAdminControls = false,
 }) => {
   const { toast } = useToast();
+
+  // FASE 2: Log detalhado de renderização
+  console.log('🎬 PARTICIPANT GRID: Rendering', {
+    totalParticipants: participants.length,
+    participantIds: participants.map(p => p.id),
+    participantStreamsKeys: Object.keys(participantStreams),
+    participantsWithStreams: participants.filter(p => participantStreams[p.id]).length,
+    streamsDetails: Object.entries(participantStreams).map(([id, stream]) => ({
+      participantId: id,
+      streamId: stream?.id,
+      active: stream?.active,
+      videoTracks: stream?.getVideoTracks().length,
+      audioTracks: stream?.getAudioTracks().length
+    }))
+  });
   const [hasVideoMap, setHasVideoMap] = useState<{[key: string]: boolean}>({});
   const [streamConnectionCount, setStreamConnectionCount] = useState<{[key: string]: number}>({});
   const [streamErrors, setStreamErrors] = useState<{[key: string]: string}>({});

@@ -265,6 +265,54 @@ const LivePage: React.FC = () => {
     }
   };
 
+  // FASE 1: Listener para evento participant-stream-connected
+  useEffect(() => {
+    const handleStreamConnected = (event: CustomEvent) => {
+      const { participantId, stream, correlationId } = event.detail;
+      
+      console.log('🎥 LIVE PAGE: Stream connected event received', {
+        participantId,
+        streamId: stream?.id,
+        correlationId,
+        hasStream: !!stream
+      });
+      
+      if (!participantId || !stream) {
+        console.error('❌ LIVE PAGE: Invalid stream event data');
+        return;
+      }
+      
+      // Atualizar participantStreams
+      state.setParticipantStreams(prev => {
+        const updated = { ...prev, [participantId]: stream };
+        console.log('✅ LIVE PAGE: participantStreams updated', {
+          participantId,
+          streamId: stream.id,
+          totalStreams: Object.keys(updated).length
+        });
+        return updated;
+      });
+      
+      // Atualizar participantList
+      state.setParticipantList(prev => prev.map(p => 
+        p.id === participantId 
+          ? { ...p, hasVideo: true, active: true, selected: true }
+          : p
+      ));
+      
+      // Notificar transmission window
+      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+        updateTransmissionParticipants();
+      }
+    };
+    
+    window.addEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+    
+    return () => {
+      window.removeEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+    };
+  }, [state.setParticipantStreams, state.setParticipantList, transmissionWindowRef, updateTransmissionParticipants]);
+
   const participantManagement = useParticipantManagement({
     participantList: state.participantList,
     setParticipantList: state.setParticipantList,

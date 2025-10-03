@@ -92,10 +92,17 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
       return;
     }
 
+    // FASE 3: Log detalhado de aplicação de stream
     console.log(`🎥 UNIFIED: Applying stream to ${participant.id}`, {
       streamId: stream.id,
       videoTracks: stream.getVideoTracks().length,
-      audioTracks: stream.getAudioTracks().length
+      audioTracks: stream.getAudioTracks().length,
+      videoEnabled: stream.getVideoTracks()[0]?.enabled,
+      videoReadyState: stream.getVideoTracks()[0]?.readyState,
+      videoMuted: stream.getVideoTracks()[0]?.muted,
+      active: stream.active,
+      videoElementId: video.id,
+      currentSrcObject: video.srcObject ? 'has stream' : 'empty'
     });
 
     // Apply stream using utility function
