@@ -285,6 +285,12 @@ class ParticipantHandshakeManager {
   }
 
   async createAndSendOffer(hostId: string): Promise<void> {
+    // FASE 1: VALIDAÇÃO CRÍTICA - Garantir que temos participantId
+    if (!this.participantId) {
+      console.error('❌ CRÍTICO [PARTICIPANT] participantId não definido! Não é possível criar offer.');
+      throw new Error('participantId não definido');
+    }
+    
     if (this.isOfferInProgress) {
       console.log('[PARTICIPANT] createAndSendOffer: Offer already in progress, skipping');
       return;
@@ -292,7 +298,11 @@ class ParticipantHandshakeManager {
 
     const offerStartTime = performance.now();
     this.handshakeStartTime = offerStartTime;
-    console.log(`🚨 CRÍTICO [PARTICIPANT] Starting offer creation sequence for ${hostId}`);
+    console.log(`🚨 CRÍTICO [PARTICIPANT] Starting offer creation sequence for ${hostId}`, {
+      participantId: this.participantId,
+      participantIdType: typeof this.participantId,
+      participantIdLength: this.participantId?.length
+    });
 
     if (this.peerConnection && this.peerConnection.connectionState !== 'closed') {
       console.log('[PARTICIPANT] createAndSendOffer: Closing existing peer connection');
@@ -458,7 +468,12 @@ class ParticipantHandshakeManager {
 
       // STEP 6: Send offer to host with detailed debugging
       const sendStartTime = performance.now();
-      console.log(`🚨 CRÍTICO [PARTICIPANT] Enviando offer para host ${hostId}`, {
+      
+      // FASE 1: LOG CRÍTICO ANTES DE ENVIAR OFFER
+      console.log(`🚨 ID-SYNC [PARTICIPANT] Enviando offer para host ${hostId}`, {
+        participantId: this.participantId,
+        participantIdType: typeof this.participantId,
+        participantIdLength: this.participantId?.length,
         sdp: offer.sdp?.substring(0, 100) + '...',
         type: offer.type,
         localStreamTracks: stream.getTracks().length,
@@ -467,8 +482,9 @@ class ParticipantHandshakeManager {
         hasLocalDescription: !!this.peerConnection.localDescription
       });
       
-      unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type);
-      console.log(`✅ CRÍTICO [PARTICIPANT] Offer enviado via WebSocket para ${hostId} - Aguardando answer...`);
+      // FASE 1: Passar participantId explicitamente
+      unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type, this.participantId || undefined);
+      console.log(`✅ ID-SYNC [PARTICIPANT] Offer enviado via WebSocket para ${hostId} com participantId: ${this.participantId} - Aguardando answer...`);
       
       const sendDuration = performance.now() - sendStartTime;
       const totalDuration = performance.now() - offerStartTime;

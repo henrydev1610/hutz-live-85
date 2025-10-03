@@ -80,10 +80,21 @@ class HostHandshakeManager {
           });
           
           // FASE 2: DISPATCH TO CENTRALIZED STREAM DISPLAY MANAGER
+          // FASE 2: LOG DETALHADO ANTES DE DISPARAR O EVENTO
+          console.log(`🚨 ID-SYNC [HOST] Preparando dispatch de participant-stream-connected:`, {
+            participantId: participantId,
+            participantIdType: typeof participantId,
+            participantIdLength: participantId?.length,
+            streamId: stream.id,
+            correlationId,
+            source: 'host-handshake',
+            timestamp: Date.now()
+          });
+          
           console.log(`🚨 CRÍTICO [${correlationId}] [HOST] Dispatching participant-stream-connected event para ${participantId}`);
           window.dispatchEvent(new CustomEvent('participant-stream-connected', {
             detail: { 
-              participantId, 
+              participantId: participantId, // 🎯 GARANTIR QUE É O ID CORRETO
               stream, 
               correlationId,
               source: 'host-handshake',
@@ -91,7 +102,7 @@ class HostHandshakeManager {
             }
           }));
           
-          console.log(`✅ CRÍTICO [${correlationId}] [HOST] Event participant-stream-connected dispatched para ${participantId}`);
+          console.log(`✅ ID-SYNC [HOST] Event dispatched com participantId: "${participantId}"`);
           
           // FASE 2: REMOVE VIDEO CREATION FROM HERE - NOW HANDLED BY CENTRALIZED MANAGER
           // Video creation is now handled by useStreamDisplayManager
@@ -163,8 +174,11 @@ class HostHandshakeManager {
 
   async handleOfferFromParticipant(data: any): Promise<void> {
     try {
-      console.log('🚨 CRÍTICO [HOST] Offer recebido de participante', {
+      // FASE 2: VALIDAÇÃO E LOG DETALHADO DO participantId
+      console.log('🚨 ID-SYNC [HOST] Offer recebido de participante', {
         participantId: data.participantId,
+        participantIdType: typeof data.participantId,
+        participantIdLength: data.participantId?.length,
         hasOffer: !!data.offer,
         dataKeys: Object.keys(data),
         offerType: data.offer?.type,
@@ -176,6 +190,17 @@ class HostHandshakeManager {
         console.error('❌ CRÍTICO [HOST] Invalid offer data:', data);
         return;
       }
+      
+      // FASE 2: VALIDAÇÃO RIGOROSA DO participantId
+      if (typeof data.participantId !== 'string' || data.participantId.trim() === '') {
+        console.error('❌ ID-SYNC [HOST] participantId inválido:', {
+          participantId: data.participantId,
+          type: typeof data.participantId
+        });
+        return;
+      }
+      
+      console.log('✅ ID-SYNC [HOST] participantId validado:', data.participantId);
 
       console.log(`✅ [HOST] Processing offer from ${data.participantId}`);
 

@@ -51,11 +51,18 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
   onToggleGrantAdminVisibility,
   showAdminControls = false,
 }) => {
-  // OPÇÃO 1: Log no render
-  console.log('🎬 OPÇÃO1 [ParticipantGrid]: Rendering', {
+  // FASE 4: LOG DETALHADO DE PROPAGAÇÃO
+  console.log('🎬 ID-SYNC [ParticipantGrid]: Rendering com:', {
     totalParticipants: participants.length,
-    streamsReceived: Object.keys(participantStreams).length,
-    participantsWithStreams: participants.filter(p => participantStreams[p.id]).length
+    participantIds: participants.map(p => p.id),
+    totalStreamsReceived: Object.keys(participantStreams).length,
+    streamParticipantIds: Object.keys(participantStreams),
+    participantsWithStreams: participants.filter(p => participantStreams[p.id]).map(p => ({
+      id: p.id,
+      hasStream: !!participantStreams[p.id],
+      streamId: participantStreams[p.id]?.id
+    })),
+    participantsWithoutStreams: participants.filter(p => !participantStreams[p.id]).map(p => p.id)
   });
   
   const { toast } = useToast();

@@ -70,16 +70,22 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
 
   // Aplicar stream quando disponível ou mudado
   useEffect(() => {
-    // OPÇÃO 1: Log quando stream muda
-    console.log('🎥 OPÇÃO1 [VideoContainer]: Stream prop changed', {
+    // FASE 5: LOG DETALHADO DE RECEPÇÃO
+    const video = videoRef.current;
+    
+    console.log('🎥 ID-SYNC [VideoContainer]: Stream prop changed', {
       participantId: participant.id,
       hasStream: !!stream,
       streamId: stream?.id,
-      lastStreamId
+      lastStreamId,
+      videoElementExists: !!video,
+      willApplyStream: !!stream && !!video && stream?.id !== lastStreamId
     });
     
-    const video = videoRef.current;
-    if (!video) return;
+    if (!video) {
+      console.log('⏭️ ID-SYNC [VideoContainer]: Skipping - no video element');
+      return;
+    }
 
     // Reset states when stream changes
     if (stream?.id !== lastStreamId) {
@@ -89,21 +95,35 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
     }
 
     if (!stream) {
-      console.log(`🚫 UNIFIED: No stream for ${participant.id}, clearing video`);
+      console.log('⏭️ ID-SYNC [VideoContainer]: Skipping - no stream', {
+        participantId: participant.id,
+        reason: 'no-stream'
+      });
       video.srcObject = null;
       setIsVideoReady(false);
       return;
     }
 
     if (video.srcObject === stream) {
-      console.log(`🔄 UNIFIED: Stream already assigned for ${participant.id}`);
+      console.log('⏭️ ID-SYNC [VideoContainer]: Skipping - same stream', {
+        participantId: participant.id,
+        reason: 'same-stream',
+        streamId: stream.id
+      });
       return;
     }
 
-    console.log(`🎥 UNIFIED: Applying stream to ${participant.id}`, {
+    console.log(`🎥 ID-SYNC [VideoContainer]: Applying stream to ${participant.id}`, {
       streamId: stream.id,
       videoTracks: stream.getVideoTracks().length,
-      audioTracks: stream.getAudioTracks().length
+      audioTracks: stream.getAudioTracks().length,
+      trackDetails: stream.getTracks().map(t => ({
+        kind: t.kind,
+        id: t.id,
+        enabled: t.enabled,
+        readyState: t.readyState,
+        muted: t.muted
+      }))
     });
 
     // 🚨 FASE 1: FORCE UNMUTE ALL VIDEO TRACKS BEFORE PLAYBACK

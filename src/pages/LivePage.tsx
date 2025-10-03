@@ -279,33 +279,80 @@ const LivePage: React.FC = () => {
     }
   }, [state.participantList, state.participantStreams, transmissionWindowRef]);
 
-  // OPÇÃO 1: CRÍTICO - Listener para participant-stream-connected
+  // FASE 3: CRÍTICO - Listener com fallback de busca por similaridade
   useEffect(() => {
     const handleStreamConnected = (event: CustomEvent) => {
-      const { participantId, stream } = event.detail;
+      let { participantId, stream, correlationId } = event.detail;
       
-      console.log('🎯 OPÇÃO1 [LivePage]: participant-stream-connected recebido', {
-        participantId,
+      console.log('🎯 ID-SYNC [LivePage]: participant-stream-connected recebido', {
+        eventParticipantId: participantId,
+        eventParticipantIdType: typeof participantId,
+        eventParticipantIdLength: participantId?.length,
         streamId: stream?.id,
-        tracks: stream?.getTracks().map((t: MediaStreamTrack) => ({
-          kind: t.kind,
-          id: t.id,
-          enabled: t.enabled,
-          muted: t.muted
-        }))
+        correlationId,
+        currentParticipantIds: state.participantList.map(p => p.id),
+        timestamp: Date.now()
       });
       
-      // Atualizar estado central com o stream
+      // 🔍 FASE 3: Validar se participante existe
+      const existingParticipant = state.participantList.find(p => p.id === participantId);
+      
+      if (!existingParticipant) {
+        console.warn('⚠️ ID-SYNC [LivePage]: Participante NÃO encontrado com ID exato:', participantId);
+        console.log('🔍 ID-SYNC [LivePage]: Tentando busca por similaridade...');
+        
+        // Tentar encontrar por substring (remover timestamp)
+        const baseId = participantId?.split('-').slice(0, 2).join('-'); // "participant-XXXXXXX"
+        const similarParticipant = state.participantList.find(p => 
+          p.id?.startsWith(baseId) || p.id?.includes(baseId)
+        );
+        
+        if (similarParticipant) {
+          console.log('✅ ID-SYNC [LivePage]: Participante similar encontrado:', {
+            eventId: participantId,
+            foundId: similarParticipant.id,
+            willUseSimilarId: true
+          });
+          
+          // Usar o ID do participante encontrado
+          participantId = similarParticipant.id;
+        } else {
+          console.warn('🆕 ID-SYNC [LivePage]: Criando nova entrada para participante:', participantId);
+          
+          // Criar entrada no participantList automaticamente
+          state.setParticipantList(prev => [
+            ...prev,
+            {
+              id: participantId,
+              name: `Participante ${prev.length + 1}`,
+              active: true,
+              hasVideo: true,
+              selected: true,
+              lastActive: Date.now(),
+              joinedAt: Date.now(),
+              isMobile: true
+            }
+          ]);
+        }
+      } else {
+        console.log('✅ ID-SYNC [LivePage]: Participante encontrado:', {
+          participantId,
+          existingData: existingParticipant
+        });
+      }
+      
+      // Atualizar estado central com o stream (usando o ID correto ou similar)
       state.setParticipantStreams(prev => {
         const updated = {
           ...prev,
           [participantId]: stream
         };
         
-        console.log('✅ OPÇÃO1 [LivePage]: participantStreams atualizado', {
+        console.log('✅ ID-SYNC [LivePage]: participantStreams atualizado', {
           participantId,
           totalStreams: Object.keys(updated).length,
-          streamIds: Object.values(updated).map((s: MediaStream) => s?.id || 'unknown')
+          streamIds: Object.values(updated).map((s: MediaStream) => s?.id || 'unknown'),
+          allParticipantIds: Object.keys(updated)
         });
         
         return updated;
@@ -313,8 +360,9 @@ const LivePage: React.FC = () => {
       
       // Atualizar participantList para marcar como ativo
       state.setParticipantList(prev => {
-        return prev.map(p => {
+        const updated = prev.map(p => {
           if (p.id === participantId) {
+            console.log('🔄 ID-SYNC [LivePage]: Atualizando participante:', p.id);
             return {
               ...p,
               active: true,
@@ -325,6 +373,13 @@ const LivePage: React.FC = () => {
           }
           return p;
         });
+        
+        console.log('✅ ID-SYNC [LivePage]: participantList atualizado:', {
+          totalParticipants: updated.length,
+          activeParticipants: updated.filter(p => p.active).length
+        });
+        
+        return updated;
       });
       
       // Notificar transmissionWindow se estiver aberta

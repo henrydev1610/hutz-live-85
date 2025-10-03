@@ -657,7 +657,7 @@ this.socket.on('ice-servers', (data) => {
   }
 
   // FASE 1: New WebRTC methods with protocol conversion
-  sendWebRTCOffer(targetUserId: string, sdp: string, type: string): void {
+  sendWebRTCOffer(targetUserId: string, sdp: string, type: string, participantId?: string): void {
     if (!this.isConnected()) {
       console.warn('📤 Cannot send WebRTC offer: WebSocket not connected');
       return;
@@ -672,15 +672,20 @@ this.socket.on('ice-servers', (data) => {
       roomId: this.currentRoomId,
       targetUserId,
       offer: { type: type as RTCSdpType, sdp },
-      fromUserId: this.currentUserId
+      fromUserId: this.currentUserId,
+      participantId: participantId || this.currentUserId, // 🎯 FASE 1: Incluir participantId
+      fromSocketId: this.socket?.id
     };
 
-    console.log('📤 [WS] Sending WebRTC offer (converted):', {
+    console.log('📤 ID-SYNC [WS] Sending WebRTC offer (converted):', {
       targetUserId,
       roomId: this.currentRoomId,
-      fromUserId: this.currentUserId
+      fromUserId: this.currentUserId,
+      participantId: legacyMessage.participantId,
+      participantIdType: typeof legacyMessage.participantId,
+      participantIdLength: legacyMessage.participantId?.length
     });
-    console.log(`[WS-SEND] webrtc-offer roomId=${this.currentRoomId} from=${this.currentUserId} to=${targetUserId} sdpLen=${sdp?.length || 0}`);
+    console.log(`[WS-SEND] webrtc-offer roomId=${this.currentRoomId} from=${this.currentUserId} to=${targetUserId} participantId=${legacyMessage.participantId} sdpLen=${sdp?.length || 0}`);
 
     this.socket?.emit('webrtc-offer', legacyMessage);
   }
