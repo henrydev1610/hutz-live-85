@@ -98,6 +98,43 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
       audioTracks: stream.getAudioTracks().length
     });
 
+    // 🚨 FASE 1: FORCE UNMUTE ALL VIDEO TRACKS BEFORE PLAYBACK
+    console.log(`🔍 FASE1 UNIFIED: Checking track states for ${participant.id}`, {
+      videoTracks: stream.getVideoTracks().map(t => ({
+        id: t.id,
+        enabled: t.enabled,
+        muted: t.muted,
+        readyState: t.readyState
+      }))
+    });
+
+    stream.getVideoTracks().forEach((track, index) => {
+      const wasDisabled = !track.enabled;
+      const wasMuted = track.muted;
+      
+      track.enabled = true;
+      
+      if (wasDisabled || wasMuted) {
+        console.log(`🔧 FASE1 UNIFIED: Force unmute track ${index}`, {
+          trackId: track.id,
+          wasDisabled,
+          wasMuted,
+          nowEnabled: track.enabled,
+          nowMuted: track.muted
+        });
+      }
+      
+      // Add listeners
+      track.onunmute = () => {
+        console.log(`✅ FASE1 UNIFIED: Track ${track.id} unmuted`);
+      };
+      
+      track.onmute = () => {
+        console.warn(`⚠️ FASE1 UNIFIED: Track ${track.id} muted! Re-enabling...`);
+        track.enabled = true;
+      };
+    });
+
     // Apply stream using utility function
     setupVideoElement(video, stream)
       .then(() => {

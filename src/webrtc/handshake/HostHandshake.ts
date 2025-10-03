@@ -33,6 +33,35 @@ class HostHandshakeManager {
           timestamp: Date.now(),
           correlationId
         });
+
+        // 🚨 FASE 1: FORCE UNMUTE VIDEO TRACKS IMMEDIATELY
+        if (event.track.kind === 'video') {
+          const wasDisabled = !event.track.enabled;
+          const wasMuted = event.track.muted;
+          
+          // Force enable track
+          event.track.enabled = true;
+          
+          console.log(`🔧 FASE1 [${correlationId}] Force unmute track:`, {
+            trackId: event.track.id,
+            wasDisabled,
+            wasMuted,
+            nowEnabled: event.track.enabled,
+            nowMuted: event.track.muted,
+            readyState: event.track.readyState
+          });
+          
+          // Add unmute listener
+          event.track.onunmute = () => {
+            console.log(`✅ FASE1 [${correlationId}] Track ${event.track.id} unmuted successfully`);
+          };
+          
+          // Add protective mute listener - re-enable if muted again
+          event.track.onmute = () => {
+            console.warn(`⚠️ FASE1 [${correlationId}] Track ${event.track.id} muted again! Re-enabling...`);
+            event.track.enabled = true;
+          };
+        }
         
         if (event.streams.length > 0) {
           const stream = event.streams[0];

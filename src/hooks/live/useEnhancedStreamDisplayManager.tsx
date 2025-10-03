@@ -388,6 +388,43 @@ export const useEnhancedStreamDisplayManager = () => {
         streamMatches: videoElement.srcObject === stream
       });
 
+      // 🚨 FASE 1: FORCE UNMUTE ALL TRACKS BEFORE RENDERING
+      console.log(`🔍 FASE1 ${logPrefix} ENHANCED-VIDEO: Validating stream tracks`, {
+        videoTracks: stream.getVideoTracks().map(t => ({
+          id: t.id,
+          enabled: t.enabled,
+          muted: t.muted,
+          readyState: t.readyState
+        }))
+      });
+
+      let unmutedTracks = 0;
+      stream.getVideoTracks().forEach((track, index) => {
+        if (!track.enabled || track.muted) {
+          console.log(`🔧 FASE1 ${logPrefix} Force unmute track ${index}`, {
+            trackId: track.id,
+            wasEnabled: track.enabled,
+            wasMuted: track.muted
+          });
+          track.enabled = true;
+          unmutedTracks++;
+        }
+        
+        // Add protective listeners
+        track.onmute = () => {
+          console.warn(`⚠️ FASE1 ${logPrefix} Track ${track.id} muted during playback! Re-enabling...`);
+          track.enabled = true;
+        };
+        
+        track.onunmute = () => {
+          console.log(`✅ FASE1 ${logPrefix} Track ${track.id} unmuted event`);
+        };
+      });
+
+      if (unmutedTracks > 0) {
+        console.log(`✅ FASE1 ${logPrefix} Unmuted ${unmutedTracks} tracks`);
+      }
+
       // If stream is already assigned and playing, no need to do anything
       if (videoElement.srcObject === stream && !videoElement.paused) {
         console.log(`✅ ${logPrefix} UNIFIED-VIDEO: Video already playing for ${participantId}`);
