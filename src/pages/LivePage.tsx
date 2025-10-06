@@ -221,6 +221,74 @@ const LivePage: React.FC = () => {
     };
   }, [toast]);
 
+  // FASE 4: Buffer de eventos + flushSync para garantir que stream chegue ao grid
+  const eventBufferRef = useRef<Map<string, { stream: MediaStream, timestamp: number }>>(new Map());
+  
+  // FASE 4: Processar eventos de stream com flushSync
+  useEffect(() => {
+    const handleStreamConnected = (event: CustomEvent) => {
+      const { participantId, stream, correlationId } = event.detail;
+      console.log('🎯 FASE 4: participant-stream-connected event received', { 
+        participantId, 
+        streamId: stream?.id,
+        correlationId 
+      });
+      
+      if (!participantId || !stream) {
+        console.error('❌ FASE 4: Invalid stream event data');
+        return;
+      }
+      
+      // Buffer event
+      eventBufferRef.current.set(participantId, { stream, timestamp: Date.now() });
+      console.log(`📦 FASE 4: Event buffered (buffer size: ${eventBufferRef.current.size})`);
+      
+      // Usar flushSync para garantir update síncrono
+      import('react-dom').then(({ flushSync }) => {
+        flushSync(() => {
+          console.log('🔄 FASE 4: flushSync - updating participantStreams and participantList');
+          
+          state.setParticipantStreams(prev => ({
+            ...prev,
+            [participantId]: stream
+          }));
+          
+          state.setParticipantList(prev => prev.map(p =>
+            p.id === participantId
+              ? { ...p, hasVideo: true, active: true, connectedAt: Date.now() }
+              : p
+          ));
+        });
+        
+        // Disparar função global de atualização do grid
+        if (typeof (window as any).forceGridUpdate === 'function') {
+          console.log('🔄 FASE 4: Calling forceGridUpdate()');
+          (window as any).forceGridUpdate();
+        }
+        
+        // Notificar transmission window
+        if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+          updateTransmissionParticipants();
+        }
+      });
+    };
+    
+    // Processar eventos em buffer no mount
+    console.log(`🔍 FASE 4: Processing event buffer on mount (${eventBufferRef.current.size} events)`);
+    eventBufferRef.current.forEach(({ stream }, participantId) => {
+      handleStreamConnected(new CustomEvent('participant-stream-connected', {
+        detail: { participantId, stream, correlationId: 'buffered' }
+      }) as CustomEvent);
+    });
+    eventBufferRef.current.clear();
+    
+    window.addEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+    
+    return () => {
+      window.removeEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+    };
+  }, [state.setParticipantStreams, state.setParticipantList]);
+
   // ENHANCED: Transmission participants update with debugging and cache management
   const updateTransmissionParticipants = () => {
     console.log('🔄 HOST: Updating transmission participants with cache awareness');
@@ -264,81 +332,8 @@ const LivePage: React.FC = () => {
       console.warn('⚠️ HOST: Transmission window not available for update');
     }
   };
-
-  // FASE 4: Buffer de eventos + flushSync para garantir re-render
-  const eventBufferRef = useRef<Map<string, { stream: MediaStream, timestamp: number }>>(new Map());
-  
-  useEffect(() => {
-    const handleStreamConnected = (event: CustomEvent) => {
-      const { participantId, stream, correlationId } = event.detail;
-      
-      console.log('🎥 FASE 4: Stream connected event received', {
-        participantId,
-        streamId: stream?.id,
-        correlationId,
-        hasStream: !!stream
-      });
-      
-      if (!participantId || !stream) {
-        console.error('❌ LIVE PAGE: Invalid stream event data');
-        return;
-      }
-      
-      // FASE 4: Adicionar ao buffer
-      eventBufferRef.current.set(participantId, { stream, timestamp: Date.now() });
-      console.log(`📦 FASE 4: Event buffered for ${participantId} (buffer size: ${eventBufferRef.current.size})`);
-      
-      // FASE 4: Usar flushSync para garantir re-render síncrono
-      import('react-dom').then(({ flushSync }) => {
-        flushSync(() => {
-          // Atualizar participantStreams
-          state.setParticipantStreams(prev => {
-            const updated = { ...prev, [participantId]: stream };
-            console.log('✅ FASE 4: participantStreams updated with flushSync', {
-              participantId,
-              streamId: stream.id,
-              totalStreams: Object.keys(updated).length
-            });
-            return updated;
-          });
-          
-          // Atualizar participantList
-          state.setParticipantList(prev => prev.map(p => 
-            p.id === participantId 
-              ? { ...p, hasVideo: true, active: true, selected: true }
-              : p
-          ));
-        });
-        
-        // FASE 4: Forçar re-render do grid
-        if (typeof (window as any).forceGridUpdate === 'function') {
-          console.log('🔄 FASE 4: Forcing grid update');
-          (window as any).forceGridUpdate();
-        }
-        
-        // Notificar transmission window
-        if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-          updateTransmissionParticipants();
-        }
-      });
-    };
     
-    window.addEventListener('participant-stream-connected', handleStreamConnected as EventListener);
-    
-    // FASE 4: Processar buffer no mount
-    console.log(`🔍 FASE 4: Processing event buffer on mount (${eventBufferRef.current.size} events)`);
-    eventBufferRef.current.forEach(({ stream }, participantId) => {
-      console.log(`📤 FASE 4: Processing buffered event for ${participantId}`);
-      window.dispatchEvent(new CustomEvent('participant-stream-connected', {
-        detail: { participantId, stream, correlationId: 'buffered' }
-      }));
-    });
-    
-    return () => {
-      window.removeEventListener('participant-stream-connected', handleStreamConnected as EventListener);
-    };
-  }, [state.setParticipantStreams, state.setParticipantList, transmissionWindowRef, updateTransmissionParticipants]);
-
+  // useParticipantManagement setup
   const participantManagement = useParticipantManagement({
     participantList: state.participantList,
     setParticipantList: state.setParticipantList,

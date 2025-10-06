@@ -856,9 +856,12 @@ const ParticipantGrid: React.FC<ParticipantGridProps> = ({
     const browserType = participant.browserType || 'unknown';
     const diagnosticInfo = streamStats[participant.id] || {};
     
+    // FASE 4: Key com streamId para forçar re-render quando stream mudar
+    const cardKey = `${participant.id}-${participantStreams[participant.id]?.id || 'no-stream'}-${forceUpdateCounter}`;
+    
     return (
       <Card 
-        key={participant.id}
+        key={cardKey}
         className={`transition-all duration-200 h-full ${
           !isActive ? 'opacity-50' : ''
         } ${

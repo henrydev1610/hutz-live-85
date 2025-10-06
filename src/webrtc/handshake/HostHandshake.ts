@@ -100,6 +100,15 @@ class HostHandshakeManager {
           unifiedWebSocketService.sendWebRTCCandidate(participantId, event.candidate);
         }
       };
+      
+      // FASE 5: Listener para icegatheringstatechange
+      pc.onicegatheringstatechange = () => {
+        const gatheringState = pc.iceGatheringState;
+        console.log(`🧊 FASE 5 [HOST]: ICE gathering state changed to: ${gatheringState} for ${participantId}`);
+        if (gatheringState === 'complete') {
+          console.log(`✅ FASE 5 [HOST]: ICE gathering complete for ${participantId}`);
+        }
+      };
 
       pc.onconnectionstatechange = () => {
         const state = pc.connectionState;
@@ -243,6 +252,20 @@ class HostHandshakeManager {
         participantICEBuffers.delete(data.participantId);
         console.log(`✅ [HOST] Buffer de ICE candidates limpo para ${data.participantId}`);
       }
+      
+      // FASE 5: Timeout de 2 segundos para flush forçado de candidates
+      setTimeout(() => {
+        const remainingCandidates = participantICEBuffers.get(data.participantId) || [];
+        if (remainingCandidates.length > 0) {
+          console.log(`🚀 FASE 5 [HOST]: FORCE FLUSH - Applying ${remainingCandidates.length} remaining buffered candidates for ${data.participantId}`);
+          remainingCandidates.forEach(candidate => {
+            pc.addIceCandidate(candidate).catch(err => {
+              console.warn('⚠️ FASE 5 [HOST]: ICE candidate flush error:', err);
+            });
+          });
+          participantICEBuffers.delete(data.participantId);
+        }
+      }, 2000);
 
       // PASSO 4: Criar answer
       console.log(`🚨 CRÍTICO [HOST] Creating answer for ${data.participantId}`);

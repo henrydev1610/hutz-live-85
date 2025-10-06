@@ -245,6 +245,19 @@ class ParticipantHandshakeManager {
           console.log('✅ [PARTICIPANT] Buffer de ICE candidates limpo');
         }
         
+        // FASE 5: Timeout de 2 segundos para flush forçado de candidates
+        setTimeout(() => {
+          if (this.pendingCandidates.length > 0) {
+            console.log(`🚀 FASE 5: FORCE FLUSH - Applying ${this.pendingCandidates.length} remaining buffered candidates`);
+            this.pendingCandidates.forEach(candidate => {
+              this.peerConnection?.addIceCandidate(candidate).catch(err => {
+                console.warn('⚠️ FASE 5: ICE candidate flush error:', err);
+              });
+            });
+            this.pendingCandidates = [];
+          }
+        }, 2000);
+        
         console.log('✅ [PARTICIPANT] Connection established successfully');
       } catch (err) {
         console.error('❌ CRÍTICO [PARTICIPANT] Error applying answer:', err);
@@ -464,6 +477,15 @@ class ParticipantHandshakeManager {
           
           console.log(`🚨 CRÍTICO [PARTICIPANT] ICE candidate ${stats.candidatesSent} generated, sending to host`);
           unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
+        }
+      };
+      
+      // FASE 5: Listener para icegatheringstatechange
+      this.peerConnection.onicegatheringstatechange = () => {
+        const gatheringState = this.peerConnection?.iceGatheringState;
+        console.log(`🧊 FASE 5: ICE gathering state changed to: ${gatheringState}`);
+        if (gatheringState === 'complete') {
+          console.log('✅ FASE 5: ICE gathering complete');
         }
       };
 
