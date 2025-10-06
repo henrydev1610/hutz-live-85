@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import LivePageContainer from '@/components/live/LivePageContainer';
 import { LovableDebugPanel } from '@/components/debug/LovableDebugPanel';
@@ -265,12 +265,14 @@ const LivePage: React.FC = () => {
     }
   };
 
-  // FASE 1: Listener para evento participant-stream-connected
+  // FASE 4: Buffer de eventos + flushSync para garantir re-render
+  const eventBufferRef = useRef<Map<string, { stream: MediaStream, timestamp: number }>>(new Map());
+  
   useEffect(() => {
     const handleStreamConnected = (event: CustomEvent) => {
       const { participantId, stream, correlationId } = event.detail;
       
-      console.log('🎥 LIVE PAGE: Stream connected event received', {
+      console.log('🎥 FASE 4: Stream connected event received', {
         participantId,
         streamId: stream?.id,
         correlationId,
@@ -282,31 +284,55 @@ const LivePage: React.FC = () => {
         return;
       }
       
-      // Atualizar participantStreams
-      state.setParticipantStreams(prev => {
-        const updated = { ...prev, [participantId]: stream };
-        console.log('✅ LIVE PAGE: participantStreams updated', {
-          participantId,
-          streamId: stream.id,
-          totalStreams: Object.keys(updated).length
+      // FASE 4: Adicionar ao buffer
+      eventBufferRef.current.set(participantId, { stream, timestamp: Date.now() });
+      console.log(`📦 FASE 4: Event buffered for ${participantId} (buffer size: ${eventBufferRef.current.size})`);
+      
+      // FASE 4: Usar flushSync para garantir re-render síncrono
+      import('react-dom').then(({ flushSync }) => {
+        flushSync(() => {
+          // Atualizar participantStreams
+          state.setParticipantStreams(prev => {
+            const updated = { ...prev, [participantId]: stream };
+            console.log('✅ FASE 4: participantStreams updated with flushSync', {
+              participantId,
+              streamId: stream.id,
+              totalStreams: Object.keys(updated).length
+            });
+            return updated;
+          });
+          
+          // Atualizar participantList
+          state.setParticipantList(prev => prev.map(p => 
+            p.id === participantId 
+              ? { ...p, hasVideo: true, active: true, selected: true }
+              : p
+          ));
         });
-        return updated;
+        
+        // FASE 4: Forçar re-render do grid
+        if (typeof (window as any).forceGridUpdate === 'function') {
+          console.log('🔄 FASE 4: Forcing grid update');
+          (window as any).forceGridUpdate();
+        }
+        
+        // Notificar transmission window
+        if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
+          updateTransmissionParticipants();
+        }
       });
-      
-      // Atualizar participantList
-      state.setParticipantList(prev => prev.map(p => 
-        p.id === participantId 
-          ? { ...p, hasVideo: true, active: true, selected: true }
-          : p
-      ));
-      
-      // Notificar transmission window
-      if (transmissionWindowRef.current && !transmissionWindowRef.current.closed) {
-        updateTransmissionParticipants();
-      }
     };
     
     window.addEventListener('participant-stream-connected', handleStreamConnected as EventListener);
+    
+    // FASE 4: Processar buffer no mount
+    console.log(`🔍 FASE 4: Processing event buffer on mount (${eventBufferRef.current.size} events)`);
+    eventBufferRef.current.forEach(({ stream }, participantId) => {
+      console.log(`📤 FASE 4: Processing buffered event for ${participantId}`);
+      window.dispatchEvent(new CustomEvent('participant-stream-connected', {
+        detail: { participantId, stream, correlationId: 'buffered' }
+      }));
+    });
     
     return () => {
       window.removeEventListener('participant-stream-connected', handleStreamConnected as EventListener);

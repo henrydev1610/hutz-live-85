@@ -16,6 +16,16 @@ class ParticipantHandshakeManager {
   private lastConnectionTime: number = 0;
   private handshakeStartTime: number = 0;
   
+  // FASE 5: ICE candidate tracking
+  private iceStats = new Map<string, {
+    candidatesSent: number;
+    candidatesReceived: number;
+    lastActivity: number;
+  }>();
+  
+  // FASE 5: Handshake stuck timeout
+  private handshakeTimeouts = new Map<string, NodeJS.Timeout>();
+  
   constructor() {
     this.setupParticipantHandlers();
   }
@@ -247,14 +257,28 @@ class ParticipantHandshakeManager {
       const hostId = data?.fromUserId || data?.fromSocketId || data?.hostId;
       const candidate = data?.candidate;
       
-      console.log('🚨 CRÍTICO [PARTICIPANT] ICE candidate recebido:', {
-        fromHost: hostId,
-        hasCandidate: !!candidate,
-        candidateType: candidate?.candidate?.includes('host') ? 'host' : 
-                      candidate?.candidate?.includes('srflx') ? 'srflx' : 'relay',
-        peerConnectionExists: !!this.peerConnection,
-        hasRemoteDescription: !!this.peerConnection?.remoteDescription
-      });
+      // FASE 5: Rastrear ICE candidates recebidos
+      if (hostId) {
+        const stats = this.iceStats.get(hostId) || {
+          candidatesSent: 0,
+          candidatesReceived: 0,
+          lastActivity: Date.now()
+        };
+        stats.candidatesReceived++;
+        stats.lastActivity = Date.now();
+        this.iceStats.set(hostId, stats);
+        
+        console.log(`🚨 CRÍTICO [PARTICIPANT] ICE candidate ${stats.candidatesReceived} recebido:`, {
+          fromHost: hostId,
+          hasCandidate: !!candidate,
+          candidateType: candidate?.candidate?.includes('host') ? 'host' : 
+                        candidate?.candidate?.includes('srflx') ? 'srflx' : 'relay',
+          peerConnectionExists: !!this.peerConnection,
+          hasRemoteDescription: !!this.peerConnection?.remoteDescription,
+          totalSent: stats.candidatesSent,
+          totalReceived: stats.candidatesReceived
+        });
+      }
       
       if (!candidate) {
         console.warn('⚠️ [PARTICIPANT] Invalid candidate from:', hostId);
@@ -389,10 +413,56 @@ class ParticipantHandshakeManager {
       const addTrackDuration = performance.now() - addTrackStartTime;
       console.log(`✅ [PARTICIPANT] ${validTracks.length} validated tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
 
+      // FASE 5: Configurar timeout de 8s para detecção de handshake travado
+      const handshakeMonitor = setTimeout(() => {
+        const pc = this.peerConnection;
+        if (pc && pc.connectionState !== 'connected') {
+          console.warn(`⚠️ FASE 5: Handshake travado para ${hostId}:`, {
+            connectionState: pc.connectionState,
+            iceState: pc.iceConnectionState,
+            signalingState: pc.signalingState,
+            iceStats: this.iceStats.get(hostId)
+          });
+          
+          // FASE 5: Disparar evento de diagnóstico
+          window.dispatchEvent(new CustomEvent('webrtc-handshake-stuck', {
+            detail: {
+              participantId: this.participantId,
+              hostId,
+              connectionState: pc.connectionState,
+              iceState: pc.iceConnectionState,
+              iceStats: this.iceStats.get(hostId),
+              timestamp: Date.now()
+            }
+          }));
+          
+          // FASE 5: Tentar renegociação
+          console.log(`🔄 FASE 5: Tentando renegociar com ${hostId}...`);
+          // Fechar PC atual e criar novo
+          pc.close();
+          this.peerConnection = null;
+          setTimeout(() => {
+            this.createAndSendOffer(hostId);
+          }, 1000);
+        }
+      }, 8000);
+      
+      this.handshakeTimeouts.set(hostId + '-monitor', handshakeMonitor);
+
       // Set up event handlers
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log('🚨 CRÍTICO [PARTICIPANT] ICE candidate generated, sending to host');
+          // FASE 5: Rastrear ICE candidates enviados
+          const stats = this.iceStats.get(hostId) || {
+            candidatesSent: 0,
+            candidatesReceived: 0,
+            lastActivity: Date.now()
+          };
+          stats.candidatesSent++;
+          stats.lastActivity = Date.now();
+          this.iceStats.set(hostId, stats);
+          
+          console.log(`🚨 CRÍTICO [PARTICIPANT] ICE candidate ${stats.candidatesSent} generated, sending to host`);
           unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
         }
       };
@@ -407,14 +477,33 @@ class ParticipantHandshakeManager {
         if (state === 'connected') {
           this.clearConnectionTimeout();
           this.reconnectAttempts = 0;
+          
+          // FASE 5: Limpar timeout de handshake travado
+          const monitor = this.handshakeTimeouts.get(hostId + '-monitor');
+          if (monitor) {
+            clearTimeout(monitor);
+            this.handshakeTimeouts.delete(hostId + '-monitor');
+          }
+          
           console.log(`✅ CONNECTION: WebRTC connection established (${elapsed.toFixed(1)}ms total)`);
           
           // Notify successful connection
           window.dispatchEvent(new CustomEvent('participant-connected', {
             detail: { participantId: this.participantId, timestamp: Date.now(), method: 'connection-state' }
           }));
+          
+          // FASE 5: Disparar evento de peer conectado
+          window.dispatchEvent(new CustomEvent('webrtc-peer-connected', {
+            detail: { participantId: this.participantId, timestamp: Date.now() }
+          }));
         } else if (state === 'failed') {
           console.warn(`❌ CONNECTION: Connection failed definitively (${state}) - initiating recovery`);
+          
+          // FASE 5: Disparar evento de peer falhado
+          window.dispatchEvent(new CustomEvent('webrtc-peer-failed', {
+            detail: { participantId: this.participantId, state, timestamp: Date.now() }
+          }));
+          
           this.handleConnectionFailure(hostId);
         } else if (state === 'disconnected') {
           console.warn(`📤 CONNECTION: Connection disconnected (${state}) - may be temporary`);

@@ -55,6 +55,10 @@ class UnifiedWebSocketService {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   
+  // FASE 3: Debounce mínimo entre reconexões
+  private MIN_RECONNECT_INTERVAL = 10000; // 10s mínimo
+  private lastReconnectTime = 0;
+  
   // CORREÇÃO 3: Circuit breaker TEMPORARIAMENTE desabilitado para reconexão
   private circuitBreakerThreshold = 20; // Aumentado para 20 tentativas (quase desabilitado)
   private circuitBreakerTimeout = 10000; // Reduzido para 10s (recovery rápido)
@@ -500,16 +504,36 @@ this.socket.on('ice-servers', (data) => {
   }
 
   private scheduleReconnect(): void {
+    const now = Date.now();
+    const timeSinceLastReconnect = now - this.lastReconnectTime;
+    
+    // FASE 3: Aplicar MIN_RECONNECT_INTERVAL debounce
+    if (timeSinceLastReconnect < this.MIN_RECONNECT_INTERVAL) {
+      const waitTime = this.MIN_RECONNECT_INTERVAL - timeSinceLastReconnect;
+      console.log(`⏸️ FASE 3: Debounce - aguardando ${Math.round(waitTime/1000)}s antes de reconectar`);
+      
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+      }
+      
+      this.reconnectTimer = setTimeout(() => {
+        this.scheduleReconnect();
+      }, waitTime);
+      return;
+    }
+    
+    this.lastReconnectTime = now;
+    
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
     }
 
-    // FASE 3: Enhanced exponential backoff with jitter
+    // Enhanced exponential backoff with jitter
     const baseDelay = this.reconnectDelay * Math.pow(this.backoffMultiplier, this.metrics.attemptCount - 1);
     const jitter = Math.random() * 1000; // Add up to 1s jitter
     const delay = Math.min(baseDelay + jitter, this.maxReconnectDelay);
 
-    console.log(`🔄 CONNECTION: Scheduling reconnect in ${Math.round(delay)}ms (attempt ${this.metrics.attemptCount}/${this.maxReconnectAttempts})`);
+    console.log(`🔄 FASE 3: Scheduling reconnect in ${Math.round(delay)}ms (attempt ${this.metrics.attemptCount}/${this.maxReconnectAttempts})`);
     console.log(`📊 RETRY METRICS: Base delay: ${baseDelay}ms, Jitter: ${Math.round(jitter)}ms, Final: ${Math.round(delay)}ms`);
 
     this.reconnectTimer = setTimeout(() => {

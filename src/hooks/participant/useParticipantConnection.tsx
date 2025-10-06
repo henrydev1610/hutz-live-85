@@ -14,6 +14,12 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
   const [error, setError] = useState<string | null>(null);
   const isMobile = useIsMobile();
   
+  // FASE 3: Circuit Breaker Local - rastreamento de tentativas
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [lastAttemptTime, setLastAttemptTime] = useState(0);
+  const MAX_ATTEMPTS_IN_WINDOW = 3;
+  const ATTEMPT_WINDOW_MS = 30000; // 30s
+  
   // FASE 2: Hook para garantir conexão WebSocket
   const { ensureConnection } = useEnsureWebSocketConnection({
     onConnected: () => {
@@ -102,6 +108,30 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
 
    
 
+    // FASE 3: Circuit Breaker Local - verificar limite de tentativas
+    const now = Date.now();
+    if (now - lastAttemptTime < ATTEMPT_WINDOW_MS) {
+      // Estamos dentro da janela de 30s
+      if (connectionAttempts >= MAX_ATTEMPTS_IN_WINDOW) {
+        const waitTime = ATTEMPT_WINDOW_MS - (now - lastAttemptTime);
+        const error = `🚫 FASE 3: Circuit Breaker - Máximo de ${MAX_ATTEMPTS_IN_WINDOW} tentativas em 30s. Aguarde ${Math.round(waitTime/1000)}s`;
+        console.error(error);
+        toast.error(error);
+        setError(error);
+        setConnectionStatus('failed');
+        return;
+      }
+    } else {
+      // Janela expirou, resetar contador
+      setConnectionAttempts(0);
+    }
+    
+    // Incrementar tentativas e atualizar timestamp
+    setConnectionAttempts(prev => prev + 1);
+    setLastAttemptTime(now);
+    
+    console.log(`🔄 FASE 3: Tentativa ${connectionAttempts + 1}/${MAX_ATTEMPTS_IN_WINDOW} na janela de 30s`);
+
     // FASE 4: QUEBRA DE RETRY LOOP - Circuit breaker rígido
     const maxRetries = isMobile ? 3 : 2; // REDUZIDO drasticamente
     const connectionMetrics = {
@@ -116,9 +146,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
     
     const attemptConnection = async (): Promise<void> => {
       // FASE 4: DEBOUNCE CHECK - evitar retry muito frequente
-      const now = Date.now();
-      if (connectionMetrics.lastAttemptTime > 0 && (now - connectionMetrics.lastAttemptTime) < DEBOUNCE_MINIMUM) {
-        const waitTime = DEBOUNCE_MINIMUM - (now - connectionMetrics.lastAttemptTime);
+      const nowRetry = Date.now();
+      if (connectionMetrics.lastAttemptTime > 0 && (nowRetry - connectionMetrics.lastAttemptTime) < DEBOUNCE_MINIMUM) {
+        const waitTime = DEBOUNCE_MINIMUM - (nowRetry - connectionMetrics.lastAttemptTime);
         console.log(`⏸️ FASE 4: DEBOUNCE - aguardando ${waitTime}ms antes da próxima tentativa`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
