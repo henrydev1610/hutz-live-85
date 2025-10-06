@@ -162,6 +162,8 @@ const initializeSocketHandlers = (io) => {
         const isHost = userId.includes('host') || userId.startsWith('host-');
         const role = isHost ? 'host' : 'participant';
 
+        console.log(`🚨 CRÍTICO SERVER: User ${userId} detectado como ${role.toUpperCase()}`);
+
         // Update new routing maps for direct WebRTC routing
         if (isHost) {
           const oldHostSocketId = hostByRoom.get(roomId);
@@ -169,14 +171,15 @@ const initializeSocketHandlers = (io) => {
             console.log(`⚠️ HOST-REPLACE: Room ${roomId} old=${oldHostSocketId} new=${socket.id}`);
           }
           hostByRoom.set(roomId, socket.id);
-          console.log(`SERVER-HOST-SOCKET-SET roomId=${roomId} socketId=${socket.id}`);
+          console.log(`🚨 ✅ CRÍTICO SERVER-HOST-SOCKET-SET roomId=${roomId} socketId=${socket.id}`);
+          console.log(`🚨 CRÍTICO SERVER: hostByRoom agora tem ${hostByRoom.size} hosts:`, Array.from(hostByRoom.entries()));
         } else {
           const oldSocketId = participantSocket.get(userId);
           if (oldSocketId && oldSocketId !== socket.id) {
             console.log(`PARTICIPANT-REJOIN ${userId} oldSocket=${oldSocketId} newSocket=${socket.id}`);
           }
           participantSocket.set(userId, socket.id);
-          console.log(`SERVER-PARTICIPANT-SOCKET-SET participantId=${userId} socketId=${socket.id}`);
+          console.log(`🚨 CRÍTICO SERVER-PARTICIPANT-SOCKET-SET participantId=${userId} socketId=${socket.id}`);
         }
 
         // Update socketToUser mapping
@@ -606,15 +609,24 @@ const initializeSocketHandlers = (io) => {
         const { roomId, offer } = data;
         const userInfo = socketToUser.get(socket.id);
 
+        console.log(`🚨 SERVER CRÍTICO: webrtc-offer RECEBIDO`, {
+          roomId,
+          fromSocketId: socket.id,
+          fromUserId: userInfo?.userId,
+          hasOffer: !!offer,
+          offerType: offer?.type,
+          sdpLength: offer?.sdp?.length
+        });
+
         if (!userInfo || userInfo.roomId !== roomId) {
-          console.log(`SERVER-OFFER-REJECTED roomId=${roomId} reason=not-in-room`);
+          console.log(`❌ SERVER-OFFER-REJECTED roomId=${roomId} reason=not-in-room userInfo=${!!userInfo}`);
           socket.emit('error', { message: 'Not in room for WebRTC offer' });
           return;
         }
 
         // Validar offer
         if (!offer || !offer.sdp || !offer.type) {
-          console.log(`SERVER-OFFER-INVALID roomId=${roomId} participantId=${userInfo.userId} reason=missing-sdp`);
+          console.log(`❌ SERVER-OFFER-INVALID roomId=${roomId} participantId=${userInfo.userId} reason=missing-sdp`);
           socket.emit('webrtc-error', { 
             message: 'Invalid offer format',
             expectedFormat: '{offer: {sdp, type}}'
@@ -625,12 +637,20 @@ const initializeSocketHandlers = (io) => {
         // Direct host lookup via map with fallback
         let hostSocketId = hostByRoom.get(roomId);
         
+        console.log(`🔍 SERVER: Procurando host para room ${roomId}`, {
+          hostSocketIdFromMap: hostSocketId,
+          hostByRoomSize: hostByRoom.size,
+          allHosts: Array.from(hostByRoom.entries())
+        });
+        
         // Fallback: buscar host na conexões
         if (!hostSocketId) {
+          console.log(`⚠️ SERVER: Host não encontrado no map, buscando em connections...`);
           connections.forEach((conn, sockId) => {
             if (conn.roomId === roomId && conn.userId.includes('host')) {
               hostSocketId = sockId;
               hostByRoom.set(roomId, sockId); // Atualizar cache
+              console.log(`✅ SERVER: Host encontrado via fallback: ${sockId}`);
             }
           });
         }
@@ -638,11 +658,11 @@ const initializeSocketHandlers = (io) => {
         const sdpLen = offer.sdp.length;
         
         if (hostSocketId) {
-          console.log(`SERVER-FWD-OFFER roomId=${roomId} participantId=${userInfo.userId} hostSocketId=${hostSocketId} sdpLen=${sdpLen}`);
+          console.log(`✅ SERVER-FWD-OFFER roomId=${roomId} participantId=${userInfo.userId} hostSocketId=${hostSocketId} sdpLen=${sdpLen}`);
           
           // Configurar timeout para offer sem resposta
           const offerTimeoutId = setTimeout(() => {
-            console.warn(`SERVER-OFFER-TIMEOUT roomId=${roomId} participantId=${userInfo.userId} timeout=10s`);
+            console.warn(`⏰ SERVER-OFFER-TIMEOUT roomId=${roomId} participantId=${userInfo.userId} timeout=10s`);
             socket.emit('webrtc-offer-timeout', {
               roomId,
               participantId: userInfo.userId,
@@ -656,18 +676,27 @@ const initializeSocketHandlers = (io) => {
             connection.offerTimeout = offerTimeoutId;
           }
           
-          socket.to(hostSocketId).emit('webrtc-offer', {
+          const offerPayload = {
             offer,
             fromSocketId: socket.id,
             fromUserId: userInfo.userId,
             participantId: userInfo.userId,
             timestamp: Date.now(),
             roomId
+          };
+          
+          console.log(`📤 SERVER: Emitindo webrtc-offer para host`, {
+            hostSocketId,
+            payloadKeys: Object.keys(offerPayload),
+            participantId: userInfo.userId
           });
           
-          console.log(`SERVER-OFFER-SENT roomId=${roomId} from=${userInfo.userId} to=host`);
+          socket.to(hostSocketId).emit('webrtc-offer', offerPayload);
+          
+          console.log(`✅ ✅ ✅ SERVER-OFFER-SENT roomId=${roomId} from=${userInfo.userId} to=host socketId=${hostSocketId}`);
         } else {
-          console.log(`SERVER-MISSING-HOST roomId=${roomId} participantId=${userInfo.userId}`);
+          console.log(`❌ SERVER-MISSING-HOST roomId=${roomId} participantId=${userInfo.userId}`);
+          console.log(`📊 SERVER DEBUG: hostByRoom=${hostByRoom.size} connections=${connections.size}`);
           socket.emit('webrtc-host-missing', { 
             roomId, 
             participantId: userInfo.userId,

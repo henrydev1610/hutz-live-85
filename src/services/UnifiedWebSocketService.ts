@@ -444,8 +444,17 @@ this.socket.on('ice-servers', (data) => {
     });
 
     this.socket.on('webrtc-offer', (data) => {
-      console.log('📞 WS: Received webrtc-offer (new), dispatching webrtc-offer event', data);
+      console.log('🚨 CRÍTICO WS: Received webrtc-offer from server:', {
+        hasData: !!data,
+        dataKeys: data ? Object.keys(data) : [],
+        participantId: data?.participantId,
+        fromUserId: data?.fromUserId,
+        hasOffer: !!data?.offer,
+        offerType: data?.offer?.type
+      });
+      console.log('🚨 CRÍTICO WS: Dispatching webrtc-offer event to eventEmitter');
       this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-offer', { detail: data }));
+      console.log('✅ CRÍTICO WS: webrtc-offer event dispatched successfully');
     });
 
     this.socket.on('answer', (data) => {
@@ -464,8 +473,15 @@ this.socket.on('ice-servers', (data) => {
     });
 
     this.socket.on('webrtc-candidate', (data) => {
-      console.log('📞 WS: Received webrtc-candidate (new), dispatching webrtc-candidate event', data);
+      console.log('🚨 CRÍTICO WS: Received webrtc-candidate from server:', {
+        hasData: !!data,
+        dataKeys: data ? Object.keys(data) : [],
+        participantId: data?.participantId,
+        fromUserId: data?.fromUserId,
+        hasCandidate: !!data?.candidate
+      });
       this.eventEmitter.dispatchEvent(new CustomEvent('webrtc-candidate', { detail: data }));
+      console.log('✅ CRÍTICO WS: webrtc-candidate event dispatched');
     });
 
     this.socket.on('stream-started', (participantId: string, streamInfo: any) => {

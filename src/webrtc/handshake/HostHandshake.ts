@@ -397,30 +397,45 @@ class HostHandshakeManager {
 
   setupHostHandlers(): void {
     console.log('🚨 CRÍTICO [HOST] Setting up WebRTC handlers');
+    console.log('🚨 CRÍTICO [HOST] unifiedWebSocketService available:', !!unifiedWebSocketService);
+    console.log('🚨 CRÍTICO [HOST] unifiedWebSocketService.on available:', typeof unifiedWebSocketService.on);
     
+    // CORREÇÃO CRÍTICA: Verificar se o método on existe antes de registrar
+    if (!unifiedWebSocketService || typeof unifiedWebSocketService.on !== 'function') {
+      console.error('❌ CRÍTICO [HOST] unifiedWebSocketService.on não está disponível!');
+      return;
+    }
+    
+    // Handler para webrtc-offer
     unifiedWebSocketService.on('webrtc-offer', (payload: any) => {
-      console.log('🚨 CRÍTICO [HOST] Received webrtc-offer:', {
+      console.log('🚨 CRÍTICO [HOST] ✅ webrtc-offer EVENT RECEIVED:', {
         hasParticipantId: !!payload.participantId,
         hasOffer: !!payload.offer,
-        dataKeys: Object.keys(payload),
+        dataKeys: Object.keys(payload || {}),
+        participantId: payload.participantId,
+        fromSocketId: payload.fromSocketId,
         timestamp: Date.now()
       });
       this.handleOfferFromParticipant(payload);
     });
+    console.log('✅ [HOST] webrtc-offer handler registered');
 
+    // Handler para webrtc-candidate
     unifiedWebSocketService.on('webrtc-candidate', (payload: any) => {
-      console.log('🚨 CRÍTICO [HOST] Received webrtc-candidate:', {
+      console.log('🚨 CRÍTICO [HOST] ✅ webrtc-candidate EVENT RECEIVED:', {
         hasParticipantId: !!payload.participantId,
         hasCandidate: !!payload.candidate,
-        dataKeys: Object.keys(payload),
+        dataKeys: Object.keys(payload || {}),
+        participantId: payload.participantId,
         timestamp: Date.now()
       });
       this.handleRemoteCandidate(payload);
     });
+    console.log('✅ [HOST] webrtc-candidate handler registered');
 
     // FASE 3: Listener para participant-ready - FORÇAR REQUEST DE OFFER
     unifiedWebSocketService.on('participant-ready', (payload: any) => {
-      console.log('🚀 CRÍTICO [HOST] Received participant-ready:', {
+      console.log('🚀 CRÍTICO [HOST] ✅ participant-ready EVENT RECEIVED:', {
         participantId: payload.participantId,
         hasStream: payload.hasStream,
         streamInfo: payload.streamInfo,
@@ -433,8 +448,9 @@ class HostHandshakeManager {
         this.requestOfferFromParticipant(payload.participantId);
       }, 1000);
     });
+    console.log('✅ [HOST] participant-ready handler registered');
 
-    console.log('✅ [HOST] Enhanced handshake handlers registered (com participant-ready)');
+    console.log('✅ ✅ ✅ [HOST] ALL Enhanced handshake handlers registered successfully');
   }
 
   requestOfferFromParticipant(participantId: string): void {
@@ -546,9 +562,33 @@ export const cleanupAllStuckConnections = () => hostHandshakeManager.cleanupAllS
 export const getHostConnectionsState = () => hostHandshakeManager.getHostConnectionsState();
 export const resetHostWebRTC = () => hostHandshakeManager.resetHostWebRTC();
 
-// Initialize handlers once
+// Initialize handlers once - COM DELAY para garantir que o UnifiedWebSocketService esteja pronto
 if (typeof window !== 'undefined' && !(window as any).__hostHandlersSetup) {
+  console.log('🔧 [HOST] Scheduling handler initialization...');
+  
+  // FASE CRÍTICA: Adicionar monitor global de eventos WebRTC
+  console.log('🔧 [HOST] Setting up global WebRTC event monitor...');
+  const originalDispatchEvent = EventTarget.prototype.dispatchEvent;
+  EventTarget.prototype.dispatchEvent = function(event: Event) {
+    if (event.type.includes('webrtc-')) {
+      console.log(`🚨 GLOBAL EVENT MONITOR: ${event.type} dispatched`, {
+        type: event.type,
+        detail: (event as CustomEvent).detail,
+        target: this.constructor.name
+      });
+    }
+    return originalDispatchEvent.call(this, event);
+  };
+  
+  // Tentar imediatamente
   hostHandshakeManager.setupHostHandlers();
   (window as any).__hostHandlersSetup = true;
-  console.log('✅ [HOST] Enhanced handshake handlers initialized');
+  console.log('✅ [HOST] Enhanced handshake handlers initialized IMMEDIATELY');
+  
+  // Também agendar para 2 segundos depois (garantia dupla)
+  setTimeout(() => {
+    console.log('🔧 [HOST] Re-registering handlers after 2s (safety measure)...');
+    hostHandshakeManager.setupHostHandlers();
+    console.log('✅ [HOST] Enhanced handshake handlers RE-INITIALIZED after 2s');
+  }, 2000);
 }
