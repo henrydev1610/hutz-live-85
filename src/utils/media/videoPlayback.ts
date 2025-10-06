@@ -25,8 +25,30 @@ export const setupVideoElement = async (videoElement: HTMLVideoElement, stream: 
   videoElement.muted = true;
   videoElement.autoplay = true;
   
+  // 🔧 CORREÇÃO: Garantir que o vídeo tenha metadados antes de tentar play
+  console.log('📺 SETUP VIDEO: Waiting for metadata if needed...');
+  if (videoElement.readyState === 0) {
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        console.warn('⚠️ SETUP VIDEO: Metadata load timeout');
+        resolve(); // Continue anyway
+      }, 2000);
+      
+      videoElement.onloadedmetadata = () => {
+        clearTimeout(timeout);
+        console.log('✅ SETUP VIDEO: Metadata loaded');
+        resolve();
+      };
+    });
+  }
+  
   try {
-    console.log('📺 SETUP VIDEO: Attempting to play video...');
+    console.log('📺 SETUP VIDEO: Attempting to play video...', {
+      readyState: videoElement.readyState,
+      networkState: videoElement.networkState,
+      paused: videoElement.paused
+    });
+    
     await videoElement.play();
     console.log(`✅ SETUP VIDEO: Video playing successfully (Mobile: ${isMobile})`);
     

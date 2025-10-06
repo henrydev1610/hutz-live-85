@@ -109,9 +109,15 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
       return;
     }
 
-    if (video.srcObject === stream) {
-      console.log(`✅ VideoContainer: Stream already assigned for ${participant.id}`);
+    // 🔧 CORREÇÃO: Remover validação prematura que bloqueia re-play
+    // Mesmo se o stream já estiver atribuído, pode ser necessário forçar play
+    if (video.srcObject === stream && !video.paused) {
+      console.log(`✅ VideoContainer: Stream already playing for ${participant.id}`);
       return;
+    }
+    
+    if (video.srcObject === stream && video.paused) {
+      console.log(`⚠️ VideoContainer: Stream assigned but paused, will retry play for ${participant.id}`);
     }
 
     // FASE 3: Log detalhado de aplicação de stream
@@ -133,7 +139,9 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
     console.log(`✅ FIX: srcObject assigned`, {
       participantId: participant.id,
       srcObjectAssigned: video.srcObject === stream,
-      videoTracks: (video.srcObject as MediaStream)?.getVideoTracks().length
+      videoTracks: (video.srcObject as MediaStream)?.getVideoTracks().length,
+      videoTrackEnabled: stream.getVideoTracks()[0]?.enabled,
+      videoTrackLive: stream.getVideoTracks()[0]?.readyState === 'live'
     });
 
     // Apply stream using utility function
@@ -141,7 +149,13 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
       .then(() => {
         setIsVideoReady(true);  
         setError(null);
-        console.log(`✅ UNIFIED: Video ready for ${participant.id}`);
+        console.log(`✅ UNIFIED: Video ready for ${participant.id}`, {
+          videoWidth: video.videoWidth,
+          videoHeight: video.videoHeight,
+          readyState: video.readyState,
+          paused: video.paused,
+          currentTime: video.currentTime
+        });
         
         // Dispatch global event for synchronization
         window.dispatchEvent(new CustomEvent('video-ready', {
@@ -149,9 +163,29 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
         }));
       })
       .catch((err) => {
-        setError('Erro ao reproduzir vídeo');
-        setIsVideoReady(false);
         console.error(`❌ UNIFIED: Video setup failed for ${participant.id}:`, err);
+        
+        // 🔧 RETRY LOGIC: Tentar novamente após 1 segundo
+        console.log(`🔄 RETRY: Will retry video setup for ${participant.id} in 1s`);
+        setTimeout(() => {
+          if (video.srcObject === stream && video.paused) {
+            console.log(`🔄 RETRY: Attempting manual play for ${participant.id}`);
+            video.play()
+              .then(() => {
+                console.log(`✅ RETRY: Manual play succeeded for ${participant.id}`);
+                setIsVideoReady(true);
+                setError(null);
+              })
+              .catch((retryErr) => {
+                console.error(`❌ RETRY: Manual play failed for ${participant.id}:`, retryErr);
+                setError('Erro ao reproduzir vídeo');
+                setIsVideoReady(false);
+              });
+          }
+        }, 1000);
+        
+        setError('Tentando reproduzir...');
+        setIsVideoReady(false);
       });
 
   }, [stream, participant.id, lastStreamId]);
