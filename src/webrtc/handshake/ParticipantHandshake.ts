@@ -227,53 +227,72 @@ class ParticipantHandshakeManager {
         return;
       }
 
-      console.log(`✅ [PARTICIPANT] setRemoteDescription -> answer received from ${hostId}`);
-
       if (!this.peerConnection) {
         console.warn('⚠️ [PARTICIPANT] Answer received without active PC');
         return;
       }
 
-      try {
-        console.log('🚨 CRÍTICO [PARTICIPANT] Setting remote description from answer...');
-        await this.peerConnection.setRemoteDescription(answer);
-        console.log('✅ [PARTICIPANT] Remote description set successfully');
-        console.log(`🚨 CRÍTICO [PARTICIPANT] Connection state após setRemoteDescription: ${this.peerConnection.connectionState}`);
+      // PATCH: Validate that answer contains m=video
+      const answerSdp = answer.sdp;
+      const hasVideoInSDP = answerSdp.includes('m=video');
+      
+      if (!hasVideoInSDP) {
+        console.error('❌ PATCH [PARTICIPANT] Answer WITHOUT m=video - rejecting:', {
+          hostId,
+          sdpPreview: answerSdp.substring(0, 200)
+        });
+        return;
+      }
+      
+      console.log(`✅ PATCH [PARTICIPANT] Answer validated - contains m=video from ${hostId}`);
 
-        // Flush all pending candidates immediately
+      try {
+        // PATCH: Check current signaling state before applying answer
+        const currentState = this.peerConnection.signalingState;
+        console.log(`🔍 PATCH [PARTICIPANT] Current signaling state: ${currentState}`);
+        
+        // PATCH: Allow answer when in have-local-offer (normal flow) or stable (renegotiation)
+        if (currentState !== 'have-local-offer' && currentState !== 'stable') {
+          console.warn(`⚠️ PATCH [PARTICIPANT] Unexpected signaling state ${currentState} - proceeding anyway`);
+        }
+        
+        console.log('🚨 CRÍTICO [PARTICIPANT] Setting remote description from answer...');
+        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        console.log(`✅ PATCH [PARTICIPANT] Remote description set - signaling state now: ${this.peerConnection.signalingState}`);
+        console.log(`🚨 CRÍTICO [PARTICIPANT] Connection state after answer: ${this.peerConnection.connectionState}`);
+
+        // PATCH: Flush buffered candidates IMMEDIATELY after setRemoteDescription
         if (this.pendingCandidates.length > 0) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Applying ${this.pendingCandidates.length} buffered candidates`);
+          console.log(`🚨 PATCH [PARTICIPANT] Flushing ${this.pendingCandidates.length} buffered ICE candidates`);
           
           const candidatesToFlush = [...this.pendingCandidates];
           this.pendingCandidates = [];
           
-          for (const candidate of candidatesToFlush) {
+          for (let i = 0; i < candidatesToFlush.length; i++) {
+            const candidate = candidatesToFlush[i];
             try {
               await this.peerConnection.addIceCandidate(candidate);
-              console.log('✅ [PARTICIPANT] ICE candidate aplicado do buffer');
+              console.log(`✅ PATCH [PARTICIPANT] Candidate ${i + 1}/${candidatesToFlush.length} applied`);
             } catch (err) {
-              console.error('❌ [PARTICIPANT] Error flushing candidate:', err);
+              console.error(`❌ PATCH [PARTICIPANT] Error flushing candidate ${i + 1}:`, err);
             }
           }
-          console.log('✅ [PARTICIPANT] Buffer de ICE candidates limpo');
+          console.log(`✅ PATCH [PARTICIPANT] All ${candidatesToFlush.length} buffered candidates flushed`);
         }
         
-        // FASE 5: Timeout de 2 segundos para flush forçado de candidates
-        setTimeout(() => {
-          if (this.pendingCandidates.length > 0) {
-            console.log(`🚀 FASE 5: FORCE FLUSH - Applying ${this.pendingCandidates.length} remaining buffered candidates`);
-            this.pendingCandidates.forEach(candidate => {
-              this.peerConnection?.addIceCandidate(candidate).catch(err => {
-                console.warn('⚠️ FASE 5: ICE candidate flush error:', err);
-              });
-            });
-            this.pendingCandidates = [];
-          }
-        }, 2000);
-        
-        console.log('✅ [PARTICIPANT] Connection established successfully');
+        console.log('✅ CRÍTICO PATCH [PARTICIPANT] Answer applied successfully - handshake complete, ICE negotiation in progress');
       } catch (err) {
         console.error('❌ CRÍTICO [PARTICIPANT] Error applying answer:', err);
+        
+        // PATCH: More detailed error logging
+        if (this.peerConnection) {
+          console.error('❌ PATCH [PARTICIPANT] PC state on error:', {
+            connectionState: this.peerConnection.connectionState,
+            iceConnectionState: this.peerConnection.iceConnectionState,
+            signalingState: this.peerConnection.signalingState
+          });
+        }
+        
         this.handleConnectionFailure(hostId);
       }
     });

@@ -249,65 +249,84 @@ class HostHandshakeManager {
         return;
       }
 
-      console.log(`✅ [HOST] Processing offer from ${data.participantId}`);
+      // PATCH: Validate that offer contains m=video BEFORE applying
+      const offerSdp = data.offer.sdp;
+      const hasVideoInSDP = offerSdp.includes('m=video');
+      
+      if (!hasVideoInSDP) {
+        console.error('❌ PATCH [HOST] Offer WITHOUT m=video - rejecting invalid SDP:', {
+          participantId: data.participantId,
+          sdpPreview: offerSdp.substring(0, 200)
+        });
+        return;
+      }
+      
+      console.log(`✅ PATCH [HOST] Offer validated - contains m=video for ${data.participantId}`);
 
       // PASSO 1: Obter ou criar peer connection
       const pc = this.getOrCreatePC(data.participantId);
-      console.log(`🚨 CRÍTICO [HOST] RTCPeerConnection state: ${pc.connectionState}`);
+      console.log(`🚨 CRÍTICO [HOST] RTCPeerConnection state: ${pc.connectionState}, signaling: ${pc.signalingState}`);
       
-      // PASSO 2: Set remote description
+      // PATCH: Validate PC is ready to receive offer
+      if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-local-offer') {
+        console.warn(`⚠️ PATCH [HOST] PC in unexpected state ${pc.signalingState} - closing and recreating`);
+        pc.close();
+        hostPeerConnections.delete(data.participantId);
+        const newPc = this.getOrCreatePC(data.participantId);
+        console.log(`✅ PATCH [HOST] Fresh PC created for ${data.participantId}`);
+      }
+      
+      // PASSO 2: Set remote description (MUST happen before creating answer)
       console.log(`🚨 CRÍTICO [HOST] Setting remote description for ${data.participantId}`);
       await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-      console.log(`✅ [HOST] Remote description set para ${data.participantId}`);
+      console.log(`✅ PATCH [HOST] Remote description set - signaling state now: ${pc.signalingState}`);
 
-      // FASE 4: Aplicar candidates em buffer SEQUENCIALMENTE com delay
+      // PATCH: Apply buffered candidates IMMEDIATELY after setRemoteDescription
       const bufferedCandidates = participantICEBuffers.get(data.participantId) || [];
       if (bufferedCandidates.length > 0) {
-        console.log(`🚨 CRÍTICO FASE 4 [HOST] Applying ${bufferedCandidates.length} buffered candidates SEQUENTIALLY for ${data.participantId}`);
+        console.log(`🚨 PATCH [HOST] Flushing ${bufferedCandidates.length} buffered ICE candidates for ${data.participantId}`);
         
         for (let i = 0; i < bufferedCandidates.length; i++) {
           const candidate = bufferedCandidates[i];
           try {
             await pc.addIceCandidate(candidate);
-            console.log(`✅ FASE 4 [HOST] ICE candidate ${i + 1}/${bufferedCandidates.length} aplicado para ${data.participantId}`);
-            
-            // FASE 4: CRÍTICO - Delay de 50ms entre cada candidate
-            if (i < bufferedCandidates.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 50));
-            }
+            console.log(`✅ PATCH [HOST] Candidate ${i + 1}/${bufferedCandidates.length} applied`);
           } catch (error) {
-            console.error(`❌ FASE 4 [HOST] Error applying buffered candidate ${i + 1} for ${data.participantId}:`, error);
+            console.error(`❌ PATCH [HOST] Error applying buffered candidate ${i + 1}:`, error);
           }
         }
         participantICEBuffers.delete(data.participantId);
-        console.log(`✅ FASE 4 [HOST] All buffered candidates applied for ${data.participantId}`);
+        console.log(`✅ PATCH [HOST] All ${bufferedCandidates.length} buffered candidates applied for ${data.participantId}`);
       }
-      
-      // FASE 5: Timeout de 2 segundos para flush forçado de candidates
-      setTimeout(() => {
-        const remainingCandidates = participantICEBuffers.get(data.participantId) || [];
-        if (remainingCandidates.length > 0) {
-          console.log(`🚀 FASE 5 [HOST]: FORCE FLUSH - Applying ${remainingCandidates.length} remaining buffered candidates for ${data.participantId}`);
-          remainingCandidates.forEach(candidate => {
-            pc.addIceCandidate(candidate).catch(err => {
-              console.warn('⚠️ FASE 5 [HOST]: ICE candidate flush error:', err);
-            });
-          });
-          participantICEBuffers.delete(data.participantId);
-        }
-      }, 2000);
 
-      // PASSO 4: Criar answer
+      // PASSO 3: Criar answer (MUST happen after setRemoteDescription)
       console.log(`🚨 CRÍTICO [HOST] Creating answer for ${data.participantId}`);
       const answer = await pc.createAnswer();
-      console.log(`✅ [HOST] Answer criado para ${data.participantId}`);
       
-      // PASSO 5: Set local description
+      // PATCH: Validate answer contains m=video and a=recvonly
+      const answerSdp = answer.sdp || '';
+      const answerHasVideo = answerSdp.includes('m=video');
+      const answerHasRecvOnly = answerSdp.includes('a=recvonly') || answerSdp.includes('a=sendrecv');
+      
+      console.log(`🚨 PATCH [HOST] Answer validation for ${data.participantId}:`, {
+        hasVideo: answerHasVideo,
+        hasRecvOnly: answerHasRecvOnly,
+        sdpPreview: answerSdp.substring(0, 200)
+      });
+      
+      if (!answerHasVideo) {
+        console.error(`❌ PATCH [HOST] Answer WITHOUT m=video - this should not happen!`);
+        throw new Error('Answer missing video section');
+      }
+      
+      console.log(`✅ PATCH [HOST] Answer created and validated for ${data.participantId}`);
+      
+      // PASSO 4: Set local description
       console.log(`🚨 CRÍTICO [HOST] Setting local description for ${data.participantId}`);
       await pc.setLocalDescription(answer);
-      console.log(`✅ [HOST] Local description set para ${data.participantId}`);
+      console.log(`✅ PATCH [HOST] Local description set - signaling state now: ${pc.signalingState}`);
 
-      // PASSO 6: Enviar answer
+      // PASSO 5: Enviar answer via WebSocket
       console.log(`🚨 CRÍTICO [HOST] Sending answer to ${data.participantId}`);
       unifiedWebSocketService.emit('webrtc-answer', {
         answer,
@@ -317,10 +336,15 @@ class HostHandshakeManager {
         timestamp: Date.now()
       });
 
-      console.log(`✅ CRÍTICO [HOST] Answer sent to ${data.participantId} - Aguardando ontrack...`);
+      console.log(`✅ CRÍTICO PATCH [HOST] Answer sent successfully to ${data.participantId} - SDP exchange complete, waiting for ICE and ontrack...`);
 
     } catch (error) {
       console.error('❌ CRÍTICO [HOST] Error handling offer:', error);
+      
+      // PATCH: Clean up failed connection attempt
+      if (data.participantId) {
+        this.cleanupHostHandshake(data.participantId);
+      }
     }
   }
 
