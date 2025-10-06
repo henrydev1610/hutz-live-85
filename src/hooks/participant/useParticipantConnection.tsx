@@ -100,16 +100,15 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // FASE 2: Validar stream do ref
+      // FASE 4: Validate stream BEFORE connecting
       if (!streamRef.current) {
         throw new Error('No stream available for connection');
       }
 
-      // Validar tracks
       const videoTracks = streamRef.current.getVideoTracks();
       const audioTracks = streamRef.current.getAudioTracks();
       
-      console.log('🔍 PARTICIPANT: Stream validation', {
+      console.log('🔍 PATCH FASE 4: Stream validation', {
         streamId: streamRef.current.id,
         active: streamRef.current.active,
         videoTracks: videoTracks.length,
@@ -121,6 +120,15 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       if (videoTracks.length === 0) {
         throw new Error('Stream has no video tracks');
       }
+      
+      // FASE 4: Check if tracks are live and enabled
+      const videoTrack = videoTracks[0];
+      if (videoTrack.readyState !== 'live' || !videoTrack.enabled) {
+        console.warn('⚠️ PATCH FASE 4: Video track not ready, reinitializing...');
+        throw new Error('Video track not ready - needs reinitialization');
+      }
+
+      console.log('✅ PATCH FASE 4: Stream validated successfully');
 
       console.log('🤝 PARTICIPANT: Initializing WebRTC handshake...');
       // WebRTC handshake será iniciado pelo ParticipantHandshake automaticamente
@@ -135,35 +143,45 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       // Reset retry count on success
       retryCountRef.current = 0;
       
-      // FASE 6: Verificar conexão WebRTC após 5 segundos e forçar retry com novo PC
+      // FASE 6: Verify WebRTC connection after 5s and reinitialize media if needed
       const streamCheckTimeout = setTimeout(async () => {
         const pc = (window as any).__participantPeerConnection;
         if (pc && pc.connectionState !== 'connected') {
-          console.warn('⚠️ FASE 6: Stream não conectado em 5s');
-          console.log('🔄 FASE 6: Connection state:', pc.connectionState);
-          console.log('🔄 FASE 6: ICE state:', pc.iceConnectionState);
-          console.log('🔄 FASE 6: Signaling state:', pc.signalingState);
+          console.warn('⚠️ PATCH FASE 6: Connection timeout after 5s');
+          console.log('🔄 PATCH FASE 6: Connection state:', pc.connectionState);
+          console.log('🔄 PATCH FASE 6: ICE state:', pc.iceConnectionState);
+          console.log('🔄 PATCH FASE 6: Signaling state:', pc.signalingState);
           
-          // FASE 6: CRÍTICO - Fechar PC existente antes de retry
-          try {
-            pc.close();
-            console.log('🔄 FASE 6: Closed stale PeerConnection');
-          } catch (err) {
-            console.warn('⚠️ FASE 6: Error closing PC:', err);
+          // FASE 6: Check if stream health is the issue
+          const currentStream = (window as any).__participantSharedStream;
+          const needsMediaRecovery = !currentStream || 
+                                     currentStream.getVideoTracks().length === 0 ||
+                                     currentStream.getVideoTracks()[0].readyState !== 'live';
+          
+          if (needsMediaRecovery) {
+            console.log('🔄 PATCH FASE 6: Reinitializing media before retry');
+            // Signal to reinitialize media externally
+            window.dispatchEvent(new CustomEvent('webrtc-media-recovery-needed'));
           }
           
-          // FASE 6: Limpar referência global
+          // FASE 6: Close PC and retry
+          try {
+            pc.close();
+            console.log('🔄 PATCH FASE 6: Closed stale PeerConnection');
+          } catch (err) {
+            console.warn('⚠️ PATCH FASE 6: Error closing PC:', err);
+          }
+          
           (window as any).__participantPeerConnection = null;
           
-          // FASE 6: CRÍTICO - Retry com delay de 1 segundo para garantir limpeza
           await new Promise(resolve => setTimeout(resolve, 1000));
           
           if (streamRef.current) {
-            console.log('🔄 FASE 6: Retrying connection with fresh PeerConnection');
+            console.log('🔄 PATCH FASE 6: Retrying connection with fresh PeerConnection');
             connectToSession(streamRef.current);
           }
         } else if (pc) {
-          console.log('✅ FASE 6: WebRTC connection verified:', pc.connectionState);
+          console.log('✅ PATCH FASE 6: WebRTC connection verified:', pc.connectionState);
         }
       }, 5000);
 

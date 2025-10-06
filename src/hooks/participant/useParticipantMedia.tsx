@@ -82,65 +82,85 @@ export const useParticipantMedia = (participantId: string) => {
     webrtcSender: (window as any).__participantWebRTCSender
   });
 
-  // Automatic media initialization (Teams/Meet style)
+  // FASE 1: Automatic media initialization with validation and retry
   const initializeMediaAutomatically = useCallback(async () => {
-    try {
-      console.log('🎬 MEDIA: Starting automatic media initialization');
-      
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      });
-
-      if (!stream) {
-        throw new Error('No stream obtained from getUserMedia');
-      }
-
-      localStreamRef.current = stream;
-      const videoTracks = stream.getVideoTracks();
-      const audioTracks = stream.getAudioTracks();
-
-      (window as any).__participantSharedStream = stream;
-      
-      setHasVideo(videoTracks.length > 0);
-      setHasAudio(audioTracks.length > 0);
-      setIsVideoEnabled(videoTracks.length > 0);
-      setIsAudioEnabled(audioTracks.length > 0);
-      
-      // Verificar consistência de estados de mídia
-      console.log(`🔍 Stream validation - Audio: ${audioTracks.length}, Video: ${videoTracks.length}`);
-      console.log(`🔍 Media states - hasAudio: ${hasAudio}, hasVideo: ${hasVideo}`);
-      
-      if (audioTracks.length > 0 && !hasAudio) {
-        console.warn('⚠️ Inconsistency: Stream has audio but hasAudio is false');
-      }
-      if (audioTracks.length === 0 && hasAudio) {
-        console.warn('⚠️ Inconsistency: Stream has no audio but hasAudio is true');
-      }
-
-      if (localVideoRef.current && videoTracks.length > 0) {
-        localVideoRef.current.srcObject = stream;
-        localVideoRef.current.muted = true;
-        localVideoRef.current.playsInline = true;
+    const MAX_ATTEMPTS = 3;
+    
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        console.log(`🎬 PATCH FASE 1: Media init attempt ${attempt}/${MAX_ATTEMPTS}`);
         
-        try {
-          await localVideoRef.current.play();
-        } catch (playError) {
-          console.warn('⚠️ Video play warning:', playError);
+        // Progressive constraints: environment -> user -> basic
+        const constraints = {
+          video: attempt === 1 ? { facingMode: 'environment' } : 
+                 attempt === 2 ? { facingMode: 'user' } : true,
+          audio: true
+        };
+        
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        // CRITICAL: Validate tracks BEFORE accepting stream
+        const videoTracks = stream.getVideoTracks();
+        const audioTracks = stream.getAudioTracks();
+        
+        if (videoTracks.length === 0) {
+          throw new Error('No video tracks in stream');
         }
-      }
-      
-      return stream;
         
-    } catch (error) {
-      console.error('❌ MEDIA: Failed to initialize automatically:', error);
-      setHasVideo(false);
-      setHasAudio(false);
-      setIsVideoEnabled(false);
-      setIsAudioEnabled(false);
-      throw error;
+        if (videoTracks[0].readyState !== 'live') {
+          throw new Error('Video track not live');
+        }
+        
+        // Store IMMEDIATELY
+        localStreamRef.current = stream;
+        (window as any).__participantSharedStream = stream;
+        
+        // Validate that it was stored
+        const stored = (window as any).__participantSharedStream;
+        if (!stored || stored.id !== stream.id) {
+          throw new Error('Stream storage failed');
+        }
+        
+        // Connect to preview
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+          localVideoRef.current.muted = true;
+          localVideoRef.current.playsInline = true;
+          await localVideoRef.current.play();
+        }
+        
+        setHasVideo(true);
+        setHasAudio(audioTracks.length > 0);
+        setIsVideoEnabled(true);
+        setIsAudioEnabled(audioTracks.length > 0);
+        
+        // Start health monitoring
+        trackHealth.startMonitoring();
+        
+        console.log('✅ PATCH FASE 1: Media initialized successfully', {
+          streamId: stream.id,
+          videoTracks: videoTracks.length,
+          audioTracks: audioTracks.length,
+          attempt
+        });
+        
+        return stream;
+        
+      } catch (error) {
+        console.warn(`⚠️ PATCH FASE 1: Attempt ${attempt} failed:`, error);
+        if (attempt === MAX_ATTEMPTS) {
+          setHasVideo(false);
+          setHasAudio(false);
+          setIsVideoEnabled(false);
+          setIsAudioEnabled(false);
+          throw error;
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
-  }, [participantId, localVideoRef, localStreamRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled]);
+    
+    throw new Error('Failed to initialize media after all attempts');
+  }, [participantId, localVideoRef, localStreamRef, setHasVideo, setHasAudio, setIsVideoEnabled, setIsAudioEnabled, trackHealth]);
 
   const initializeMedia = useCallback(async () => {
     if (!mutex.isOperationAllowed('initialize-media')) {

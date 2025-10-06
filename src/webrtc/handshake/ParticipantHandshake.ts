@@ -91,23 +91,30 @@ class ParticipantHandshakeManager {
   }
 
   async ensureLocalStream(): Promise<MediaStream | null> {
-    // GUARANTEED SINGLE SOURCE: Only use shared stream from participant page
+    // FASE 2: Check shared stream with validation
     const sharedStream = (window as any).__participantSharedStream;
+    
     if (sharedStream && sharedStream.getTracks().length > 0) {
-      const activeTracks = sharedStream.getTracks().filter(track => track.readyState === 'live' && track.enabled);
-      if (activeTracks.length > 0) {
-        console.log('[PART] ensureLocalStream: Using validated shared stream');
+      const videoTracks = sharedStream.getVideoTracks();
+      if (videoTracks.length > 0 && videoTracks[0].readyState === 'live') {
+        console.log('✅ PATCH FASE 2: Using validated shared stream');
         this.localStream = sharedStream;
         return sharedStream;
-      } else {
-        console.error('[PART] ensureLocalStream: Shared stream has no active tracks');
-        return null;
       }
     }
     
-    // NO FALLBACK TO PREVENT DUPLICATION - let participant page handle stream creation
-    console.error('[PART] ensureLocalStream: No shared stream available - this should not happen');
-    return null;
+    // FASE 2: CRITICAL FALLBACK - If no valid shared stream, create new one
+    console.warn('⚠️ PATCH FASE 2: No valid shared stream, creating new one');
+    try {
+      const newStream = await this.getUserMediaForOffer();
+      (window as any).__participantSharedStream = newStream;
+      this.localStream = newStream;
+      console.log('✅ PATCH FASE 2: Fallback stream created successfully');
+      return newStream;
+    } catch (error) {
+      console.error('❌ PATCH FASE 2: Failed to create fallback stream:', error);
+      return null;
+    }
   }
 
   private setupStreamHealthMonitoring(stream: MediaStream): void {
@@ -142,16 +149,22 @@ class ParticipantHandshakeManager {
     });
   }
 
+  // FASE 5: Handler registration flag to prevent duplicates
+  private handlersRegistered = false;
+
   private setupParticipantHandlers(): void {
     if (!unifiedWebSocketService) {
       console.error('❌ [PARTICIPANT] unifiedWebSocketService not initialized');
       return;
     }
 
-    console.log('🚨 CRÍTICO [PARTICIPANT] Setting up event handlers');
-    
-    // Limpar handlers existentes primeiro para evitar duplicação  
-    // Note: UnifiedWebSocketService não tem método off(), então apenas registramos novos handlers
+    // FASE 5: Prevent duplicate handler registration
+    if (this.handlersRegistered) {
+      console.log('✅ PATCH FASE 5: Handlers already registered, skipping');
+      return;
+    }
+
+    console.log('🚨 PATCH FASE 5: Registering handlers ONCE');
     
     // Listen for WebRTC offer request from host
     unifiedWebSocketService.on('webrtc-request-offer', async (data: any) => {
@@ -318,7 +331,9 @@ class ParticipantHandshakeManager {
       }
     });
     
-    console.log('✅ [PARTICIPANT] Event handlers configurados com sucesso');
+    // FASE 5: Mark handlers as registered
+    this.handlersRegistered = true;
+    console.log('✅ PATCH FASE 5: Handlers registered successfully');
   }
 
   async createAndSendOffer(hostId: string): Promise<void> {
@@ -626,9 +641,32 @@ class ParticipantHandshakeManager {
         sdpPreview: sdp.substring(0, 300)
       });
       
+      // FASE 3: Block offer without video and trigger recovery
       if (!hasVideoInSDP || videoSSRC === 0) {
-        console.error(`❌ CRÍTICO [${correlationId}] SDP generated WITHOUT video tracks!`);
-        throw new Error('SDP does not contain video - tracks not properly added');
+        console.error(`❌ PATCH FASE 3: SDP WITHOUT VIDEO - triggering recovery`);
+        
+        // Close current PC
+        if (this.peerConnection) {
+          this.peerConnection.close();
+          this.peerConnection = null;
+        }
+        
+        // Try to recreate stream
+        try {
+          const newStream = await this.getUserMediaForOffer();
+          (window as any).__participantSharedStream = newStream;
+          this.localStream = newStream;
+          
+          // Retry offer after 1s
+          setTimeout(() => {
+            console.log('🔄 PATCH FASE 3: Retrying offer after media recovery');
+            this.createAndSendOffer(hostId);
+          }, 1000);
+          
+          return;
+        } catch (error) {
+          throw new Error('Failed to recover media for offer');
+        }
       }
 
       // FASE 3: Send offer to host with correlation tracking

@@ -193,23 +193,39 @@ const ParticipantPage = () => {
     await initParticipantMedia();
   };
 
-  // AUTO MEDIA INITIALIZATION: Start media immediately on page load (Teams/Meet style)
+  // FASE 7: Synchronized initialization sequence
   useEffect(() => {
     if (!sessionId || isBlocked) {
-      console.log('🚫 PARTICIPANT: Skipping auto-initialization - blocked or no session');
+      console.log('🚫 PATCH FASE 7: Skipping auto-initialization - blocked or no session');
       return;
     }
     
-    console.log('🚀 PARTICIPANT: Auto-initializing media (Teams/Meet style)');
+    const initSequence = async () => {
+      // 1. Wait for handshake to be ready
+      await new Promise(r => setTimeout(r, 500));
+      console.log('✅ PATCH FASE 7: Handshake ready');
+      
+      // 2. Initialize media
+      await initParticipantMedia();
+      
+      // 3. Validate stream was created
+      const stream = (window as any).__participantSharedStream;
+      if (!stream || stream.getVideoTracks().length === 0) {
+        console.error('❌ PATCH FASE 7: Failed to initialize valid stream');
+        setMediaError('StreamInitError');
+      } else {
+        console.log('✅ PATCH FASE 7: Media ready for WebRTC');
+      }
+    };
     
-    // Call automatic media initialization
-    initParticipantMedia();
+    console.log('🚀 PATCH FASE 7: Starting synchronized initialization');
+    initSequence();
     
     return () => {
       try {
         media.cleanup();
       } catch (error) {
-        console.error('❌ PARTICIPANT: Cleanup error:', error);
+        console.error('❌ PATCH FASE 7: Cleanup error:', error);
       }
     };
   }, [sessionId, isBlocked, participantId]);
