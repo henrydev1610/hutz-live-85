@@ -21,6 +21,7 @@ interface LivePreviewProps {
   participantList: Participant[];
   participantCount: number;
   participantStreams: {[id: string]: MediaStream};
+  onStreamReceived: (participantId: string, stream: MediaStream) => void;
 }
 
 const LivePreview: React.FC<LivePreviewProps> = ({
@@ -38,7 +39,8 @@ const LivePreview: React.FC<LivePreviewProps> = ({
   selectedBackgroundColor,
   participantList,
   participantCount,
-  participantStreams
+  participantStreams,
+  onStreamReceived
 }) => {
   return (
     <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden live-preview">
@@ -58,6 +60,7 @@ const LivePreview: React.FC<LivePreviewProps> = ({
         participantList={participantList}
         participantCount={participantCount}
         participantStreams={participantStreams}
+        onStreamReceived={onStreamReceived}
       />
       
       {/* QR Code and description overlays */}

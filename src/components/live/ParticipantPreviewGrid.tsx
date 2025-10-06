@@ -7,12 +7,14 @@ interface ParticipantPreviewGridProps {
   participantList: Participant[];
   participantCount: number;
   participantStreams: {[id: string]: MediaStream};
+  onStreamReceived: (participantId: string, stream: MediaStream) => void;
 }
 
 const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   participantList,
   participantCount,
-  participantStreams
+  participantStreams,
+  onStreamReceived
 }) => {
   // FASE 3: CONTAINER PRE-CREATION - Estado para slots P1-P4
   const [slots, setSlots] = useState<Participant[]>([]);
@@ -42,6 +44,12 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
     const handleStreamConnected = (event: CustomEvent) => {
       const { participantId, stream } = event.detail;
       console.log('🌉 PONTE BRIDGE: Stream WebRTC recebido no grid:', participantId, stream?.id);
+      
+      // CRÍTICO: Atualizar participantStreams ANTES de forçar re-render
+      if (stream && onStreamReceived) {
+        onStreamReceived(participantId, stream);
+        console.log('✅ PONTE BRIDGE: participantStreams updated for:', participantId);
+      }
       
       // Forçar re-render completo do grid
       setSlots(currentSlots => {

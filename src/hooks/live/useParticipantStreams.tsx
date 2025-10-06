@@ -29,24 +29,6 @@ export const useParticipantStreams = ({
   });
   const { addToBuffer, processBuffer, removeFromBuffer, cleanup } = useStreamBuffer();
 
-  // FASE 4: CONFIGURAR CALLBACK NO WEBRTC MANAGER
-  useEffect(() => {
-    const manager = getWebRTCManagerInstance();
-
-    console.log('🎯 Stream callback sendo registrado no WebRTC Manager');
-    manager.setStreamCallback((participantId, stream) => {
-      console.log('🎯 Stream callback triggered for:', participantId);
-      setParticipantStreams((prev) => ({
-        ...prev,
-        [participantId]: stream
-      }));
-
-      // Lógica de processamento do stream
-      console.log('📹 FASE 1: Processando stream recebido:', participantId);
-      handleParticipantStream(participantId, stream);
-    });
-  }, []);
-
   const processStreamSafely = useCallback(async (participantId: string, stream: MediaStream): Promise<boolean> => {
     try {
       console.log('🎯 CRITICAL: Processing stream for:', participantId);
@@ -202,6 +184,27 @@ export const useParticipantStreams = ({
       });
     }
   }, [validateStream, processStreamSafely, addToBuffer, setParticipantList, setParticipantStreams, toast]);
+
+  // FASE 3: CONFIGURAR CALLBACK NO WEBRTC MANAGER
+  useEffect(() => {
+    const manager = getWebRTCManagerInstance();
+
+    console.log('🎯 CRÍTICO: Stream callback sendo registrado no WebRTC Manager');
+    manager.setStreamCallback((participantId, stream) => {
+      console.log('🎯 CRÍTICO: Stream callback triggered for:', participantId, stream?.id);
+      
+      // CRÍTICO: Atualizar estado IMEDIATAMENTE
+      setParticipantStreams((prev) => {
+        const updated = { ...prev, [participantId]: stream };
+        console.log('✅ CRÍTICO: participantStreams updated via callback:', Object.keys(updated));
+        return updated;
+      });
+
+      // Processar stream
+      console.log('📹 FASE 3: Processando stream recebido:', participantId);
+      handleParticipantStream(participantId, stream);
+    });
+  }, [handleParticipantStream, setParticipantStreams]);
 
   useEffect(() => {
     const interval = setInterval(() => {

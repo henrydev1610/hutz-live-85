@@ -17,6 +17,7 @@ interface LivePageContainerProps {
   onGenerateQRCode: () => void;
   onQRCodeToTransmission: () => void;
   closeFinalAction: () => void;
+  onStreamReceived: (participantId: string, stream: MediaStream) => void;
 }
 
 const LivePageContainer: React.FC<LivePageContainerProps> = ({
@@ -30,7 +31,8 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
   onRemoveImage,
   onGenerateQRCode,
   onQRCodeToTransmission,
-  closeFinalAction
+  closeFinalAction,
+  onStreamReceived
 }) => {
   // FASE 5: Enhanced cache management with URL sync validation
   useEffect(() => {
@@ -93,6 +95,7 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
         onRemoveImage={onRemoveImage}
         onGenerateQRCode={onGenerateQRCode}
         onQRCodeToTransmission={onQRCodeToTransmission}
+        onStreamReceived={onStreamReceived}
       />
       
       <FinalActionDialog

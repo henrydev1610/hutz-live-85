@@ -44,6 +44,17 @@ const LivePage: React.FC = () => {
     setFinalActionOpen: state.setFinalActionOpen
   });
 
+  // FASE 2: Callback para atualizar streams quando recebidos do grid
+  const handleStreamReceived = React.useCallback((participantId: string, stream: MediaStream) => {
+    console.log('📥 LIVE PAGE: Stream received callback for:', participantId);
+    
+    state.setParticipantStreams(prev => {
+      const updated = { ...prev, [participantId]: stream };
+      console.log('✅ LIVE PAGE: participantStreams updated:', Object.keys(updated));
+      return updated;
+    });
+  }, [state.setParticipantStreams]);
+
   // REMOVED: Stream display manager - now using simplified system
   
   // ✅ DIAGNÓSTICO CRÍTICO: DEBUG COMPLETO + LISTENERS EXTRAS
@@ -438,6 +449,7 @@ const LivePage: React.FC = () => {
         onGenerateQRCode={() => handleGenerateQRCode(state)}
         onQRCodeToTransmission={() => handleQRCodeToTransmission(state.setQrCodeVisible)}
         closeFinalAction={closeFinalAction}
+        onStreamReceived={handleStreamReceived}
       />
       
       {/* Health Monitor */}

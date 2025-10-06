@@ -90,7 +90,12 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
     }
 
     if (!stream) {
-      console.log(`🚫 VideoContainer: No stream for ${participant.id}, clearing video`);
+      console.log(`🚫 FASE 4: VideoContainer: No stream for ${participant.id}`, {
+        participantId: participant.id,
+        participantActive: participant.active,
+        participantSelected: participant.selected,
+        hasVideo: participant.hasVideo
+      });
       video.srcObject = null;
       setIsVideoReady(false);
       return;

@@ -20,6 +20,7 @@ interface LivePageContentProps {
   onRemoveImage: () => void;
   onGenerateQRCode: () => void;
   onQRCodeToTransmission: () => void;
+  onStreamReceived: (participantId: string, stream: MediaStream) => void;
 }
 
 const LivePageContent: React.FC<LivePageContentProps> = ({
@@ -32,7 +33,8 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
   onFileSelect,
   onRemoveImage,
   onGenerateQRCode,
-  onQRCodeToTransmission
+  onQRCodeToTransmission,
+  onStreamReceived
 }) => {
   // FASE 1 & 2: Initialize simplified video manager instead of complex systems
   useSimplifiedVideoManager();
@@ -139,6 +141,7 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
                 participantList={state.participantList}
                 participantCount={state.participantCount}
                 participantStreams={state.participantStreams}
+                onStreamReceived={onStreamReceived}
               />
             </div>
           </CardContent>
