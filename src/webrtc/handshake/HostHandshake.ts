@@ -90,6 +90,18 @@ class HostHandshakeManager {
           console.warn(`⚠️ [${correlationId}] [HOST] ontrack disparado mas sem streams para ${participantId}`);
         }
       };
+      
+      // FASE 3: CRITICAL - Validar que ontrack foi registrado ANTES de qualquer operação SDP
+      console.log(`✅ FASE 3 [HOST] pc.ontrack handler registered for ${participantId} BEFORE any SDP operation`);
+      
+      // FASE 3: Adicionar listener de debug para verificar se handler é chamado
+      const originalOnTrack = pc.ontrack;
+      pc.ontrack = (event) => {
+        console.log(`🚨 CRÍTICO FASE 3 [HOST] ontrack CALLED for ${participantId} - handler is ACTIVE`);
+        if (originalOnTrack) {
+          originalOnTrack.call(pc, event);
+        }
+      };
 
       // Add receive-only transceiver for video BEFORE setRemoteDescription
       pc.addTransceiver('video', { direction: 'recvonly' });
@@ -248,20 +260,27 @@ class HostHandshakeManager {
       await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
       console.log(`✅ [HOST] Remote description set para ${data.participantId}`);
 
-      // PASSO 3: Aplicar candidates em buffer se existirem
+      // FASE 4: Aplicar candidates em buffer SEQUENCIALMENTE com delay
       const bufferedCandidates = participantICEBuffers.get(data.participantId) || [];
       if (bufferedCandidates.length > 0) {
-        console.log(`🚨 CRÍTICO [HOST] Applying ${bufferedCandidates.length} buffered candidates for ${data.participantId}`);
-        for (const candidate of bufferedCandidates) {
+        console.log(`🚨 CRÍTICO FASE 4 [HOST] Applying ${bufferedCandidates.length} buffered candidates SEQUENTIALLY for ${data.participantId}`);
+        
+        for (let i = 0; i < bufferedCandidates.length; i++) {
+          const candidate = bufferedCandidates[i];
           try {
             await pc.addIceCandidate(candidate);
-            console.log(`✅ [HOST] ICE candidate aplicado para ${data.participantId}`);
+            console.log(`✅ FASE 4 [HOST] ICE candidate ${i + 1}/${bufferedCandidates.length} aplicado para ${data.participantId}`);
+            
+            // FASE 4: CRÍTICO - Delay de 50ms entre cada candidate
+            if (i < bufferedCandidates.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
           } catch (error) {
-            console.error(`❌ [HOST] Error applying buffered candidate for ${data.participantId}:`, error);
+            console.error(`❌ FASE 4 [HOST] Error applying buffered candidate ${i + 1} for ${data.participantId}:`, error);
           }
         }
         participantICEBuffers.delete(data.participantId);
-        console.log(`✅ [HOST] Buffer de ICE candidates limpo para ${data.participantId}`);
+        console.log(`✅ FASE 4 [HOST] All buffered candidates applied for ${data.participantId}`);
       }
       
       // FASE 5: Timeout de 2 segundos para flush forçado de candidates

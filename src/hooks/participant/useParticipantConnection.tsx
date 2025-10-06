@@ -135,21 +135,35 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       // Reset retry count on success
       retryCountRef.current = 0;
       
-      // FASE 5: Verificar conexão WebRTC após 5 segundos
-      const streamCheckTimeout = setTimeout(() => {
+      // FASE 6: Verificar conexão WebRTC após 5 segundos e forçar retry com novo PC
+      const streamCheckTimeout = setTimeout(async () => {
         const pc = (window as any).__participantPeerConnection;
         if (pc && pc.connectionState !== 'connected') {
-          console.warn('⚠️ FASE 5: Stream não conectado em 5s, tentando novamente');
-          console.log('🔄 FASE 5: Connection state:', pc.connectionState);
-          console.log('🔄 FASE 5: ICE state:', pc.iceConnectionState);
+          console.warn('⚠️ FASE 6: Stream não conectado em 5s');
+          console.log('🔄 FASE 6: Connection state:', pc.connectionState);
+          console.log('🔄 FASE 6: ICE state:', pc.iceConnectionState);
+          console.log('🔄 FASE 6: Signaling state:', pc.signalingState);
           
-          // Retry connection com stream persistente
+          // FASE 6: CRÍTICO - Fechar PC existente antes de retry
+          try {
+            pc.close();
+            console.log('🔄 FASE 6: Closed stale PeerConnection');
+          } catch (err) {
+            console.warn('⚠️ FASE 6: Error closing PC:', err);
+          }
+          
+          // FASE 6: Limpar referência global
+          (window as any).__participantPeerConnection = null;
+          
+          // FASE 6: CRÍTICO - Retry com delay de 1 segundo para garantir limpeza
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
           if (streamRef.current) {
-            console.log('🔄 FASE 5: Retrying connection with existing stream');
+            console.log('🔄 FASE 6: Retrying connection with fresh PeerConnection');
             connectToSession(streamRef.current);
           }
         } else if (pc) {
-          console.log('✅ FASE 5: WebRTC connection verified:', pc.connectionState);
+          console.log('✅ FASE 6: WebRTC connection verified:', pc.connectionState);
         }
       }, 5000);
 

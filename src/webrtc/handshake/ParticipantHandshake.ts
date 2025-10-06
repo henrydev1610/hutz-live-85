@@ -442,11 +442,25 @@ class ParticipantHandshakeManager {
         }
       });
       
-      // FASE 1: Validar que tracks foram adicionados
+      // FASE 1: CRÍTICO - Aguardar estabilização do PC após addTrack
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // FASE 1: Validar que os senders foram criados corretamente
       const senders = this.peerConnection!.getSenders();
-      console.log(`🔗 [${correlationId}] FASE 1: PC senders after addTrack:`, {
-        sendersCount: senders.length,
-        tracks: senders.map(s => ({ kind: s.track?.kind, enabled: s.track?.enabled }))
+      const activeSenders = senders.filter(s => s.track && s.track.readyState === 'live');
+      
+      if (activeSenders.length === 0) {
+        throw new Error('CRITICAL: No active senders after addTrack - tracks not properly added');
+      }
+      
+      console.log(`🔗 [${correlationId}] FASE 1: Senders validation:`, {
+        totalSenders: senders.length,
+        activeSenders: activeSenders.length,
+        senderDetails: activeSenders.map(s => ({
+          trackKind: s.track?.kind,
+          trackId: s.track?.id,
+          trackReadyState: s.track?.readyState
+        }))
       });
       
       const addTrackDuration = performance.now() - addTrackStartTime;
@@ -597,6 +611,25 @@ class ParticipantHandshakeManager {
       const setLocalDuration = performance.now() - setLocalStartTime;
       
       console.log(`🔗 [${correlationId}] FASE 3: ✅ Local description set (${setLocalDuration.toFixed(1)}ms)`);
+      
+      // FASE 5: CRITICAL - Validar SDP gerada
+      const sdp = this.peerConnection.localDescription?.sdp || '';
+      const hasVideoInSDP = sdp.includes('m=video');
+      const hasAudioInSDP = sdp.includes('m=audio');
+      const videoSSRC = sdp.match(/a=ssrc:\d+/g)?.length || 0;
+      
+      console.log(`🔗 [${correlationId}] FASE 5: SDP Analysis:`, {
+        hasVideo: hasVideoInSDP,
+        hasAudio: hasAudioInSDP,
+        ssrcCount: videoSSRC,
+        sdpSize: sdp.length,
+        sdpPreview: sdp.substring(0, 300)
+      });
+      
+      if (!hasVideoInSDP || videoSSRC === 0) {
+        console.error(`❌ CRÍTICO [${correlationId}] SDP generated WITHOUT video tracks!`);
+        throw new Error('SDP does not contain video - tracks not properly added');
+      }
 
       // FASE 3: Send offer to host with correlation tracking
       const sendStartTime = performance.now();
@@ -631,51 +664,49 @@ class ParticipantHandshakeManager {
     }
   }
 
-  // FASE 3: Método para reusar PeerConnection existente sem fechar
+  // FASE 2 & 3: Método para reusar PeerConnection existente com renegociação forçada
   private async reuseExistingPeerConnection(): Promise<void> {
+    console.log('🔄 FASE 2: Reusing existing PeerConnection');
+    
     if (!this.peerConnection || !this.localStream) {
-      console.error('❌ FASE 3: Cannot reuse - no PC or stream');
+      console.error('❌ FASE 2: Cannot reuse PC: missing PC or stream');
       return;
     }
-    
-    const pc = this.peerConnection;
-    const currentState = pc.connectionState;
-    console.log(`🔄 FASE 3: Reusing existing PC in state: ${currentState}`);
-    
-    // Verificar se as tracks ainda estão presentes
-    const senders = pc.getSenders();
-    const streamTracks = this.localStream.getTracks();
-    
-    if (senders.length === 0) {
-      console.log('📹 FASE 3: No senders found, adding tracks...');
-      streamTracks.forEach(track => {
-        if (this.peerConnection && this.localStream) {
-          this.peerConnection.addTrack(track, this.localStream);
-          console.log(`✅ FASE 3: Track ${track.kind} added`);
-        }
-      });
-    } else {
-      // Verificar se precisamos substituir tracks
-      console.log(`🔍 FASE 3: Found ${senders.length} existing senders`);
-      for (const sender of senders) {
-        const currentTrack = sender.track;
-        if (currentTrack && currentTrack.readyState !== 'live') {
-          const newTrack = streamTracks.find(t => t.kind === currentTrack.kind);
-          if (newTrack) {
-            await sender.replaceTrack(newTrack);
-            console.log(`✅ FASE 3: Replaced ${currentTrack.kind} track`);
-          }
-        }
+
+    // FASE 2: Remover senders existentes
+    const senders = this.peerConnection.getSenders();
+    console.log(`🔄 FASE 2: Removing ${senders.length} existing senders`);
+    senders.forEach(sender => {
+      if (sender.track) {
+        this.peerConnection!.removeTrack(sender);
       }
+    });
+
+    // FASE 2: Re-adicionar tracks
+    console.log('🔄 FASE 2: Re-adding tracks to PeerConnection');
+    this.localStream.getTracks().forEach(track => {
+      if (track.readyState === 'live' && track.enabled) {
+        this.peerConnection!.addTrack(track, this.localStream!);
+        console.log(`✅ FASE 2: Track ${track.kind} re-added`);
+      }
+    });
+
+    // FASE 2: CRÍTICO - Forçar renegociação com ICE restart
+    console.log('🔄 FASE 2: Creating new offer with iceRestart');
+    try {
+      const offer = await this.peerConnection.createOffer({ iceRestart: true });
+      await this.peerConnection.setLocalDescription(offer);
+
+      // Obter hostId do participantId
+      const hostId = 'host'; // O host sempre tem ID 'host' no sistema
+
+      // Enviar nova offer com renegociação
+      unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type);
+
+      console.log('✅ FASE 2: Renegotiation offer sent with iceRestart');
+    } catch (error) {
+      console.error('❌ FASE 2: Error during renegotiation:', error);
     }
-    
-    // Se já conectado, fazer restartIce
-    if (currentState === 'connected') {
-      console.log('🧊 FASE 3: PC already connected, restarting ICE...');
-      pc.restartIce();
-    }
-    
-    console.log('✅ FASE 3: PC reuse complete');
   }
 
   private async checkHostReadiness(hostId: string): Promise<{ready: boolean, reason?: string}> {
