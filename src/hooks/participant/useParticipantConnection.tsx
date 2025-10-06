@@ -96,26 +96,9 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       console.log('✅ PARTICIPANT: WebSocket ready');
 
       console.log('👤 PARTICIPANT: Joining session via WebSocket...');
-      
-      // CORREÇÃO: Aguardar confirmação explícita de entrada na sala
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Room join confirmation timeout'));
-        }, 5000);
+      await unifiedWebSocketService.joinRoom(sessionId, participantId);
 
-        const handleRoomJoined = (event: Event) => {
-          const customEvent = event as CustomEvent;
-          if (customEvent.detail.roomId === sessionId) {
-            clearTimeout(timeout);
-            window.removeEventListener('room-joined-confirmed', handleRoomJoined);
-            console.log('✅ PARTICIPANT: Room join confirmed by server');
-            resolve();
-          }
-        };
-
-        window.addEventListener('room-joined-confirmed', handleRoomJoined);
-        unifiedWebSocketService.joinRoom(sessionId, participantId);
-      });
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // FASE 2: Validar stream do ref
       if (!streamRef.current) {
@@ -140,10 +123,8 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       }
 
       console.log('🤝 PARTICIPANT: Initializing WebRTC handshake...');
-      
-      // CORREÇÃO: ParticipantHandshake já foi criado e enviará "participant-ready"
-      // O handshake completo será iniciado quando Host responder
-      console.log('✅ PARTICIPANT: WebRTC initialized and ready signal sent');
+      // WebRTC handshake será iniciado pelo ParticipantHandshake automaticamente
+      console.log('✅ PARTICIPANT: WebRTC initialized');
 
       console.log('✅ PARTICIPANT: Successfully connected to session');
       setIsConnected(true);

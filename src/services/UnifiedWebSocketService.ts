@@ -547,42 +547,75 @@ this.socket.on('ice-servers', (data) => {
   }
 
   async joinRoom(roomId: string, userId: string): Promise<void> {
-    if (!this.socket) {
-      throw new Error('WebSocket not connected');
+    console.log(`🚪 WEBSOCKET: Joining room ${roomId} as ${userId}`);
+    
+    if (!this.isConnected()) {
+      console.log('🔗 CONNECTION: Not connected, connecting first...');
+      await this.connect();
+    }
+
+    if (!this.isConnected()) {
+      throw new Error('Failed to establish connection');
     }
 
     this.currentRoomId = roomId;
     this.currentUserId = userId;
 
-    console.log('📥 [SYNC] JOINING ROOM:', { roomId, userId });
-    
     return new Promise((resolve, reject) => {
+      // FASE 2: Progressive join timeout based on network
+      const baseTimeout = this.metrics.networkQuality === 'slow' ? 30000 : 20000;
+      const isMobile = this.isMobileDevice();
+      const joinTimeout = isMobile ? baseTimeout + 10000 : baseTimeout;
+      
+      console.log(`⏱️ JOIN TIMEOUT: ${joinTimeout}ms (Network: ${this.metrics.networkQuality}, Mobile: ${isMobile})`);
+
       const timeout = setTimeout(() => {
-        reject(new Error('Room join timeout'));
-      }, 10000);
+        console.error(`❌ WEBSOCKET: Join room timeout for ${roomId} after ${joinTimeout}ms`);
+        reject(new Error(`Join room timeout after ${joinTimeout}ms`));
+      }, joinTimeout);
 
-      this.socket!.emit('join-room', { roomId, userId }, (response: any) => {
+      const handleJoinSuccess = (data: any) => {
+        console.log(`✅ WEBSOCKET: Successfully joined room ${roomId}:`, data);
         clearTimeout(timeout);
-        console.log('✅ [SYNC] ROOM JOINED - Server confirmed:', response);
-        
-        window.dispatchEvent(new CustomEvent('room-joined-confirmed', {
-          detail: { roomId, userId, timestamp: Date.now() }
-        }));
-        
+        this.socket?.off('room_joined', handleJoinSuccess);
+        this.socket?.off('join-room-response', handleJoinResponse);
+        this.socket?.off('error', handleJoinError);
         resolve();
-      });
+      };
+
+      const handleJoinResponse = (response: any) => {
+        console.log(`📡 WEBSOCKET: Join room response:`, response);
+        if (response?.success) {
+          clearTimeout(timeout);
+          this.socket?.off('room_joined', handleJoinSuccess);
+          this.socket?.off('join-room-response', handleJoinResponse);
+          this.socket?.off('error', handleJoinError);
+          resolve();
+        } else {
+          clearTimeout(timeout);
+          this.socket?.off('room_joined', handleJoinSuccess);
+          this.socket?.off('join-room-response', handleJoinResponse);
+          this.socket?.off('error', handleJoinError);
+          reject(new Error(response?.error || 'Join room failed'));
+        }
+      };
+
+      const handleJoinError = (error: any) => {
+        console.error(`❌ WEBSOCKET: Join room error for ${roomId}:`, error);
+        clearTimeout(timeout);
+        this.socket?.off('room_joined', handleJoinSuccess);
+        this.socket?.off('join-room-response', handleJoinResponse);
+        this.socket?.off('error', handleJoinError);
+        reject(error);
+      };
+
+      this.socket?.on('room_joined', handleJoinSuccess);
+      this.socket?.on('join-room-response', handleJoinResponse);
+      this.socket?.on('error', handleJoinError);
+
+      console.log(`📡 WEBSOCKET: Sending join-room for ${roomId} as ${userId}`);
+      this.socket?.emit('join-room', { roomId, userId, timestamp: Date.now() });
     });
-  }
-
-  leaveRoom(): void {
-    if (!this.socket || !this.currentRoomId) {
-      console.warn('Cannot leave room: Not connected or no active room');
-      return;
-    }
-
-    console.log(`🚪 Leaving room: ${this.currentRoomId}`);
-    this.socket.emit('leave-room', { roomId: this.currentRoomId });
-    this.currentRoomId = null;
   }
 
   sendOffer(targetUserId: string, offer: RTCSessionDescriptionInit): void {

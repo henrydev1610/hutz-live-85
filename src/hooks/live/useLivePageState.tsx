@@ -3,7 +3,6 @@ import { useState, useRef, useEffect } from 'react';
 import { Participant } from '@/components/live/ParticipantGrid';
 import { generateSessionId } from '@/utils/sessionUtils';
 import { initHostWebRTC } from '@/utils/webrtc';
-import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 
 export const useLivePageState = () => {
   const [participantCount, setParticipantCount] = useState(4);
@@ -38,40 +37,11 @@ export const useLivePageState = () => {
     }
   }, []);
 
-  // 🔌 CORREÇÃO CRÍTICA: Conectar WebSocket quando sessionId for gerado
   useEffect(() => {
     if (sessionId) {
-      console.log('🔌 Conectando WebSocket para sessionId:', sessionId);
-      
-      const initializeWebSocket = async () => {
-        try {
-          // Conectar WebSocket primeiro
-          await unifiedWebSocketService.connect();
-          console.log('✅ WebSocket conectado com sucesso');
-          
-          // Entrar na sala
-          await unifiedWebSocketService.joinRoom(sessionId, `host-${sessionId}`);
-          console.log('✅ Entrou na sala com sucesso');
-          
-          // Iniciar WebRTC
-          console.log('🚀 Iniciando WebRTC com sessionId:', sessionId);
-          await initHostWebRTC(sessionId);
-          console.log('✅ WebRTC iniciado com sucesso');
-          
-        } catch (error) {
-          console.error('❌ Erro ao inicializar conexões:', error);
-        }
-      };
-      
-      initializeWebSocket();
+      console.log('🚀 Iniciando WebRTC com sessionId:', sessionId);
+      initHostWebRTC(sessionId);
     }
-    
-    return () => {
-      // Cleanup ao desmontar
-      if (sessionId) {
-        unifiedWebSocketService.leaveRoom();
-      }
-    };
   }, [sessionId]);
 
   
