@@ -234,123 +234,179 @@ class HostHandshakeManager {
   }
 
   async handleOfferFromParticipant(data: any): Promise<void> {
+    const correlationId = `host-offer-${data.participantId}-${Date.now()}`;
+    
     try {
-      console.log('🚨 CRÍTICO [HOST] Offer recebido de participante', {
+      console.log(`🚨 CRÍTICO [${correlationId}] [HOST] Offer recebido de participante`, {
         participantId: data.participantId,
+        fromSocketId: data.fromSocketId,
         hasOffer: !!data.offer,
         dataKeys: Object.keys(data),
         offerType: data.offer?.type,
-        offerSdpPreview: data.offer?.sdp?.substring(0, 100) + '...',
+        offerSdpLength: data.offer?.sdp?.length,
         timestamp: Date.now()
       });
 
-      if (!data.participantId || !data.offer) {
-        console.error('❌ CRÍTICO [HOST] Invalid offer data:', data);
+      // VALIDAÇÃO 1: Dados obrigatórios
+      if (!data.participantId) {
+        console.error(`❌ CRÍTICO [${correlationId}] [HOST] Missing participantId:`, data);
         return;
       }
 
-      // PATCH: Validate that offer contains m=video BEFORE applying
+      if (!data.offer || !data.offer.sdp || !data.offer.type) {
+        console.error(`❌ CRÍTICO [${correlationId}] [HOST] Invalid offer data:`, {
+          hasOffer: !!data.offer,
+          hasSdp: !!data.offer?.sdp,
+          hasType: !!data.offer?.type
+        });
+        return;
+      }
+
+      // VALIDAÇÃO 2: Offer deve conter m=video
       const offerSdp = data.offer.sdp;
       const hasVideoInSDP = offerSdp.includes('m=video');
       
       if (!hasVideoInSDP) {
-        console.error('❌ PATCH [HOST] Offer WITHOUT m=video - rejecting invalid SDP:', {
-          participantId: data.participantId,
-          sdpPreview: offerSdp.substring(0, 200)
-        });
+        console.error(`❌ CRÍTICO [${correlationId}] [HOST] Offer SEM m=video - rejeitando SDP inválido`);
         return;
       }
       
-      console.log(`✅ PATCH [HOST] Offer validated - contains m=video for ${data.participantId}`);
+      console.log(`✅ [${correlationId}] [HOST] Offer validado - contém m=video`);
 
       // PASSO 1: Obter ou criar peer connection
       const pc = this.getOrCreatePC(data.participantId);
-      console.log(`🚨 CRÍTICO [HOST] RTCPeerConnection state: ${pc.connectionState}, signaling: ${pc.signalingState}`);
+      console.log(`🚨 [${correlationId}] [HOST] PC state: connection=${pc.connectionState}, signaling=${pc.signalingState}, ice=${pc.iceConnectionState}`);
       
-      // PATCH: Validate PC is ready to receive offer
+      // VALIDAÇÃO 3: PC deve estar em estado válido para receber offer
       if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-local-offer') {
-        console.warn(`⚠️ PATCH [HOST] PC in unexpected state ${pc.signalingState} - closing and recreating`);
+        console.warn(`⚠️ [${correlationId}] [HOST] PC em estado inesperado ${pc.signalingState} - recriando...`);
         pc.close();
         hostPeerConnections.delete(data.participantId);
         const newPc = this.getOrCreatePC(data.participantId);
-        console.log(`✅ PATCH [HOST] Fresh PC created for ${data.participantId}`);
+        console.log(`✅ [${correlationId}] [HOST] Novo PC criado - signaling state: ${newPc.signalingState}`);
       }
       
-      // PASSO 2: Set remote description (MUST happen before creating answer)
-      console.log(`🚨 CRÍTICO [HOST] Setting remote description for ${data.participantId}`);
-      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-      console.log(`✅ PATCH [HOST] Remote description set - signaling state now: ${pc.signalingState}`);
+      // PASSO 2: Aplicar remote description
+      console.log(`🚨 [${correlationId}] [HOST] ANTES setRemoteDescription - signaling: ${pc.signalingState}`);
+      
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        console.log(`✅ [${correlationId}] [HOST] APÓS setRemoteDescription - signaling: ${pc.signalingState}`);
+      } catch (error) {
+        console.error(`❌ [${correlationId}] [HOST] ERRO em setRemoteDescription:`, error);
+        throw error;
+      }
 
-      // PATCH: Apply buffered candidates IMMEDIATELY after setRemoteDescription
+      // PASSO 3: Aplicar ICE candidates bufferizados IMEDIATAMENTE
       const bufferedCandidates = participantICEBuffers.get(data.participantId) || [];
       if (bufferedCandidates.length > 0) {
-        console.log(`🚨 PATCH [HOST] Flushing ${bufferedCandidates.length} buffered ICE candidates for ${data.participantId}`);
+        console.log(`🚨 [${correlationId}] [HOST] Aplicando ${bufferedCandidates.length} ICE candidates bufferizados`);
         
         for (let i = 0; i < bufferedCandidates.length; i++) {
           const candidate = bufferedCandidates[i];
           try {
             await pc.addIceCandidate(candidate);
-            console.log(`✅ PATCH [HOST] Candidate ${i + 1}/${bufferedCandidates.length} applied`);
+            console.log(`✅ [${correlationId}] [HOST] Candidate ${i + 1}/${bufferedCandidates.length} aplicado`);
           } catch (error) {
-            console.error(`❌ PATCH [HOST] Error applying buffered candidate ${i + 1}:`, error);
+            console.error(`❌ [${correlationId}] [HOST] Erro aplicando candidate ${i + 1}:`, error);
           }
         }
         participantICEBuffers.delete(data.participantId);
-        console.log(`✅ PATCH [HOST] All ${bufferedCandidates.length} buffered candidates applied for ${data.participantId}`);
+        console.log(`✅ [${correlationId}] [HOST] Todos os ${bufferedCandidates.length} candidates bufferizados aplicados`);
+      } else {
+        console.log(`ℹ️ [${correlationId}] [HOST] Nenhum ICE candidate bufferizado`);
       }
 
-      // PASSO 3: Criar answer (MUST happen after setRemoteDescription)
-      console.log(`🚨 CRÍTICO [HOST] Creating answer for ${data.participantId}`);
-      const answer = await pc.createAnswer();
+      // PASSO 4: Criar answer
+      console.log(`🚨 [${correlationId}] [HOST] ANTES createAnswer - signaling: ${pc.signalingState}`);
       
-      // PATCH: Validate answer contains m=video and a=recvonly
+      let answer: RTCSessionDescriptionInit;
+      try {
+        answer = await pc.createAnswer();
+        console.log(`✅ [${correlationId}] [HOST] APÓS createAnswer - type: ${answer.type}, sdpLength: ${answer.sdp?.length}`);
+      } catch (error) {
+        console.error(`❌ [${correlationId}] [HOST] ERRO em createAnswer:`, error);
+        throw error;
+      }
+      
+      // VALIDAÇÃO 4: Answer deve conter m=video
       const answerSdp = answer.sdp || '';
       const answerHasVideo = answerSdp.includes('m=video');
-      const answerHasRecvOnly = answerSdp.includes('a=recvonly') || answerSdp.includes('a=sendrecv');
-      
-      console.log(`🚨 PATCH [HOST] Answer validation for ${data.participantId}:`, {
-        hasVideo: answerHasVideo,
-        hasRecvOnly: answerHasRecvOnly,
-        sdpPreview: answerSdp.substring(0, 200)
-      });
       
       if (!answerHasVideo) {
-        console.error(`❌ PATCH [HOST] Answer WITHOUT m=video - this should not happen!`);
+        console.error(`❌ [${correlationId}] [HOST] Answer SEM m=video!`);
         throw new Error('Answer missing video section');
       }
       
-      console.log(`✅ PATCH [HOST] Answer created and validated for ${data.participantId}`);
+      console.log(`✅ [${correlationId}] [HOST] Answer validado - contém m=video`);
       
-      // PASSO 4: Set local description
-      console.log(`🚨 CRÍTICO [HOST] Setting local description for ${data.participantId}`);
-      await pc.setLocalDescription(answer);
-      console.log(`✅ PATCH [HOST] Local description set - signaling state now: ${pc.signalingState}`);
+      // PASSO 5: Aplicar local description
+      console.log(`🚨 [${correlationId}] [HOST] ANTES setLocalDescription - signaling: ${pc.signalingState}`);
+      
+      try {
+        await pc.setLocalDescription(answer);
+        console.log(`✅ [${correlationId}] [HOST] APÓS setLocalDescription - signaling: ${pc.signalingState}`);
+      } catch (error) {
+        console.error(`❌ [${correlationId}] [HOST] ERRO em setLocalDescription:`, error);
+        throw error;
+      }
 
-      // PASSO 5: Enviar answer via WebSocket
-      console.log(`🚨 CRÍTICO [HOST] Sending answer to ${data.participantId}`);
-      unifiedWebSocketService.emit('webrtc-answer', {
-        answer,
-        toSocketId: data.fromSocketId,
-        hostId: 'host',
+      // PASSO 6: Enviar answer via WebSocket
+      console.log(`🚨 [${correlationId}] [HOST] Enviando answer para ${data.participantId}`);
+      
+      // CORREÇÃO CRÍTICA: Usar o formato correto do servidor
+      const answerPayload = {
+        roomId: data.roomId,
         participantId: data.participantId,
+        answer: answer,
+        fromUserId: 'host',
         timestamp: Date.now()
+      };
+      
+      console.log(`📤 [${correlationId}] [HOST] Answer payload:`, {
+        roomId: answerPayload.roomId,
+        participantId: answerPayload.participantId,
+        answerType: answerPayload.answer.type,
+        answerSdpLength: answerPayload.answer.sdp?.length
       });
+      
+      // Emitir diretamente via socket
+      unifiedWebSocketService.emit('webrtc-answer', answerPayload);
 
-      console.log(`✅ CRÍTICO PATCH [HOST] Answer sent successfully to ${data.participantId} - SDP exchange complete, waiting for ICE and ontrack...`);
+      console.log(`✅ ✅ ✅ [${correlationId}] [HOST] Answer enviado com sucesso - aguardando ICE e ontrack...`);
 
     } catch (error) {
-      console.error('❌ CRÍTICO [HOST] Error handling offer:', error);
+      console.error(`❌ ❌ ❌ [${correlationId}] [HOST] ERRO FATAL ao processar offer:`, error);
+      console.error(`Stack trace:`, (error as Error).stack);
       
-      // PATCH: Clean up failed connection attempt
+      // Cleanup em caso de erro
       if (data.participantId) {
+        console.log(`🧹 [${correlationId}] [HOST] Limpando conexão após erro`);
         this.cleanupHostHandshake(data.participantId);
       }
     }
   }
 
   handleRemoteCandidate(data: any): void {
+    const correlationId = `host-ice-${data.participantId}-${Date.now()}`;
     const participantId = data.participantId || data.fromUserId;
     const candidate = data.candidate;
+
+    console.log(`🚨 [${correlationId}] [HOST] ICE candidate recebido:`, {
+      participantId,
+      fromUserId: data.fromUserId,
+      hasCandidate: !!candidate,
+      candidatePreview: candidate?.candidate?.substring(0, 50)
+    });
+
+    // VALIDAÇÃO: Dados obrigatórios
+    if (!candidate || !participantId) {
+      console.error(`❌ [${correlationId}] [HOST] ICE candidate inválido:`, {
+        hasCandidate: !!candidate,
+        hasParticipantId: !!participantId
+      });
+      return;
+    }
 
     // FASE 3: Rastrear ICE recebido
     const stats = this.iceStats.get(participantId) || { 
@@ -362,36 +418,57 @@ class HostHandshakeManager {
     stats.lastActivity = Date.now();
     this.iceStats.set(participantId, stats);
 
-    console.log(`🚨 CRÍTICO [HOST] Received webrtc-candidate ${stats.candidatesReceived}:`, {
-      participantId,
-      hasCandidate: !!candidate,
-      candidateType: candidate?.candidate?.includes('host') ? 'host' : 
-                    candidate?.candidate?.includes('srflx') ? 'srflx' : 'relay',
-      iceStats: stats
-    });
+    const candidateType = candidate?.candidate?.includes('typ host') ? 'host' : 
+                          candidate?.candidate?.includes('typ srflx') ? 'srflx' : 
+                          candidate?.candidate?.includes('typ relay') ? 'relay' : 'unknown';
 
-    if (!candidate || !participantId) {
-      console.error('❌ [HOST] handleRemoteCandidate: Missing candidate or participantId');
-      return;
-    }
+    console.log(`📊 [${correlationId}] [HOST] ICE stats:`, {
+      candidatesReceived: stats.candidatesReceived,
+      candidateType,
+      participantId
+    });
 
     const pc = hostPeerConnections.get(participantId);
 
-    if (pc && pc.remoteDescription) {
-      // PC pronto, aplicar candidate imediatamente
-      try {
-        pc.addIceCandidate(new RTCIceCandidate(candidate));
-        console.log(`✅ [HOST] ICE candidate ${stats.candidatesReceived} aplicado imediatamente para ${participantId}`);
-      } catch (error) {
-        console.error(`❌ [HOST] Error applying ICE candidate for ${participantId}:`, error);
-      }
-    } else {
-      // PC não pronto, buffer candidate
+    if (!pc) {
+      console.warn(`⚠️ [${correlationId}] [HOST] PC não existe para ${participantId} - bufferizando candidate`);
       if (!participantICEBuffers.has(participantId)) {
         participantICEBuffers.set(participantId, []);
       }
       participantICEBuffers.get(participantId)!.push(new RTCIceCandidate(candidate));
-      console.log(`📦 [HOST] ICE candidate bufferizado para ${participantId} (total: ${participantICEBuffers.get(participantId)!.length})`);
+      console.log(`📦 [${correlationId}] [HOST] Candidate bufferizado (total: ${participantICEBuffers.get(participantId)!.length})`);
+      return;
+    }
+
+    console.log(`🔍 [${correlationId}] [HOST] PC state:`, {
+      connectionState: pc.connectionState,
+      signalingState: pc.signalingState,
+      iceState: pc.iceConnectionState,
+      hasRemoteDescription: !!pc.remoteDescription
+    });
+
+    if (pc.remoteDescription) {
+      // PC pronto, aplicar candidate imediatamente
+      console.log(`🚀 [${correlationId}] [HOST] Aplicando ICE candidate ${stats.candidatesReceived} imediatamente`);
+      
+      pc.addIceCandidate(new RTCIceCandidate(candidate))
+        .then(() => {
+          console.log(`✅ [${correlationId}] [HOST] ICE candidate ${stats.candidatesReceived} aplicado com sucesso`);
+        })
+        .catch((error) => {
+          console.error(`❌ [${correlationId}] [HOST] Erro ao aplicar ICE candidate:`, error);
+        });
+    } else {
+      // PC não pronto, buffer candidate
+      console.log(`📦 [${correlationId}] [HOST] Remote description ainda não aplicada - bufferizando candidate`);
+      
+      if (!participantICEBuffers.has(participantId)) {
+        participantICEBuffers.set(participantId, []);
+      }
+      participantICEBuffers.get(participantId)!.push(new RTCIceCandidate(candidate));
+      
+      const bufferSize = participantICEBuffers.get(participantId)!.length;
+      console.log(`📦 [${correlationId}] [HOST] Candidate bufferizado (total no buffer: ${bufferSize})`);
     }
   }
 

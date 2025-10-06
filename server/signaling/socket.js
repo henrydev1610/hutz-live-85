@@ -717,15 +717,25 @@ const initializeSocketHandlers = (io) => {
         const { roomId, participantId, answer } = data;
         const userInfo = socketToUser.get(socket.id);
 
+        console.log(`🚨 SERVER CRÍTICO: webrtc-answer RECEBIDO`, {
+          roomId,
+          participantId,
+          fromSocketId: socket.id,
+          fromUserId: userInfo?.userId,
+          hasAnswer: !!answer,
+          answerType: answer?.type,
+          sdpLength: answer?.sdp?.length
+        });
+
         if (!userInfo || userInfo.roomId !== roomId) {
-          console.log(`SERVER-ANSWER-REJECTED roomId=${roomId} reason=not-in-room`);
+          console.log(`❌ SERVER-ANSWER-REJECTED roomId=${roomId} reason=not-in-room`);
           socket.emit('error', { message: 'Not in room for WebRTC answer' });
           return;
         }
 
         // Validar answer
         if (!answer || !answer.sdp || !answer.type) {
-          console.log(`SERVER-ANSWER-INVALID roomId=${roomId} participantId=${participantId} reason=missing-sdp`);
+          console.log(`❌ SERVER-ANSWER-INVALID roomId=${roomId} participantId=${participantId} reason=missing-sdp`);
           socket.emit('webrtc-error', { 
             message: 'Invalid answer format',
             expectedFormat: '{answer: {sdp, type}}'
@@ -736,11 +746,19 @@ const initializeSocketHandlers = (io) => {
         // Direct participant lookup via map with fallback
         let targetSocketId = participantSocket.get(participantId);
         
+        console.log(`🔍 SERVER: Procurando participant ${participantId}`, {
+          targetSocketIdFromMap: targetSocketId,
+          participantSocketSize: participantSocket.size,
+          allParticipants: Array.from(participantSocket.entries())
+        });
+        
         if (!targetSocketId) {
+          console.log(`⚠️ SERVER: Participant não encontrado no map, buscando em connections...`);
           connections.forEach((conn, sockId) => {
             if (conn.userId === participantId && conn.roomId === roomId) {
               targetSocketId = sockId;
               participantSocket.set(participantId, sockId); // Atualizar cache
+              console.log(`✅ SERVER: Participant encontrado via fallback: ${sockId}`);
             }
           });
         }
@@ -751,21 +769,29 @@ const initializeSocketHandlers = (io) => {
           if (targetConnection && targetConnection.offerTimeout) {
             clearTimeout(targetConnection.offerTimeout);
             delete targetConnection.offerTimeout;
-            console.log(`SERVER-ANSWER-TIMEOUT-CLEARED roomId=${roomId} participantId=${participantId}`);
+            console.log(`✅ SERVER-ANSWER-TIMEOUT-CLEARED roomId=${roomId} participantId=${participantId}`);
           }
           
-          console.log(`SERVER-FWD-ANSWER roomId=${roomId} participantId=${participantId} socketId=${targetSocketId}`);
-          socket.to(targetSocketId).emit('webrtc-answer', {
+          const answerPayload = {
             answer,
             fromSocketId: socket.id,
             fromUserId: userInfo.userId,
             timestamp: Date.now(),
             roomId
+          };
+          
+          console.log(`📤 SERVER: Emitindo webrtc-answer para participant`, {
+            targetSocketId,
+            participantId,
+            payloadKeys: Object.keys(answerPayload)
           });
           
-          console.log(`SERVER-ANSWER-SENT roomId=${roomId} from=host to=${participantId}`);
+          socket.to(targetSocketId).emit('webrtc-answer', answerPayload);
+          
+          console.log(`✅ ✅ ✅ SERVER-ANSWER-SENT roomId=${roomId} from=host to=${participantId} socketId=${targetSocketId}`);
         } else {
-          console.log(`SERVER-MISSING-PARTICIPANT roomId=${roomId} participantId=${participantId}`);
+          console.log(`❌ SERVER-MISSING-PARTICIPANT roomId=${roomId} participantId=${participantId}`);
+          console.log(`📊 SERVER DEBUG: participantSocket=${participantSocket.size} connections=${connections.size}`);
           socket.emit('webrtc-participant-missing', { 
             roomId, 
             participantId,
