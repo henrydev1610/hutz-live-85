@@ -547,6 +547,51 @@ this.socket.on('ice-servers', (data) => {
   }
 
   async joinRoom(roomId: string, userId: string): Promise<void> {
+    if (!this.socket) {
+      throw new Error('WebSocket not connected');
+    }
+
+    this.currentRoomId = roomId;
+    this.currentUserId = userId;
+
+    console.log('📥 [SYNC] JOINING ROOM:', { roomId, userId });
+    
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Room join timeout'));
+      }, 10000);
+
+      this.socket!.emit('join-room', { roomId, userId }, (response: any) => {
+        clearTimeout(timeout);
+        console.log('✅ [SYNC] ROOM JOINED - Server confirmed:', response);
+        
+        window.dispatchEvent(new CustomEvent('room-joined-confirmed', {
+          detail: { roomId, userId, timestamp: Date.now() }
+        }));
+        
+        resolve();
+      });
+    });
+  }
+    
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Room join timeout'));
+      }, 10000);
+
+      this.socket!.emit('join-room', { roomId, userId }, (response: any) => {
+        clearTimeout(timeout);
+        console.log('✅ [SYNC] ROOM JOINED - Server confirmed:', response);
+        
+        // CORREÇÃO: Disparar evento de confirmação de entrada na sala
+        window.dispatchEvent(new CustomEvent('room-joined-confirmed', {
+          detail: { roomId, userId, timestamp: Date.now() }
+        }));
+        
+        resolve();
+      });
+    });
+  }
     console.log(`🚪 WEBSOCKET: Joining room ${roomId} as ${userId}`);
     
     if (!this.isConnected()) {

@@ -28,6 +28,74 @@ class ParticipantHandshakeManager {
   
   constructor() {
     this.setupParticipantHandlers();
+    // CORREÇÃO: Criar PeerConnection imediatamente para evitar condição de corrida com ICE candidates
+    console.log('🔧 [SYNC] ParticipantHandshake: Preparing for early PC creation');
+  }
+
+  // CORREÇÃO: Método para criar PeerConnection antes de receber offer/answer
+  createPeerConnectionEarly(localStream: MediaStream, participantId: string): void {
+    if (this.peerConnection) {
+      console.log('⚠️ [SYNC] PeerConnection already exists, skipping early creation');
+      return;
+    }
+
+    console.log('🚀 [SYNC] Creating early RTCPeerConnection for ICE candidate buffering');
+    this.participantId = participantId;
+    this.localStream = localStream;
+    
+    const configuration: RTCConfiguration = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ],
+      iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
+    };
+
+    this.peerConnection = new RTCPeerConnection(configuration);
+
+    // Configurar event handlers
+    this.setupPeerConnectionEventHandlers();
+
+    // Adicionar tracks local
+    if (this.localStream) {
+      const tracks = this.localStream.getTracks();
+      tracks.forEach(track => {
+        if (this.peerConnection && this.localStream) {
+          this.peerConnection.addTrack(track, this.localStream);
+          console.log(`✅ [SYNC] Early track added: ${track.kind}`);
+        }
+      });
+    }
+
+    console.log('✅ [SYNC] Early RTCPeerConnection created and ready for ICE candidates');
+  }
+
+  // CORREÇÃO: Enviar evento "participant-ready" após criar PC
+  sendParticipantReady(): void {
+    if (!this.participantId) {
+      console.error('❌ [SYNC] Cannot send participant-ready: no participantId');
+      return;
+    }
+
+    console.log('📢 [SYNC] Sending participant-ready event to Host');
+    
+    const readyData = {
+      participantId: this.participantId,
+      hasStream: !!this.localStream,
+      streamInfo: this.localStream ? {
+        id: this.localStream.id,
+        videoTracks: this.localStream.getVideoTracks().length,
+        audioTracks: this.localStream.getAudioTracks().length
+      } : null,
+      pcReady: !!this.peerConnection,
+      timestamp: Date.now()
+    };
+
+    unifiedWebSocketService.emit('participant-ready', readyData);
+    console.log('✅ [SYNC] participant-ready sent:', readyData);
   }
 
   // GUARANTEED SINGLE STREAM: Always use shared stream from participant page
@@ -217,8 +285,16 @@ class ParticipantHandshakeManager {
       console.log(`✅ [PARTICIPANT] setRemoteDescription -> answer received from ${hostId}`);
 
       if (!this.peerConnection) {
-        console.warn('⚠️ [PARTICIPANT] Answer received without active PC');
-        return;
+        console.error('❌ [SYNC] CRITICAL: No peer connection when answer received');
+        // PC deveria ter sido criado no early creation, mas criar emergencial
+        if (this.localStream && this.participantId) {
+          console.log('🚨 [SYNC] Creating emergency PC for answer');
+          this.createPeerConnectionEarly(this.localStream, this.participantId);
+        }
+        if (!this.peerConnection) {
+          console.error('❌ [SYNC] Failed to create emergency PC');
+          return;
+        }
       }
 
       try {
@@ -227,22 +303,28 @@ class ParticipantHandshakeManager {
         console.log('✅ [PARTICIPANT] Remote description set successfully');
         console.log(`🚨 CRÍTICO [PARTICIPANT] Connection state após setRemoteDescription: ${this.peerConnection.connectionState}`);
 
-        // Flush all pending candidates immediately
+        // CORREÇÃO CRÍTICA: Aplicar candidates em buffer SEQUENCIALMENTE
         if (this.pendingCandidates.length > 0) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Applying ${this.pendingCandidates.length} buffered candidates`);
+          console.log(`🚀 [SYNC] Applying ${this.pendingCandidates.length} buffered ICE candidates SEQUENTIALLY`);
           
-          const candidatesToFlush = [...this.pendingCandidates];
-          this.pendingCandidates = [];
+          let successCount = 0;
+          let failCount = 0;
           
-          for (const candidate of candidatesToFlush) {
+          for (const candidate of this.pendingCandidates) {
             try {
               await this.peerConnection.addIceCandidate(candidate);
-              console.log('✅ [PARTICIPANT] ICE candidate aplicado do buffer');
-            } catch (err) {
-              console.error('❌ [PARTICIPANT] Error flushing candidate:', err);
+              successCount++;
+              console.log(`✅ [SYNC] Buffered candidate ${successCount}/${this.pendingCandidates.length} applied`);
+            } catch (error) {
+              failCount++;
+              console.warn(`⚠️ [SYNC] Error applying buffered candidate ${successCount + failCount}:`, error);
             }
           }
-          console.log('✅ [PARTICIPANT] Buffer de ICE candidates limpo');
+          
+          this.pendingCandidates = [];
+          console.log(`✅ [SYNC] Buffered candidates processed: ${successCount} success, ${failCount} failed`);
+        } else {
+          console.log('ℹ️ [SYNC] No buffered candidates to apply');
         }
         
         // FASE 5: Timeout de 2 segundos para flush forçado de candidates
@@ -294,27 +376,30 @@ class ParticipantHandshakeManager {
       }
       
       if (!candidate) {
-        console.warn('⚠️ [PARTICIPANT] Invalid candidate from:', hostId);
+        console.warn('⚠️ [SYNC] Invalid candidate from:', hostId);
         return;
       }
 
+      // CORREÇÃO CRÍTICA: PC early-created sempre existe, mas pode não ter remoteDescription
       if (!this.peerConnection) {
-        console.warn('⚠️ [PARTICIPANT] PC doesn\'t exist, buffering candidate from:', hostId);
+        console.error('❌ [SYNC] CRITICAL: No PeerConnection exists! Buffering anyway...');
         this.pendingCandidates.push(candidate);
         return;
       }
 
-      // Apply immediately OR buffer consistently
-      if (this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
-        try {
-          await this.peerConnection.addIceCandidate(candidate);
-          console.log(`✅ [PARTICIPANT] ICE candidate applied immediately from ${hostId}`);
-        } catch (err) {
-          console.warn('⚠️ [PARTICIPANT] Error adding candidate from:', hostId, err);
-        }
-      } else {
+      if (!this.peerConnection.remoteDescription) {
+        console.log(`📦 [SYNC] Buffering ICE candidate (waiting for answer with remoteDescription)`);
         this.pendingCandidates.push(candidate);
-        console.log(`📦 [PARTICIPANT] ICE candidate buffered from ${hostId} (total: ${this.pendingCandidates.length})`);
+        console.log(`📊 [SYNC] Total buffered candidates: ${this.pendingCandidates.length}`);
+        return;
+      }
+
+      // Aplicar imediatamente se remoteDescription já está setado
+      try {
+        await this.peerConnection.addIceCandidate(candidate);
+        console.log(`✅ [SYNC] ICE candidate applied immediately from ${hostId}`);
+      } catch (err) {
+        console.warn('⚠️ [SYNC] Error adding candidate from:', hostId, err);
       }
     });
     
@@ -331,16 +416,21 @@ class ParticipantHandshakeManager {
     this.handshakeStartTime = offerStartTime;
     console.log(`🚨 CRÍTICO [PARTICIPANT] Starting offer creation sequence for ${hostId}`);
 
-    // FASE 3: Proteger Stream - NÃO fechar conexões ativas
+    // CORREÇÃO: Reusar PC early-created se disponível
     if (this.peerConnection) {
       const currentState = this.peerConnection.connectionState;
+      const signalingState = this.peerConnection.signalingState;
+      console.log(`🔍 [SYNC] Existing PC state: ${currentState}, signaling: ${signalingState}`);
       
       if (currentState === 'connected' || currentState === 'connecting') {
-        console.log(`✅ FASE 3: Reusando PC existente (${currentState}) - protegendo stream`);
+        console.log(`✅ [SYNC] Reusing existing PC (${currentState})`);
         await this.reuseExistingPeerConnection();
         return;
+      } else if (currentState === 'new' && (signalingState === 'stable' || signalingState === 'have-local-offer')) {
+        console.log(`✅ [SYNC] Reusing early-created PC (connection: ${currentState}, signaling: ${signalingState})`);
+        // PC já foi criado, apenas continuar com offer
       } else if (currentState === 'failed' || currentState === 'closed') {
-        console.log(`🔄 FASE 3: Fechando PC em estado ${currentState}`);
+        console.log(`🔄 [SYNC] Closing failed/closed PC (${currentState})`);
         this.peerConnection.close();
         this.peerConnection = null;
       }
@@ -390,50 +480,24 @@ class ParticipantHandshakeManager {
         iceCandidatePoolSize: 10
       };
 
-      this.peerConnection = new RTCPeerConnection(configuration);
-      const pcDuration = performance.now() - pcStartTime;
-      console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
-
-      // STEP 3: VALIDATE AND ADD tracks to peer connection BEFORE creating offer
-      const addTrackStartTime = performance.now();
-      console.log('🚨 CRÍTICO [PARTICIPANT] Validating and adding tracks to RTCPeerConnection...');
-      
-      const tracks = stream.getTracks();
-      const validTracks = tracks.filter(track => track.readyState === 'live' && track.enabled);
-      
-      console.log(`🔍 [PARTICIPANT] Track validation:`, {
-        totalTracks: tracks.length,
-        validTracks: validTracks.length,
-        trackDetails: tracks.map(t => ({
-          kind: t.kind,
-          readyState: t.readyState,
-          enabled: t.enabled,
-          muted: t.muted
-        }))
-      });
-      
-      if (validTracks.length === 0) {
-        throw new Error('No valid tracks found in stream for WebRTC');
+      // CORREÇÃO: Só criar novo PC se não existir (early creation já feita)
+      if (!this.peerConnection) {
+        console.log(`🚨 [SYNC] Creating RTCPeerConnection (fallback) for ${hostId}`);
+        this.peerConnection = new RTCPeerConnection(configuration);
+        this.setupPeerConnectionEventHandlers();
+        const pcDuration = performance.now() - pcStartTime;
+        console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
+      } else {
+        console.log(`✅ [SYNC] Using existing RTCPeerConnection for ${hostId}`);
       }
-      
-      validTracks.forEach((track, index) => {
-        if (this.peerConnection && stream) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding validated track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
-          this.peerConnection.addTrack(track, stream);
-          
-          // Track health monitoring after adding to peer connection
-          track.addEventListener('ended', () => {
-            console.warn(`⚠️ [PARTICIPANT] Track ${track.kind} ended after being added to PC`);
-          });
-          
-          track.addEventListener('mute', () => {
-            console.warn(`⚠️ [PARTICIPANT] Track ${track.kind} muted after being added to PC`);
-          });
-        }
-      });
-      
-      const addTrackDuration = performance.now() - addTrackStartTime;
-      console.log(`✅ [PARTICIPANT] ${validTracks.length} validated tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
+
+      // CORREÇÃO: Adicionar tracks apenas se necessário
+      this.addLocalTracksIfNeeded(stream);
+
+      // CORREÇÃO: Extrair setup de event handlers para método reutilizável
+      if (!this.peerConnection.onicecandidate) {
+        this.setupPeerConnectionEventHandlers();
+      }
 
       // FASE 5: Configurar timeout de 8s para detecção de handshake travado
       const handshakeMonitor = setTimeout(() => {
@@ -656,6 +720,90 @@ class ParticipantHandshakeManager {
     console.log('✅ FASE 3: PC reuse complete');
   }
 
+  // CORREÇÃO: Método para adicionar tracks local apenas se necessário
+  private addLocalTracksIfNeeded(stream: MediaStream): void {
+    if (!this.peerConnection) return;
+
+    const senders = this.peerConnection.getSenders();
+    if (senders.length > 0) {
+      console.log(`✅ [SYNC] Tracks already added (${senders.length} senders)`);
+      return;
+    }
+
+    console.log(`📹 [SYNC] Adding local tracks to PeerConnection`);
+    const tracks = stream.getTracks();
+    const validTracks = tracks.filter(track => track.readyState === 'live' && track.enabled);
+    
+    if (validTracks.length === 0) {
+      throw new Error('No valid tracks found in stream for WebRTC');
+    }
+    
+    validTracks.forEach(track => {
+      if (this.peerConnection && stream) {
+        this.peerConnection.addTrack(track, stream);
+        console.log(`✅ [SYNC] Track ${track.kind} added`);
+      }
+    });
+  }
+
+  // CORREÇÃO: Método para configurar handlers do PC
+  private setupPeerConnectionEventHandlers(): void {
+    if (!this.peerConnection) return;
+
+    console.log(`🚨 [SYNC] Setting up PeerConnection event handlers`);
+    const pc = this.peerConnection;
+
+    pc.ontrack = (event) => {
+      console.log(`🚨 [PARTICIPANT] ontrack:`, {
+        streamCount: event.streams.length,
+        trackKind: event.track.kind
+      });
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        const hostId = 'host';
+        const stats = this.iceStats.get(hostId) || {
+          candidatesSent: 0,
+          candidatesReceived: 0,
+          lastActivity: Date.now()
+        };
+        stats.candidatesSent++;
+        stats.lastActivity = Date.now();
+        this.iceStats.set(hostId, stats);
+
+        console.log(`[ICE] Candidate ${stats.candidatesSent} generated, sending to host`);
+        unifiedWebSocketService.sendWebRTCCandidate(hostId, event.candidate);
+      }
+    };
+
+    pc.onicegatheringstatechange = () => {
+      const gatheringState = pc.iceGatheringState;
+      console.log(`🧊 [PARTICIPANT]: ICE gathering state: ${gatheringState}`);
+      if (gatheringState === 'complete') {
+        console.log(`✅ [PARTICIPANT]: ICE gathering complete`);
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      const state = pc.connectionState;
+      console.log(`[PART] Connection state: ${state}`);
+      
+      if (state === 'connected') {
+        console.log('✅ PARTICIPANT: WebRTC peer connected to host');
+        window.dispatchEvent(new CustomEvent('webrtc-peer-connected', {
+          detail: { participantId: this.participantId, timestamp: Date.now() }
+        }));
+      } else if (state === 'failed' || state === 'closed') {
+        window.dispatchEvent(new CustomEvent('webrtc-peer-failed', {
+          detail: { participantId: this.participantId, state, timestamp: Date.now() }
+        }));
+      }
+    };
+
+    console.log(`✅ [SYNC] PeerConnection event handlers configured`);
+  }
+
   private async checkHostReadiness(hostId: string): Promise<{ready: boolean, reason?: string}> {
     try {
       console.log(`[PART] Checking host readiness: ${hostId}`);
@@ -823,3 +971,6 @@ if (typeof window !== 'undefined' && !(window as any).__participantHandlersSetup
   (window as any).__participantHandlersSetup = true;
   console.log('✅ [PARTICIPANT] Enhanced handshake handlers initialized');
 }
+
+// Export singleton instance
+export const participantHandshakeManager = new ParticipantHandshakeManager();

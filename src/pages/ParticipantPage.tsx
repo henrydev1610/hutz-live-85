@@ -5,7 +5,7 @@ import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
 import { useMobileOnlyGuard } from '@/hooks/useMobileOnlyGuard';
 
 // Importar handshake do participante para registrar listeners
-import '@/webrtc/handshake/ParticipantHandshake';
+import { participantHandshakeManager } from '@/webrtc/handshake/ParticipantHandshake';
 import ParticipantHeader from '@/components/participant/ParticipantHeader';
 import ParticipantErrorDisplay from '@/components/participant/ParticipantErrorDisplay';
 import ParticipantConnectionStatus from '@/components/participant/ParticipantConnectionStatus';
@@ -130,6 +130,10 @@ const ParticipantPage = () => {
       // Share globally for WebRTC
       (window as any).__participantSharedStream = stream;
       
+      // CORREÇÃO: Criar PeerConnection early para evitar race condition com ICE candidates
+      console.log('🚀 [SYNC] Creating early PeerConnection before room join');
+      participantHandshakeManager.createPeerConnectionEarly(stream, participantId);
+      
       // Send tracks to WebRTC if connection exists
       if (stream) {
         stream.getTracks().forEach(track => {
@@ -143,6 +147,10 @@ const ParticipantPage = () => {
 
       // Connect to session
       await connection.connectToSession(stream);
+      
+      // CORREÇÃO: Enviar participant-ready após conexão estabelecida
+      console.log('📢 [SYNC] Sending participant-ready after room join');
+      participantHandshakeManager.sendParticipantReady();
 
       console.log("✅ Camera and microphone connected automatically");
       toast.success(`📱 Camera connected! Video: ${videoTracks.length > 0 ? '✅' : '❌'}, Audio: ${audioTracks.length > 0 ? '✅' : '❌'}`);
