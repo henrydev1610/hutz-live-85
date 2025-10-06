@@ -7,17 +7,18 @@ export const setupVideoElement = async (videoElement: HTMLVideoElement, stream: 
     isMobile,
     streamId: stream.id,
     streamActive: stream.active,
-    videoTracks: stream.getVideoTracks().length
+    videoTracks: stream.getVideoTracks().length,
+    currentSrcObject: videoElement.srcObject ? 'has stream' : 'empty'
   });
   
-  // Clear any existing stream first
-  if (videoElement.srcObject) {
-    console.log('📺 SETUP VIDEO: Clearing existing srcObject');
-    videoElement.srcObject = null;
+  // 🔧 CORREÇÃO CRÍTICA: Apenas atribuir se for diferente
+  if (videoElement.srcObject !== stream) {
+    console.log('📺 SETUP VIDEO: Assigning new srcObject');
+    videoElement.srcObject = stream;
+    console.log('✅ SETUP VIDEO: srcObject assigned successfully');
+  } else {
+    console.log('📺 SETUP VIDEO: Stream already assigned, skipping');
   }
-  
-  // Set new stream
-  videoElement.srcObject = stream;
   
   // Ensure all necessary properties are set
   videoElement.playsInline = true;

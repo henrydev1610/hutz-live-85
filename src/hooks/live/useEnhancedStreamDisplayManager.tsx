@@ -388,10 +388,24 @@ export const useEnhancedStreamDisplayManager = () => {
         streamMatches: videoElement.srcObject === stream
       });
 
-      // If stream is already assigned and playing, no need to do anything
-      if (videoElement.srcObject === stream && !videoElement.paused) {
-        console.log(`✅ ${logPrefix} UNIFIED-VIDEO: Video already playing for ${participantId}`);
-        return true;
+      // 🔧 CORREÇÃO CRÍTICA: Atribuir stream ANTES de verificar se já está tocando
+      if (videoElement.srcObject !== stream) {
+        console.log(`🔧 ${logPrefix} FIX: Assigning srcObject to video element for ${participantId}`);
+        videoElement.srcObject = stream;
+        console.log(`✅ ${logPrefix} FIX: srcObject assigned`, {
+          participantId,
+          streamId: stream.id,
+          videoTracks: stream.getVideoTracks().length,
+          srcObjectMatches: videoElement.srcObject === stream
+        });
+      } else {
+        console.log(`✅ ${logPrefix} UNIFIED-VIDEO: Stream already assigned for ${participantId}`);
+        
+        // If already playing, no need to do anything else
+        if (!videoElement.paused) {
+          console.log(`✅ ${logPrefix} UNIFIED-VIDEO: Video already playing for ${participantId}`);
+          return true;
+        }
       }
 
       // FASE 2: ENHANCED PLAY ATTEMPT WITH RETRIES

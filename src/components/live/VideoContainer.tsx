@@ -127,6 +127,15 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
       currentSrcObject: video.srcObject ? 'has stream' : 'empty'
     });
 
+    // 🔧 CORREÇÃO CRÍTICA: Atribuir stream ANTES de setupVideoElement
+    console.log(`🔧 FIX: Assigning srcObject directly before setup for ${participant.id}`);
+    video.srcObject = stream;
+    console.log(`✅ FIX: srcObject assigned`, {
+      participantId: participant.id,
+      srcObjectAssigned: video.srcObject === stream,
+      videoTracks: (video.srcObject as MediaStream)?.getVideoTracks().length
+    });
+
     // Apply stream using utility function
     setupVideoElement(video, stream)
       .then(() => {
