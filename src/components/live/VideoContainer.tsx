@@ -68,27 +68,44 @@ const VideoContainer: React.FC<VideoContainerProps> = ({
     console.log(`✅ UNIFIED: Video element created for ${participant.id}`);
   }, [participant.id, videoId]);
 
-  // Aplicar stream quando disponível ou mudado
+  // FASE 4: Aplicar stream com validação adicional
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    
+    // FASE 4: Validação crítica
+    if (!video) {
+      console.warn(`⚠️ VideoContainer: Missing video ref for ${participant.id}`);
+      return;
+    }
 
     // Reset states when stream changes
     if (stream?.id !== lastStreamId) {
+      console.log(`🔄 VideoContainer: Stream changed for ${participant.id}`, {
+        oldStreamId: lastStreamId,
+        newStreamId: stream?.id
+      });
       setIsVideoReady(false);
       setError(null);
       setLastStreamId(stream?.id || null);
     }
 
     if (!stream) {
-      console.log(`🚫 UNIFIED: No stream for ${participant.id}, clearing video`);
+      console.log(`🚫 VideoContainer: No stream for ${participant.id}, clearing video`);
       video.srcObject = null;
       setIsVideoReady(false);
       return;
     }
 
+    // FASE 4: Validar stream antes de aplicar
+    const videoTracks = stream.getVideoTracks();
+    if (videoTracks.length === 0) {
+      console.warn(`⚠️ VideoContainer: Stream has no video tracks for ${participant.id}`);
+      setError('Stream sem vídeo');
+      return;
+    }
+
     if (video.srcObject === stream) {
-      console.log(`🔄 UNIFIED: Stream already assigned for ${participant.id}`);
+      console.log(`✅ VideoContainer: Stream already assigned for ${participant.id}`);
       return;
     }
 
