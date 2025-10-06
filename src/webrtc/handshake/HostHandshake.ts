@@ -29,7 +29,7 @@ class HostHandshakeManager {
         ]
       });
 
-      // FASE 2: ENHANCED EVENT HANDLERS - VIDEO CREATION REMOVED FROM HOST HANDSHAKE
+      // FASE 4: ENHANCED EVENT HANDLERS WITH STREAM VALIDATION
       pc.ontrack = (event) => {
         const correlationId = `host-ontrack-${participantId}-${Date.now()}`;
         
@@ -44,12 +44,26 @@ class HostHandshakeManager {
         
         if (event.streams.length > 0) {
           const stream = event.streams[0];
-          console.log(`✅ CRÍTICO [${correlationId}] [HOST] Stream recebido de ${participantId}:`, {
+          
+          // FASE 4: VALIDAÇÃO CRÍTICA DO STREAM
+          const videoTrack = stream.getVideoTracks()[0];
+          if (!videoTrack) {
+            console.error(`❌ FASE 4 [${correlationId}] Stream sem video track de ${participantId}`);
+            return;
+          }
+          
+          if (videoTrack.readyState !== 'live') {
+            console.error(`❌ FASE 4 [${correlationId}] Video track not live de ${participantId}:`, videoTrack.readyState);
+            return;
+          }
+          
+          console.log(`✅ FASE 4 [${correlationId}] Stream válido recebido de ${participantId}:`, {
             streamId: stream.id,
             videoTracks: stream.getVideoTracks().length,
             audioTracks: stream.getAudioTracks().length,
-            videoEnabled: stream.getVideoTracks()[0]?.enabled,
-            audioEnabled: stream.getAudioTracks()[0]?.enabled,
+            videoEnabled: videoTrack.enabled,
+            videoMuted: videoTrack.muted,
+            videoReadyState: videoTrack.readyState,
             trackDetails: stream.getVideoTracks().map(t => ({
               id: t.id,
               kind: t.kind,
@@ -58,7 +72,7 @@ class HostHandshakeManager {
             }))
           });
           
-          // FASE 2: DISPATCH TO CENTRALIZED STREAM DISPLAY MANAGER
+          // FASE 4: DISPATCH TO CENTRALIZED STREAM DISPLAY MANAGER
           console.log(`🚨 CRÍTICO [${correlationId}] [HOST] Dispatching participant-stream-connected event para ${participantId}`);
           window.dispatchEvent(new CustomEvent('participant-stream-connected', {
             detail: { 
@@ -71,9 +85,6 @@ class HostHandshakeManager {
           }));
           
           console.log(`✅ CRÍTICO [${correlationId}] [HOST] Event participant-stream-connected dispatched para ${participantId}`);
-          
-          // FASE 2: REMOVE VIDEO CREATION FROM HERE - NOW HANDLED BY CENTRALIZED MANAGER
-          // Video creation is now handled by useStreamDisplayManager
           
         } else {
           console.warn(`⚠️ [${correlationId}] [HOST] ontrack disparado mas sem streams para ${participantId}`);

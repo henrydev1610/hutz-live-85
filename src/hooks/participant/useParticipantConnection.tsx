@@ -134,6 +134,24 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
       
       // Reset retry count on success
       retryCountRef.current = 0;
+      
+      // FASE 5: Verificar conexão WebRTC após 5 segundos
+      const streamCheckTimeout = setTimeout(() => {
+        const pc = (window as any).__participantPeerConnection;
+        if (pc && pc.connectionState !== 'connected') {
+          console.warn('⚠️ FASE 5: Stream não conectado em 5s, tentando novamente');
+          console.log('🔄 FASE 5: Connection state:', pc.connectionState);
+          console.log('🔄 FASE 5: ICE state:', pc.iceConnectionState);
+          
+          // Retry connection com stream persistente
+          if (streamRef.current) {
+            console.log('🔄 FASE 5: Retrying connection with existing stream');
+            connectToSession(streamRef.current);
+          }
+        } else if (pc) {
+          console.log('✅ FASE 5: WebRTC connection verified:', pc.connectionState);
+        }
+      }, 5000);
 
     } catch (error) {
       console.error('❌ PARTICIPANT: Connection failed:', error);

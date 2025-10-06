@@ -394,14 +394,17 @@ class ParticipantHandshakeManager {
       const pcDuration = performance.now() - pcStartTime;
       console.log(`🚨 CRÍTICO [PARTICIPANT] RTCPeerConnection created: ${this.peerConnection.connectionState} (${pcDuration.toFixed(1)}ms)`);
 
-      // STEP 3: VALIDATE AND ADD tracks to peer connection BEFORE creating offer
+      // FASE 1: VALIDATE AND ADD tracks to peer connection BEFORE creating offer
+      const correlationId = `webrtc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      console.log(`🔗 [${correlationId}] FASE 1: INÍCIO DO HANDSHAKE`);
+      
       const addTrackStartTime = performance.now();
-      console.log('🚨 CRÍTICO [PARTICIPANT] Validating and adding tracks to RTCPeerConnection...');
+      console.log(`🔗 [${correlationId}] FASE 1: Validating and adding tracks to RTCPeerConnection...`);
       
       const tracks = stream.getTracks();
       const validTracks = tracks.filter(track => track.readyState === 'live' && track.enabled);
       
-      console.log(`🔍 [PARTICIPANT] Track validation:`, {
+      console.log(`🔗 [${correlationId}] FASE 1: Track validation:`, {
         totalTracks: tracks.length,
         validTracks: validTracks.length,
         trackDetails: tracks.map(t => ({
@@ -416,24 +419,38 @@ class ParticipantHandshakeManager {
         throw new Error('No valid tracks found in stream for WebRTC');
       }
       
+      // FASE 1: CRITICAL - Adicionar TODOS os tracks ao PeerConnection
       validTracks.forEach((track, index) => {
         if (this.peerConnection && stream) {
-          console.log(`🚨 CRÍTICO [PARTICIPANT] Adding validated track ${index + 1}: ${track.kind} (enabled: ${track.enabled}, readyState: ${track.readyState})`);
+          console.log(`🔗 [${correlationId}] FASE 1: Adding track ${index + 1}/${validTracks.length}:`, {
+            kind: track.kind,
+            enabled: track.enabled,
+            readyState: track.readyState,
+            id: track.id
+          });
+          
           this.peerConnection.addTrack(track, stream);
           
           // Track health monitoring after adding to peer connection
           track.addEventListener('ended', () => {
-            console.warn(`⚠️ [PARTICIPANT] Track ${track.kind} ended after being added to PC`);
+            console.warn(`⚠️ [${correlationId}] Track ${track.kind} ended after being added to PC`);
           });
           
           track.addEventListener('mute', () => {
-            console.warn(`⚠️ [PARTICIPANT] Track ${track.kind} muted after being added to PC`);
+            console.warn(`⚠️ [${correlationId}] Track ${track.kind} muted after being added to PC`);
           });
         }
       });
       
+      // FASE 1: Validar que tracks foram adicionados
+      const senders = this.peerConnection!.getSenders();
+      console.log(`🔗 [${correlationId}] FASE 1: PC senders after addTrack:`, {
+        sendersCount: senders.length,
+        tracks: senders.map(s => ({ kind: s.track?.kind, enabled: s.track?.enabled }))
+      });
+      
       const addTrackDuration = performance.now() - addTrackStartTime;
-      console.log(`✅ [PARTICIPANT] ${validTracks.length} validated tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
+      console.log(`🔗 [${correlationId}] FASE 1: ✅ ${validTracks.length} validated tracks added to RTCPeerConnection (${addTrackDuration.toFixed(1)}ms)`);
 
       // FASE 5: Configurar timeout de 8s para detecção de handshake travado
       const handshakeMonitor = setTimeout(() => {
@@ -559,26 +576,31 @@ class ParticipantHandshakeManager {
         }
       };
 
-      // STEP 4: Create offer AFTER stream is added
+      // FASE 3: Create offer with correlation tracking (using existing correlationId)
+      console.log(`🔗 [${correlationId}] FASE 3: Creating WebRTC offer...`);
       const offerCreateStartTime = performance.now();
-      console.log('🚨 CRÍTICO [PARTICIPANT] Creating offer...');
       const offer = await this.peerConnection.createOffer({
         offerToReceiveVideo: false,
         offerToReceiveAudio: true
       });
       const offerCreateDuration = performance.now() - offerCreateStartTime;
+      console.log(`🔗 [${correlationId}] FASE 3: ✅ Offer created (${offerCreateDuration.toFixed(1)}ms):`, {
+        type: offer.type,
+        sdpLength: offer.sdp?.length,
+        hasTracks: this.peerConnection.getSenders().length > 0
+      });
 
-      // STEP 5: Set local description
+      // FASE 3: Set local description with correlation tracking
       const setLocalStartTime = performance.now();
-      console.log('🚨 CRÍTICO [PARTICIPANT] Setting local description...');
+      console.log(`🔗 [${correlationId}] FASE 3: Setting local description...`);
       await this.peerConnection.setLocalDescription(offer);
       const setLocalDuration = performance.now() - setLocalStartTime;
       
-      console.log(`✅ [PARTICIPANT] createOffer (${offerCreateDuration.toFixed(1)}ms) -> setLocalDescription (${setLocalDuration.toFixed(1)}ms)`);
+      console.log(`🔗 [${correlationId}] FASE 3: ✅ Local description set (${setLocalDuration.toFixed(1)}ms)`);
 
-      // STEP 6: Send offer to host with detailed debugging
+      // FASE 3: Send offer to host with correlation tracking
       const sendStartTime = performance.now();
-      console.log(`🚨 CRÍTICO [PARTICIPANT] Enviando offer para host ${hostId}`, {
+      console.log(`🔗 [${correlationId}] FASE 3: Sending offer to ${hostId}`, {
         sdp: offer.sdp?.substring(0, 100) + '...',
         type: offer.type,
         localStreamTracks: stream.getTracks().length,
@@ -588,11 +610,11 @@ class ParticipantHandshakeManager {
       });
       
       unifiedWebSocketService.sendWebRTCOffer(hostId, offer.sdp!, offer.type);
-      console.log(`✅ CRÍTICO [PARTICIPANT] Offer enviado via WebSocket para ${hostId} - Aguardando answer...`);
+      console.log(`🔗 [${correlationId}] FASE 3: ✅ Offer sent via WebSocket - Awaiting answer...`);
       
       const sendDuration = performance.now() - sendStartTime;
       const totalDuration = performance.now() - offerStartTime;
-      console.log(`✅ [PARTICIPANT] setLocalDescription -> offerSent (${sendDuration.toFixed(1)}ms) -> Total sequence: ${totalDuration.toFixed(1)}ms`);
+      console.log(`🔗 [${correlationId}] FASE 3: 🎯 Total handshake duration: ${totalDuration.toFixed(1)}ms (send: ${sendDuration.toFixed(1)}ms)`);
 
       // Set connection timeout
       this.setConnectionTimeout(() => {

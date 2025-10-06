@@ -141,6 +141,22 @@ const ParticipantPage = () => {
         });
       }
 
+      // FASE 2: Aguardar 500ms para stream estabilizar
+      console.log("⏳ FASE 2: Aguardando stream estabilizar (500ms)...");
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // FASE 2: Validar tracks antes de conectar
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack || videoTrack.readyState !== 'live') {
+        throw new Error('FASE 2: Video track not ready');
+      }
+      
+      console.log("✅ FASE 2: Stream estabilizado e validado:", {
+        videoReadyState: videoTrack.readyState,
+        videoEnabled: videoTrack.enabled,
+        audioTracks: audioTracks.length
+      });
+
       // Connect to session
       await connection.connectToSession(stream);
 
