@@ -350,14 +350,19 @@ export class UnifiedWebRTCManager {
     this.callbacksManager.setOnParticipantJoinCallback(callback);
   }
 
-  // FASE 2: Listener para eventos de conexão de peers
+  // FASE 2 & 4: Listener para eventos de conexão de peers
   private setupPeerConnectionListeners(): void {
     window.addEventListener('webrtc-peer-connected', (event: Event) => {
       const customEvent = event as CustomEvent;
       const { participantId } = customEvent.detail;
-      console.log(`✅ MANAGER: Peer ${participantId} connected`);
+      console.log(`🎉 FASE 4: WEBRTC MANAGER - Peer ${participantId} CONECTADO!`);
       this.peerConnectionStates.set(participantId, 'connected');
       this.updateConnectionState('webrtc', 'connected');
+      
+      // FASE 4: Disparar evento visual
+      window.dispatchEvent(new CustomEvent('webrtc-status-change', {
+        detail: { status: 'connected', participantId, timestamp: Date.now() }
+      }));
     });
     
     window.addEventListener('webrtc-peer-failed', (event: Event) => {
@@ -403,6 +408,7 @@ export class UnifiedWebRTCManager {
           if (hasConnectedPeers) {
             this.connectionState.webrtc = 'connected';
             this.connectionState.overall = 'connected';
+            console.log('🎉 FASE 4: WEBRTC MANAGER - Status mudado para CONNECTED');
           } else if (hasConnectingPeers || this.peerConnections.size > 0) {
             this.connectionState.webrtc = 'connecting';
             this.connectionState.overall = 'connecting';

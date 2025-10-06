@@ -331,10 +331,19 @@ class ParticipantHandshakeManager {
     this.handshakeStartTime = offerStartTime;
     console.log(`🚨 CRÍTICO [PARTICIPANT] Starting offer creation sequence for ${hostId}`);
 
-    if (this.peerConnection && this.peerConnection.connectionState !== 'closed') {
-      console.log('[PARTICIPANT] createAndSendOffer: Closing existing peer connection');
-      this.peerConnection.close();
-      this.peerConnection = null;
+    // FASE 3: Proteger Stream - NÃO fechar conexões ativas
+    if (this.peerConnection) {
+      const currentState = this.peerConnection.connectionState;
+      
+      if (currentState === 'connected' || currentState === 'connecting') {
+        console.log(`✅ FASE 3: Reusando PC existente (${currentState}) - protegendo stream`);
+        await this.reuseExistingPeerConnection();
+        return;
+      } else if (currentState === 'failed' || currentState === 'closed') {
+        console.log(`🔄 FASE 3: Fechando PC em estado ${currentState}`);
+        this.peerConnection.close();
+        this.peerConnection = null;
+      }
     }
 
     this.isOfferInProgress = true;
@@ -598,6 +607,53 @@ class ParticipantHandshakeManager {
     } finally {
       this.isOfferInProgress = false;
     }
+  }
+
+  // FASE 3: Método para reusar PeerConnection existente sem fechar
+  private async reuseExistingPeerConnection(): Promise<void> {
+    if (!this.peerConnection || !this.localStream) {
+      console.error('❌ FASE 3: Cannot reuse - no PC or stream');
+      return;
+    }
+    
+    const pc = this.peerConnection;
+    const currentState = pc.connectionState;
+    console.log(`🔄 FASE 3: Reusing existing PC in state: ${currentState}`);
+    
+    // Verificar se as tracks ainda estão presentes
+    const senders = pc.getSenders();
+    const streamTracks = this.localStream.getTracks();
+    
+    if (senders.length === 0) {
+      console.log('📹 FASE 3: No senders found, adding tracks...');
+      streamTracks.forEach(track => {
+        if (this.peerConnection && this.localStream) {
+          this.peerConnection.addTrack(track, this.localStream);
+          console.log(`✅ FASE 3: Track ${track.kind} added`);
+        }
+      });
+    } else {
+      // Verificar se precisamos substituir tracks
+      console.log(`🔍 FASE 3: Found ${senders.length} existing senders`);
+      for (const sender of senders) {
+        const currentTrack = sender.track;
+        if (currentTrack && currentTrack.readyState !== 'live') {
+          const newTrack = streamTracks.find(t => t.kind === currentTrack.kind);
+          if (newTrack) {
+            await sender.replaceTrack(newTrack);
+            console.log(`✅ FASE 3: Replaced ${currentTrack.kind} track`);
+          }
+        }
+      }
+    }
+    
+    // Se já conectado, fazer restartIce
+    if (currentState === 'connected') {
+      console.log('🧊 FASE 3: PC already connected, restarting ICE...');
+      pc.restartIce();
+    }
+    
+    console.log('✅ FASE 3: PC reuse complete');
   }
 
   private async checkHostReadiness(hostId: string): Promise<{ready: boolean, reason?: string}> {
