@@ -973,4 +973,4 @@ if (typeof window !== 'undefined' && !(window as any).__participantHandlersSetup
 }
 
 // Export singleton instance
-export const participantHandshakeManager = new ParticipantHandshakeManager();
+export { participantHandshakeManager };
