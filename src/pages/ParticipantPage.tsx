@@ -1,31 +1,29 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useParticipantConnection } from '@/hooks/participant/useParticipantConnection';
-import { useParticipantMedia } from '@/hooks/participant/useParticipantMedia';
 import { useMobileOnlyGuard } from '@/hooks/useMobileOnlyGuard';
-
-// Importar handshake do participante para registrar listeners
-import '@/webrtc/handshake/ParticipantHandshake';
+import { useLiveKitRoom } from '@/hooks/live/useLiveKitRoom';
+import { VideoTrack } from '@livekit/components-react';
+import { Track } from 'livekit-client';
 import ParticipantHeader from '@/components/participant/ParticipantHeader';
 import ParticipantErrorDisplay from '@/components/participant/ParticipantErrorDisplay';
 import ParticipantConnectionStatus from '@/components/participant/ParticipantConnectionStatus';
-import ParticipantVideoPreview from '@/components/participant/ParticipantVideoPreview';
 import ParticipantControls from '@/components/participant/ParticipantControls';
 import ParticipantInstructions from '@/components/participant/ParticipantInstructions';
 import StreamDebugPanel from '@/utils/debug/StreamDebugPanel';
-import { unifiedWebSocketService } from '@/services/UnifiedWebSocketService';
 import { toast } from 'sonner';
+import { Card } from '@/components/ui/card';
 
 const ParticipantPage = () => {
-  console.log('🎯 PARTICIPANT PAGE: Starting with automatic media initialization (Teams/Meet style)');
+  console.log('🎯 PARTICIPANT PAGE: Iniciando com LiveKit');
   
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  const localVideoRef = useRef<HTMLVideoElement>(null);
   
   // Debug panel state
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   
-  // ENHANCED: Mobile-only guard with FORCE OVERRIDE support
+  // Mobile guard
   const { isMobile, isValidated, isBlocked } = useMobileOnlyGuard({
     redirectTo: '/',
     allowDesktop: false,
@@ -34,231 +32,59 @@ const ParticipantPage = () => {
   });
   
   console.log('🎯 PARTICIPANT PAGE: sessionId:', sessionId);
-  console.log('🎯 PARTICIPANT PAGE: Enhanced mobile guard:', { isMobile, isValidated, isBlocked });
   
   // State management
   const [participantId] = useState(() => `participant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
-  const [signalingStatus, setSignalingStatus] = useState<string>('disconnected');
   const [mediaError, setMediaError] = useState<string | null>(null);
   
-  // PROPAGAÇÃO: participantId único passado para todos os hooks
-  const connection = useParticipantConnection(sessionId, participantId);
-  const media = useParticipantMedia(participantId);
+  // LiveKit connection
+  const {
+    room,
+    participants,
+    isConnected,
+    isConnecting,
+    error,
+    toggleVideo,
+    toggleAudio,
+    disconnect,
+    localParticipant
+  } = useLiveKitRoom({
+    roomName: sessionId || '',
+    userName: participantId,
+    autoConnect: !isBlocked && isValidated
+  });
 
-  // Monitor signaling service status
+  // Monitor connection status
   useEffect(() => {
-    const checkSignalingStatus = () => {
-      const status = unifiedWebSocketService.getConnectionStatus();
-      setSignalingStatus(status);
-    };
+    if (error) {
+      setMediaError(error);
+      toast.error(`Erro: ${error}`);
+    }
+  }, [error]);
 
-    const interval = setInterval(checkSignalingStatus, 1000);
-    checkSignalingStatus();
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // AUTOMATIC MEDIA INITIALIZATION (Teams/Meet style)
-  const initParticipantMedia = async () => {
-    try {
-      // Check permissions proactively
-      if (navigator.permissions) {
-        try {
-          const cameraStatus = await navigator.permissions.query({ name: "camera" as PermissionName });
-          const micStatus = await navigator.permissions.query({ name: "microphone" as PermissionName });
-          console.log("📋 Permissions:", { camera: cameraStatus.state, mic: micStatus.state });
-        } catch (permError) {
-          console.log("⚠️ Could not check permissions:", permError);
-        }
-      }
-
-      // List available devices for diagnostic
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        console.log("🎥 Devices available:", devices.map(d => ({ kind: d.kind, label: d.label.substring(0, 50) })));
-      } catch (devError) {
-        console.log("⚠️ Could not enumerate devices:", devError);
-      }
-
-      // Request media immediately (Teams/Meet style)
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true, 
-        audio: true 
-      });
-
-      if (!stream) {
-        throw new Error("No stream obtained from getUserMedia");
-      }
-
-      // Connect to local preview
-      if (media.localVideoRef.current) {
-        media.localVideoRef.current.srcObject = stream;
-        media.localVideoRef.current.muted = true;
-        media.localVideoRef.current.playsInline = true;
-        
-        try {
-          await media.localVideoRef.current.play();
-          console.log("📹 Stream connected to local preview");
-        } catch (playError) {
-          console.warn("⚠️ Video play warning:", playError);
-        }
-      }
-
-      // Update media state
-      media.localStreamRef.current = stream;
-      const videoTracks = stream.getVideoTracks();
-      const audioTracks = stream.getAudioTracks();
-      
-      // Adicionar validação de tracks de áudio
-      console.log(`🎤 Audio tracks: ${audioTracks.length}, Video tracks: ${videoTracks.length}`);
-      
-      if (audioTracks.length === 0) {
-        console.warn('⚠️ No audio tracks found in stream');
-      }
-      
-      if (videoTracks.length === 0) {
-        console.warn('⚠️ No video tracks found in stream');
-      }
-
-      // Verificar stream compartilhado globalmente
-      const sharedStream = (window as any).__participantSharedStream;
-      if (sharedStream) {
-        const sharedAudioTracks = sharedStream.getAudioTracks();
-        console.log(`🌐 Shared stream audio tracks: ${sharedAudioTracks.length}`);
-      }
-      
-      // Share globally for WebRTC
-      (window as any).__participantSharedStream = stream;
-      
-      // Send tracks to WebRTC if connection exists
-      if (stream) {
-        stream.getTracks().forEach(track => {
-          try {
-            console.log(`✅ Track ready for WebRTC: ${track.kind}`);
-          } catch (trackError) {
-            console.warn(`⚠️ Could not prepare track:`, trackError);
-          }
+  // Setup local video preview
+  useEffect(() => {
+    if (localVideoRef.current && localParticipant) {
+      const videoPublication = Array.from(localParticipant.videoTrackPublications.values())[0];
+      if (videoPublication && videoPublication.track) {
+        const mediaStream = new MediaStream([videoPublication.track.mediaStreamTrack]);
+        localVideoRef.current.srcObject = mediaStream;
+        localVideoRef.current.muted = true;
+        localVideoRef.current.playsInline = true;
+        localVideoRef.current.play().catch(err => {
+          console.warn('⚠️ Erro ao reproduzir vídeo local:', err);
         });
       }
-
-      // FASE 2: Aguardar 500ms para stream estabilizar
-      console.log("⏳ FASE 2: Aguardando stream estabilizar (500ms)...");
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // FASE 2: Validar tracks antes de conectar
-      const videoTrack = stream.getVideoTracks()[0];
-      if (!videoTrack || videoTrack.readyState !== 'live') {
-        throw new Error('FASE 2: Video track not ready');
-      }
-      
-      console.log("✅ FASE 2: Stream estabilizado e validado:", {
-        videoReadyState: videoTrack.readyState,
-        videoEnabled: videoTrack.enabled,
-        audioTracks: audioTracks.length
-      });
-
-      // Connect to session
-      await connection.connectToSession(stream);
-
-      console.log("✅ Camera and microphone connected automatically");
-      toast.success(`📱 Camera connected! Video: ${videoTracks.length > 0 ? '✅' : '❌'}, Audio: ${audioTracks.length > 0 ? '✅' : '❌'}`);
-
-    } catch (err: any) {
-      console.error("❌ Error initializing media:", err.name, err.message);
-
-      if (err.name === "NotAllowedError") {
-        console.log("❌ Permission denied. Camera/microphone access blocked.");
-        toast.error("Permission denied. Please enable camera/microphone in your browser settings.");
-      } else if (err.name === "NotFoundError") {
-        console.log("❌ No camera/microphone devices found.");
-        toast.error("No camera/microphone devices found on this device.");
-      } else {
-        console.log("❌ Error accessing camera/microphone:", err.message);
-        toast.error("Error accessing camera/microphone. Please try again.");
-      }
-      
-      // Set error state to show retry button
-      setMediaError(err.name || 'UnknownError');
     }
-  };
-
-  // Manual retry function for error cases
-  const handleStartCamera = async () => {
-    setMediaError(null);
-    await initParticipantMedia();
-  };
-
-  const handleRetryCamera = async () => {
-    setMediaError(null);
-    await initParticipantMedia();
-  };
-
-  // FASE 7: Synchronized initialization sequence
-  useEffect(() => {
-    if (!sessionId || isBlocked) {
-      console.log('🚫 PATCH FASE 7: Skipping auto-initialization - blocked or no session');
-      return;
-    }
-    
-    const initSequence = async () => {
-      // 1. Wait for handshake to be ready
-      await new Promise(r => setTimeout(r, 500));
-      console.log('✅ PATCH FASE 7: Handshake ready');
-      
-      // 2. Initialize media
-      await initParticipantMedia();
-      
-      // 3. Validate stream was created
-      const stream = (window as any).__participantSharedStream;
-      if (!stream || stream.getVideoTracks().length === 0) {
-        console.error('❌ PATCH FASE 7: Failed to initialize valid stream');
-        setMediaError('StreamInitError');
-      } else {
-        console.log('✅ PATCH FASE 7: Media ready for WebRTC');
-      }
-    };
-    
-    console.log('🚀 PATCH FASE 7: Starting synchronized initialization');
-    initSequence();
-    
-    return () => {
-      try {
-        media.cleanup();
-      } catch (error) {
-        console.error('❌ PATCH FASE 7: Cleanup error:', error);
-      }
-    };
-  }, [sessionId, isBlocked, participantId]);
+  }, [localParticipant]);
 
   // Handler functions
-  const handleConnect = async () => {
-    try {
-      console.log('🔌 PARTICIPANT: Manual connect requested');
-      
-      // If no media, try to get it first
-      if (!media.hasVideo && !media.hasAudio) {
-        await media.initializeMediaAutomatically();
-      }
-      
-      await connection.connectToSession(media.localStreamRef.current);
-    } catch (error) {
-      console.error('❌ PARTICIPANT: Manual connect failed:', error);
-      toast.error('Connection failed');
-    }
-  };
-
   const handleRetryMedia = async () => {
-    try {
-      console.log('🔄 PARTICIPANT: Media retry requested');
-      await media.initializeMediaAutomatically();
-    } catch (error) {
-      console.error('❌ PARTICIPANT: Media retry failed:', error);
-      toast.error('Media retry failed');
-    }
+    window.location.reload();
   };
 
-  const handleSwitchCamera = async () => {
-    toast.info('Camera switching not available in automatic mode');
+  const handleStartCamera = async () => {
+    window.location.reload();
   };
 
   // Loading states
@@ -292,89 +118,106 @@ const ParticipantPage = () => {
     );
   }
 
+  const connectionStatus = isConnected ? 'connected' : isConnecting ? 'connecting' : 'disconnected';
+  const hasVideo = localParticipant?.isCameraEnabled || false;
+  const hasAudio = localParticipant?.isMicrophoneEnabled || false;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
       <div className="max-w-md mx-auto space-y-6">
         {/* Header */}
         <ParticipantHeader
           sessionId={sessionId || ''}
-          connectionStatus={connection.connectionStatus}
-          signalingStatus={signalingStatus}
+          connectionStatus={connectionStatus}
+          signalingStatus={isConnected ? 'connected' : 'disconnected'}
           onBack={() => navigate('/')}
         />
 
         {/* Error Display */}
-        <ParticipantErrorDisplay
-          error={connection.error}
-          isConnecting={connection.isConnecting}
-          onRetryConnect={handleConnect}
-        />
+        {mediaError && (
+          <ParticipantErrorDisplay
+            error={mediaError}
+            isConnecting={isConnecting}
+            onRetryConnect={handleRetryMedia}
+          />
+        )}
 
-        {/* Connection Status Details */}
+        {/* Connection Status */}
         <ParticipantConnectionStatus
-          signalingStatus={signalingStatus}
-          connectionStatus={connection.connectionStatus}
-          hasVideo={media.hasVideo}
-          hasAudio={media.hasAudio}
+          signalingStatus={isConnected ? 'connected' : 'disconnected'}
+          connectionStatus={connectionStatus}
+          hasVideo={hasVideo}
+          hasAudio={hasAudio}
           onRetryMedia={handleRetryMedia}
         />
 
-        {/* Video Preview */}
-        <ParticipantVideoPreview
-          localVideoRef={media.localVideoRef}
-          hasVideo={media.hasVideo}
-          hasAudio={media.hasAudio}
-          hasScreenShare={media.hasScreenShare}
-          isVideoEnabled={media.isVideoEnabled}
-          isAudioEnabled={media.isAudioEnabled}
-          localStream={media.localStreamRef.current}
-          onRetryMedia={handleRetryMedia}
-        />
+        {/* Video Preview - Local Stream */}
+        <Card className="relative aspect-video bg-slate-800 overflow-hidden">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+          />
+          
+          {!hasVideo && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
+              <p className="text-white">📷 Câmera desativada</p>
+            </div>
+          )}
+          
+          {/* Status badges */}
+          <div className="absolute top-2 right-2 flex gap-2">
+            <span className={`px-2 py-1 rounded text-xs ${hasVideo ? 'bg-green-500' : 'bg-red-500'}`}>
+              {hasVideo ? '📹 Vídeo' : '📹 Off'}
+            </span>
+            <span className={`px-2 py-1 rounded text-xs ${hasAudio ? 'bg-green-500' : 'bg-red-500'}`}>
+              {hasAudio ? '🎤 Áudio' : '🎤 Off'}
+            </span>
+          </div>
+        </Card>
 
         {/* Controls */}
         <ParticipantControls
-          hasVideo={media.hasVideo}
-          hasAudio={media.hasAudio}
-          hasScreenShare={media.hasScreenShare}
-          isVideoEnabled={media.isVideoEnabled}
-          isAudioEnabled={media.isAudioEnabled}
-          isConnected={connection.isConnected}
-          isConnecting={connection.isConnecting}
-          connectionStatus={connection.connectionStatus}
-          onToggleVideo={media.toggleVideo}
-          onToggleAudio={media.toggleAudio}
-          onToggleScreenShare={media.toggleScreenShare}
-          onConnect={handleConnect}
-          onDisconnect={connection.disconnectFromSession}
+          hasVideo={hasVideo}
+          hasAudio={hasAudio}
+          hasScreenShare={false}
+          isVideoEnabled={hasVideo}
+          isAudioEnabled={hasAudio}
+          isConnected={isConnected}
+          isConnecting={isConnecting}
+          connectionStatus={connectionStatus}
+          onToggleVideo={toggleVideo}
+          onToggleAudio={toggleAudio}
+          onToggleScreenShare={() => {}}
+          onConnect={() => {}}
+          onDisconnect={disconnect}
           mediaError={mediaError}
           onStartCamera={handleStartCamera}
-          onRetryMedia={handleRetryCamera}
+          onRetryMedia={handleRetryMedia}
         />
 
         {/* Instructions */}
         <ParticipantInstructions />
         
-        {/* Enhanced Mobile Debug Info */}
-        {isMobile && (
-          <div className="mt-4 p-3 bg-green-500/20 rounded-lg border border-green-500/30">
-            <p className="text-green-300 text-sm">
-              ✅ Automatic media initialization enabled (Teams/Meet style)
-            </p>
-            <p className="text-green-200 text-xs mt-1">
-              📱 Mode: {sessionStorage.getItem('confirmedMobileCamera') || 
-                        media.localStreamRef.current?.getVideoTracks()[0]?.getSettings()?.facingMode || 
-                        'Detecting...'}
-            </p>
-          </div>
-        )}
+        {/* LiveKit Status */}
+        <div className="mt-4 p-3 bg-green-500/20 rounded-lg border border-green-500/30">
+          <p className="text-green-300 text-sm">
+            ✅ Conectado via LiveKit SFU
+          </p>
+          <p className="text-green-200 text-xs mt-1">
+            👥 Participantes na sala: {participants.length + 1}
+          </p>
+        </div>
         
-        {/* Enhanced URL Debug Info */}
+        {/* Debug Info */}
         <div className="mt-2 p-2 bg-blue-500/10 rounded border border-blue-500/20">
           <p className="text-blue-300 text-xs">
-            🌐 URL: {window.location.href.includes('hutz-live-85.onrender.com') ? '✅ Production' : '⚠️ Development'}
+            🌐 Backend: {import.meta.env.VITE_API_URL}
           </p>
           <p className="text-blue-200 text-xs mt-1">
-            🔧 Parameters: {new URLSearchParams(window.location.search).toString() || 'None'}
+            🔧 Room: {sessionId}
           </p>
           <p className="text-blue-100 text-xs mt-1">
             🐛 Debug: 

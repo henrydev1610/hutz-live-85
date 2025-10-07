@@ -4,6 +4,7 @@ import LivePageContent from '@/components/live/LivePageContent';
 import FinalActionDialog from '@/components/live/FinalActionDialog';
 import { clearConnectionCache, forceRefreshConnections, getEnvironmentInfo, validateURLConsistency } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
+import { Room, RemoteParticipant } from 'livekit-client';
 
 interface LivePageContainerProps {
   state: any;
@@ -18,6 +19,8 @@ interface LivePageContainerProps {
   onQRCodeToTransmission: () => void;
   closeFinalAction: () => void;
   onStreamReceived: (participantId: string, stream: MediaStream) => void;
+  livekitRoom?: Room | null;
+  livekitParticipants?: RemoteParticipant[];
 }
 
 const LivePageContainer: React.FC<LivePageContainerProps> = ({
@@ -32,7 +35,9 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
   onGenerateQRCode,
   onQRCodeToTransmission,
   closeFinalAction,
-  onStreamReceived
+  onStreamReceived,
+  livekitRoom,
+  livekitParticipants = []
 }) => {
   // FASE 5: Enhanced cache management with URL sync validation
   useEffect(() => {
@@ -96,6 +101,8 @@ const LivePageContainer: React.FC<LivePageContainerProps> = ({
         onGenerateQRCode={onGenerateQRCode}
         onQRCodeToTransmission={onQRCodeToTransmission}
         onStreamReceived={onStreamReceived}
+        livekitRoom={livekitRoom}
+        livekitParticipants={livekitParticipants}
       />
       
       <FinalActionDialog

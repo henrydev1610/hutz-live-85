@@ -4,6 +4,7 @@ import { Participant } from './ParticipantGrid';
 import ParticipantPreviewGrid from './ParticipantPreviewGrid';
 import QRCodeOverlay from './QRCodeOverlay';
 import LiveIndicator from './LiveIndicator';
+import { Room, RemoteParticipant } from 'livekit-client';
 
 interface LivePreviewProps {
   qrCodeVisible: boolean;
@@ -22,6 +23,8 @@ interface LivePreviewProps {
   participantCount: number;
   participantStreams: {[id: string]: MediaStream};
   onStreamReceived: (participantId: string, stream: MediaStream) => void;
+  livekitRoom?: Room | null;
+  livekitParticipants?: RemoteParticipant[];
 }
 
 const LivePreview: React.FC<LivePreviewProps> = ({
@@ -38,6 +41,8 @@ const LivePreview: React.FC<LivePreviewProps> = ({
   backgroundImage,
   selectedBackgroundColor,
   participantList,
+  livekitRoom,
+  livekitParticipants = [],
   participantCount,
   participantStreams,
   onStreamReceived
@@ -56,12 +61,14 @@ const LivePreview: React.FC<LivePreviewProps> = ({
       </div>
       
       {/* Participant grid preview */}
-      <ParticipantPreviewGrid 
-        participantList={participantList}
-        participantCount={participantCount}
-        participantStreams={participantStreams}
-        onStreamReceived={onStreamReceived}
-      />
+        <ParticipantPreviewGrid
+          participantList={participantList}
+          participantCount={participantCount}
+          participantStreams={participantStreams}
+          onStreamReceived={onStreamReceived}
+          livekitRoom={livekitRoom}
+          livekitParticipants={livekitParticipants}
+        />
       
       {/* QR Code and description overlays */}
       <QRCodeOverlay

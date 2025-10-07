@@ -8,6 +8,7 @@ import LiveControlTabs from '@/components/live/LiveControlTabs';
 import ConnectionDiagnostics from '@/components/live/ConnectionDiagnostics';
 import StreamDebugPanel from '@/components/live/StreamDebugPanel';
 import { Participant } from '@/components/live/ParticipantGrid';
+import { Room, RemoteParticipant } from 'livekit-client';
 
 interface LivePageContentProps {
   state: any;
@@ -21,6 +22,8 @@ interface LivePageContentProps {
   onGenerateQRCode: () => void;
   onQRCodeToTransmission: () => void;
   onStreamReceived: (participantId: string, stream: MediaStream) => void;
+  livekitRoom?: Room | null;
+  livekitParticipants?: RemoteParticipant[];
 }
 
 const LivePageContent: React.FC<LivePageContentProps> = ({
@@ -34,7 +37,9 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
   onRemoveImage,
   onGenerateQRCode,
   onQRCodeToTransmission,
-  onStreamReceived
+  onStreamReceived,
+  livekitRoom,
+  livekitParticipants = []
 }) => {
   // FASE 1 & 2: Initialize simplified video manager instead of complex systems
   useSimplifiedVideoManager();
@@ -142,6 +147,8 @@ const LivePageContent: React.FC<LivePageContentProps> = ({
                 participantCount={state.participantCount}
                 participantStreams={state.participantStreams}
                 onStreamReceived={onStreamReceived}
+                livekitRoom={livekitRoom}
+                livekitParticipants={livekitParticipants}
               />
             </div>
           </CardContent>

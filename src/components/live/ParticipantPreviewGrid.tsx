@@ -2,19 +2,25 @@
 import React, { useEffect, useState } from 'react';
 import { Participant } from './ParticipantGrid';
 import VideoContainer from './VideoContainer';
+import { Room, RemoteParticipant, Track } from 'livekit-client';
+import { VideoTrack } from '@livekit/components-react';
 
 interface ParticipantPreviewGridProps {
   participantList: Participant[];
   participantCount: number;
   participantStreams: {[id: string]: MediaStream};
   onStreamReceived: (participantId: string, stream: MediaStream) => void;
+  livekitRoom?: Room | null;
+  livekitParticipants?: RemoteParticipant[];
 }
 
 const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
   participantList,
   participantCount,
   participantStreams,
-  onStreamReceived
+  onStreamReceived,
+  livekitRoom,
+  livekitParticipants = []
 }) => {
   // FASE 3: CONTAINER PRE-CREATION - Estado para slots P1-P4
   const [slots, setSlots] = useState<Participant[]>([]);
@@ -110,9 +116,59 @@ const ParticipantPreviewGrid: React.FC<ParticipantPreviewGridProps> = ({
     selectedParticipants: selectedParticipants.length,
     slots: slots.length,
     totalShown: allParticipants.length,
-    streams: Object.keys(participantStreams).length
+    streams: Object.keys(participantStreams).length,
+    livekitParticipants: livekitParticipants.length
   });
 
+  // Renderizar com LiveKit se disponível
+  if (livekitRoom && livekitParticipants.length > 0) {
+    console.log('🎥 Renderizando com LiveKit:', livekitParticipants.length);
+    
+    return (
+      <div className="absolute inset-0 p-4">
+        <div className={`grid ${getGridClass(participantCount)} gap-2 h-full`}>
+          {livekitParticipants.slice(0, participantCount).map((participant, index) => {
+            const videoPublication = Array.from(participant.videoTrackPublications.values())[0];
+            
+            return (
+              <div key={participant.sid} className="relative bg-slate-900 rounded-lg overflow-hidden">
+                {videoPublication && videoPublication.track ? (
+                  <VideoTrack
+                    trackRef={{
+                      participant,
+                      publication: videoPublication,
+                      source: Track.Source.Camera
+                    }}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <p className="text-white">P{index + 1}</p>
+                  </div>
+                )}
+                
+                {/* Nome do participante */}
+                <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-white text-sm">
+                  {participant.identity}
+                </div>
+              </div>
+            );
+          })}
+          
+          {/* Slots vazios */}
+          {Array.from({ length: Math.max(0, participantCount - livekitParticipants.length) }).map((_, index) => (
+            <div key={`empty-${index}`} className="relative bg-slate-900 rounded-lg overflow-hidden">
+              <div className="w-full h-full flex items-center justify-center">
+                <p className="text-white/50">P{livekitParticipants.length + index + 1}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback: renderizar com sistema WebRTC antigo
   return (
     <div className="absolute inset-0 p-4">
       <div className={`grid ${getGridClass(participantCount)} gap-2 h-full`}>

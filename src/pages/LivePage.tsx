@@ -12,14 +12,10 @@ import { useTransmissionWindow } from '@/hooks/live/useTransmissionWindow';
 import { useFinalAction } from '@/hooks/live/useFinalAction';
 import { useLivePageEffects } from '@/hooks/live/useLivePageEffects';
 import { useTransmissionMessageHandler } from '@/hooks/live/useTransmissionMessageHandler';
-// REMOVED: useStreamDisplayManager - now using simplified video manager
-// Removed conflicting WebRTC stability systems - now unified in useParticipantManagement
+import { useLiveKitRoom } from '@/hooks/live/useLiveKitRoom';
 import { WebRTCDebugToasts } from '@/components/live/WebRTCDebugToasts';
 import { getEnvironmentInfo, clearConnectionCache } from '@/utils/connectionUtils';
 import { clearDeviceCache } from '@/utils/media/deviceDetection';
-// Temporariamente removido para resolver erro 404
-// import { WebSocketDiagnostics } from '@/utils/debug/WebSocketDiagnostics';
-// import { ServerConnectivityTest } from '@/utils/debug/ServerConnectivityTest';
 
 const LivePage: React.FC = () => {
   const { toast } = useToast();
@@ -27,6 +23,17 @@ const LivePage: React.FC = () => {
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
   const { generateQRCode, handleGenerateQRCode, handleQRCodeToTransmission } = useQRCodeGeneration();
   const { transmissionWindowRef, openTransmissionWindow, finishTransmission } = useTransmissionWindow();
+  
+  // LiveKit connection for host
+  const {
+    room: livekitRoom,
+    participants: livekitParticipants,
+    isConnected: livekitConnected
+  } = useLiveKitRoom({
+    roomName: state.sessionId,
+    userName: 'host',
+    autoConnect: true
+  });
   
   // Auto-geração de QR Code quando sessionId existir
   useAutoQRGeneration({ 
@@ -450,6 +457,8 @@ const LivePage: React.FC = () => {
         onQRCodeToTransmission={() => handleQRCodeToTransmission(state.setQrCodeVisible)}
         closeFinalAction={closeFinalAction}
         onStreamReceived={handleStreamReceived}
+        livekitRoom={livekitRoom}
+        livekitParticipants={livekitParticipants}
       />
       
       {/* Health Monitor */}
