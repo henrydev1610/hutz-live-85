@@ -214,11 +214,14 @@ app.get('/get-token', (req, res) => {
     // Gerar token JWT
     const token = at.toJwt();
 
-    console.log(`✅ Token generated successfully for user="${user}"`);
+    if(!token){
+       console.error("❌ Failed to generate LiveKit token");
+      return res.status(500).json({ error: "Token generation failed" });
+    }
 
     // Retornar token e metadados
     res.json({
-      token: token,   // agora garante que é string
+      token,   // agora garante que é string
       url: LIVEKIT_URL,
       room,
       user,
