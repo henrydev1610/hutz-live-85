@@ -174,3 +174,8 @@ class ParticipantHandshakeManager {
 }
 
 export const participantHandshakeManager = new ParticipantHandshakeManager();
+
+// Export helper function for global debug
+export function getLocalStream(): MediaStream | null {
+  return (window as any).__participantSharedStream || null;
+}

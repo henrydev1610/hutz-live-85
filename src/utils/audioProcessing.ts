@@ -308,8 +308,10 @@ export async function generateUltrasonicAudio(
     
     console.log(`WAV conversion complete: ${wavData.byteLength} bytes`);
     
-    // Create the final blob
-    const wavBlob = new Blob([wavData], { type: 'audio/wav' });
+    // Create the final blob (convert to standard ArrayBuffer to fix TypeScript type issue)
+    const standardBuffer = new ArrayBuffer(wavData.byteLength);
+    new Uint8Array(standardBuffer).set(wavData);
+    const wavBlob = new Blob([standardBuffer], { type: 'audio/wav' });
     
     console.log(`WAV blob created successfully: ${wavBlob.size} bytes`);
     console.log("=== ULTRASONIC AUDIO GENERATION COMPLETE ===\n");
