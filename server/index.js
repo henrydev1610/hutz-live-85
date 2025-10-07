@@ -4,6 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
+const { AccessToken } = require('livekit-server-sdk');
 const roomsRouter = require('./routes/rooms');
 const { initializeSocketHandlers } = require('./signaling/socket');
 
@@ -24,6 +25,18 @@ if (allowedOrigins.length === 0) {
   console.error('💡 Example: ALLOWED_ORIGINS=https://domain1.com,https://domain2.com');
 } else {
   console.log('✅ Allowed origins (sanitized):', allowedOrigins);
+}
+
+// Validar variáveis de ambiente do LiveKit
+const LIVEKIT_URL = process.env.LIVEKIT_URL;
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
+
+if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+  console.warn('⚠️ WARNING: LiveKit credentials not configured');
+  console.warn('🔧 Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET in .env');
+} else {
+  console.log('✅ LiveKit credentials loaded:', LIVEKIT_URL);
 }
 
 const corsOptions = {
@@ -150,13 +163,76 @@ app.get('/', (req, res) => {
     endpoints: {
       health: '/health',
       rooms: '/api/rooms',
-      status: '/status'
+      status: '/status',
+      livekit: '/get-token'
     }
   });
 });
 
 // Rotas da API
 app.use('/api/rooms', roomsRouter);
+
+// Rota LiveKit - Gerar token JWT para acesso à sala
+app.get('/get-token', (req, res) => {
+  try {
+    const { room, user } = req.query;
+
+    // Validar parâmetros obrigatórios
+    if (!room || !user) {
+      return res.status(400).json({
+        error: 'Missing required parameters',
+        message: 'Both "room" and "user" query parameters are required',
+        example: '/get-token?room=live-session-123&user=participant-456'
+      });
+    }
+
+    // Validar credenciais LiveKit
+    if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+      return res.status(500).json({
+        error: 'LiveKit not configured',
+        message: 'Server is missing LiveKit credentials'
+      });
+    }
+
+    console.log(`🎫 Generating LiveKit token for user="${user}" in room="${room}"`);
+
+    // Criar token de acesso com permissões completas
+    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+      identity: user,
+      ttl: '24h' // Token válido por 24 horas
+    });
+
+    // Conceder permissões para a sala
+    at.addGrant({
+      roomJoin: true,
+      room: room,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true
+    });
+
+    // Gerar token JWT
+    const token = at.toJwt();
+
+    console.log(`✅ Token generated successfully for user="${user}"`);
+
+    // Retornar token e metadados
+    res.json({
+      token,
+      url: LIVEKIT_URL,
+      room,
+      user,
+      expiresIn: 86400 // 24 horas em segundos
+    });
+
+  } catch (error) {
+    console.error('❌ Error generating LiveKit token:', error);
+    res.status(500).json({
+      error: 'Token generation failed',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
 
 // Status endpoint com configurações
 app.get('/status', (req, res) => {
@@ -222,6 +298,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 Socket.IO server ready`);
   console.log(`🌐 Allowed origins: ${JSON.stringify(allowedOrigins)}`);
   console.log(`💾 Redis: ${process.env.REDIS_URL ? 'Enabled' : 'Disabled'}`);
+  console.log(`🎬 LiveKit Token Server: ${LIVEKIT_URL ? '✅ Ready at /get-token' : '⚠️ Not configured'}`);
 });
 
 // Graceful shutdown
