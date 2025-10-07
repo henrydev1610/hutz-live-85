@@ -100,6 +100,17 @@ export const useParticipantConnection = (sessionId: string | undefined, particip
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      // CRITICAL: Emitir evento participant-ready após join bem-sucedido
+      console.log('📢 PARTICIPANT: Emitting participant-ready event');
+      if (unifiedWebSocketService.isConnected()) {
+        const socket = (unifiedWebSocketService as any).socket;
+        socket?.emit('participant-ready', {
+          participantId,
+          sessionId,
+          timestamp: Date.now()
+        });
+      }
+
       // FASE 4: Validate stream BEFORE connecting
       if (!streamRef.current) {
         throw new Error('No stream available for connection');

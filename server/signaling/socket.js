@@ -268,6 +268,38 @@ const initializeSocketHandlers = (io) => {
     socket.on('join-room', handleJoinRoom);
     socket.on('join_room', handleJoinRoom);
 
+    // CRITICAL: Handler para participant-ready - rotear ao host
+    socket.on('participant-ready', (data) => {
+      try {
+        const { participantId, sessionId, timestamp } = data;
+        console.log(`📢 [SERVER] participant-ready from ${participantId} in room ${sessionId}`);
+
+        const connection = connections.get(socket.id);
+        if (!connection || connection.roomId !== sessionId) {
+          console.warn(`⚠️ [SERVER] participant-ready: user not in room ${sessionId}`);
+          return;
+        }
+
+        // Encontrar o host da sala
+        const hostSocketId = hostByRoom.get(sessionId);
+        if (!hostSocketId) {
+          console.warn(`⚠️ [SERVER] participant-ready: no host found for room ${sessionId}`);
+          return;
+        }
+
+        // Enviar evento ao host
+        socket.to(hostSocketId).emit('participant-ready', {
+          participantId,
+          sessionId,
+          timestamp
+        });
+
+        console.log(`✅ [SERVER] participant-ready routed to host ${hostSocketId}`);
+      } catch (error) {
+        console.error('❌ [SERVER] Error handling participant-ready:', error);
+      }
+    });
+
     // FASE 4: Enhanced heartbeat with connection health tracking
     socket.on('ping', (callback) => {
       const connection = connections.get(socket.id);
