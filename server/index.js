@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const { AccessToken } = require('livekit-server-sdk');
+const jwt = require('jsonwebtoken');
 const roomsRouter = require('./routes/rooms');
 const { initializeSocketHandlers } = require('./signaling/socket');
 
@@ -146,6 +147,33 @@ if (process.env.REDIS_URL) {
 // Inicializar handlers do Socket.IO
 initializeSocketHandlers(io);
 
+// Função fallback para gerar token manualmente
+function generateLiveKitTokenManually(apiKey, apiSecret, user, room) {
+  const now = Math.floor(Date.now() / 1000);
+  
+  const payload = {
+    exp: now + 86400, // 24 horas
+    iss: apiKey,
+    nbf: now - 10, // 10 segundos no passado para evitar clock skew
+    sub: user,
+    video: {
+      roomJoin: true,
+      room: room,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true
+    }
+  };
+  
+  return jwt.sign(payload, apiSecret, {
+    algorithm: 'HS256',
+    header: {
+      alg: 'HS256',
+      typ: 'JWT'
+    }
+  });
+}
+
 // Middleware de log para debug
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - Origin: ${req.get('Origin') || 'no-origin'}`);
@@ -195,14 +223,31 @@ app.get('/get-token', (req, res) => {
     }
 
     console.log(`🎫 Generating LiveKit token for user="${user}" in room="${room}"`);
+    
+    // Log detalhado das credenciais (sem expor valores completos)
+    console.log('🔐 LiveKit Credentials Check:');
+    console.log(`  - API_KEY: ${LIVEKIT_API_KEY.substring(0, 10)}... (${LIVEKIT_API_KEY.length} chars)`);
+    console.log(`  - API_SECRET: ${LIVEKIT_API_SECRET.substring(0, 10)}... (${LIVEKIT_API_SECRET.length} chars)`);
+    console.log(`  - URL: ${LIVEKIT_URL}`);
 
-    // Criar token de acesso com permissões completas (síncrono)
-    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+    // Sanitizar credenciais (remover espaços)
+    const sanitizedKey = LIVEKIT_API_KEY.trim();
+    const sanitizedSecret = LIVEKIT_API_SECRET.trim();
+    
+    console.log('🧹 Credentials sanitized');
+
+    // Criar token de acesso com credenciais sanitizadas
+    console.log('🏗️ Creating AccessToken...');
+    const at = new AccessToken(sanitizedKey, sanitizedSecret, {
       identity: user,
       ttl: '24h'
     });
+    
+    console.log('✅ AccessToken instance created');
+    console.log(`📝 AccessToken type: ${typeof at}`);
 
     // Conceder permissões para a sala
+    console.log('🔓 Adding grants...');
     at.addGrant({
       roomJoin: true,
       room: room,
@@ -210,14 +255,35 @@ app.get('/get-token', (req, res) => {
       canSubscribe: true,
       canPublishData: true
     });
+    
+    console.log('✅ Grants added successfully');
 
     // Gerar token JWT de forma síncrona
-    const token = at.toJwt();
+    console.log('🔨 Generating JWT token...');
+    let token = at.toJwt();
+    
+    console.log(`📊 Token generation result:`);
+    console.log(`  - Type: ${typeof token}`);
+    console.log(`  - Length: ${token?.length || 0}`);
+    console.log(`  - Is string: ${typeof token === 'string'}`);
+    console.log(`  - Preview: ${typeof token === 'string' ? token.substring(0, 50) + '...' : JSON.stringify(token)}`);
 
-    // Validar se o token foi gerado corretamente
+    // Fallback se o SDK falhar
     if (!token || typeof token !== 'string' || token.length === 0) {
-      console.error("❌ Failed to generate LiveKit token");
-      return res.status(500).json({ error: "Token generation failed" });
+      console.warn('⚠️ SDK token failed, trying manual generation...');
+      try {
+        token = generateLiveKitTokenManually(sanitizedKey, sanitizedSecret, user, room);
+        console.log('✅ Manual token generated successfully');
+      } catch (manualError) {
+        console.error('❌ Manual token generation also failed:', manualError);
+        return res.status(500).json({ 
+          error: "Token generation failed completely",
+          debug: {
+            sdkTokenType: typeof at.toJwt(),
+            manualError: manualError.message
+          }
+        });
+      }
     }
 
     console.log(`✅ LiveKit token generated successfully (${token.length} chars)`);
@@ -232,9 +298,13 @@ app.get('/get-token', (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error generating LiveKit token:', error);
+    console.error('  - Error name:', error.name);
+    console.error('  - Error message:', error.message);
+    console.error('  - Error stack:', error.stack);
     res.status(500).json({
       error: 'Token generation failed',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      errorType: error.name
     });
   }
 });
@@ -255,8 +325,16 @@ app.get('/test-livekit', (req, res) => {
       });
     }
 
+    console.log('🔐 Test - LiveKit Credentials:');
+    console.log(`  - API_KEY: ${LIVEKIT_API_KEY.substring(0, 10)}... (${LIVEKIT_API_KEY.length} chars)`);
+    console.log(`  - API_SECRET: ${LIVEKIT_API_SECRET.substring(0, 10)}... (${LIVEKIT_API_SECRET.length} chars)`);
+
+    // Sanitizar credenciais
+    const sanitizedKey = LIVEKIT_API_KEY.trim();
+    const sanitizedSecret = LIVEKIT_API_SECRET.trim();
+
     // Criar token de acesso (síncrono)
-    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+    const at = new AccessToken(sanitizedKey, sanitizedSecret, {
       identity: testUser,
       ttl: '1h'
     });
@@ -271,15 +349,27 @@ app.get('/test-livekit', (req, res) => {
     });
 
     // Gerar token JWT de forma síncrona
-    const token = at.toJwt();
+    let token = at.toJwt();
 
-    // Validar se o token foi gerado corretamente
+    console.log(`📊 Test token result: Type=${typeof token}, Length=${token?.length || 0}`);
+
+    // Fallback manual se SDK falhar
     if (!token || typeof token !== 'string' || token.length === 0) {
-      console.error("❌ Failed to generate LiveKit test token");
-      return res.status(500).json({
-        success: false,
-        error: 'Token generation failed'
-      });
+      console.warn('⚠️ SDK token failed in test, trying manual generation...');
+      try {
+        token = generateLiveKitTokenManually(sanitizedKey, sanitizedSecret, testUser, testRoom);
+        console.log('✅ Manual test token generated successfully');
+      } catch (manualError) {
+        console.error('❌ Manual test token generation failed:', manualError);
+        return res.status(500).json({
+          success: false,
+          error: 'Token generation failed completely',
+          debug: {
+            sdkFailed: true,
+            manualError: manualError.message
+          }
+        });
+      }
     }
 
     console.log(`✅ Test token generated successfully (${token.length} chars)`);
@@ -296,11 +386,84 @@ app.get('/test-livekit', (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error in test-livekit:', error);
+    console.error('  - Error name:', error.name);
+    console.error('  - Error message:', error.message);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
+      errorType: error.name
     });
   }
+});
+
+// DEBUG ENDPOINT - Remover após resolver o problema
+app.get('/debug-token', (req, res) => {
+  const debugInfo = {
+    timestamp: Date.now(),
+    nodeVersion: process.version,
+    env: {
+      hasLivekitUrl: !!LIVEKIT_URL,
+      hasApiKey: !!LIVEKIT_API_KEY,
+      hasApiSecret: !!LIVEKIT_API_SECRET,
+      apiKeyLength: LIVEKIT_API_KEY?.length || 0,
+      apiSecretLength: LIVEKIT_API_SECRET?.length || 0,
+      livekitUrlPreview: LIVEKIT_URL?.substring(0, 30) + '...'
+    },
+    sdk: {
+      version: require('livekit-server-sdk/package.json').version,
+      hasAccessToken: typeof AccessToken === 'function'
+    },
+    test: {}
+  };
+  
+  try {
+    const sanitizedKey = LIVEKIT_API_KEY?.trim() || '';
+    const sanitizedSecret = LIVEKIT_API_SECRET?.trim() || '';
+    
+    const testAt = new AccessToken(sanitizedKey, sanitizedSecret, {
+      identity: 'debug-user',
+      ttl: '1h'
+    });
+    
+    testAt.addGrant({
+      roomJoin: true,
+      room: 'debug-room'
+    });
+    
+    const testToken = testAt.toJwt();
+    
+    debugInfo.test = {
+      tokenGenerated: !!testToken,
+      tokenType: typeof testToken,
+      tokenLength: testToken?.length || 0,
+      tokenPreview: typeof testToken === 'string' ? testToken.substring(0, 50) + '...' : String(testToken),
+      credentialsSanitized: true
+    };
+    
+    // Testar fallback manual também
+    try {
+      const manualToken = generateLiveKitTokenManually(sanitizedKey, sanitizedSecret, 'debug-user', 'debug-room');
+      debugInfo.test.manualFallback = {
+        success: true,
+        tokenType: typeof manualToken,
+        tokenLength: manualToken?.length || 0,
+        tokenPreview: manualToken.substring(0, 50) + '...'
+      };
+    } catch (manualError) {
+      debugInfo.test.manualFallback = {
+        success: false,
+        error: manualError.message
+      };
+    }
+  } catch (error) {
+    debugInfo.test = {
+      error: error.message,
+      errorType: error.name,
+      stack: error.stack
+    };
+  }
+  
+  res.json(debugInfo);
 });
 
 // Status endpoint com configurações
