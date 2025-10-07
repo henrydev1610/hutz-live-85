@@ -37,8 +37,16 @@ export const useLiveKitRoom = ({
       setError(null);
 
       console.log('🔌 LiveKit: Iniciando conexão...', { roomName, userName });
+      console.log('📱 User Agent:', navigator.userAgent);
+      console.log('🌐 API URL:', import.meta.env.VITE_API_URL);
+      console.log('🔗 LiveKit URL:', import.meta.env.VITE_LIVEKIT_URL);
 
       const connectedRoom = await joinLiveRoom(roomName, userName);
+      
+      console.log('✅ LiveKit: Room conectada');
+      console.log('👥 Participantes na sala:', connectedRoom.remoteParticipants.size);
+      console.log('🎥 Câmera local:', connectedRoom.localParticipant.isCameraEnabled);
+      console.log('🎤 Microfone local:', connectedRoom.localParticipant.isMicrophoneEnabled);
       
       roomRef.current = connectedRoom;
       setRoom(connectedRoom);

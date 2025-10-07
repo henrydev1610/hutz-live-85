@@ -222,7 +222,7 @@ app.get('/get-token', (req, res) => {
       url: LIVEKIT_URL,
       room,
       user,
-      expiresIn: 86400 // 24 horas em segundos
+      ttl: 86400 // 24 horas em segundos
     });
 
   } catch (error) {
@@ -230,6 +230,43 @@ app.get('/get-token', (req, res) => {
     res.status(500).json({
       error: 'Token generation failed',
       message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
+// TEST ENDPOINT - Remover em produção
+app.get('/test-livekit', async (req, res) => {
+  try {
+    const testRoom = 'test-room';
+    const testUser = 'test-user';
+    
+    console.log('🧪 Testing LiveKit token generation...');
+    
+    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+      identity: testUser,
+      ttl: '1h'
+    });
+    
+    at.addGrant({
+      roomJoin: true,
+      room: testRoom,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true
+    });
+    
+    const token = at.toJwt();
+    
+    res.json({
+      success: true,
+      token: token.substring(0, 50) + '...',
+      url: LIVEKIT_URL,
+      message: 'Token gerado com sucesso! Use /get-token para produção.'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
@@ -254,6 +291,16 @@ app.get('/status', (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: Date.now(),
+    uptime: Math.floor(process.uptime()),
+    version: process.env.npm_package_version || '1.0.0'
+  });
+});
+
+// Health check endpoint (alias)
+app.get('/healthz', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: Date.now(),

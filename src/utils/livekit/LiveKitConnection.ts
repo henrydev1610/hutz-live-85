@@ -10,6 +10,11 @@ export async function joinLiveRoom(
   roomName: string,
   userName: string
 ): Promise<Room> {
+  // Verificar suporte a WebRTC
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error('Seu navegador não suporta WebRTC. Por favor, atualize para a versão mais recente.');
+  }
+  
   try {
     console.log('🚀 LiveKit: Iniciando conexão...', { roomName, userName });
 
@@ -26,16 +31,23 @@ export async function joinLiveRoom(
     }
     
     const data = await response.json();
-    const { token } = data;
+    const { token, url, room: roomFromToken, user, ttl } = data;
     
     if (!token) {
       throw new Error('Token não recebido do backend');
     }
+
+    // Validação adicional
+    if (!url) {
+      console.warn('⚠️ URL do LiveKit não recebida, usando fallback');
+    }
     
     console.log('✅ LiveKit: Token recebido com sucesso');
+    console.log(`🔑 Token válido por ${ttl || 'N/A'} segundos`);
 
     // 2. Conectar ao LiveKit
     const livekitUrl = import.meta.env.VITE_LIVEKIT_URL || 'wss://web-rtc-menager-aoxvi3be.livekit.cloud';
+    console.log(`🌐 Conectando a: ${url || livekitUrl}`);
     console.log('🔌 LiveKit: Conectando a:', livekitUrl);
     
     const room = new Room({
@@ -54,26 +66,37 @@ export async function joinLiveRoom(
     console.log('📡 Conectado ao LiveKit');
 
     // 3. Criar e publicar tracks locais (câmera + microfone)
-    console.log('🎥 LiveKit: Criando tracks locais...');
+    console.log('🎥 LiveKit: Solicitando permissões de câmera e microfone...');
+    console.log('📱 Dispositivo:', navigator.userAgent);
     
-    const tracks = await createLocalTracks({
-      audio: true,
-      video: {
-        facingMode: 'user',
-        resolution: {
-          width: 1280,
-          height: 720,
-          frameRate: 30,
+    try {
+      const tracks = await createLocalTracks({
+        audio: true,
+        video: {
+          facingMode: 'user',
+          resolution: {
+            width: 1280,
+            height: 720,
+            frameRate: 30,
+          },
         },
-      },
-    });
+      });
 
-    console.log('🎥 Publicando câmera e microfone');
-    
-    // Publicar cada track na room
-    for (const track of tracks) {
-      await room.localParticipant.publishTrack(track);
-      console.log(`✅ Track publicado: ${track.kind}`);
+      console.log('🎥 Publicando câmera e microfone');
+      
+      // Publicar cada track na room
+      for (const track of tracks) {
+        await room.localParticipant.publishTrack(track);
+        console.log(`✅ Track publicado: ${track.kind}`);
+      }
+    } catch (mediaError) {
+      console.error('❌ Erro ao acessar câmera/microfone:', mediaError);
+      
+      // Se falhar, conectar sem mídia local
+      console.log('⚠️ Conectando sem mídia local...');
+      
+      // Apenas retornar a room sem publicar tracks
+      return room;
     }
 
     // 4. Setup event listeners para novos participantes
