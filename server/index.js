@@ -196,10 +196,10 @@ app.get('/get-token', (req, res) => {
 
     console.log(`🎫 Generating LiveKit token for user="${user}" in room="${room}"`);
 
-    // Criar token de acesso com permissões completas
+    // Criar token de acesso com permissões completas (síncrono)
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
       identity: user,
-      ttl: '24h' // Token válido por 24 horas
+      ttl: '24h'
     });
 
     // Conceder permissões para a sala
@@ -211,17 +211,20 @@ app.get('/get-token', (req, res) => {
       canPublishData: true
     });
 
-    // Gerar token JWT
+    // Gerar token JWT de forma síncrona
     const token = at.toJwt();
 
-    if(!token){
-       console.error("❌ Failed to generate LiveKit token");
+    // Validar se o token foi gerado corretamente
+    if (!token || typeof token !== 'string' || token.length === 0) {
+      console.error("❌ Failed to generate LiveKit token");
       return res.status(500).json({ error: "Token generation failed" });
     }
 
+    console.log(`✅ LiveKit token generated successfully (${token.length} chars)`);
+
     // Retornar token e metadados
     res.json({
-      token,   // agora garante que é string
+      token,
       url: LIVEKIT_URL,
       room,
       user,
@@ -237,18 +240,28 @@ app.get('/get-token', (req, res) => {
 });
 
 // TEST ENDPOINT - Remover em produção
-app.get('/test-livekit', async (req, res) => {
+app.get('/test-livekit', (req, res) => {
   try {
     const testRoom = 'test-room';
     const testUser = 'test-user';
 
     console.log('🧪 Testing LiveKit token generation...');
 
+    // Validar credenciais LiveKit
+    if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+      return res.status(500).json({
+        success: false,
+        error: 'LiveKit credentials not configured'
+      });
+    }
+
+    // Criar token de acesso (síncrono)
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
       identity: testUser,
       ttl: '1h'
     });
 
+    // Conceder permissões
     at.addGrant({
       roomJoin: true,
       room: testRoom,
@@ -257,15 +270,32 @@ app.get('/test-livekit', async (req, res) => {
       canPublishData: true
     });
 
+    // Gerar token JWT de forma síncrona
     const token = at.toJwt();
+
+    // Validar se o token foi gerado corretamente
+    if (!token || typeof token !== 'string' || token.length === 0) {
+      console.error("❌ Failed to generate LiveKit test token");
+      return res.status(500).json({
+        success: false,
+        error: 'Token generation failed'
+      });
+    }
+
+    console.log(`✅ Test token generated successfully (${token.length} chars)`);
 
     res.json({
       success: true,
-      token: token.substring(0, 50) + '...',
+      token,
+      tokenPreview: token.substring(0, 50) + '...',
       url: LIVEKIT_URL,
+      room: testRoom,
+      user: testUser,
+      ttl: 3600,
       message: 'Token gerado com sucesso! Use /get-token para produção.'
     });
   } catch (error) {
+    console.error('❌ Error in test-livekit:', error);
     res.status(500).json({
       success: false,
       error: error.message
