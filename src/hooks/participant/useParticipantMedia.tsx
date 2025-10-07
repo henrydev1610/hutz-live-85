@@ -111,15 +111,7 @@ export const useParticipantMedia = (participantId: string) => {
           throw new Error('Video track not live');
         }
         
-        console.log('✅ MEDIA: Stream created and validated', {
-          streamId: stream.id,
-          videoTracks: videoTracks.length,
-          audioTracks: audioTracks.length,
-          videoReadyState: videoTracks[0].readyState,
-          videoEnabled: videoTracks[0].enabled
-        });
-        
-        // Store IMMEDIATELY and PERSISTENTLY
+        // Store IMMEDIATELY
         localStreamRef.current = stream;
         (window as any).__participantSharedStream = stream;
         
@@ -129,23 +121,12 @@ export const useParticipantMedia = (participantId: string) => {
           throw new Error('Stream storage failed');
         }
         
-        console.log('✅ MEDIA: Stream stored globally', {
-          storedId: stored.id,
-          matchesLocal: stored.id === stream.id
-        });
-        
-        // Connect to preview IMEDIATAMENTE
+        // Connect to preview
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
           localVideoRef.current.muted = true;
           localVideoRef.current.playsInline = true;
-          
-          try {
-            await localVideoRef.current.play();
-            console.log('✅ MEDIA: Preview playing');
-          } catch (playErr) {
-            console.warn('⚠️ MEDIA: Preview play warning (non-critical):', playErr);
-          }
+          await localVideoRef.current.play();
         }
         
         setHasVideo(true);
