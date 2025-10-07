@@ -218,7 +218,7 @@ app.get('/get-token', (req, res) => {
 
     // Retornar token e metadados
     res.json({
-      token,
+      token:typeof token === 'string'? token:String(token),
       url: LIVEKIT_URL,
       room,
       user,
