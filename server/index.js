@@ -43,10 +43,10 @@ const corsOptions = {
   origin: function (origin, callback) {
     // Permitir requisições sem origin (aplicações mobile, Postman, etc.)
     if (!origin) return callback(null, true);
-    
+
     console.log(`🔍 CORS CHECK: Testing origin: ${origin}`);
     console.log(`📋 CORS CHECK: Allowed origins: ${JSON.stringify(allowedOrigins)}`);
-    
+
     // Verificar se o origin está na lista permitida (com suporte a wildcards)
     const isAllowed = allowedOrigins.some(allowedOrigin => {
       if (typeof allowedOrigin === 'string') {
@@ -69,7 +69,7 @@ const corsOptions = {
       }
       return false;
     });
-    
+
     if (isAllowed) {
       console.log(`✅ CORS ALLOWED: ${origin}`);
       callback(null, true);
@@ -125,10 +125,10 @@ if (process.env.REDIS_URL) {
   try {
     const { createAdapter } = require('@socket.io/redis-adapter');
     const { createClient } = require('redis');
-    
+
     const pubClient = createClient({ url: process.env.REDIS_URL });
     const subClient = pubClient.duplicate();
-    
+
     Promise.all([
       pubClient.connect(),
       subClient.connect()
@@ -218,13 +218,12 @@ app.get('/get-token', (req, res) => {
 
     // Retornar token e metadados
     res.json({
-      token:typeof token === 'string'? token:String(token),
+      token: token,   // agora garante que é string
       url: LIVEKIT_URL,
       room,
       user,
-      ttl: 86400 // 24 horas em segundos
+      ttl: 86400
     });
-
   } catch (error) {
     console.error('❌ Error generating LiveKit token:', error);
     res.status(500).json({
@@ -239,14 +238,14 @@ app.get('/test-livekit', async (req, res) => {
   try {
     const testRoom = 'test-room';
     const testUser = 'test-user';
-    
+
     console.log('🧪 Testing LiveKit token generation...');
-    
+
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
       identity: testUser,
       ttl: '1h'
     });
-    
+
     at.addGrant({
       roomJoin: true,
       room: testRoom,
@@ -254,9 +253,9 @@ app.get('/test-livekit', async (req, res) => {
       canSubscribe: true,
       canPublishData: true
     });
-    
+
     const token = at.toJwt();
-    
+
     res.json({
       success: true,
       token: token.substring(0, 50) + '...',
@@ -327,7 +326,7 @@ app.use('*', (req, res) => {
 // Middleware de tratamento de erros
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
   });
